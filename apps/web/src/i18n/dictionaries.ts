@@ -33,6 +33,15 @@ const en = {
   'settings.appearance.system.hint': 'Follow your phone’s day/night setting.',
   'settings.language.title': 'Language',
   'settings.language.legend': 'Language',
+  // Sync-status strip. Never the word "sync" to a farmer — "saved" and "sent". The offline
+  // line is the most important string in the product: a farmer unsure their entry survived
+  // keeps a paper backup, and then the app is extra work. See .claude/rules/frontend.md.
+  'sync.status.label': 'Save status',
+  'sync.synced': 'Saved and sent',
+  'sync.offline': 'Offline — your work is saved',
+  'sync.syncing': 'Sending…',
+  'sync.error': 'Not sent — will retry',
+  'sync.toSend': 'to send',
   'module.comingSoon': 'This part of the farm arrives in a later phase.',
   'module.notFound.title': 'Not found',
   'module.notFound.body': 'There is nothing here.',
@@ -53,6 +62,12 @@ const af: Record<TranslationKey, string> = {
   'settings.appearance.system.hint': 'Volg jou foon se dag/nag-instelling.',
   'settings.language.title': 'Taal',
   'settings.language.legend': 'Taal',
+  'sync.status.label': 'Stoorstatus',
+  'sync.synced': 'Gestoor en gestuur',
+  'sync.offline': 'Aflyn — jou werk is gestoor',
+  'sync.syncing': 'Stuur tans…',
+  'sync.error': 'Nie gestuur nie — sal weer probeer',
+  'sync.toSend': 'om te stuur',
   'module.comingSoon': 'Hierdie deel van die plaas kom in ’n latere fase.',
   'module.notFound.title': 'Nie gevind nie',
   'module.notFound.body': 'Daar is niks hier nie.',

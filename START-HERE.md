@@ -23,21 +23,50 @@ Verify:
 node --version ; pnpm --version ; git --version ; claude --version
 ```
 
-## 1. Initialise the repo
+## 1. Initialise the repo and push to GitHub
 
-From this folder (`C:\Users\pjmvu\Claude\Projects\Werf Build`):
+Repo: **https://github.com/JPJvv/werf**
+
+Run this from Windows PowerShell (do the git setup here, not from inside Cowork — the
+sandbox can't manage `.git` cleanly and may have left a partial one; the first line clears it):
 
 ```powershell
 cd "C:\Users\pjmvu\Claude\Projects\Werf Build"
+if (Test-Path .git) { Remove-Item -Recurse -Force .git }   # clear any partial repo
+
 git init
-git add .
-git commit -m "chore: import Werf specification pack and Claude Code config"
+git branch -M main
 
 # Author identity — MUST be the email on your GitHub account, or your
-# contribution graph stays empty.
+# contribution graph stays empty. Verify it matches github.com/JPJvv.
 git config user.name  "JP van Vuuren"
 git config user.email "your-github-email@example.com"
+
+git add .
+git commit -m "chore: import Werf specification pack and Claude Code config"
+git remote add origin https://github.com/JPJvv/werf.git
+git push -u origin main
 ```
+
+If the push asks for credentials, sign in with your GitHub account (or install the GitHub CLI:
+`winget install GitHub.cli`, then `gh auth login`). After the first Claude Code session, confirm
+your email authored the commits:
+
+```powershell
+git log --format="%an <%ae>"
+```
+
+### Committing periodically
+
+Commit at the end of each checklist item and push at the end of each work session — the
+`/loop` prompt already commits per item (Conventional messages, FR refs). A simple session-end habit:
+
+```powershell
+git add . ; git commit -m "feat(...): ..." ; git push
+```
+
+Set **branch protection** on `main` in the repo settings (require a PR, require CI green) once the
+first push lands — it stops a 2 a.m. force-push from becoming the thing you explain in an interview.
 
 ## 2. Make the hooks executable (Git Bash / WSL only)
 

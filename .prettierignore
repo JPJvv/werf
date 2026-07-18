@@ -4,6 +4,9 @@ build
 .turbo
 coverage
 pnpm-lock.yaml
+
+# CI artifacts (e.g. gitleaks writes results.sarif into the workspace)
+*.sarif
 docs/
 **/*.md
 LICENSE

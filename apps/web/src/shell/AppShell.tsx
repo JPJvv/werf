@@ -1,4 +1,5 @@
 import { Link, Outlet } from 'react-router-dom';
+import { useTranslation } from '../i18n/LocaleProvider';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -7,6 +8,7 @@ import { Link, Outlet } from 'react-router-dom';
  * hang on.
  */
 export function AppShell() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-sand-50 text-soil-900">
       <header className="flex items-center justify-between border-b border-soil-200 px-4 py-2">
@@ -15,10 +17,10 @@ export function AppShell() {
         </Link>
         <nav>
           <Link
-            to="/settings/appearance"
+            to="/settings"
             className="flex min-h-touch-min items-center px-3 text-body text-soil-700 no-underline"
           >
-            Settings
+            {t('nav.settings')}
           </Link>
         </nav>
       </header>

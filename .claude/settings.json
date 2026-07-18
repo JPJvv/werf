@@ -2,11 +2,20 @@
   "permissions": {
     "allow": [
       "Bash(pnpm *)",
-      "Bash(git status)", "Bash(git diff *)", "Bash(git log *)",
-      "Bash(git add *)", "Bash(git commit *)", "Bash(git checkout -b *)",
-      "Bash(gh pr *)", "Bash(gh run *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout -b *)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
       "Bash(docker compose *)",
-      "Edit", "Write", "Read", "Glob", "Grep"
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep"
     ],
     "deny": [
       "Read(./.env)",
@@ -22,9 +31,7 @@
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
-        "hooks": [
-          { "type": "command", "command": ".claude/hooks/guard-migrations.sh" }
-        ]
+        "hooks": [{ "type": "command", "command": ".claude/hooks/guard-migrations.sh" }]
       }
     ],
     "PostToolUse": [
@@ -40,9 +47,7 @@
     ],
     "Stop": [
       {
-        "hooks": [
-          { "type": "command", "command": ".claude/hooks/verify-gate.sh" }
-        ]
+        "hooks": [{ "type": "command", "command": ".claude/hooks/verify-gate.sh" }]
       }
     ]
   }

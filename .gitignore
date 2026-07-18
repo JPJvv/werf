@@ -1,0 +1,29 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+infra/secrets/
+
+# Claude Code escape hatch (Stop-hook override)
+.claude/gate-off
+
+# Dependencies / build
+node_modules/
+dist/
+build/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Local databases / dumps
+*.sqlite
+*.sqlite-*
+*.dump
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

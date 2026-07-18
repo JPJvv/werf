@@ -1,0 +1,2 @@
+Rename this file to `.claude/gate-off` (git-ignored) to temporarily disable the verify Stop hook.
+Delete it to re-arm the gate. Never commit `.claude/gate-off`.

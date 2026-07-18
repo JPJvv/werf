@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-ZA" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#FBF8F3" />
+    <title>Werf</title>
+    <!--
+      Theme bootstrap — runs BEFORE first paint so a dark-mode user never gets a white
+      flash on a cold start at 5am. Default is light and does NOT follow the OS setting
+      unless the user opted in by choosing "Match my phone" (stored as 'system'). See
+      docs/02-design/ux-design-system.md § 2.3.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('werf-theme');
+          var theme = 'light';
+          if (stored === 'dark') {
+            theme = 'dark';
+          } else if (stored === 'system') {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

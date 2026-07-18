@@ -1,0 +1,37 @@
+{
+  "name": "werf",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Offline-first PWA for South African farm management",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@11.14.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "eslint . && prettier --check .",
+    "typecheck": "turbo typecheck",
+    "db:migrate": "pnpm --filter @werf/db migrate",
+    "db:generate": "pnpm --filter @werf/db generate",
+    "db:seed": "pnpm --filter @werf/db seed",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.10.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "jsdom": "^25.0.1",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  }
+}

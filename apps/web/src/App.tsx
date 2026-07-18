@@ -1,22 +1,25 @@
-import type { EnterpriseType } from '@werf/core';
-import { HomeGrid } from './home/HomeGrid';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { AppShell } from './shell/AppShell';
+import { HomeScreen } from './shell/HomeScreen';
+import { ModulePlaceholder } from './shell/ModulePlaceholder';
+import { AppearanceSettings } from './settings/AppearanceSettings';
 
 /**
- * Phase 1 app shell. The home screen is the enterprise-adaptive grid (FR-017).
- *
- * TEMPORARY: the farm shown here is a placeholder demo farm. The auth slice replaces it
- * with the active farm from the signed-in session (FR-004, FR-006) — the grid component
- * itself already takes the farm as data, so that swap is a wiring change, not a rewrite.
+ * Phase 1 app shell + routing. Everything renders inside AppShell (the persistent frame).
+ * The home screen is the enterprise-adaptive grid (FR-017); tiles are doors to module routes
+ * that fill in with their phases. The auth guard and offline session gate land in later slices.
  */
-const DEMO_FARM: { name: string; enterpriseTypes: EnterpriseType[] } = {
-  name: 'Rietfontein',
-  enterpriseTypes: ['beef_cattle', 'row_crops'],
-};
-
 export function App() {
   return (
-    <main className="min-h-screen bg-sand-50">
-      <HomeGrid farmName={DEMO_FARM.name} enterpriseTypes={DEMO_FARM.enterpriseTypes} />
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route index element={<HomeScreen />} />
+          <Route path="settings/appearance" element={<AppearanceSettings />} />
+          <Route path=":module" element={<ModulePlaceholder />} />
+          <Route path="*" element={<ModulePlaceholder />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

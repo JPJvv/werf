@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { HomeTile } from './tiles';
 
 /**
@@ -19,8 +20,8 @@ export interface TileProps {
 
 export function Tile({ tile, metric, badge }: TileProps) {
   return (
-    <a
-      href={tile.to}
+    <Link
+      to={tile.to}
       className="flex min-h-tile-min flex-col items-center justify-center gap-2 rounded border border-soil-200 bg-sand-100 p-4 text-center text-soil-900 no-underline transition-colors duration-fast ease-werf hover:bg-soil-100"
     >
       <span aria-hidden="true" className="text-h1 leading-none">
@@ -37,6 +38,6 @@ export function Tile({ tile, metric, badge }: TileProps) {
           <span>{badge.label}</span>
         </span>
       )}
-    </a>
+    </Link>
   );
 }

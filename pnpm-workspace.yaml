@@ -1,0 +1,11 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Approve install-time build scripts. esbuild (used by Vite and Vitest) verifies its
+# platform binary in a postinstall; it is trusted and required.
+allowBuilds:
+  esbuild: true
+
+onlyBuiltDependencies:
+  - esbuild

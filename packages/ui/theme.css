@@ -1,0 +1,110 @@
+/*
+ * Werf design tokens. Token NAMES are stable across themes — `--soil-900` is always
+ * "the ink". Only the VALUES change under [data-theme]. Components never branch on theme;
+ * if you write `theme === 'dark' ? a : b`, the token system has failed. See
+ * docs/02-design/ux-design-system.md.
+ *
+ * The inline bootstrap script in apps/web/index.html sets [data-theme] before first paint.
+ * Default is light and does NOT follow prefers-color-scheme unless the user opts in.
+ */
+
+:root,
+[data-theme='light'] {
+  /* Soil — the ink. Warm-shifted, never pure #000 (harsh under glare) */
+  --soil-900: #23190f;
+  --soil-700: #4a3a28;
+  --soil-500: #7a6952;
+  --soil-300: #b3a48c;
+  --soil-200: #d9cfbc;
+  --soil-100: #ede6da;
+
+  /* Sand — the working surface */
+  --sand-50: #fbf8f3;
+  --sand-100: #f3eee4;
+
+  /* Tag ochre — the signature. PRIMARY ACTION ONLY. Never decorative. */
+  --ochre-500: #d99a2b;
+  --ochre-600: #b87f1c;
+  --ochre-100: #faefd6;
+
+  /* Semantics — earth-derived */
+  --rooigrond-600: #a63a21;
+  --rooigrond-100: #f7e5df;
+  --klei-700: #8a5a16;
+  --klei-100: #fbf0dc;
+  --aloe-700: #3f5a32;
+  --aloe-100: #e8efe3;
+  --dam-700: #2c4a63;
+  --dam-100: #e4ebf1;
+}
+
+[data-theme='dark'] {
+  /* Kraal — designed, not inverted. A kraal wall at night is warm, not grey. */
+  --sand-50: #16110a;
+  --sand-100: #1f1810;
+  --soil-100: #2a2118;
+  --soil-200: #3d3225;
+  --soil-300: #7a6952;
+  --soil-500: #b3a48c;
+  --soil-700: #d2c7b4;
+  --soil-900: #ede6da;
+
+  --ochre-500: #e8b34f;
+  --ochre-600: #d99a2b;
+  --ochre-100: #33260d;
+
+  --rooigrond-600: #e07a5f;
+  --rooigrond-100: #3a1a12;
+  --klei-700: #c98a3a;
+  --klei-100: #302108;
+  --aloe-700: #7fa36b;
+  --aloe-100: #1d2a17;
+  --dam-700: #6b9bc4;
+  --dam-100: #16232e;
+}
+
+/* Theme-invariant tokens — type, space, size, motion. */
+:root {
+  --font-ui: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale — 16px floor, no exceptions (NFR-408) */
+  --t-display: 32px;
+  --t-h1: 24px;
+  --t-h2: 20px;
+  --t-body: 16px;
+  --t-label: 14px;
+  --t-tile: 18px;
+  --t-data-lg: 28px;
+  --t-data: 16px;
+
+  /* Space — 4px base */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 32px;
+  --s-8: 48px;
+  --s-10: 64px;
+  --s-12: 96px;
+
+  /* Size — gloves, in the sun */
+  --touch-min: 48px;
+  --touch-primary: 64px;
+  --tile-min: 96px;
+  --radius: 4px;
+
+  /* Motion — state feedback only; honours prefers-reduced-motion */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+  }
+}

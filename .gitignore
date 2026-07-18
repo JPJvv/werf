@@ -16,6 +16,9 @@ build/
 coverage/
 *.tsbuildinfo
 
+# CI artifacts (gitleaks-action writes results.sarif into the workspace)
+*.sarif
+
 # Local databases / dumps
 *.sqlite
 *.sqlite-*

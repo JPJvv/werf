@@ -1,15 +1,22 @@
+import type { EnterpriseType } from '@werf/core';
+import { HomeGrid } from './home/HomeGrid';
+
 /**
- * Phase 0 placeholder shell. The real home is an enterprise-adaptive GRID generated from
- * farm.enterprise_types (Phase 1) — never a static array of tiles. This screen exists only
- * to prove the scaffold, the tokens, and the theme bootstrap render.
+ * Phase 1 app shell. The home screen is the enterprise-adaptive grid (FR-017).
+ *
+ * TEMPORARY: the farm shown here is a placeholder demo farm. The auth slice replaces it
+ * with the active farm from the signed-in session (FR-004, FR-006) — the grid component
+ * itself already takes the farm as data, so that swap is a wiring change, not a rewrite.
  */
+const DEMO_FARM: { name: string; enterpriseTypes: EnterpriseType[] } = {
+  name: 'Rietfontein',
+  enterpriseTypes: ['beef_cattle', 'row_crops'],
+};
+
 export function App() {
   return (
-    <main className="mx-auto flex min-h-tile-min max-w-3xl flex-col gap-4 p-6">
-      <h1 className="font-ui text-h1 text-soil-900">Werf</h1>
-      <p className="text-body text-soil-700">
-        Offline-first farm management. The scaffold is up; features arrive by phase.
-      </p>
+    <main className="min-h-screen bg-sand-50">
+      <HomeGrid farmName={DEMO_FARM.name} enterpriseTypes={DEMO_FARM.enterpriseTypes} />
     </main>
   );
 }

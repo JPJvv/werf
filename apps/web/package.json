@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@werf/core": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

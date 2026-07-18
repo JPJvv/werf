@@ -19,6 +19,7 @@ export default defineWorkspace([
       root: './apps/web',
       environment: 'jsdom',
       include: ['src/**/*.{test,spec}.{ts,tsx}'],
+      setupFiles: ['src/test-setup.ts'],
       passWithNoTests: true,
     },
   },

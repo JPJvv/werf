@@ -42,6 +42,12 @@ const en = {
   'sync.syncing': 'Sending…',
   'sync.error': 'Not sent — will retry',
   'sync.toSend': 'to send',
+  // PWA install. Offered after the browser signals the app is install-worthy (never on
+  // first paint, FR-007) and dismissible — a farmer decides, we don't nag.
+  'install.title': 'Install Werf on this phone',
+  'install.body': 'Open it from your home screen, and it works offline.',
+  'install.action': 'Install',
+  'install.dismiss': 'Not now',
   'module.comingSoon': 'This part of the farm arrives in a later phase.',
   'module.notFound.title': 'Not found',
   'module.notFound.body': 'There is nothing here.',
@@ -68,6 +74,10 @@ const af: Record<TranslationKey, string> = {
   'sync.syncing': 'Stuur tans…',
   'sync.error': 'Nie gestuur nie — sal weer probeer',
   'sync.toSend': 'om te stuur',
+  'install.title': 'Installeer Werf op hierdie foon',
+  'install.body': 'Maak dit oop van jou tuisskerm af, en dit werk aflyn.',
+  'install.action': 'Installeer',
+  'install.dismiss': 'Nie nou nie',
   'module.comingSoon': 'Hierdie deel van die plaas kom in ’n latere fase.',
   'module.notFound.title': 'Nie gevind nie',
   'module.notFound.body': 'Daar is niks hier nie.',

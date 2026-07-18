@@ -18,6 +18,32 @@ Global farm software (Farmbrite, AgriWebb, Herdwatch) is feature-rich but has no
 
 ---
 
+## Screenshots
+
+<!-- SCREENSHOT SLOT — replace when Phase 1 (app shell) lands.
+     Home grid (light + dark), an offline write, and a compliance pack export.
+     Store under docs/assets/screenshots/ and reference with relative paths. -->
+
+_Coming with the Phase 1 app shell. The home grid, an offline capture flow, and a compliance export — light and dark._
+
+---
+
+## What's interesting here
+
+The load-bearing engineering decisions, for anyone reading the repo to judge the work rather than use the product:
+
+- **Offline is the default state, not the error state.** Reads and writes hit local SQLite (PowerSync over OPFS) always; the sync engine moves deltas to Postgres. There is no "you're offline" failure path on a write — if a code path throws when the network is off, that is the bug.
+- **No regulated number is ever hardcoded.** Minimum wage, the BCEA threshold, the UIF ceiling, deduction caps — all live in a `regulatory_rates` table keyed by effective date and looked up by *when the event occurred*, never `now()`. Recalculating a two-year-old payslip yields the two-year-old wage, because that is a legal requirement, not a nicety.
+- **Tenancy is enforced twice, on purpose.** Every domain row carries `farm_id`; Postgres RLS and PowerSync sync rules are written and tested *independently*, because sync bypasses PostgREST — a permissive sync rule leaks across farms even when RLS is perfect. There is a test that fails if the two disagree.
+- **Money is integer cents in TypeScript and `numeric(14,2)` in Postgres** — a branded `Money` type, never a JS float.
+- **Built offline-native from the ID up:** client-generated UUIDv7 (the client can't ask a server for a key), soft-delete tombstones (a hard `DELETE` breaks replication and destroys the audit trail compliance needs), and a deliberate split between `occurred_at` (when it happened on the farm) and `created_at` (when it synced) — which can differ by a week.
+- **Security choices that reflect the context, not the defaults:** no SMS second factor (SIM-swap is industrialised in SA and SMS dies with no signal — TOTP and passkeys both work offline); no worker biometrics (POPIA s26 consent posture); data resident in `af-south-1` because there is no South African cloud region for the usual managed options.
+- **The design tokens carry the theme, not the components.** No `theme === 'dark' ? …` anywhere — a token whose value changes under `[data-theme]` is the only place the theme lives. Light is the default and does **not** follow the OS at noon in a cattle crush.
+
+Each of these is enforced in `CLAUDE.md` and, where it matters, by a Claude Code review agent (`compliance-checker`, `sync-auditor`) and the `pnpm verify` gate.
+
+---
+
 ## How to read this pack
 
 Read in this order. Each document assumes the ones above it.

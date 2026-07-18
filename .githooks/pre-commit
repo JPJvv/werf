@@ -1,0 +1,30 @@
+#!/bin/sh
+# Werf pre-commit: block secrets from ever entering history.
+#
+# Scans the staged diff with gitleaks. This mirrors the gitleaks job in CI
+# (.github/workflows/ci.yml) so a secret is caught on the developer's machine,
+# before it is committed, rather than after it has already been pushed.
+#
+# If gitleaks is not installed locally the hook WARNS and lets the commit
+# through — CI remains the hard gate — rather than blocking every commit on a
+# machine that has not installed the tool. Install it to close the local gap:
+#   macOS:   brew install gitleaks
+#   Windows: winget install gitleaks.gitleaks   (or: scoop install gitleaks)
+#   Linux:   see https://github.com/gitleaks/gitleaks#installing
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  printf '\033[33m⚠  gitleaks not found — skipping local secret scan.\033[0m\n' >&2
+  printf '   CI will still scan this push. Install gitleaks to catch secrets before committing.\n' >&2
+  exit 0
+fi
+
+gitleaks protect --staged --redact --verbose
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  printf '\033[31m✖  gitleaks found a potential secret in your staged changes.\033[0m\n' >&2
+  printf '   Remove it, or if it is a false positive add an allowlist entry to .gitleaks.toml.\n' >&2
+  exit "$status"
+fi
+
+exit 0

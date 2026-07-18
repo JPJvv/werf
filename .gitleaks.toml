@@ -1,0 +1,14 @@
+# Werf gitleaks configuration.
+# Extends the built-in gitleaks ruleset (do not redefine the default rules here).
+# Used by both the pre-commit hook (.githooks/pre-commit) and the CI job.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Werf-specific false positives"
+# Synthetic seed data is deliberately fake (see the Phase 0 seed-data plan:
+# invalid SA ID checksums, obviously-fake keys). Add narrowly-scoped entries
+# here — a path, a commit, or a regex — never a blanket allow.
+paths = [
+  '''(^|/)packages/db/seed/.*''',
+]

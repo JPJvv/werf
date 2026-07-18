@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege. gitleaks-action reads the PR's commit list on pull_request
+# events, which needs pull-requests:read on top of the default contents:read.
+permissions:
+  contents: read
+  pull-requests: read
+
 # Cancel superseded runs on the same ref
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

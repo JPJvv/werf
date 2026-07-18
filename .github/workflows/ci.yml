@@ -23,6 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: gitleaks scans the whole commit range on a PR, which
+          # a shallow (depth-1) clone can't walk — the base commit is missing
+          # and the underlying git log fails with "stderr is not empty".
+          fetch-depth: 0
 
       - name: Scan for secrets
         uses: gitleaks/gitleaks-action@v2

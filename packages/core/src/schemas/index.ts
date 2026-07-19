@@ -31,3 +31,5 @@ export type UuidInput = z.infer<typeof uuidSchema>;
 export type JurisdictionInput = z.infer<typeof jurisdictionSchema>;
 export type EnterpriseTypeInput = z.infer<typeof enterpriseTypeSchema>;
 export type UserRoleInput = z.infer<typeof userRoleSchema>;
+
+export * from './entities';

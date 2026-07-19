@@ -181,3 +181,16 @@ export function syncsToUser(
 export const SERVER_ONLY_TABLES: readonly SyncedTable[] = (
   Object.keys(TENANCY) as SyncedTable[]
 ).filter((t) => TENANCY[t].classification === 'server-only');
+
+// Local durable state the app reads through this adapter rather than touching a storage
+// API directly (ADR-0003). The session is the first of these; the write queue and the
+// domain tables join it in Phase 3.
+export {
+  DEFAULT_SESSION_WINDOW_DAYS,
+  createSessionStore,
+  isWithinWindow,
+  type CachedSession,
+  type SessionStorageLike,
+  type SessionStore,
+  type SessionStoreOptions,
+} from './session-store';

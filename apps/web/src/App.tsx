@@ -1,5 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { LocaleProvider } from './i18n/LocaleProvider';
+import { AuthProvider } from './auth/AuthProvider';
+import { RequireAuth } from './auth/RequireAuth';
+import { SignInScreen } from './auth/SignInScreen';
+import { RegisterScreen } from './auth/RegisterScreen';
+import { SecondFactorEnrolmentScreen } from './auth/SecondFactorEnrolmentScreen';
 import { AppShell } from './shell/AppShell';
 import { HomeScreen } from './shell/HomeScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
@@ -8,28 +13,44 @@ import { AppearanceSettings } from './settings/AppearanceSettings';
 import { LanguageSettings } from './settings/LanguageSettings';
 
 /**
- * Phase 1 app shell + routing. LocaleProvider wraps everything so any screen can translate
- * (FR-008). The home screen is the enterprise-adaptive grid (FR-017); tiles are doors to
- * module routes that fill in with their phases. The auth guard and offline session gate land
- * in later slices.
+ * Phase 1 app shell + routing.
+ *
+ * Provider order is load-bearing. `LocaleProvider` is outermost because sign-in and
+ * onboarding must speak the farmer's language before any account exists — locale is a
+ * device preference until then, and a property of the user afterwards (FR-008).
+ * `AuthProvider` sits inside it and hydrates the session synchronously from the local
+ * store, so the guard below already knows the answer on the very first render: a cold
+ * start with no signal never flashes a login screen at someone who is signed in (FR-006).
  */
 export function App() {
   return (
     <LocaleProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route index element={<HomeScreen />} />
-            <Route path="settings" element={<SettingsLayout />}>
-              <Route index element={<Navigate to="appearance" replace />} />
-              <Route path="appearance" element={<AppearanceSettings />} />
-              <Route path="language" element={<LanguageSettings />} />
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Reachable signed out. Everything else sits behind the guard. */}
+            <Route path="/sign-in" element={<SignInScreen />} />
+            <Route path="/register" element={<RegisterScreen />} />
+
+            <Route element={<RequireAuth />}>
+              {/* Outside the shell on purpose: an account that still owes a second factor
+                  has no working navigation, because the API refuses every other route. */}
+              <Route path="/security/second-factor" element={<SecondFactorEnrolmentScreen />} />
+
+              <Route element={<AppShell />}>
+                <Route index element={<HomeScreen />} />
+                <Route path="settings" element={<SettingsLayout />}>
+                  <Route index element={<Navigate to="appearance" replace />} />
+                  <Route path="appearance" element={<AppearanceSettings />} />
+                  <Route path="language" element={<LanguageSettings />} />
+                </Route>
+                <Route path=":module" element={<ModulePlaceholder />} />
+                <Route path="*" element={<ModulePlaceholder />} />
+              </Route>
             </Route>
-            <Route path=":module" element={<ModulePlaceholder />} />
-            <Route path="*" element={<ModulePlaceholder />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </LocaleProvider>
   );
 }

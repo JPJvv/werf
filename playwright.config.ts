@@ -4,8 +4,20 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './apps/web/e2e',
   fullyParallel: true,
+  /**
+   * Two workers, not "however many cores". The suite is served by a single `vite preview`
+   * process, and six concurrent Chromium instances hammering it produced `page.goto`
+   * timeouts on a DIFFERENT test each run — the classic flake that gets re-run rather
+   * than read. The suite takes about eight seconds; there is nothing to win here.
+   */
+  workers: 2,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  /**
+   * No retries. A retry on this suite would hide exactly the failure above, and the axe
+   * assertions it guards are deterministic: a contrast violation does not pass on the
+   * second attempt. A red lane should stay red.
+   */
+  retries: 0,
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:4173',

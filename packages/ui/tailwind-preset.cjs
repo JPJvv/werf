@@ -32,6 +32,10 @@ module.exports = {
         600: 'var(--ochre-600)',
         100: 'var(--ochre-100)',
       },
+      // The ink for text sitting ON an ochre action. `text-soil-900` is the PAGE ink and
+      // inverts with the theme; the ochre beneath it does not, so the two drift apart in
+      // dark mode. Use `text-on-action` on a filled action, never `text-soil-900`.
+      'on-action': 'var(--on-action)',
       rooigrond: {
         600: 'var(--rooigrond-600)',
         100: 'var(--rooigrond-100)',

@@ -63,6 +63,23 @@ function animalsIcon(label: string): string {
  * - one land tile always, labelled "Blocks" when crops are present else "Camps";
  * - Labour, Money and Compliance are shared by every enterprise.
  */
+/**
+ * What this farm calls a piece of land: a "camp" for animals, a "block" for crops.
+ *
+ * The ONE place that decision is made. It is exported because the first-run guide needs
+ * the same word, and a second derivation elsewhere is how a farm ends up being shown
+ * "Blocks" in the grid and "add your first camp" directly beneath it — which is exactly
+ * what happened before this existed.
+ *
+ * Crop naming wins on a mixed farm: a block is the audited unit, and an export auditor's
+ * vocabulary is the one that costs money to get wrong.
+ */
+export type LandTerm = 'camp' | 'block';
+
+export function landTerm(enterpriseTypes: readonly EnterpriseType[]): LandTerm {
+  return enterpriseTypes.some(isCropEnterprise) ? 'block' : 'camp';
+}
+
 export function homeTiles(enterpriseTypes: readonly EnterpriseType[]): HomeTile[] {
   const livestock = enterpriseTypes.filter(isLivestockEnterprise);
   const crops = enterpriseTypes.filter(isCropEnterprise);
@@ -76,10 +93,10 @@ export function homeTiles(enterpriseTypes: readonly EnterpriseType[]): HomeTile[
     tiles.push({ key: 'animals', label, icon: animalsIcon(label), to: '/animals' });
   }
 
-  // One land tile. Crop naming wins on a mixed farm — a block is the audited unit.
+  // One land tile, named by the shared rule below so nothing else has to re-derive it.
   if (hasLivestock || hasCrop) {
     tiles.push(
-      hasCrop
+      landTerm(enterpriseTypes) === 'block'
         ? { key: 'land', label: 'Blocks', icon: '🌾', to: '/land' }
         : { key: 'land', label: 'Camps', icon: '🌿', to: '/land' },
     );

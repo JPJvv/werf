@@ -48,3 +48,33 @@ jobs:
       # THE GATE — must exit 0. Mirrors `pnpm verify` locally.
       - name: Verify
         run: pnpm verify
+
+  e2e:
+    name: E2E · axe (both themes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Chromium only. The accessibility rules being asserted are engine-independent, and
+      # a second browser doubles the lane's cost to re-answer the same question.
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      # NFR-401: axe-core, zero violations, in BOTH themes. Its own lane rather than part
+      # of `pnpm verify` because it needs a browser and a built, served app — keeping the
+      # inner loop fast is what stops people skipping the gate.
+      - name: E2E and accessibility
+        run: pnpm test:e2e

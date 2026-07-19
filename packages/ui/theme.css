@@ -27,6 +27,19 @@
   --ochre-600: #b87f1c;
   --ochre-100: #faefd6;
 
+  /*
+   * The ink that sits ON an ochre action. Deliberately NOT --soil-900.
+   *
+   * --soil-900 is the ink of the PAGE, and the page background inverts between themes, so
+   * that token inverts with it. An ochre button does not invert — a plastic ear tag is the
+   * same colour at night — so labelling it with the page ink gives 1.5:1 contrast in dark
+   * mode. Caught by the both-theme axe gate, which is what that gate is for.
+   *
+   * Same value in both blocks, on purpose: it is defined per-theme rather than as an
+   * invariant so that a future theme with a different action colour can override it.
+   */
+  --on-action: #23190f;
+
   /* Semantics — earth-derived */
   --rooigrond-600: #a63a21;
   --rooigrond-100: #f7e5df;
@@ -52,6 +65,9 @@
   --ochre-500: #e8b34f;
   --ochre-600: #d99a2b;
   --ochre-100: #33260d;
+
+  /* Still the dark ink: the ochre it sits on is lighter here, not darker. */
+  --on-action: #23190f;
 
   --rooigrond-600: #e07a5f;
   --rooigrond-100: #3a1a12;

@@ -120,6 +120,23 @@ export const farmUsers = pgTable(
     role: userRoleEnum('role').notNull(),
     scope: jsonb('scope'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+
+    /**
+     * Invitation lifecycle. A membership is only REAL once `accepted_at` is set —
+     * `app_user_farm_ids()` ignores pending rows, so an invitation grants nothing until
+     * the invitee agrees.
+     *
+     * Without this, inviting is a one-sided act with cross-tenant consequences: naming any
+     * email address would make that person a co-member, and the `users` RLS policy would
+     * then disclose their real name, phone and locale to the inviter — data belonging to
+     * someone who never agreed to share it. POPIA makes that our problem, and a farm owner
+     * choosing whose PII to acquire is not a defensible design.
+     *
+     * Self-created memberships (registering, or adding your own farm) are accepted on the
+     * spot: consent is not in question when you are inviting yourself.
+     */
+    invitedAt: timestamp('invited_at', { withTimezone: true }),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     ...auditColumns,
   },
   (t) => [unique('farm_users_farm_user_unique').on(t.farmId, t.userId)],

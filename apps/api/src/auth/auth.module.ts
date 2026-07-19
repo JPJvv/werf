@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
+import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
@@ -10,7 +12,17 @@ import { TokenService } from './token.service';
   // there is one place a signing key comes from and it is the one that was validated.
   imports: [JwtModule.register({})],
   controllers: [AuthController],
-  providers: [AuthService, SessionService, TokenService],
-  exports: [AuthService, SessionService, TokenService],
+  providers: [
+    AuthService,
+    SessionService,
+    TokenService,
+    AuthGuard,
+    // Registered GLOBALLY, so the default posture of any route anyone adds later is
+    // "denied" and reaching the public ones takes a deliberate @Public(). Per-controller
+    // @UseGuards has the opposite default: a new controller is wide open until somebody
+    // remembers, and nobody remembers in the commit where it matters.
+    { provide: APP_GUARD, useExisting: AuthGuard },
+  ],
+  exports: [AuthService, SessionService, TokenService, AuthGuard],
 })
 export class AuthModule {}

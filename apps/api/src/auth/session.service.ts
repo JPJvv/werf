@@ -9,10 +9,17 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { userSessions, type ElevatedDb } from '@werf/db';
-import { SessionInvalidError } from '@werf/core';
+import { SessionInvalidError, uuidv7 } from '@werf/core';
 import { REFRESH_TOKEN_TTL_SECONDS } from '../config/config';
 import { ELEVATED_DB } from '../db/db.module';
 import { TokenService } from './token.service';
+
+/**
+ * Unexpired AND past its second factor. Both halves are what "live" means: a session that
+ * has only cleared the password is not one a request may act on.
+ */
+const isLive = () =>
+  sql`${userSessions.expiresAt} > now() and ${userSessions.secondFactorAt} is not null`;
 
 /** What the rotation transaction found. Reported, not thrown — see `rotate`. */
 type RotateOutcome =
@@ -44,7 +51,8 @@ export class SessionService {
     deviceLabel: string | null;
     secondFactorSatisfied: boolean;
   }): Promise<IssuedSession> {
-    const familyId = crypto.randomUUID();
+    // v7, like every other id we store: the family index stays dense (db.md).
+    const familyId = uuidv7();
     return this.insert({ ...params, familyId });
   }
 
@@ -79,6 +87,14 @@ export class SessionService {
       if (session.expiresAt.getTime() <= Date.now()) {
         return { kind: 'invalid', reason: 'expired' };
       }
+
+      // A half-authenticated session must never be redeemable here. The challenge token
+      // handed to a caller who has passed only the password IS a refresh token; without
+      // this check, presenting it to /auth/refresh returns a full access token and walks
+      // straight around the second factor. "2FA at login, not at every refresh" (ADR-0007)
+      // only holds if login is the step that cannot be skipped. Reported as 'unknown' so
+      // the response cannot distinguish it from a token that never existed.
+      if (session.secondFactorAt === null) return { kind: 'invalid', reason: 'unknown' };
 
       await tx
         .update(userSessions)
@@ -124,27 +140,63 @@ export class SessionService {
       .where(and(eq(userSessions.familyId, familyId), isNull(userSessions.revokedAt)));
   }
 
-  /** Loads a live session by id — used to authorise an access token's `sid`. */
+  /**
+   * Loads a FULLY authenticated session by id — used to authorise an access token's `sid`.
+   *
+   * `second_factor_at IS NOT NULL` is part of "live". A session that has passed the
+   * password but still owes a second factor is not a session yet, and must not authorise
+   * anything; see the note on `rotate`.
+   */
   async findLive(sessionId: string): Promise<typeof userSessions.$inferSelect | undefined> {
+    const [session] = await this.elevated.db
+      .select()
+      .from(userSessions)
+      .where(and(eq(userSessions.id, sessionId), isNull(userSessions.revokedAt), isLive()));
+    return session;
+  }
+
+  /**
+   * Loads a half-authenticated session by its challenge token — the ONLY thing that may
+   * act on one. The 2FA verification step uses this; nothing else should.
+   */
+  async findPendingSecondFactor(
+    challengeToken: string,
+  ): Promise<typeof userSessions.$inferSelect | undefined> {
     const [session] = await this.elevated.db
       .select()
       .from(userSessions)
       .where(
         and(
-          eq(userSessions.id, sessionId),
+          eq(userSessions.refreshTokenHash, this.tokens.hashRefreshToken(challengeToken)),
           isNull(userSessions.revokedAt),
+          isNull(userSessions.rotatedAt),
+          isNull(userSessions.secondFactorAt),
           sql`${userSessions.expiresAt} > now()`,
         ),
       );
     return session;
   }
 
-  /** Points a live session at a different farm — FR-004, without re-authenticating. */
-  async setActiveFarm(sessionId: string, farmId: string): Promise<void> {
+  /**
+   * Points a live session at a different farm — FR-004, without re-authenticating.
+   *
+   * The predicate binds the session to `userId` and requires it to still be live. The
+   * caller authorises membership before calling, but this write runs elevated, and an
+   * elevated write whose only protection is the discipline of its callers is one refactor
+   * away from being a cross-tenant hijack of somebody else's session.
+   */
+  async setActiveFarm(sessionId: string, userId: string, farmId: string): Promise<void> {
     await this.elevated.db
       .update(userSessions)
       .set({ activeFarmId: farmId })
-      .where(eq(userSessions.id, sessionId));
+      .where(
+        and(
+          eq(userSessions.id, sessionId),
+          eq(userSessions.userId, userId),
+          isNull(userSessions.revokedAt),
+          isLive(),
+        ),
+      );
   }
 
   private async insert(

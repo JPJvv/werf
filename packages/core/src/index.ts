@@ -1,4 +1,5 @@
 export * from './money';
+export * from './uuid';
 export * from './jurisdiction';
 export * from './enterprise';
 export * from './roles';

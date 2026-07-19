@@ -145,7 +145,14 @@ async function seedTwoFarms(elevated: ElevatedDb): Promise<Fixture> {
       .insert(users)
       .values({ email: `${label.toLowerCase().replace(/\s/g, '')}@werf.test`, fullName: label })
       .returning();
-    await db.insert(farmUsers).values({ farmId: farm!.id, userId: user!.id, role: 'owner' });
+    // `accepted_at` is what makes a membership real — `app_user_farm_ids()` ignores
+    // pending invitations, so a fixture that omits it grants nothing at all.
+    await db.insert(farmUsers).values({
+      farmId: farm!.id,
+      userId: user!.id,
+      role: 'owner',
+      acceptedAt: new Date(),
+    });
     await db
       .insert(enterprises)
       .values({ farmId: farm!.id, name: `${label} Beef`, type: 'beef_cattle' });

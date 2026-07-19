@@ -12,11 +12,12 @@ import {
   farms,
   userSessions,
   users,
+  type AppDb,
   type ElevatedDb,
 } from '@werf/db';
 import { ConflictError, InvalidCredentialsError, schemas } from '@werf/core';
 import { ACCESS_TOKEN_TTL_SECONDS } from '../config/config';
-import { ELEVATED_DB } from '../db/db.module';
+import { APP_DB, ELEVATED_DB } from '../db/db.module';
 import { SessionService, type IssuedSession } from './session.service';
 import { TokenService } from './token.service';
 
@@ -43,6 +44,7 @@ const ENTERPRISE_DEFAULT_NAMES: Record<string, string> = {
 @Injectable()
 export class AuthService {
   constructor(
+    @Inject(APP_DB) private readonly app: AppDb,
     @Inject(ELEVATED_DB) private readonly elevated: ElevatedDb,
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(TokenService) private readonly tokens: TokenService,
@@ -113,6 +115,10 @@ export class AuthService {
         farmId: farm!.id,
         userId: owner!.id,
         role: 'owner',
+        // Accepted on the spot: consent is not in question when you are inviting yourself.
+        // Only rows with `accepted_at` count towards `app_user_farm_ids()`, so omitting
+        // this would leave the founder locked out of the farm they just created.
+        acceptedAt: new Date(),
       });
 
       await tx.insert(enterprises).values(
@@ -241,25 +247,29 @@ export class AuthService {
     };
   }
 
-  /** The farms this user may act on, with the role they hold on each (roles are per FARM). */
+  /**
+   * The farms this user may act on, with the role they hold on each (roles are per FARM).
+   *
+   * Runs on the SCOPED connection even though the user id is already known and the WHERE
+   * clause would be correct on its own. Post-authentication reads have no claim on the
+   * elevated path, and going through RLS means a mistake in this query returns too little
+   * rather than another tenant's farms. It also means pending invitations are excluded for
+   * free: `app_user_farm_ids()` ignores them, so an invitation the user has not accepted
+   * cannot show up in their session as a farm they own.
+   */
   private async loadFarms(userId: string): Promise<schemas.SessionFarm[]> {
-    const rows = await this.elevated.db
-      .select({
-        id: farms.id,
-        name: farms.name,
-        enterpriseTypes: farms.enterpriseTypes,
-        role: farmUsers.role,
-      })
-      .from(farmUsers)
-      .innerJoin(farms, eq(farms.id, farmUsers.farmId))
-      .where(and(eq(farmUsers.userId, userId), isNull(farmUsers.deletedAt)));
-
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      enterpriseTypes: r.enterpriseTypes,
-      role: r.role,
-    }));
+    return this.app.asUser(userId, async (tx) =>
+      tx
+        .select({
+          id: farms.id,
+          name: farms.name,
+          enterpriseTypes: farms.enterpriseTypes,
+          role: farmUsers.role,
+        })
+        .from(farmUsers)
+        .innerJoin(farms, eq(farms.id, farmUsers.farmId))
+        .where(and(eq(farmUsers.userId, userId), isNull(farmUsers.deletedAt))),
+    );
   }
 }
 

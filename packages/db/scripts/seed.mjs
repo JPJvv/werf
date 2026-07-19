@@ -73,8 +73,11 @@ try {
 
   for (const [id, farmId] of MEMBERSHIPS) {
     await client.query(
-      `INSERT INTO farm_users (id, farm_id, user_id, role)
-       VALUES ($1, $2, $3, 'owner') ON CONFLICT (farm_id, user_id) DO NOTHING`,
+      // accepted_at is what makes a membership real: app_user_farm_ids() ignores pending
+      // invitations, so without it the seeded owner would log in and see no farms at all.
+      // Self-created memberships are accepted on the spot — you are inviting yourself.
+      `INSERT INTO farm_users (id, farm_id, user_id, role, accepted_at)
+       VALUES ($1, $2, $3, 'owner', now()) ON CONFLICT (farm_id, user_id) DO NOTHING`,
       [id, farmId, ID.owner],
     );
   }

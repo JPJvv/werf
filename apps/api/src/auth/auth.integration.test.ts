@@ -9,6 +9,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
+import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { eq } from 'drizzle-orm';
 import {
   businesses,
@@ -26,6 +28,7 @@ import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
 import { ConflictError, InvalidCredentialsError, SessionInvalidError, schemas } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS } from '../config/config';
+import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
@@ -56,6 +59,7 @@ describe('auth', () => {
   let elevated: ElevatedDb;
   let auth: AuthService;
   let tokens: TokenService;
+  let sessions: SessionService;
 
   beforeAll(async () => {
     pg = await startWerfTestDatabase();
@@ -84,6 +88,7 @@ describe('auth', () => {
 
     auth = moduleRef.get(AuthService);
     tokens = moduleRef.get(TokenService);
+    sessions = moduleRef.get(SessionService);
   }, BOOT_TIMEOUT_MS);
 
   afterEach(async () => {
@@ -299,6 +304,32 @@ describe('auth', () => {
       await expect(auth.refresh('not-a-real-token')).rejects.toThrow(SessionInvalidError);
     });
 
+    it('cannot be used to walk around an unsatisfied second factor', async () => {
+      // The challenge token handed to a caller who has passed only the password IS a
+      // refresh token. If /auth/refresh honoured it, the second factor would be optional
+      // for anyone who noticed — the whole of ADR-0007's "2FA at login" turns decorative.
+      const first = await auth.register(REGISTRATION);
+      await elevated.db
+        .update(userSessions)
+        .set({ secondFactorAt: null })
+        .where(eq(userSessions.refreshTokenHash, tokens.hashRefreshToken(first.refreshToken)));
+
+      await expect(auth.refresh(first.refreshToken)).rejects.toThrow(SessionInvalidError);
+    });
+
+    it('does not let a half-authenticated session authorise a request either', async () => {
+      const session = await auth.register(REGISTRATION);
+      const [row] = await elevated.db.select().from(userSessions);
+      await elevated.db
+        .update(userSessions)
+        .set({ secondFactorAt: null })
+        .where(eq(userSessions.id, row!.id));
+
+      // Same rule at the guard: a session that still owes a factor is not a session.
+      await expect(sessions.findLive(row!.id)).resolves.toBeUndefined();
+      expect(session.accessToken).toBeTruthy();
+    });
+
     it('rejects an expired token without touching anything else', async () => {
       const first = await auth.register(REGISTRATION);
 
@@ -326,6 +357,72 @@ describe('auth', () => {
       await auth.logout(session.refreshToken);
       await expect(auth.logout(session.refreshToken)).resolves.toBeUndefined();
       await expect(auth.logout('a token that never existed')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('the access-token guard', () => {
+    // A guarded route that carries no @Public() metadata. getHandler/getClass must return
+    // real objects — Reflector reads metadata off them and throws on undefined.
+    class GuardedController {
+      guarded(): void {}
+    }
+
+    const contextFor = (request: Record<string, unknown>): ExecutionContext =>
+      ({
+        switchToHttp: () => ({ getRequest: () => request }),
+        getHandler: () => GuardedController.prototype.guarded,
+        getClass: () => GuardedController,
+      }) as unknown as ExecutionContext;
+
+    /** A minimal ExecutionContext carrying just the Authorization header. */
+    const contextWith = (header?: string): ExecutionContext =>
+      contextFor({ headers: header ? { authorization: header } : {} });
+
+    const guardFor = () => new AuthGuard(tokens, sessions, new Reflector());
+
+    it('admits a valid token and reports who is calling', async () => {
+      const session = await auth.register(REGISTRATION);
+      const context = contextWith(`Bearer ${session.accessToken}`);
+
+      await expect(guardFor().canActivate(context)).resolves.toBe(true);
+    });
+
+    it('turns a logged-out token away immediately, not in fifteen minutes', async () => {
+      // The whole reason the guard re-reads the session: an access token is valid for 15
+      // minutes, and a revoked session must not keep working for the remainder of them.
+      const session = await auth.register(REGISTRATION);
+      await auth.logout(session.refreshToken);
+
+      await expect(
+        guardFor().canActivate(contextWith(`Bearer ${session.accessToken}`)),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('refuses a missing, malformed, or forged token alike', async () => {
+      const guard = guardFor();
+
+      await expect(guard.canActivate(contextWith())).rejects.toThrow(UnauthorizedException);
+      await expect(guard.canActivate(contextWith('Bearer '))).rejects.toThrow(
+        UnauthorizedException,
+      );
+      await expect(guard.canActivate(contextWith('Bearer not.a.token'))).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('reads the active farm from the session, so a farm switch takes effect at once', async () => {
+      const session = await auth.register(REGISTRATION);
+      const [row] = await elevated.db.select().from(userSessions);
+
+      // The token was minted before this change and still carries the old farm.
+      await sessions.setActiveFarm(row!.id, row!.userId, row!.activeFarmId!);
+
+      const request: Record<string, unknown> = {
+        headers: { authorization: `Bearer ${session.accessToken}` },
+      };
+
+      await guardFor().canActivate(contextFor(request));
+      expect((request.auth as { activeFarmId: string }).activeFarmId).toBe(row!.activeFarmId);
     });
   });
 

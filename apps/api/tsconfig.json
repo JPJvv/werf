@@ -14,5 +14,11 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src/**/*"]
+  // The server program is CommonJS, because that is what Nest emits and runs. Tests are
+  // NOT part of it: they run under Vitest (esbuild, ESM, bundler resolution) and reach
+  // into ESM-only test helpers like @werf/db/testing, which a CommonJS program cannot
+  // even parse. They are typechecked by tsconfig.test.json instead, under the module
+  // settings they actually execute with.
+  "include": ["src/**/*"],
+  "exclude": ["**/*.spec.ts", "**/*.test.ts"]
 }

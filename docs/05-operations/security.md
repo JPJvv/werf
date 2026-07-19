@@ -279,3 +279,58 @@ Honest list. Every one is a decision, not an oversight.
 | No bug bounty | Team size | Post-launch, when there is someone to triage |
 
 The 30-day session is the one that looks worst on paper and is right anyway. The alternative — locking a farmer out of their own offline data because a token expired while they were working — is a worse outcome than the risk it prevents, and it is the exact failure mode that makes people go back to paper.
+
+---
+
+## 10. Phase 1 security notes (auth & tenancy implementation)
+
+A running record of what the auth work actually changed, and what it has NOT yet done. Read §10.2 before treating auth as finished — several controls this document describes as if they exist are still open.
+
+### 10.1 Controls now implemented
+
+**The elevated-connection inventory.** `@werf/db` exposes two connections as two distinct *types* (`packages/db/src/client.ts`). `AppDb` connects as `werf_app` and has no method that runs a query outside `asUser()`, so an unscoped query is not expressible through it; the `app.user_id` GUC is set with `is_local = true`, bound to the transaction, so a pooled connection can never hand the next request the previous user's tenancy.
+
+`ElevatedDb` bypasses RLS. **Every current use, exhaustively** — this list is the thing to re-audit whenever it grows:
+
+| Operation | Why elevation is unavoidable |
+|---|---|
+| `AuthService.register` | Business, farm and owner rows precede the membership RLS scopes by |
+| `FarmsService.createFarm` | New farm has no members yet; would fail its own `WITH CHECK` |
+| `FarmsService.invite` / `acceptInvitation` | Invitee's user row and membership do not exist yet |
+| `SessionService.*` | `user_sessions` is unreachable from `werf_app` by design; refresh must find a session *before* it knows whose it is |
+| `AuthService.login` | Must read a user row by email before any identity is established |
+
+`createFarm` and `invite` both authorise the caller through the **RLS-bound** path first, so the elevated write is only ever reached by someone RLS already agreed is an owner. That ordering is the control; reversing it would be a silent privilege escalation.
+
+**`user_sessions` is doubly unreachable from the request path.** RLS is `ENABLE`d and `FORCE`d with *zero policies*, and `werf_app` is granted nothing (`migrations/0003`). Either lock alone would suffice; both exist so that a future stray `GRANT` is not the difference between a leak and no leak. `@werf/sync` classifies it `server-only`, so sync and RLS agree by both saying "never".
+
+**Refresh-token rotation with family reuse detection.** Single-use; replaying a spent token revokes the entire lineage. The revocation is deliberately committed *outside* the transaction that rejects the request — issuing it inside means the rollback silently undoes it and the stolen family keeps working. This was a real bug, caught by its own test.
+
+**Half-authenticated sessions cannot act.** A session whose `second_factor_at` is null is rejected by both `SessionService.rotate` and `findLive`, so the login challenge token can only be spent at the 2FA step. Without this, the challenge token (which *is* a refresh token) could be presented to `/auth/refresh` for a full access token — ADR-0007's "2FA at login" would have been decorative.
+
+**The guard fails closed.** `AuthGuard` is registered as `APP_GUARD`, so a newly added controller defaults to *denied* and reaching the public routes takes a deliberate `@Public()`. It re-reads the session on every request rather than trusting the token alone, so a logout or a reuse-revocation takes effect immediately instead of surviving for the remainder of a 15-minute access token; and it asserts `session.userId === claims.sub`, so the JWT signature is not the only lock between a forged `sub` and another tenant's data.
+
+**Invitations require consent (`migrations/0004`).** An invitation writes a *pending* membership and grants nothing until accepted. Two predicates enforce this and **both are required**: `app_user_farm_ids()` ignores pending rows, *and* the co-member arm of the `users_self_and_comembers` policy requires `accepted_at IS NOT NULL`. Fixing only the first leaves the disclosure fully open — an owner naming any email address would still read that person's name, phone, locale and `last_seen_at`, and sync it to their device, because `users` is farm-scoped. POPIA makes an owner's unilateral choice of whose PII to acquire our problem.
+
+**Account-enumeration resistance.** Login answers an unknown address exactly as it answers a wrong password — same error type, same message, and the same cost, because an unknown address still pays for an argon2 verification against a dummy hash computed at runtime from random bytes. `invite` likewise answers identically whether or not the address already had an account.
+
+**Credential storage.** Passwords: argon2id at OWASP's 19 MiB / t=2 / p=1 baseline. Refresh tokens: 256 bits of CSPRNG output stored as SHA-256 — deliberately *not* a slow KDF, because full-entropy input has no guessing attack to slow down and this runs on every refresh from a phone on a weak connection.
+
+### 10.2 Open — NOT yet implemented, and load-bearing
+
+> These are gaps, not accepted risks. None may survive to the Phase 5 gate (§8).
+
+| Gap | Consequence today | Where it lands |
+|---|---|---|
+| **2FA is not enforced.** `login` marks every session second-factor-satisfied because nothing enrols TOTP yet | The whole of §3.5 is currently aspirational. Mandatory-for-owner/bookkeeper is not implemented | 2FA slice (Task #8) |
+| **No rate limiting** on login, refresh, or register | Online password guessing is unthrottled; argon2's cost is the only brake, and register is a trivial resource-exhaustion vector | Before any deployment reachable from the internet |
+| **No auth audit log.** Logins, failures, farm switches, invitations and reuse-detected revocations write no audit row | A breach cannot be reconstructed, and §7's "whose data?" query has nothing to read. `.claude/rules/db.md` requires an audit row for every conflict resolution; auth events deserve the same | With the audit-log table |
+| **No `helmet`, no CORS policy, no CSP** on the API | Default Express headers | Before deployment |
+| **TOTP seeds are not yet encrypted with the PII key** — the column exists, nothing writes it | §3.5's storage claim is not yet true | 2FA slice |
+| **Invitation delivery does not exist.** Acceptance is API-only; no email/SMS is sent | An invited person has no way to learn they were invited | Client onboarding slice |
+| **JWT signing is a single HS256 secret** with no rotation story | Key rotation requires invalidating every live access token | Before launch |
+| **`AuthContext.activeFarmId` is advisory**, not re-checked against membership at guard time | Safe today because every `FarmsService` method re-checks membership under RLS. It *looks* authoritative, and the next feature to trust it introduces a hole | Intersect with `app_user_farm_ids()` at the guard, or rename it |
+
+### 10.3 Deployment note
+
+The elevated connection needs a role that genuinely bypasses RLS. Because `user_sessions` and every domain table use `FORCE ROW LEVEL SECURITY`, table *ownership* is not enough — the role must be `BYPASSRLS` or superuser. `DATABASE_URL` must name `werf_app` and **must not** be the same role as `DATABASE_ELEVATED_URL`: pointing both at a superuser silently disables every RLS policy in the database, and nothing about the system looks broken while it happens.

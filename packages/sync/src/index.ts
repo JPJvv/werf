@@ -62,10 +62,23 @@ export const TENANCY = {
   },
   // The user row syncs so the client can render the session offline — but its secrets
   // (password/TOTP/recovery hashes) are stripped. A device holds identity, never credentials.
+  //
+  // The 2FA STATE columns are stripped too, not just the secrets. Two reasons, and the
+  // second is the sharp one: `totp_last_used_step` is auth telemetry about another person
+  // (it discloses to every co-member roughly when someone last logged in), and because
+  // this table is bidirectional, a column a device can push is a column a device can
+  // REWRITE — a client-authored lower step, or a null, resets the replay guard from the
+  // outside. Credential state belongs to the elevated server path only.
   users: {
     classification: 'farm-scoped',
     scope: { kind: 'via-membership' },
-    neverSyncColumns: ['password_hash', 'totp_secret_encrypted', 'recovery_codes_hashed'],
+    neverSyncColumns: [
+      'password_hash',
+      'totp_secret_encrypted',
+      'totp_enrolled_at',
+      'totp_last_used_step',
+      'recovery_codes_hashed',
+    ],
   },
   // WebAuthn material never reaches a device. Even public keys stay server-side: the
   // authentication ceremony is server-authoritative (ADR-0007).

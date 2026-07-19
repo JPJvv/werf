@@ -13,6 +13,7 @@ export type WerfErrorCode =
   | 'INVALID_MONEY'
   | 'INVALID_CREDENTIALS'
   | 'SESSION_INVALID'
+  | 'SECOND_FACTOR_ENROLMENT_REQUIRED'
   | 'CONFLICT';
 
 export abstract class WerfError extends Error {
@@ -88,6 +89,23 @@ export class SessionInvalidError extends WerfError {
 
   constructor(readonly reason: 'expired' | 'revoked' | 'reused' | 'unknown') {
     super(`Session invalid: ${reason}`);
+  }
+}
+
+/**
+ * The caller is authenticated but holds a role that must have a second factor, and has
+ * not enrolled one. Every route refuses them except enrolment itself and logout.
+ *
+ * Unlike the login errors above, this one is deliberately SPECIFIC. There is no oracle to
+ * protect here — the caller has already proved who they are — and a client that cannot
+ * tell "enrol your second factor" apart from a generic 403 has no way to send the farmer
+ * anywhere useful. Vagueness here would strand an owner at a blank wall.
+ */
+export class SecondFactorEnrolmentRequiredError extends WerfError {
+  readonly code = 'SECOND_FACTOR_ENROLMENT_REQUIRED';
+
+  constructor() {
+    super('This role requires a second factor before the account can be used');
   }
 }
 

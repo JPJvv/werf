@@ -38,6 +38,22 @@ export class AuthController {
     return this.auth.refresh(body.refreshToken);
   }
 
+  /**
+   * Completes a login that stopped at the second factor (FR-014).
+   *
+   * Public, like login: the caller holds a challenge token, not a session, and that token
+   * is the only thing authorising this call. It is spent on the attempt either way.
+   */
+  @Public()
+  @Post('2fa/verify')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ZodValidationPipe(schemas.verifySecondFactorRequestSchema))
+  async verifySecondFactor(
+    @Body() body: schemas.VerifySecondFactorRequest,
+  ): Promise<schemas.AuthSession> {
+    return this.auth.verifySecondFactor(body);
+  }
+
   /** Idempotent: logging out an already-dead session is the state the caller wanted. */
   @Public()
   @Post('logout')

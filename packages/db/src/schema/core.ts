@@ -80,6 +80,16 @@ export const users = pgTable(
     theme: text('theme').notNull().default('light'), // 'light'|'dark'|'system' (FR-016)
     totpSecretEncrypted: bytea('totp_secret_encrypted'),
     totpEnrolledAt: timestamp('totp_enrolled_at', { withTimezone: true }),
+
+    /**
+     * The last TOTP counter step accepted for this user. A TOTP code stays valid for its
+     * whole 30-second period (longer, with the drift window), so without this the same
+     * six digits — read over a shoulder or off a shared screen — can be spent twice.
+     * Refusing any step at or below this one makes a code single-use, like the recovery
+     * codes beside it.
+     */
+    totpLastUsedStep: bigint('totp_last_used_step', { mode: 'number' }),
+
     recoveryCodesHashed: text('recovery_codes_hashed').array(), // argon2id, single-use, 10 issued
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     ...auditColumns,

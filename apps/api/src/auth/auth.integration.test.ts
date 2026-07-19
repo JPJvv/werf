@@ -7,6 +7,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
@@ -32,6 +33,8 @@ import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
+import { TwoFactorService } from './two-factor.service';
+import { deriveTotp } from './totp';
 
 const BOOT_TIMEOUT_MS = 180_000;
 
@@ -60,6 +63,7 @@ describe('auth', () => {
   let auth: AuthService;
   let tokens: TokenService;
   let sessions: SessionService;
+  let twoFactor: TwoFactorService;
 
   beforeAll(async () => {
     pg = await startWerfTestDatabase();
@@ -72,6 +76,7 @@ describe('auth', () => {
         AuthService,
         SessionService,
         TokenService,
+        TwoFactorService,
         {
           provide: APP_CONFIG,
           useValue: {
@@ -79,6 +84,7 @@ describe('auth', () => {
             databaseUrl: pg.appUrl,
             databaseElevatedUrl: pg.elevatedUrl,
             jwtSecret: 'test-signing-key-that-is-long-enough-32',
+            piiEncryptionKey: randomBytes(32).toString('base64'),
           },
         },
         { provide: APP_DB, useValue: app },
@@ -89,6 +95,7 @@ describe('auth', () => {
     auth = moduleRef.get(AuthService);
     tokens = moduleRef.get(TokenService);
     sessions = moduleRef.get(SessionService);
+    twoFactor = moduleRef.get(TwoFactorService);
   }, BOOT_TIMEOUT_MS);
 
   afterEach(async () => {
@@ -378,10 +385,21 @@ describe('auth', () => {
     const contextWith = (header?: string): ExecutionContext =>
       contextFor({ headers: header ? { authorization: header } : {} });
 
-    const guardFor = () => new AuthGuard(tokens, sessions, new Reflector());
+    const guardFor = () => new AuthGuard(tokens, sessions, twoFactor, new Reflector());
+
+    /**
+     * Gets an owner past the mandatory-enrolment gate (FR-014), so the tests below can be
+     * about what they are actually about — identity, revocation, the active farm — rather
+     * than about 2FA. The gate itself is tested in two-factor.integration.test.ts.
+     */
+    const enrolSecondFactor = async (userId: string): Promise<void> => {
+      const { secret } = await twoFactor.beginTotpEnrolment(userId);
+      await twoFactor.confirmTotpEnrolment(userId, deriveTotp(secret, new Date()));
+    };
 
     it('admits a valid token and reports who is calling', async () => {
       const session = await auth.register(REGISTRATION);
+      await enrolSecondFactor(session.user.id);
       const context = contextWith(`Bearer ${session.accessToken}`);
 
       await expect(guardFor().canActivate(context)).resolves.toBe(true);
@@ -412,6 +430,7 @@ describe('auth', () => {
 
     it('reads the active farm from the session, so a farm switch takes effect at once', async () => {
       const session = await auth.register(REGISTRATION);
+      await enrolSecondFactor(session.user.id);
       const [row] = await elevated.db.select().from(userSessions);
 
       // The token was minted before this change and still carries the old farm.

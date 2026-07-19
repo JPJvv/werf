@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+// Dev-only dependency, and only for the credential-column check below: the point of that
+// test is to compare the registry against the REAL schema, so a hand-copied column list
+// would defeat it.
+import { users } from '@werf/db';
 import {
   SERVER_ONLY_TABLES,
   SYNC_CLASSIFICATIONS,
@@ -94,6 +98,36 @@ describe('sync tenancy — no server-only leak', () => {
     expect(TENANCY.users.neverSyncColumns).toEqual(
       expect.arrayContaining(['password_hash', 'totp_secret_encrypted', 'recovery_codes_hashed']),
     );
+  });
+
+  /**
+   * The classification table makes an UNCLASSIFIED TABLE break the build. This does the
+   * same for an unclassified credential COLUMN, which the table-level check cannot see.
+   *
+   * It reads the real column names out of the drizzle schema rather than a list kept by
+   * hand, so adding the next `totp_…` or `…_secret` column to `users` fails here until
+   * somebody decides, in writing, whether a device may hold it. That decision arriving by
+   * default — because nobody remembered this file existed — is the failure mode; `users`
+   * is bidirectional, so a column that syncs is a column a device can rewrite.
+   */
+  it('forces a decision on every new credential column in users', () => {
+    const CREDENTIAL_PATTERN = /password|secret|totp|recovery|passkey|token/i;
+
+    const credentialColumns = Object.values(users)
+      .map((column) => (column as { name: string }).name)
+      .filter((name) => CREDENTIAL_PATTERN.test(name));
+
+    // Sanity: if this ever goes empty the assertion below passes vacuously and the guard
+    // silently stops guarding.
+    expect(credentialColumns.length).toBeGreaterThan(0);
+
+    for (const column of credentialColumns) {
+      expect(
+        TENANCY.users.neverSyncColumns,
+        `users.${column} looks like credential state but is not in neverSyncColumns — ` +
+          'decide explicitly whether a device may hold it',
+      ).toContain(column);
+    }
   });
 });
 

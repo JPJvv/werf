@@ -18,12 +18,26 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
+import { SecondFactorEnrolmentRequiredError } from '@werf/core';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
+import { TwoFactorService } from './two-factor.service';
 
 /** Marks an endpoint as reachable without a session — login, register, refresh. */
 export const IS_PUBLIC = 'werf:public';
 export const Public = (): MethodDecorator => SetMetadata(IS_PUBLIC, true);
+
+/**
+ * Marks an endpoint an owner or bookkeeper may reach BEFORE enrolling a second factor.
+ *
+ * There are only two: enrolment itself, and logout. The default is the safe one — a route
+ * added later is confined until someone deliberately opens it — and the set stays this
+ * small on purpose. Every route wearing this decorator is reachable by an account that
+ * FR-014 says is not yet fit to use the system, so each one is a decision, not a default.
+ */
+export const ALLOWS_PENDING_ENROLMENT = 'werf:allows-pending-enrolment';
+export const AllowsPendingEnrolment = (): MethodDecorator =>
+  SetMetadata(ALLOWS_PENDING_ENROLMENT, true);
 
 /** Who the caller is. Attached to the request by the guard, read by `@CurrentUser()`. */
 export interface AuthContext {
@@ -48,6 +62,7 @@ export class AuthGuard implements CanActivate {
   constructor(
     @Inject(TokenService) private readonly tokens: TokenService,
     @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(TwoFactorService) private readonly twoFactor: TwoFactorService,
     @Inject(Reflector) private readonly reflector: Reflector,
   ) {}
 
@@ -79,6 +94,25 @@ export class AuthGuard implements CanActivate {
     // tenant's data — one key-handling mistake away from full impersonation, with no
     // second lock. The session is already loaded; comparing it is free.
     if (session.userId !== claims.sub) throw new UnauthorizedException();
+
+    // 2FA is mandatory for owner and bookkeeper (FR-014). "Mandatory" has to mean the
+    // server refuses to serve them, not that the client shows a nag screen — a nag is
+    // enforced by the attacker's browser, which is to say not at all. So an account that
+    // owes an enrolment reaches enrolment and logout, and nothing else.
+    //
+    // The check is here rather than at login because login CANNOT be the place: a user
+    // with no factor enrolled has nothing to present, so refusing the login is a lockout
+    // with no way out. They get a real session that can do exactly one useful thing.
+    const allowsPendingEnrolment = this.reflector.getAllAndOverride<boolean>(
+      ALLOWS_PENDING_ENROLMENT,
+      [context.getHandler(), context.getClass()],
+    );
+    if (
+      !allowsPendingEnrolment &&
+      (await this.twoFactor.statusFor(session.userId)) === 'required'
+    ) {
+      throw new SecondFactorEnrolmentRequiredError();
+    }
 
     // The session row is the authority on the active farm, not the token: switching farms
     // (FR-004) must take effect immediately, not when the access token happens to expire.

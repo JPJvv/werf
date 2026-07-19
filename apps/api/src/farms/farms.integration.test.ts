@@ -5,6 +5,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { and, eq } from 'drizzle-orm';
@@ -25,6 +26,7 @@ import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
 import { TokenService } from '../auth/token.service';
+import { TwoFactorService } from '../auth/two-factor.service';
 import { FarmsService } from './farms.service';
 
 const BOOT_TIMEOUT_MS = 180_000;
@@ -64,6 +66,7 @@ describe('farm management', () => {
         AuthService,
         SessionService,
         TokenService,
+        TwoFactorService,
         FarmsService,
         {
           provide: APP_CONFIG,
@@ -72,6 +75,7 @@ describe('farm management', () => {
             databaseUrl: pg.appUrl,
             databaseElevatedUrl: pg.elevatedUrl,
             jwtSecret: 'test-signing-key-that-is-long-enough-32',
+            piiEncryptionKey: randomBytes(32).toString('base64'),
           },
         },
         { provide: APP_DB, useValue: app },

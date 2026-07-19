@@ -6,16 +6,19 @@ import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
+import { TwoFactorController } from './two-factor.controller';
+import { TwoFactorService } from './two-factor.service';
 
 @Module({
   // The secret is passed per-call from validated config rather than registered here, so
   // there is one place a signing key comes from and it is the one that was validated.
   imports: [JwtModule.register({})],
-  controllers: [AuthController],
+  controllers: [AuthController, TwoFactorController],
   providers: [
     AuthService,
     SessionService,
     TokenService,
+    TwoFactorService,
     AuthGuard,
     // Registered GLOBALLY, so the default posture of any route anyone adds later is
     // "denied" and reaching the public ones takes a deliberate @Public(). Per-controller
@@ -23,6 +26,6 @@ import { TokenService } from './token.service';
     // remembers, and nobody remembers in the commit where it matters.
     { provide: APP_GUARD, useExisting: AuthGuard },
   ],
-  exports: [AuthService, SessionService, TokenService, AuthGuard],
+  exports: [AuthService, SessionService, TokenService, TwoFactorService, AuthGuard],
 })
 export class AuthModule {}

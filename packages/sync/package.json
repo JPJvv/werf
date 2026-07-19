@@ -16,6 +16,7 @@
     "@werf/core": "workspace:*"
   },
   "devDependencies": {
+    "@werf/db": "workspace:*",
     "typescript": "^5.7.2"
   }
 }

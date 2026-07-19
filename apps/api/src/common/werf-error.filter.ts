@@ -20,6 +20,7 @@ import {
   ConflictError,
   InvalidCredentialsError,
   NotFoundError,
+  SecondFactorEnrolmentRequiredError,
   SessionInvalidError,
   TenancyError,
   ValidationError,
@@ -58,6 +59,19 @@ export class WerfErrorFilter implements ExceptionFilter {
         // No `reason`: telling a caller their token was "reused" rather than "expired"
         // tells an attacker holding a stolen token that the real user is still active.
         body: { code: 'SESSION_INVALID', message: 'Session is no longer valid' },
+      };
+    }
+    if (error instanceof SecondFactorEnrolmentRequiredError) {
+      // 403 and SPECIFIC, unlike the 401s above. The caller has already proved who they
+      // are, so there is no enumeration oracle to protect — and a client that cannot
+      // tell this apart from a generic refusal has nowhere to send the farmer. The code
+      // is the routing instruction: go to enrolment.
+      return {
+        status: HttpStatus.FORBIDDEN,
+        body: {
+          code: 'SECOND_FACTOR_ENROLMENT_REQUIRED',
+          message: 'Set up your authenticator app to continue',
+        },
       };
     }
     if (error instanceof ConflictError) {

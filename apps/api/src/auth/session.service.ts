@@ -10,7 +10,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { userSessions, type ElevatedDb } from '@werf/db';
 import { SessionInvalidError, uuidv7 } from '@werf/core';
-import { REFRESH_TOKEN_TTL_SECONDS } from '../config/config';
+import { REFRESH_TOKEN_TTL_SECONDS, SECOND_FACTOR_CHALLENGE_TTL_SECONDS } from '../config/config';
 import { ELEVATED_DB } from '../db/db.module';
 import { TokenService } from './token.service';
 
@@ -214,8 +214,16 @@ export class SessionService {
     const db = tx ?? this.elevated.db;
     const refreshToken = this.tokens.generateRefreshToken();
     const now = new Date();
-    const refreshExpiresAt = new Date(now.getTime() + REFRESH_TOKEN_TTL_SECONDS * 1000);
     const secondFactorAt = params.secondFactorAt ?? (params.secondFactorSatisfied ? now : null);
+
+    // A row that still owes a second factor is a CHALLENGE, not a session, and it gets
+    // minutes rather than the 30-day offline window. The two are the same shape in this
+    // table — the challenge token handed to a half-authenticated caller is literally a
+    // refresh token — so without this branch a password-only artefact would stay live for
+    // a month (ADR-0007).
+    const ttlSeconds =
+      secondFactorAt === null ? SECOND_FACTOR_CHALLENGE_TTL_SECONDS : REFRESH_TOKEN_TTL_SECONDS;
+    const refreshExpiresAt = new Date(now.getTime() + ttlSeconds * 1000);
 
     const [row] = await db
       .insert(userSessions)

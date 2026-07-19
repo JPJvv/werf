@@ -70,6 +70,33 @@ const configSchema = z.object({
     // here rather than becoming an undecryptable column six months from now.
     .regex(/^[A-Za-z0-9+/]{43}=$|^[A-Za-z0-9+/]{44}$/, 'must be base64')
     .refine((value) => Buffer.from(value, 'base64').length === 32, 'must be 32 base64 bytes'),
+
+  /**
+   * The WebAuthn Relying Party ID: the registrable domain a passkey is bound to, e.g.
+   * `werf.co.za`. A credential created under one RP ID cannot be used under another —
+   * that binding IS the phishing resistance, and it is enforced by the authenticator on
+   * the user's own phone, not by us. Getting it wrong does not weaken security; it makes
+   * every existing passkey stop working, so it must never change casually.
+   *
+   * Defaults to `localhost`, which is the one host browsers permit WebAuthn on without
+   * TLS.
+   */
+  webauthnRpId: z.string().min(1).default('localhost'),
+
+  /** What the phone shows the farmer in its own prompt. Never the word "passkey". */
+  webauthnRpName: z.string().min(1).default('Werf'),
+
+  /**
+   * The exact origin(s) the ceremony must have happened on — scheme, host and port.
+   * Distinct from the RP ID and checked separately: the RP ID pins the domain, the origin
+   * pins the actual page, so `https://werf.co.za` and `http://werf.co.za` are not
+   * interchangeable.
+   */
+  webauthnOrigin: z
+    .string()
+    .min(1)
+    .default('http://localhost:5173')
+    .transform((value) => value.split(',').map((origin) => origin.trim())),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -82,6 +109,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseElevatedUrl: env.DATABASE_ELEVATED_URL ?? env.DATABASE_URL,
     jwtSecret: env.JWT_SECRET,
     piiEncryptionKey: env.PII_ENCRYPTION_KEY,
+    webauthnRpId: env.WEBAUTHN_RP_ID,
+    webauthnRpName: env.WEBAUTHN_RP_NAME,
+    webauthnOrigin: env.WEBAUTHN_ORIGIN,
   });
 
   if (!parsed.success) {

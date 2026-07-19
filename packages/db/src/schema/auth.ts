@@ -89,3 +89,57 @@ export const userSessions = pgTable(
   },
   (t) => [index('user_sessions_user').on(t.userId), index('user_sessions_family').on(t.familyId)],
 );
+
+/**
+ * One-time WebAuthn challenges, held between the two halves of a ceremony (ADR-0007).
+ *
+ * A challenge is what makes a passkey assertion un-replayable: the server names a random
+ * value, the authenticator signs over it, and a signature for a challenge nobody issued —
+ * or issued once already — is worthless. That guarantee only holds if the server is the
+ * one remembering, so this is a table and not a map in process memory. In memory it would
+ * break the moment there are two API instances (the finish request lands on the node that
+ * never issued the challenge) and evaporate on every deploy, and both failures look like
+ * "passkeys are flaky" rather than like a bug.
+ *
+ * Server-only, like `user_sessions`: migration 0006 enables and FORCEs RLS with zero
+ * policies and grants `werf_app` nothing, so it is unreachable from the request path.
+ * A device never sees a challenge — it receives one in a response and hands it back.
+ */
+export const webauthnChallenges = pgTable(
+  'webauthn_challenges',
+  {
+    id: primaryId(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+
+    /**
+     * The login this challenge belongs to, for an authentication ceremony; NULL for an
+     * enrolment, which happens inside a session that is already authenticated.
+     *
+     * Not decoration. Keyed by user alone, anyone holding the victim's PASSWORD could call
+     * the challenge endpoint in a loop, retiring the victim's genuine challenge each time
+     * so their real assertion never had a live value to match — a targeted denial of the
+     * preferred second factor, bought with a credential the attacker already has.
+     */
+    sessionFamilyId: uuid('session_family_id'),
+
+    /** Base64url, as issued to the browser. Not a secret — a nonce. */
+    challenge: text('challenge').notNull(),
+
+    /**
+     * 'registration' or 'authentication'. Stored so a challenge minted for enrolment
+     * cannot be spent on a login: the two ceremonies prove different things, and letting
+     * one stand in for the other is how a "register this new key" flow gets turned into
+     * an authentication bypass.
+     */
+    ceremony: text('ceremony').notNull(),
+
+    /** Minutes, not days. A challenge outliving the tab that asked for it has no purpose. */
+    expiresAt: tz('expires_at').notNull(),
+    /** Set the moment it is spent. Single-use is the point; a replayed one must fail. */
+    consumedAt: tz('consumed_at'),
+    createdAt: tz('created_at').notNull().defaultNow(),
+  },
+  (t) => [index('webauthn_challenges_user').on(t.userId)],
+);

@@ -19,31 +19,20 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { randomInt } from 'node:crypto';
-import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import { farmUsers, users, type ElevatedDb } from '@werf/db';
 import { ConflictError, InvalidCredentialsError, SessionInvalidError, schemas } from '@werf/core';
 import { APP_CONFIG, ELEVATED_DB } from '../db/db.module';
 import type { AppConfig } from '../config/config';
 import { SessionService, type IssuedSession } from './session.service';
+import { PasskeyService } from './passkey.service';
+import { RecoveryCodeService } from './recovery-code.service';
 import { TokenService } from './token.service';
 import { decryptPii, encryptPii, parsePiiKey } from './pii-crypto';
 import { generateTotpSecret, totpEnrolmentUri, verifyTotp } from './totp';
 
 /** What the QR code and the authenticator app's account list will say. */
 const TOTP_ISSUER = 'Werf';
-
-/** FR-014a: ten codes, single-use, shown once. */
-const RECOVERY_CODE_COUNT = 10;
-
-/**
- * The alphabet for recovery codes. No 0/O, no 1/I/L: these get printed and put in a safe,
- * then retyped a year later by someone reading their own handwriting under pressure,
- * having lost their phone. Ambiguity here is a support call at the worst possible moment.
- */
-const RECOVERY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const RECOVERY_GROUP_LENGTH = 5;
-const RECOVERY_GROUPS = 2;
 
 /**
  * The roles that MUST have a second factor (FR-014). An owner holds the keys to the whole
@@ -59,6 +48,8 @@ export class TwoFactorService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(TokenService) private readonly tokens: TokenService,
+    @Inject(PasskeyService) private readonly passkeys: PasskeyService,
+    @Inject(RecoveryCodeService) private readonly recoveryCodes: RecoveryCodeService,
   ) {}
 
   /**
@@ -118,21 +109,16 @@ export class TwoFactorService {
     const result = verifyTotp(secret, code, new Date());
     if (!result.valid) throw new InvalidCredentialsError();
 
-    const plainCodes = Array.from({ length: RECOVERY_CODE_COUNT }, generateRecoveryCode);
-    const hashed = await Promise.all(plainCodes.map((c) => this.tokens.hashPassword(normalise(c))));
-
     await this.elevated.db
       .update(users)
-      .set({
-        totpEnrolledAt: new Date(),
-        totpLastUsedStep: result.step,
-        recoveryCodesHashed: hashed,
-      })
+      .set({ totpEnrolledAt: new Date(), totpLastUsedStep: result.step })
       .where(eq(users.id, userId));
 
-    // The ONLY time these exist in plaintext anywhere. We store argon2id hashes, so this
-    // is not a policy we could relax later even if someone asked — the codes are gone.
-    return { recoveryCodes: plainCodes };
+    // Fresh codes, replacing any the account had. Enrolling an authenticator app is a
+    // deliberate act by someone who is holding their phone, so this is the right moment
+    // to hand over a new printed page — and the old one stops working, which is what
+    // "replace" has to mean.
+    return { recoveryCodes: await this.recoveryCodes.issue(userId) };
   }
 
   /**
@@ -164,7 +150,7 @@ export class TwoFactorService {
     const accepted =
       input.method === 'totp'
         ? await this.consumeTotp(user, input.code)
-        : await this.consumeRecoveryCode(user, input.code);
+        : await this.recoveryCodes.consume(user.id, input.code);
     if (!accepted) throw new InvalidCredentialsError();
 
     const session = await this.sessions.issue({
@@ -182,8 +168,10 @@ export class TwoFactorService {
    * query: the roles this user actually holds, on accepted memberships only.
    */
   async statusFor(userId: string): Promise<schemas.SecondFactorStatus> {
-    const user = await this.loadUser(userId);
-    if (user.totpEnrolledAt !== null) return 'complete';
+    // EITHER factor discharges the obligation. ADR-0007 prefers passkeys and calls TOTP
+    // the universal fallback, so an owner who enrolled a fingerprint and no authenticator
+    // app has done what FR-014 asks; demanding both would be a rule the ADR does not make.
+    if (await this.isEnrolled(userId)) return 'complete';
 
     // `accepted_at IS NOT NULL` matters as much here as it does in the RLS predicate: an
     // invitation grants nothing until it is accepted, so it must not IMPOSE anything
@@ -206,9 +194,10 @@ export class TwoFactorService {
     return mustEnrol ? 'required' : 'optional';
   }
 
-  /** True when this user has any second factor enrolled — the login branch reads this. */
+  /** True when this user has ANY second factor enrolled — a passkey or an authenticator. */
   async isEnrolled(userId: string): Promise<boolean> {
-    return (await this.loadUser(userId)).totpEnrolledAt !== null;
+    if ((await this.loadUser(userId)).totpEnrolledAt !== null) return true;
+    return this.passkeys.hasPasskey(userId);
   }
 
   /**
@@ -250,43 +239,6 @@ export class TwoFactorService {
     return advanced.length === 1;
   }
 
-  /**
-   * Verifies a recovery code and consumes it — FR-014a's "single-use", enforced by
-   * deleting the hash rather than by a flag, so there is nothing left to un-delete.
-   *
-   * Every stored hash is checked even after a match, because argon2id is slow and
-   * returning on the first hit makes a code stored early in the array verify measurably
-   * faster than one stored late.
-   *
-   * The removal is done by the database with `array_remove`, gated on the hash still
-   * being present, rather than by writing back a filtered copy of the array we read.
-   * Writing back a copy is a lost update: two concurrent redemptions of DIFFERENT codes
-   * each compute nine elements from the same ten-element snapshot, and the second write
-   * silently resurrects the code the first one burned. "Single-use, permanently"
-   * (FR-014a) has to be enforced by the write, not by the snapshot.
-   */
-  private async consumeRecoveryCode(user: UserRow, code: string): Promise<boolean> {
-    const stored = user.recoveryCodesHashed ?? [];
-    if (stored.length === 0) return false;
-
-    const supplied = normalise(code);
-    let matched: string | undefined;
-
-    for (const hash of stored) {
-      if (await this.tokens.verifyPassword(hash, supplied)) matched ??= hash;
-    }
-    if (matched === undefined) return false;
-
-    const consumed = await this.elevated.db
-      .update(users)
-      .set({ recoveryCodesHashed: sql`array_remove(${users.recoveryCodesHashed}, ${matched})` })
-      .where(and(eq(users.id, user.id), sql`${matched} = ANY(${users.recoveryCodesHashed})`))
-      .returning({ id: users.id });
-
-    // Lost the race: someone else redeemed this same code first. It is spent either way.
-    return consumed.length === 1;
-  }
-
   private encryptSeed(secret: string, userId: string): Uint8Array {
     return encryptPii(secret, parsePiiKey(this.config.piiEncryptionKey), userId);
   }
@@ -306,23 +258,3 @@ export class TwoFactorService {
 }
 
 type UserRow = typeof users.$inferSelect;
-
-/** `A7K2M-9PQRS`. Two groups of five: ~49 bits, and readable off a printed page. */
-function generateRecoveryCode(): string {
-  const group = () =>
-    Array.from(
-      { length: RECOVERY_GROUP_LENGTH },
-      () => RECOVERY_ALPHABET[randomInt(RECOVERY_ALPHABET.length)],
-    ).join('');
-
-  return Array.from({ length: RECOVERY_GROUPS }, group).join('-');
-}
-
-/**
- * Case and separators are presentation, not secret. Someone retyping a code off paper will
- * lower-case it, add a space, or drop the hyphen, and none of those should cost them their
- * only way back into the account.
- */
-function normalise(code: string): string {
-  return code.replace(/[\s-]/g, '').toUpperCase();
-}

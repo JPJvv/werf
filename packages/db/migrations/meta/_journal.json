@@ -43,6 +43,13 @@
       "when": 1784474823277,
       "tag": "0005_totp_replay_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784479295653,
+      "tag": "0006_webauthn_challenges",
+      "breakpoints": true
     }
   ]
 }

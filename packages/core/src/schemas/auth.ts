@@ -179,3 +179,102 @@ export const totpEnrolmentConfirmResponseSchema = z.object({
   recoveryCodes: z.array(z.string().min(1)).length(10),
 });
 export type TotpEnrolmentConfirmResponse = z.infer<typeof totpEnrolmentConfirmResponseSchema>;
+
+/**
+ * ── Passkeys (WebAuthn) ──────────────────────────────────────────────────────────
+ *
+ * ADR-0007's PREFERRED second factor. The word "passkey" never reaches a farmer: on
+ * their phone this is the fingerprint they already use forty times a day, and the copy
+ * says so.
+ *
+ * The ceremony options we send are produced by the WebAuthn library and handed straight
+ * to `navigator.credentials`, so they are typed loosely here — validating a blob we
+ * generated ourselves, against a spec that gains fields, buys nothing and breaks on the
+ * next browser. What the CLIENT sends back is validated strictly, because that is the
+ * untrusted direction.
+ */
+export const passkeyCeremonyOptionsSchema = z.object({
+  /** `PublicKeyCredentialCreationOptionsJSON` or `…RequestOptionsJSON`, server-generated. */
+  options: z.record(z.unknown()),
+});
+export type PasskeyCeremonyOptions = z.infer<typeof passkeyCeremonyOptionsSchema>;
+
+/** Fields common to both ceremonies' responses, as `@simplewebauthn/browser` returns them. */
+const credentialEnvelope = {
+  id: z.string().min(1),
+  rawId: z.string().min(1),
+  type: z.literal('public-key'),
+  clientExtensionResults: z.record(z.unknown()).default({}),
+  authenticatorAttachment: z.string().nullish(),
+};
+
+/** What the browser returns after creating a credential. Verified server-side. */
+export const passkeyRegistrationResponseSchema = z.object({
+  ...credentialEnvelope,
+  response: z.object({
+    clientDataJSON: z.string().min(1),
+    attestationObject: z.string().min(1),
+    transports: z.array(z.string()).optional(),
+    publicKeyAlgorithm: z.number().optional(),
+    publicKey: z.string().optional(),
+    authenticatorData: z.string().optional(),
+  }),
+});
+
+export const passkeyRegistrationRequestSchema = z.object({
+  credential: passkeyRegistrationResponseSchema,
+  /** "Samsung A15" — so a person can recognise and revoke one key among several. */
+  deviceLabel: z.string().min(1).max(64).nullable().default(null),
+});
+export type PasskeyRegistrationRequest = z.infer<typeof passkeyRegistrationRequestSchema>;
+
+/** What the browser returns after signing a challenge. Verified server-side. */
+export const passkeyAuthenticationResponseSchema = z.object({
+  ...credentialEnvelope,
+  response: z.object({
+    clientDataJSON: z.string().min(1),
+    authenticatorData: z.string().min(1),
+    signature: z.string().min(1),
+    userHandle: z.string().nullish(),
+  }),
+});
+
+/** Satisfies the second factor with a passkey, completing a half-authenticated login. */
+export const passkeyAuthenticationRequestSchema = z.object({
+  challengeToken: z.string().min(1),
+  credential: passkeyAuthenticationResponseSchema,
+});
+export type PasskeyAuthenticationRequest = z.infer<typeof passkeyAuthenticationRequestSchema>;
+
+/** Begins an authentication ceremony for a login that has passed the password. */
+export const passkeyChallengeRequestSchema = z.object({
+  challengeToken: z.string().min(1),
+});
+export type PasskeyChallengeRequest = z.infer<typeof passkeyChallengeRequestSchema>;
+
+/**
+ * A passkey the user has enrolled, for the "which devices can open this account?" list.
+ * Public keys are NEVER in here — nothing about this table is secret, which is the point
+ * of choosing public-key credentials, but there is also no reason to ship the key.
+ */
+export const passkeySummarySchema = z.object({
+  id: uuidSchema,
+  deviceLabel: z.string().nullable(),
+  createdAt: z.date(),
+  lastUsedAt: z.date().nullable(),
+});
+export type PasskeySummary = z.infer<typeof passkeySummarySchema>;
+
+/**
+ * What completing passkey enrolment returns.
+ *
+ * `recoveryCodes` is present only when this enrolment was the account's FIRST second
+ * factor, and then exactly once (FR-014a). A passkey-only owner whose phone drowns has
+ * no other way back in, so the codes have to be minted here rather than only alongside
+ * TOTP — and null means "you already have a printed page", not "you have none".
+ */
+export const passkeyEnrolmentResponseSchema = z.object({
+  passkey: passkeySummarySchema,
+  recoveryCodes: z.array(z.string().min(1)).length(10).nullable(),
+});
+export type PasskeyEnrolmentResponse = z.infer<typeof passkeyEnrolmentResponseSchema>;

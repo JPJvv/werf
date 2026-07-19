@@ -12,7 +12,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { startWerfTestDatabase, type WerfTestDatabase } from './testing';
 import { createAppDb, createElevatedDb, type AppDb, type ElevatedDb } from './client';
-import { businesses, enterprises, farmUsers, farms, userSessions, users } from './schema';
+import {
+  businesses,
+  enterprises,
+  farmUsers,
+  farms,
+  userSessions,
+  users,
+  webauthnChallenges,
+} from './schema';
 
 /** Container start + image pull + migrations. Generous, because a cold CI machine pulls. */
 const BOOT_TIMEOUT_MS = 180_000;
@@ -119,6 +127,38 @@ describe('RLS tenancy boundary', () => {
 
       expect(found).toHaveLength(1);
       expect(found[0]?.secondFactorAt).toBeNull(); // not yet through the second factor
+    });
+  });
+
+  describe('webauthn_challenges', () => {
+    it('is unreachable from the request path, like every other credential table', async () => {
+      // A device that could read this table could answer its own WebAuthn challenges,
+      // which is the one thing making a passkey assertion un-replayable. Migration 0006
+      // claims the same posture as user_sessions; this is that claim under test rather
+      // than merely inspected.
+      await elevated.db.insert(webauthnChallenges).values({
+        userId: fx.userAId,
+        challenge: 'a-challenge',
+        ceremony: 'authentication',
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      });
+
+      await expect(
+        app.asUser(fx.userAId, (tx) => tx.select().from(webauthnChallenges)),
+      ).rejects.toThrow(/permission denied/i);
+    });
+
+    it('refuses a ceremony name the code does not know', async () => {
+      // The CHECK is what stops a registration challenge being spent as an
+      // authentication one — the enrolment-flow-as-login-bypass shape.
+      await expect(
+        elevated.db.insert(webauthnChallenges).values({
+          userId: fx.userAId,
+          challenge: 'a-challenge',
+          ceremony: 'something-else',
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+        }),
+      ).rejects.toThrow(/webauthn_challenges_ceremony_v1|violates check constraint/i);
     });
   });
 });

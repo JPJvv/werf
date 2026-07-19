@@ -87,6 +87,10 @@ export const TENANCY = {
   // live credential state, and a device that could read it could impersonate every session
   // on it. The client holds ITS OWN token in secure storage; it never syncs the table.
   user_sessions: { classification: 'server-only' },
+  // WebAuthn challenges. Server-only for the same reason the ceremony works at all: the
+  // challenge is un-replayable because the SERVER decides what was issued and whether it
+  // has been spent. A device that held this table could answer its own questions.
+  webauthn_challenges: { classification: 'server-only' },
   farm_users: {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },

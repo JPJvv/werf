@@ -21,6 +21,7 @@ import { APP_DB, ELEVATED_DB } from '../db/db.module';
 import { SessionService, type IssuedSession } from './session.service';
 import { TokenService } from './token.service';
 import { TwoFactorService } from './two-factor.service';
+import { PasskeyService } from './passkey.service';
 
 /**
  * A human-readable default name for the enterprise row each chosen type creates. The farmer
@@ -50,6 +51,7 @@ export class AuthService {
     @Inject(SessionService) private readonly sessions: SessionService,
     @Inject(TokenService) private readonly tokens: TokenService,
     @Inject(TwoFactorService) private readonly twoFactor: TwoFactorService,
+    @Inject(PasskeyService) private readonly passkeys: PasskeyService,
   ) {}
 
   /**
@@ -170,6 +172,17 @@ export class AuthService {
     if (!ok) throw new InvalidCredentialsError();
 
     const memberships = await this.loadFarms(user.id);
+
+    // What this account can actually present. Passkeys FIRST: ADR-0007 prefers them, and
+    // the order is what the client offers the farmer — a fingerprint before six digits.
+    const methods: schemas.SecondFactorRequired['methods'] = [];
+    if (await this.passkeys.hasPasskey(user.id)) methods.push('passkey');
+    if (user.totpEnrolledAt !== null) methods.push('totp');
+    // Recovery codes ride along with any enrolled factor, because the case they exist for
+    // — the phone holding both the passkey and the authenticator is at the bottom of a
+    // dam — is exactly the case where this is the only line left (FR-014a).
+    if (methods.length > 0) methods.push('recovery_code');
+
     const session = await this.sessions.issue({
       userId: user.id,
       activeFarmId: memberships[0]?.id ?? null,
@@ -178,17 +191,14 @@ export class AuthService {
       // none cannot be asked for one — that is a lockout, not a security control. The
       // rule that owners and bookkeepers must ENROL is enforced after login, by the
       // guard, which confines them to the enrolment routes until they do (FR-014).
-      secondFactorSatisfied: user.totpEnrolledAt === null,
+      secondFactorSatisfied: methods.length === 0,
     });
 
     if (session.secondFactorAt === null) {
       return {
         secondFactorRequired: true,
         challengeToken: session.refreshToken,
-        // Recovery codes are offered alongside TOTP because the case they exist for —
-        // the phone with the authenticator on it is at the bottom of a dam — is exactly
-        // the case where this list is the only thing the farmer can act on (FR-014a).
-        methods: ['totp', 'recovery_code'],
+        methods: methods as schemas.SecondFactorRequired['methods'],
       };
     }
 
@@ -260,6 +270,12 @@ export class AuthService {
    */
   async verifySecondFactor(input: schemas.VerifySecondFactorRequest): Promise<schemas.AuthSession> {
     const { userId, session } = await this.twoFactor.verifySecondFactor(input);
+    return this.buildAuthSession(userId, session);
+  }
+
+  /** The same, satisfied with a passkey instead of a typed code (ADR-0007). */
+  async verifyPasskey(input: schemas.PasskeyAuthenticationRequest): Promise<schemas.AuthSession> {
+    const { userId, session } = await this.passkeys.verifySecondFactor(input);
     return this.buildAuthSession(userId, session);
   }
 

@@ -8,6 +8,8 @@ import { SessionService } from './session.service';
 import { TokenService } from './token.service';
 import { TwoFactorController } from './two-factor.controller';
 import { TwoFactorService } from './two-factor.service';
+import { PasskeyService } from './passkey.service';
+import { RecoveryCodeService } from './recovery-code.service';
 
 @Module({
   // The secret is passed per-call from validated config rather than registered here, so
@@ -19,6 +21,8 @@ import { TwoFactorService } from './two-factor.service';
     SessionService,
     TokenService,
     TwoFactorService,
+    PasskeyService,
+    RecoveryCodeService,
     AuthGuard,
     // Registered GLOBALLY, so the default posture of any route anyone adds later is
     // "denied" and reaching the public ones takes a deliberate @Public(). Per-controller
@@ -26,6 +30,14 @@ import { TwoFactorService } from './two-factor.service';
     // remembers, and nobody remembers in the commit where it matters.
     { provide: APP_GUARD, useExisting: AuthGuard },
   ],
-  exports: [AuthService, SessionService, TokenService, TwoFactorService, AuthGuard],
+  exports: [
+    AuthService,
+    SessionService,
+    TokenService,
+    TwoFactorService,
+    PasskeyService,
+    RecoveryCodeService,
+    AuthGuard,
+  ],
 })
 export class AuthModule {}

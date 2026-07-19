@@ -27,6 +27,8 @@ import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
 import { TokenService } from '../auth/token.service';
 import { TwoFactorService } from '../auth/two-factor.service';
+import { PasskeyService } from '../auth/passkey.service';
+import { RecoveryCodeService } from '../auth/recovery-code.service';
 import { FarmsService } from './farms.service';
 
 const BOOT_TIMEOUT_MS = 180_000;
@@ -67,6 +69,8 @@ describe('farm management', () => {
         SessionService,
         TokenService,
         TwoFactorService,
+        PasskeyService,
+        RecoveryCodeService,
         FarmsService,
         {
           provide: APP_CONFIG,

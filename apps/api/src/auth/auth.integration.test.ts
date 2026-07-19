@@ -34,6 +34,8 @@ import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
 import { TwoFactorService } from './two-factor.service';
+import { PasskeyService } from './passkey.service';
+import { RecoveryCodeService } from './recovery-code.service';
 import { deriveTotp } from './totp';
 
 const BOOT_TIMEOUT_MS = 180_000;
@@ -77,6 +79,8 @@ describe('auth', () => {
         SessionService,
         TokenService,
         TwoFactorService,
+        PasskeyService,
+        RecoveryCodeService,
         {
           provide: APP_CONFIG,
           useValue: {

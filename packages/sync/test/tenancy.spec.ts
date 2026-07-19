@@ -43,6 +43,7 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   users: { id: USER_B },
   user_passkeys: { id: 'pk-b', user_id: USER_B },
   user_sessions: { id: 'sess-b', user_id: USER_B, active_farm_id: FARM_B },
+  webauthn_challenges: { id: 'chal-b', user_id: USER_B },
   farm_users: { id: 'fu-b', farm_id: FARM_B, user_id: USER_B },
   enterprises: { id: 'ent-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
@@ -66,6 +67,7 @@ describe('sync tenancy — classification vocabulary', () => {
         'user_passkeys',
         'user_sessions',
         'users',
+        'webauthn_challenges',
       ].sort(),
     );
   });
@@ -86,6 +88,7 @@ describe('sync tenancy — no server-only leak', () => {
   it('never syncs a server-only table to anyone', () => {
     expect(SERVER_ONLY_TABLES).toContain('user_passkeys');
     expect(SERVER_ONLY_TABLES).toContain('user_sessions');
+    expect(SERVER_ONLY_TABLES).toContain('webauthn_challenges');
     for (const table of SERVER_ONLY_TABLES) {
       expect(syncsToUser(table, farmBRows[table], userAFarms, graph)).toBe(false);
       // not even to its own owner

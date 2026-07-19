@@ -3,5 +3,8 @@
   "compilerOptions": {
     "noEmit": false
   },
-  "exclude": ["**/*.spec.ts", "**/*.test.ts"]
+  // `test-*.ts` covers helpers that are not themselves suites but exist only for them —
+  // the software WebAuthn authenticator, which mints private keys and must never be
+  // reachable from a running server.
+  "exclude": ["**/*.spec.ts", "**/*.test.ts", "**/test-*.ts"]
 }

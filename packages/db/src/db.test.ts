@@ -5,6 +5,7 @@ import {
   enterprises,
   farmUsers,
   farms,
+  regulatoryRates,
   userPasskeys,
   users,
 } from './index';
@@ -38,5 +39,15 @@ describe('@werf/db identity & tenancy core', () => {
     const cols = getTableConfig(userPasskeys).columns.map((c) => c.name);
     expect(cols).toContain('public_key');
     expect(cols).not.toContain('private_key');
+  });
+
+  it('regulatory_rates is regulated reference data: jurisdiction, no farm_id, no ZA-lock', () => {
+    const config = getTableConfig(regulatoryRates);
+    const cols = config.columns.map((c) => c.name);
+    expect(cols).toContain('jurisdiction'); // regulated -> carries jurisdiction
+    expect(cols).toContain('gazette_reference'); // every rate traces to a source
+    expect(cols).not.toContain('farm_id'); // reference data, not farm-scoped
+    // Unlike farms, NO jurisdiction CHECK: a second country's rates live in this same table.
+    expect(config.checks).toHaveLength(0);
   });
 });

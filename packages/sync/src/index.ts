@@ -23,21 +23,25 @@
 export type SyncClassification = 'farm-scoped' | 'reference' | 'server-only';
 
 /**
- * How a farm-scoped table ties a row to the farm(s) that own it. The connected user syncs
- * a row only when its owning farm set intersects the farms they are a member of.
+ * How a row is tied to the tenant(s) that may see it. For farm-scoped tables the connected
+ * user syncs a row only when its owning farm set intersects the farms they belong to; for
+ * reference tables the row syncs when its jurisdiction matches one of the user's farms.
  * - `direct`: the row has a farm column that IS the farm id (e.g. farms.id, enterprises.farm_id).
  * - `via-business`: the row is a business; it is owned by every farm whose business_id is it.
  * - `via-membership`: the row is a user; it is owned by every farm that user is a member of.
+ * - `reference-jurisdiction`: read-only reference data, filtered by the farm's jurisdiction
+ *   (a ZA device never downloads Namibian withdrawal periods).
  */
-export type FarmScope =
+export type RowScope =
   | { readonly kind: 'direct'; readonly column: string }
   | { readonly kind: 'via-business'; readonly column: string }
-  | { readonly kind: 'via-membership' };
+  | { readonly kind: 'via-membership' }
+  | { readonly kind: 'reference-jurisdiction'; readonly column: string };
 
 export interface TenancyEntry {
   readonly classification: SyncClassification;
-  /** Present for every farm-scoped table; absent for reference/server-only. */
-  readonly scope?: FarmScope;
+  /** Present for farm-scoped and reference tables; absent only for server-only. */
+  readonly scope?: RowScope;
   /** Columns that must never leave the server even when the row syncs (secrets). */
   readonly neverSyncColumns?: readonly string[];
 }
@@ -74,6 +78,12 @@ export const TENANCY = {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },
+  // Regulated reference data: the rate/withdrawal/PHI tables the client must read offline.
+  // Read-only, filtered by the FARM's jurisdiction — never the user's or the browser's.
+  regulatory_rates: {
+    classification: 'reference',
+    scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
+  },
 } as const satisfies Record<string, TenancyEntry>;
 
 export type SyncedTable = keyof typeof TENANCY;
@@ -93,12 +103,15 @@ export interface FarmGraph {
   readonly farmBusiness: Readonly<Record<string, string>>;
   /** user id -> the farm ids they are an active member of */
   readonly membership: Readonly<Record<string, readonly string[]>>;
+  /** farm id -> its jurisdiction (ISO 3166-1 alpha-2). Reference data is filtered by this. */
+  readonly farmJurisdiction: Readonly<Record<string, string>>;
 }
 
 /**
- * The set of farm ids that own a given row of `table`. A row syncs to a user iff this set
- * intersects the user's own farm membership. This one function is the tenancy predicate
- * both the sync rules and RLS are generated from — the place a leak would hide.
+ * The set of farm ids that own a given farm-scoped row of `table`. A row syncs to a user
+ * iff this set intersects the user's own farm membership. This one function is the tenancy
+ * predicate both the sync rules and RLS are generated from — the place a leak would hide.
+ * Returns [] for reference and server-only tables (they are not owned by a farm).
  */
 export function owningFarmIds(
   table: SyncedTable,
@@ -107,7 +120,7 @@ export function owningFarmIds(
 ): readonly string[] {
   const entry: TenancyEntry = TENANCY[table];
   const scope = entry.scope;
-  if (!scope) return []; // server-only / reference: never owned by a farm bucket
+  if (!scope) return [];
   switch (scope.kind) {
     case 'direct':
       return [String(row[scope.column])];
@@ -119,6 +132,8 @@ export function owningFarmIds(
     }
     case 'via-membership':
       return graph.membership[String(row['id'])] ?? [];
+    case 'reference-jurisdiction':
+      return []; // scoped by jurisdiction, not by farm ownership
   }
 }
 
@@ -129,9 +144,16 @@ export function syncsToUser(
   userFarmIds: readonly string[],
   graph: FarmGraph,
 ): boolean {
-  if (TENANCY[table].classification === 'server-only') return false;
-  const owners = owningFarmIds(table, row, graph);
-  return owners.some((farmId) => userFarmIds.includes(farmId));
+  const entry: TenancyEntry = TENANCY[table];
+  if (entry.classification === 'server-only') return false;
+  if (entry.scope?.kind === 'reference-jurisdiction') {
+    // Reference data syncs when its jurisdiction matches one of the user's farms.
+    const userJurisdictions = new Set(
+      userFarmIds.map((farmId) => graph.farmJurisdiction[farmId]).filter(Boolean),
+    );
+    return userJurisdictions.has(String(row[entry.scope.column]));
+  }
+  return owningFarmIds(table, row, graph).some((farmId) => userFarmIds.includes(farmId));
 }
 
 /** The tables that must never contribute a bucket, a data query, or a synced row. */

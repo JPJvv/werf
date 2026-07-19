@@ -29,6 +29,7 @@ const USER_B = 'user-b';
 const graph: FarmGraph = {
   farmBusiness: { [FARM_A]: BIZ_A, [FARM_B]: BIZ_B },
   membership: { [USER_A]: [FARM_A], [USER_B]: [FARM_B] },
+  farmJurisdiction: { [FARM_A]: 'ZA', [FARM_B]: 'ZA' },
 };
 
 // A row from each table, all belonging to farm B / business B / user B.
@@ -39,6 +40,7 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   user_passkeys: { id: 'pk-b', user_id: USER_B },
   farm_users: { id: 'fu-b', farm_id: FARM_B, user_id: USER_B },
   enterprises: { id: 'ent-b', farm_id: FARM_B },
+  regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
 };
 
 const userAFarms = [FARM_A];
@@ -50,17 +52,25 @@ describe('sync tenancy — classification vocabulary', () => {
       expect(allowed).toContain(c);
     }
     expect(Object.keys(SYNC_CLASSIFICATIONS).sort()).toEqual(
-      ['businesses', 'enterprises', 'farm_users', 'farms', 'user_passkeys', 'users'].sort(),
+      [
+        'businesses',
+        'enterprises',
+        'farm_users',
+        'farms',
+        'regulatory_rates',
+        'user_passkeys',
+        'users',
+      ].sort(),
     );
   });
 
-  it('gives every farm-scoped table a farm scope and every server-only table none', () => {
+  it('gives farm-scoped and reference tables a scope, and server-only tables none', () => {
     for (const table of Object.keys(TENANCY) as SyncedTable[]) {
       const entry = TENANCY[table];
-      if (entry.classification === 'farm-scoped') {
-        expect(entry.scope, `${table} must declare how it ties to a farm`).toBeDefined();
+      if (entry.classification === 'server-only') {
+        expect(entry.scope, `${table} is server-only and must not sync`).toBeUndefined();
       } else {
-        expect(entry.scope, `${table} is not farm-scoped`).toBeUndefined();
+        expect(entry.scope, `${table} must declare how it ties to a tenant`).toBeDefined();
       }
     }
   });
@@ -85,8 +95,10 @@ describe('sync tenancy — no server-only leak', () => {
 });
 
 describe('sync tenancy — cross-farm isolation', () => {
-  it('does not sync ANY of farm B’s rows to farm A’s user', () => {
+  it('does not sync ANY of farm B’s farm-owned rows to farm A’s user', () => {
     for (const table of Object.keys(TENANCY) as SyncedTable[]) {
+      // Reference data is shared by jurisdiction, not owned by a farm — covered separately.
+      if (TENANCY[table].scope?.kind === 'reference-jurisdiction') continue;
       expect(
         syncsToUser(table, farmBRows[table], userAFarms, graph),
         `${table}: farm B row leaked to farm A`,
@@ -108,5 +120,17 @@ describe('sync tenancy — cross-farm isolation', () => {
     expect(owningFarmIds('businesses', { id: BIZ_B }, graph)).toEqual([FARM_B]);
     expect(owningFarmIds('users', { id: USER_B }, graph)).toEqual([FARM_B]);
     expect(owningFarmIds('enterprises', { farm_id: FARM_B }, graph)).toEqual([FARM_B]);
+  });
+});
+
+describe('sync tenancy — reference data by jurisdiction', () => {
+  it('syncs a ZA rate to a ZA farm’s user', () => {
+    expect(syncsToUser('regulatory_rates', { jurisdiction: 'ZA' }, userAFarms, graph)).toBe(true);
+  });
+
+  it('never syncs another jurisdiction’s rate to a ZA device', () => {
+    // A ZA phone must not download Namibian withdrawal periods, even though NA farms
+    // do not exist in v1 — the filter is the guard, not the absence of data.
+    expect(syncsToUser('regulatory_rates', { jurisdiction: 'NA' }, userAFarms, graph)).toBe(false);
   });
 });

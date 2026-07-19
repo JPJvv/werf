@@ -13,6 +13,8 @@ import {
   boolean,
   char,
   check,
+  date,
+  index,
   jsonb,
   numeric,
   pgTable,
@@ -134,3 +136,32 @@ export const enterprises = pgTable('enterprises', {
   active: boolean('active').notNull().default(true),
   ...auditColumns,
 });
+
+/**
+ * The regulated-rate registry — the mechanism that makes "never hardcode a regulated
+ * number" enforceable (FR-019, ADR-0005). Every minimum wage, threshold, cap, multiplier,
+ * and withdrawal period is a row here with an effective-date range and a gazette reference,
+ * looked up by the date an event OCCURRED. NOT farm-scoped: it is reference data keyed by
+ * `jurisdiction` (from the FARM), so there is NO farm_id and — unlike farms — NO ZA-lock
+ * CHECK, because a second country's rates live in the very same table. `value` is
+ * numeric(14,4): a rate, a factor, or a fraction, never money-cents and never a float.
+ */
+export const regulatoryRates = pgTable(
+  'regulatory_rates',
+  {
+    id: primaryId(),
+    jurisdiction: char('jurisdiction', { length: 2 }).notNull().default('ZA'),
+    code: text('code').notNull(), // 'NMW_FARM','BCEA_THRESHOLD','UIF_CEILING',... — ZA names live in @werf/domain/za
+    value: numeric('value', { precision: 14, scale: 4 }).notNull(),
+    unit: text('unit').notNull(),
+    effectiveFrom: date('effective_from').notNull(),
+    effectiveTo: date('effective_to'), // NULL = in force
+    gazetteReference: text('gazette_reference').notNull(), // every rate traces to a source
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('regulatory_rates_unique').on(t.jurisdiction, t.code, t.effectiveFrom),
+    index('regulatory_rates_lookup').on(t.jurisdiction, t.code, t.effectiveFrom.desc()),
+  ],
+);

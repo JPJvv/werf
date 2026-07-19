@@ -12,3 +12,5 @@ import type { Jurisdiction } from '@werf/core';
 
 /** Jurisdictions with a rules implementation. One: ZA. No stubbed second country (ADR-0006). */
 export const IMPLEMENTED_JURISDICTIONS: readonly Jurisdiction[] = ['ZA'];
+
+export * from './rates/rate-lookup';

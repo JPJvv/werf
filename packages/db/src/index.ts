@@ -1,9 +1,12 @@
 /**
- * Drizzle schema, migrations, and RLS policies live here. Phase 0 is an empty scaffold:
- * there are no domain tables yet. When they arrive (Phase 1+) EVERY domain table carries
- * `farm_id`, `deleted_at` (soft delete only), UUIDv7 PKs, `occurred_at` where something
- * happened, RLS + FORCE ROW LEVEL SECURITY, and a `jurisdiction char(2)` on anything
- * regulated. See docs/03-architecture/database-schema.md and .claude/rules/db.md.
+ * Drizzle schema, migrations, and RLS policies live here. EVERY domain table carries
+ * `farm_id`, `deleted_at` (soft delete only), a client-generated UUIDv7 PK, audit
+ * columns, and — where regulated — `jurisdiction char(2)`. RLS + FORCE ROW LEVEL
+ * SECURITY are applied in the migrations (SQL), not in the Drizzle table objects.
+ * See docs/03-architecture/database-schema.md and .claude/rules/db.md.
  */
 
-export const SCHEMA_VERSION = 0;
+export * from './schema';
+
+/** Bumped when the schema shape changes. Phase 1 introduces the identity & tenancy core. */
+export const SCHEMA_VERSION = 1;

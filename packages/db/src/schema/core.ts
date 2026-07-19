@@ -1,0 +1,136 @@
+/**
+ * Identity & tenancy core (Phase 1): businesses, farms, users, user_passkeys,
+ * farm_users, enterprises. Implements docs/03-architecture/database-schema.md § 2.
+ *
+ * Geometry (farm centroid/boundary + their geojson mirrors) is deliberately NOT here
+ * yet: Phase 1 has no spatial feature, and additive-only migrations let the mapping
+ * feature add those columns without a rewrite. See the schema doc for the full shape.
+ */
+
+import { sql } from 'drizzle-orm';
+import {
+  bigint,
+  boolean,
+  char,
+  check,
+  jsonb,
+  numeric,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { auditColumns, bytea, citext, primaryId } from './columns';
+import { enterpriseTypeEnum, userRoleEnum } from './enums';
+
+/** The account root. One business owns many farms (FR-001, FR-004). */
+export const businesses = pgTable('businesses', {
+  id: primaryId(),
+  name: text('name').notNull(),
+  registrationNumber: text('registration_number'),
+  vatNumber: text('vat_number'),
+  ...auditColumns,
+});
+
+/**
+ * The unit of tenancy AND of jurisdiction. `enterprise_types` drives the whole UI.
+ * `jurisdiction` is the law this farm operates under — from the FARM, never the user
+ * or browser — locked to 'ZA' in v1 by a CHECK so a second country is a migration and
+ * a conversation, not a config flag (FR-018, ADR-0006).
+ */
+export const farms = pgTable(
+  'farms',
+  {
+    id: primaryId(),
+    businessId: uuid('business_id')
+      .notNull()
+      .references(() => businesses.id),
+    name: text('name').notNull(),
+    jurisdiction: char('jurisdiction', { length: 2 }).notNull().default('ZA'),
+    province: text('province').notNull(),
+    district: text('district'),
+    enterpriseTypes: enterpriseTypeEnum('enterprise_types')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    hectares: numeric('hectares', { precision: 10, scale: 2 }),
+    timezone: text('timezone').notNull().default('Africa/Johannesburg'),
+    ...auditColumns,
+  },
+  (t) => [check('farms_jurisdiction_v1', sql`${t.jurisdiction} = 'ZA'`)],
+);
+
+/**
+ * A person. Identity is business-wide; ROLE is per-farm on farm_users, never here.
+ * `email` is citext so casing never splits an account. The TOTP seed is encrypted with
+ * the PII key (not the DB key) and, with recovery codes, NEVER syncs to a device.
+ */
+export const users = pgTable(
+  'users',
+  {
+    id: primaryId(),
+    email: citext('email').unique(),
+    phone: text('phone').unique(),
+    passwordHash: text('password_hash'), // argon2id
+    fullName: text('full_name').notNull(),
+    locale: text('locale').notNull().default('en-ZA'), // per USER, not per farm (SRS-19)
+    theme: text('theme').notNull().default('light'), // 'light'|'dark'|'system' (FR-016)
+    totpSecretEncrypted: bytea('totp_secret_encrypted'),
+    totpEnrolledAt: timestamp('totp_enrolled_at', { withTimezone: true }),
+    recoveryCodesHashed: text('recovery_codes_hashed').array(), // argon2id, single-use, 10 issued
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    ...auditColumns,
+  },
+  (t) => [check('users_contact', sql`${t.email} IS NOT NULL OR ${t.phone} IS NOT NULL`)],
+);
+
+/**
+ * Passkeys (WebAuthn). Public keys only — a breach of this table gives an attacker
+ * nothing, which is the point. No `updated_at`: a passkey is created, used, revoked.
+ */
+export const userPasskeys = pgTable('user_passkeys', {
+  id: primaryId(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  credentialId: bytea('credential_id').notNull().unique(),
+  publicKey: bytea('public_key').notNull(),
+  signCount: bigint('sign_count', { mode: 'number' }).notNull().default(0),
+  transports: text('transports').array(),
+  deviceLabel: text('device_label'), // "Samsung A15" — so a user can revoke one
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+});
+
+/** Membership. Role is per FARM (SRS-12); `scope`/`expires_at` carry the 'external' grant. */
+export const farmUsers = pgTable(
+  'farm_users',
+  {
+    id: primaryId(),
+    farmId: uuid('farm_id')
+      .notNull()
+      .references(() => farms.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    role: userRoleEnum('role').notNull(),
+    scope: jsonb('scope'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    ...auditColumns,
+  },
+  (t) => [unique('farm_users_farm_user_unique').on(t.farmId, t.userId)],
+);
+
+/** The financial attribution unit — "Beef cattle", "Maize 2026", "Chardonnay" (ADR-0004). */
+export const enterprises = pgTable('enterprises', {
+  id: primaryId(),
+  farmId: uuid('farm_id')
+    .notNull()
+    .references(() => farms.id),
+  name: text('name').notNull(),
+  type: enterpriseTypeEnum('type').notNull(),
+  active: boolean('active').notNull().default(true),
+  ...auditColumns,
+});

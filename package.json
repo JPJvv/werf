@@ -16,6 +16,8 @@
     "test:e2e": "playwright test",
     "lint": "eslint . && prettier --check .",
     "typecheck": "turbo typecheck",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @werf/db migrate",
     "db:generate": "pnpm --filter @werf/db generate",
     "db:seed": "pnpm --filter @werf/db seed",

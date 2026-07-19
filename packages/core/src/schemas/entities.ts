@@ -23,7 +23,7 @@ import {
   timestampSchema,
   userRoleSchema,
   uuidSchema,
-} from './index';
+} from './primitives';
 
 /** BCP-47 locale tags we ship. Locale lives on the USER, never the farm or browser (FR-008). */
 export const SUPPORTED_LOCALES = ['en-ZA', 'af-ZA'] as const;

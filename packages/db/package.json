@@ -11,8 +11,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json",
-    "migrate": "node ./scripts/not-yet.mjs migrate",
-    "generate": "node ./scripts/not-yet.mjs generate",
+    "migrate": "node ./scripts/migrate.mjs",
+    "generate": "drizzle-kit generate",
     "seed": "node ./scripts/not-yet.mjs seed"
   },
   "dependencies": {

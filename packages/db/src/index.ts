@@ -7,6 +7,7 @@
  */
 
 export * from './schema';
+export * from './client';
 
 /** Bumped when the schema shape changes. Phase 1 introduces the identity & tenancy core. */
 export const SCHEMA_VERSION = 1;

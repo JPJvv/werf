@@ -4,8 +4,15 @@ packages:
 
 # Approve install-time build scripts. esbuild (used by Vite and Vitest) verifies its
 # platform binary in a postinstall; it is trusted and required.
+# The three testcontainers transitives below are all DENIED. testcontainers reaches Docker
+# over the local socket/named pipe; ssh2 is its remote-host transport, cpu-features is an
+# optional native speedup for ssh2, and protobufjs's postinstall is a no-op for us. None
+# runs on our path, so none earns the right to execute a script at install time.
 allowBuilds:
+  cpu-features: false
   esbuild: true
+  protobufjs: false
+  ssh2: false
 
 onlyBuiltDependencies:
   - esbuild

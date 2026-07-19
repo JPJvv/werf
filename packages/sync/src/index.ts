@@ -70,6 +70,10 @@ export const TENANCY = {
   // WebAuthn material never reaches a device. Even public keys stay server-side: the
   // authentication ceremony is server-authoritative (ADR-0007).
   user_passkeys: { classification: 'server-only' },
+  // Refresh-token sessions. The most obviously server-only table in the schema: it holds
+  // live credential state, and a device that could read it could impersonate every session
+  // on it. The client holds ITS OWN token in secure storage; it never syncs the table.
+  user_sessions: { classification: 'server-only' },
   farm_users: {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },

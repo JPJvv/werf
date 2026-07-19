@@ -7,6 +7,7 @@ import {
   farms,
   regulatoryRates,
   userPasskeys,
+  userSessions,
   users,
 } from './index';
 import { getTableConfig } from 'drizzle-orm/pg-core';
@@ -39,6 +40,20 @@ describe('@werf/db identity & tenancy core', () => {
     const cols = getTableConfig(userPasskeys).columns.map((c) => c.name);
     expect(cols).toContain('public_key');
     expect(cols).not.toContain('private_key');
+  });
+
+  it('stores refresh tokens only as hashes, never as tokens', () => {
+    const cols = getTableConfig(userSessions).columns.map((c) => c.name);
+    expect(cols).toContain('refresh_token_hash');
+    expect(cols).not.toContain('refresh_token');
+  });
+
+  it('keeps sessions per-person, not per-farm, so switching farms needs no re-login (FR-004)', () => {
+    const cols = getTableConfig(userSessions).columns.map((c) => c.name);
+    // active_farm_id is a pointer the session carries; it is NOT the tenancy key, and a
+    // farm_id here would force a fresh login on every farm switch.
+    expect(cols).toContain('active_farm_id');
+    expect(cols).not.toContain('farm_id');
   });
 
   it('regulatory_rates is regulated reference data: jurisdiction, no farm_id, no ZA-lock', () => {

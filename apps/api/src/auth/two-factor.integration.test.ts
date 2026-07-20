@@ -68,6 +68,7 @@ describe('second factor', () => {
   let tokens: TokenService;
   let sessions: SessionService;
   let twoFactor: TwoFactorService;
+  let recoveryCodes: RecoveryCodeService;
 
   beforeAll(async () => {
     pg = await startWerfTestDatabase();
@@ -102,6 +103,7 @@ describe('second factor', () => {
     tokens = moduleRef.get(TokenService);
     sessions = moduleRef.get(SessionService);
     twoFactor = moduleRef.get(TwoFactorService);
+    recoveryCodes = moduleRef.get(RecoveryCodeService);
   }, BOOT_TIMEOUT_MS);
 
   afterEach(async () => {
@@ -135,7 +137,10 @@ describe('second factor', () => {
       session.user.id,
       deriveTotp(secret, previousStep),
     );
-    return { userId: session.user.id, secret, recoveryCodes };
+    // Non-null because this owner has just registered and TOTP is their FIRST factor, so
+    // it is the enrolment that mints the set. A later factor returns null instead, which
+    // is the behaviour `keeps the recovery codes ...` below pins down.
+    return { userId: session.user.id, secret, recoveryCodes: recoveryCodes! };
   };
 
   const login = () =>
@@ -166,6 +171,27 @@ describe('second factor', () => {
       // Printable and unambiguous: no O/0 or I/1/L to misread off a page in a safe.
       for (const code of recoveryCodes)
         expect(code).toMatch(/^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/);
+    });
+
+    it('keeps the recovery codes an earlier factor issued, rather than replacing them', async () => {
+      // The farmer this protects: they enrolled a passkey months ago, printed the ten
+      // codes and put the page in the safe. Today they add an authenticator app. If that
+      // mints a fresh set, the page in the safe is dead and NOTHING tells them — they find
+      // out on the day the phone is at the bottom of a dam, which is the one scenario
+      // FR-014a exists for. Recovery codes belong to the account, not to the last factor.
+      const session = await auth.register(REGISTRATION);
+      const first = await recoveryCodes.issue(session.user.id);
+
+      const { secret } = await twoFactor.beginTotpEnrolment(session.user.id);
+      const confirmed = await twoFactor.confirmTotpEnrolment(
+        session.user.id,
+        deriveTotp(secret, new Date(Date.now() - TOTP_PERIOD_SECONDS * 1000)),
+      );
+
+      // Null, not a new page: the caller has to say "your existing codes still work".
+      expect(confirmed.recoveryCodes).toBeNull();
+      // And the codes from the safe are still the ones that actually open the account.
+      expect(await recoveryCodes.consume(session.user.id, first[0]!)).toBe(true);
     });
 
     it('refuses a wrong code, leaving the account un-enrolled', async () => {

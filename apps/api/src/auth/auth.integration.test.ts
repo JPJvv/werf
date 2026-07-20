@@ -163,6 +163,47 @@ describe('auth', () => {
       await expect(auth.register(REGISTRATION)).rejects.toThrow(ConflictError);
     });
 
+    it('lets someone register an address that was only ever invited', async () => {
+      // The denial of service this closes. `invite` writes a user row for the invitee so
+      // the pending membership has something to point at, and `users.email` is UNIQUE. If
+      // any existing row is a conflict, an owner can name a stranger's address and bar
+      // that person from ever signing up — permanently, silently, and with no invitation
+      // actually delivered to explain it. This is that row, exactly as `invite` leaves it.
+      await elevated.db
+        .insert(users)
+        .values({ email: REGISTRATION.owner.email, fullName: 'Guessed Name' });
+
+      const session = await auth.register(REGISTRATION);
+
+      // They get a real account, and it is theirs: their name, not the inviter's guess.
+      expect(session.user.email).toBe(REGISTRATION.owner.email);
+      expect(session.user.fullName).toBe(REGISTRATION.owner.fullName);
+      expect(session.activeFarmId).not.toBeNull();
+
+      // And it is one account, not a duplicate alongside the shell.
+      const rows = await elevated.db
+        .select()
+        .from(users)
+        .where(eq(users.email, REGISTRATION.owner.email));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('still refuses an address that belongs to a real account', async () => {
+      // The other half: claiming is only ever for a password-less shell. A row with a
+      // password is somebody's account and must not be takeable by re-registering it.
+      await auth.register(REGISTRATION);
+
+      await expect(
+        auth.register({ ...REGISTRATION, owner: { ...REGISTRATION.owner, fullName: 'Impostor' } }),
+      ).rejects.toThrow(ConflictError);
+
+      const [user] = await elevated.db
+        .select()
+        .from(users)
+        .where(eq(users.email, REGISTRATION.owner.email));
+      expect(user!.fullName).toBe(REGISTRATION.owner.fullName);
+    });
+
     it('leaves nothing behind when registration fails partway', async () => {
       await auth.register(REGISTRATION);
       const before = await elevated.db.select().from(businesses);

@@ -7,14 +7,7 @@
  * SessionInvalidError stays in our logs and never reaches the wire for the same reason.
  */
 
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import {
   ConflictError,
@@ -101,10 +94,16 @@ export class WerfErrorFilter implements ExceptionFilter {
       };
     }
 
+    // RETURNED, not thrown. Throwing from inside a filter's `catch` does not re-enter the
+    // exception layer — that layer has already dispatched to us — so the throw escapes as
+    // an unhandled rejection and the caller is left waiting for a response that never
+    // comes. An unmapped error becoming a hung request instead of a 500 is a worse failure
+    // than the error itself, and `MissingRateError` and `OfflineUnavailableError` are both
+    // unmapped today and both reach HTTP as soon as payroll does.
     this.logger.error(`Unmapped WerfError: ${error.code}`, error.stack);
-    throw new HttpException(
-      { code: 'INTERNAL', message: 'Internal server error' },
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    return {
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      body: { code: 'INTERNAL', message: 'Internal server error' },
+    };
   }
 }

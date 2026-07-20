@@ -450,6 +450,85 @@ describe('farm management', () => {
     });
   });
 
+  /**
+   * These go straight at RLS through the scoped connection, deliberately bypassing
+   * FarmsService. The point is what the DATABASE refuses, not what the service checks —
+   * RLS is the layer that has to hold when the application code above it is wrong, and
+   * every membership write today happens to run elevated, so nothing else exercises it.
+   */
+  describe("membership writes are an owner's act (RLS)", () => {
+    /** Accepts an invitation the way the invitee would, so the membership is live. */
+    async function joinedMember(farmId: string, role: 'manager' | 'worker') {
+      const [user] = await elevated.db
+        .insert(users)
+        .values({ email: `${role}@rls.test`, fullName: 'Joined Member' })
+        .returning();
+      await elevated.db
+        .insert(farmUsers)
+        .values({ farmId, userId: user!.id, role, invitedAt: new Date(), acceptedAt: new Date() });
+      return user!.id;
+    }
+
+    it('refuses to let a member promote themselves to owner', async () => {
+      // The escalation: `farm_users` is where ROLE lives, so a policy that checks only the
+      // farm lets the lowest role on it rewrite its own row into the highest.
+      const a = await tenant('Alpha');
+      const workerId = await joinedMember(a.farmId, 'worker');
+
+      // Silently affects NOTHING rather than raising: the UPDATE policy's USING clause
+      // filters the row out of the statement's scope before WITH CHECK is ever consulted,
+      // so there is no row left to reject. That is the right shape — the escalation fails
+      // whether or not the caller bothers to read the row count.
+      const changed = await app.asUser(workerId, (tx) =>
+        tx
+          .update(farmUsers)
+          .set({ role: 'owner' })
+          .where(and(eq(farmUsers.farmId, a.farmId), eq(farmUsers.userId, workerId)))
+          .returning({ id: farmUsers.id }),
+      );
+      expect(changed).toHaveLength(0);
+
+      const [after] = await elevated.db
+        .select()
+        .from(farmUsers)
+        .where(and(eq(farmUsers.farmId, a.farmId), eq(farmUsers.userId, workerId)));
+      expect(after!.role).toBe('worker');
+    });
+
+    it('refuses to let a non-owner add anyone to the farm', async () => {
+      const a = await tenant('Alpha');
+      const managerId = await joinedMember(a.farmId, 'manager');
+      const [stranger] = await elevated.db
+        .insert(users)
+        .values({ email: 'stranger@rls.test', fullName: 'Stranger' })
+        .returning();
+
+      await expect(
+        app.asUser(managerId, (tx) =>
+          tx.insert(farmUsers).values({
+            farmId: a.farmId,
+            userId: stranger!.id,
+            role: 'owner',
+            acceptedAt: new Date(),
+          }),
+        ),
+      ).rejects.toThrow();
+    });
+
+    it('still lets a member READ who else is on the farm', async () => {
+      // Narrowing the write predicate must not narrow the read one: FarmsService decides
+      // authorisation by reading this table through the very same scoped connection, so a
+      // too-tight USING clause would turn "wrong role" into "no such farm".
+      const a = await tenant('Alpha');
+      const workerId = await joinedMember(a.farmId, 'worker');
+
+      const rows = await app.asUser(workerId, (tx) =>
+        tx.select().from(farmUsers).where(eq(farmUsers.farmId, a.farmId)),
+      );
+      expect(rows.map((r) => r.role).sort()).toEqual(['owner', 'worker']);
+    });
+  });
+
   describe('switching the active farm (FR-004)', () => {
     it('changes farms without issuing a new session', async () => {
       const a = await tenant('Alpha');

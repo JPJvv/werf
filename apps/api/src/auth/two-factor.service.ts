@@ -92,6 +92,14 @@ export class TwoFactorService {
    * Recovery codes are generated HERE, not at `begin`, because they only mean anything
    * once the factor they recover from is live — and because showing them beside a QR code
    * the user never scanned trains people to ignore them.
+   *
+   * `issueIfNone`, NOT `issue`. This path used to mint a fresh set unconditionally, which
+   * silently invalidated the page already printed and in the safe: an owner enrols a
+   * passkey (which issues codes), then months later adds an authenticator app, and the ten
+   * codes they wrote down stop working with nothing said. They would find out in the one
+   * scenario FR-014a exists for — the phone at the bottom of a dam — which is the worst
+   * possible moment to discover it. Recovery codes belong to the ACCOUNT, not to whichever
+   * factor was enrolled last, so they are minted once and only replaced deliberately.
    */
   async confirmTotpEnrolment(
     userId: string,
@@ -114,11 +122,9 @@ export class TwoFactorService {
       .set({ totpEnrolledAt: new Date(), totpLastUsedStep: result.step })
       .where(eq(users.id, userId));
 
-    // Fresh codes, replacing any the account had. Enrolling an authenticator app is a
-    // deliberate act by someone who is holding their phone, so this is the right moment
-    // to hand over a new printed page — and the old one stops working, which is what
-    // "replace" has to mean.
-    return { recoveryCodes: await this.recoveryCodes.issue(userId) };
+    // Null when the account already had codes — the caller renders "you already have
+    // recovery codes" rather than a page of new ones, and the printed set stays valid.
+    return { recoveryCodes: await this.recoveryCodes.issueIfNone(userId) };
   }
 
   /**

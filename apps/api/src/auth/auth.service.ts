@@ -73,11 +73,20 @@ export class AuthService {
     const passwordHash = await this.tokens.hashPassword(input.owner.password);
 
     const created = await this.elevated.db.transaction(async (tx) => {
-      const existing = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.email, input.owner.email));
-      if (existing.length > 0) {
+      // An address may already have a row for a reason that is NOT "someone registered
+      // it": `FarmsService.invite` writes a user row for the invitee so the pending
+      // membership has something to point at, and that row has no password. Because
+      // `users.email` is UNIQUE and no invitation is actually delivered yet, treating
+      // every existing row as a conflict means any owner can name a stranger's address
+      // and permanently bar that person from ever signing up — a denial of service one
+      // API call wide, aimed at anyone, with no notice to the victim.
+      //
+      // So a password-less, undeleted row is CLAIMED by the person who proves they want
+      // it. This grants nothing: any pending invitations on that row stay pending, and
+      // acceptance is still the invitee's own act. A row with a password is a real
+      // account and still conflicts; a soft-deleted one is not resurrected by a stranger.
+      const [existing] = await tx.select().from(users).where(eq(users.email, input.owner.email));
+      if (existing && (existing.passwordHash !== null || existing.deletedAt !== null)) {
         throw new ConflictError('That email address is already registered');
       }
 
@@ -104,16 +113,35 @@ export class AuthService {
         })
         .returning();
 
-      const [owner] = await tx
-        .insert(users)
-        .values({
-          email: input.owner.email,
-          fullName: input.owner.fullName,
-          passwordHash,
-          locale: input.owner.locale,
-          theme: input.owner.theme,
-        })
-        .returning();
+      // Claim the invited shell if there is one, otherwise create the account. Either way
+      // the details are the REGISTRANT's, not the inviter's guess at their name.
+      const [owner] = existing
+        ? await tx
+            .update(users)
+            .set({
+              fullName: input.owner.fullName,
+              passwordHash,
+              locale: input.owner.locale,
+              theme: input.owner.theme,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(users.id, existing.id), isNull(users.passwordHash)))
+            .returning()
+        : await tx
+            .insert(users)
+            .values({
+              email: input.owner.email,
+              fullName: input.owner.fullName,
+              passwordHash,
+              locale: input.owner.locale,
+              theme: input.owner.theme,
+            })
+            .returning();
+
+      // The `IS NULL` in that predicate is the race guard: two registrations for the same
+      // invited address both read a password-less row, and only one may win. The loser
+      // updates nothing and is told the address is taken, which by then it is.
+      if (!owner) throw new ConflictError('That email address is already registered');
 
       await tx.insert(farmUsers).values({
         farmId: farm!.id,

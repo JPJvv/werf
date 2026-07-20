@@ -109,6 +109,14 @@ const en = {
     'Ten codes, each usable once, for the day the phone is gone. Print them and put them in the safe.',
   'security.recovery.warning': 'This is the only time these are shown. We cannot show them again.',
   'security.recovery.done': 'I have saved them',
+  // Shown when the account already had recovery codes from an earlier factor. Never
+  // implies the old page is dead — it is not, and that is the entire message.
+  'security.recovery.keptTitle': 'Your recovery codes still work',
+  'security.recovery.keptBody':
+    'You already have ten recovery codes from when you set up your first sign-in method. They have not changed. The page you printed is still the one to keep.',
+  'security.recovery.keptWarning':
+    'If you cannot find them, sign in and set up a new sign-in method to get a fresh set.',
+  'security.recovery.keptDone': 'Continue',
   'security.signOut': 'Sign out',
   // Guided first run (FR-010).
   'firstRun.title': 'Get started',
@@ -206,6 +214,12 @@ const af: Record<TranslationKey, string> = {
   'security.recovery.warning':
     'Dit is die enigste keer wat hierdie gewys word. Ons kan hulle nie weer wys nie.',
   'security.recovery.done': 'Ek het hulle gestoor',
+  'security.recovery.keptTitle': 'Jou herstelkodes werk steeds',
+  'security.recovery.keptBody':
+    'Jy het reeds tien herstelkodes van toe jy jou eerste aanmeldmetode opgestel het. Hulle het nie verander nie. Die bladsy wat jy gedruk het, is steeds die een om te hou.',
+  'security.recovery.keptWarning':
+    'As jy hulle nie kan kry nie, meld aan en stel ’n nuwe aanmeldmetode op vir ’n vars stel.',
+  'security.recovery.keptDone': 'Gaan voort',
   'security.signOut': 'Meld af',
   'firstRun.title': 'Kom ons begin',
   'firstRun.body': 'Drie dinge om eerste te doen. Elkeen vat ’n minuut.',

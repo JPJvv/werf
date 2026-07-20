@@ -176,7 +176,14 @@ export type TotpEnrolmentConfirmRequest = z.infer<typeof totpEnrolmentConfirmReq
  * farmer to print it and put it in the safe.
  */
 export const totpEnrolmentConfirmResponseSchema = z.object({
-  recoveryCodes: z.array(z.string().min(1)).length(10),
+  /**
+   * Ten codes on the FIRST factor this account enrols, and null on any later one — the
+   * same contract the passkey path has always had. Null means "you already have recovery
+   * codes and the page in your safe still works", which is a different message to the
+   * farmer than a fresh set, and the client must render it as one. Returning a new set
+   * here would silently retire the printed page (FR-014a).
+   */
+  recoveryCodes: z.array(z.string().min(1)).length(10).nullable(),
 });
 export type TotpEnrolmentConfirmResponse = z.infer<typeof totpEnrolmentConfirmResponseSchema>;
 

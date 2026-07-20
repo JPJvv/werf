@@ -28,7 +28,10 @@ import { Screen } from './SignInScreen';
 type Stage =
   | { name: 'loading' }
   | { name: 'confirm'; enrolment: schemas.TotpEnrolmentStartResponse }
-  | { name: 'recovery'; codes: string[] };
+  // `codes: null` is the account that already had recovery codes from an earlier factor.
+  // The distinction is the whole point: showing an empty list would read as "you have
+  // none", when in fact the page in the safe is still the live one.
+  | { name: 'recovery'; codes: string[] | null };
 
 export function SecondFactorEnrolmentScreen() {
   const { session, signOut, refreshSession } = useAuth();
@@ -106,21 +109,26 @@ export function SecondFactorEnrolmentScreen() {
   };
 
   if (stage.name === 'recovery') {
+    const codes = stage.codes;
     return (
-      <Screen title={t('security.recovery.title')}>
-        <p className="mb-4 text-body text-soil-900">{t('security.recovery.body')}</p>
-        <ul className="mb-4 grid list-none grid-cols-2 gap-2 p-0">
-          {stage.codes.map((recoveryCode) => (
-            <li
-              key={recoveryCode}
-              className="rounded border border-soil-200 bg-sand-100 p-3 text-center font-data text-data tabular-nums text-soil-900"
-            >
-              {recoveryCode}
-            </li>
-          ))}
-        </ul>
+      <Screen title={t(codes ? 'security.recovery.title' : 'security.recovery.keptTitle')}>
+        <p className="mb-4 text-body text-soil-900">
+          {t(codes ? 'security.recovery.body' : 'security.recovery.keptBody')}
+        </p>
+        {codes && (
+          <ul className="mb-4 grid list-none grid-cols-2 gap-2 p-0">
+            {codes.map((recoveryCode) => (
+              <li
+                key={recoveryCode}
+                className="rounded border border-soil-200 bg-sand-100 p-3 text-center font-data text-data tabular-nums text-soil-900"
+              >
+                {recoveryCode}
+              </li>
+            ))}
+          </ul>
+        )}
         <p className="mb-6 border-l-4 border-klei-700 bg-sand-100 p-3 text-body text-soil-900">
-          {t('security.recovery.warning')}
+          {t(codes ? 'security.recovery.warning' : 'security.recovery.keptWarning')}
         </p>
         <button
           type="button"
@@ -128,7 +136,7 @@ export function SecondFactorEnrolmentScreen() {
           disabled={busy}
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
-          {t('security.recovery.done')}
+          {t(codes ? 'security.recovery.done' : 'security.recovery.keptDone')}
         </button>
       </Screen>
     );

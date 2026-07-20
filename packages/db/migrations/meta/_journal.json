@@ -50,6 +50,13 @@
       "when": 1784479295653,
       "tag": "0006_webauthn_challenges",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0007_membership_write_authority",
+      "breakpoints": true
     }
   ]
 }

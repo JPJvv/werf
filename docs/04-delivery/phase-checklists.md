@@ -84,10 +84,14 @@ Auth & 2FA (apps/api, NestJS — server-authoritative, integration-tested on rea
 App shell (apps/web + @werf/ui)
 ☑ Routing + auth guard; unauthenticated → login; the shell renders offline from cached session (FR-006)
 ☑ 📶 Session persists offline for a configurable window (default 30 days) via the sync adapter (FR-006)
-☑ 🇿🇦 Home = grid of ≥96px tiles GENERATED from farm.enterprise_types; fixed order, never personalised;
-  2 cols phone / 3 tablet / 4 desktop. Tiles carry NO live number yet — there is no domain data
-  to count until the modules land (stated in the scope boundary above), so a tile is a door with
-  a stable identity. The "one number or one badge" half of FR-017 lands with Phase 2.
+◐ 🇿🇦 Home = grid of ≥96px tiles GENERATED from farm.enterprise_types; fixed order, never personalised;
+  2 cols phone / 3 tablet / 4 desktop; each tile carries ONE live number or ONE badge (FR-017).
+  The grid, sizing, generation and fixed order are done. The live number is NOT: there is no
+  domain data to count until the modules land (stated in the scope boundary above), so a tile is
+  currently a door with a stable identity. `Tile` accepts `metric`/`badge` props and nothing
+  populates them. The FR-017 half lands with Phase 2.
+  NOTE: this line previously read ☑ with the FR-017 clause deleted from it rather than met —
+  exactly the rewording the exit gate below warns about. It was caught in review and restored.
 ◐ Terminology engine: "camp" for cattle, "block" for vines — decided in ONE place
   (`landTerm()` in `home/tiles.ts`), consumed by both the grid and the first-run guide, and
   covered by tests that pin the mixed-farm case. NOT yet read from a terminology table: the
@@ -97,9 +101,14 @@ App shell (apps/web + @werf/ui)
 ☑ Theme: light default, does NOT follow prefers-color-scheme unless "Match my phone" chosen;
   set before first paint (already bootstrapped); Settings → Appearance to change it (FR-016)
 ◐ Language switch EN ↔ Afrikaans per user; locale on the user, not the farm/browser (FR-008) —
-  the account's locale is chosen at onboarding, stored on the user row, and adopted on every
-  sign-in and cold start, so it follows the farmer onto a borrowed tablet. A change made LATER
-  from Settings is device-scoped until there is a profile-update endpoint (Phase 2).
+  the account's locale is stored on the user row and adopted on every sign-in and cold start,
+  so it follows the farmer onto a borrowed tablet. Two real remainders, both Phase 2:
+  (a) there is no language control before sign-in — `LanguageSettings` sits behind `RequireAuth`,
+  so although `RegisterScreen` submits the live UI locale, a farmer onboarding on a fresh device
+  can only ever submit the default. An Afrikaans farmer cannot create an Afrikaans account.
+  (b) a change made LATER from Settings is reverted on the next reload, because
+  `AuthProvider` re-adopts `session.user.locale` on mount. It is session-scoped, not
+  device-scoped as this line previously claimed. Both need a profile-update endpoint.
 ☑ 📶 Sync-status strip: persistent, non-modal — synced / N pending / syncing / error;
   copy says "saved"/"sent", never "sync" (FR-009)
 ☑ 📶 PWA install prompt at the right moment (deferred beforeinstallprompt), not on first paint (FR-007)

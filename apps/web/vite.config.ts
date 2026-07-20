@@ -15,6 +15,14 @@ export default defineConfig({
       { find: /^@werf\/core$/, replacement: resolvePath('../../packages/core/src/index.ts') },
     ],
   },
+  server: {
+    // The API sets a global 'api' prefix, so this forwards the path unchanged rather than
+    // rewriting it. Keeping both sides on /api means the dev proxy and the production
+    // reverse proxy agree, and the client's API_BASE ('/api') is correct in both.
+    proxy: {
+      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

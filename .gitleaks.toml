@@ -12,3 +12,26 @@ description = "Werf-specific false positives"
 paths = [
   '''(^|/)packages/db/seed/.*''',
 ]
+
+# Two literals in the test suite that the loose `generic-api-key` rule flags. Both are
+# allowlisted BY VALUE rather than by path: allowing `**/*.test.ts` wholesale would mean a
+# real credential pasted into a test is invisible forever, and tests are exactly where a
+# careless copy-paste of a live key tends to land.
+#
+# Note these only surface in CI, not in the pre-commit hook. The hook scans one commit's
+# staged diff; `gitleaks-action` on a pull_request scans the WHOLE commit range with
+# `fetch-depth: 0`, so a value committed weeks ago is re-reported on every PR that carries it.
+regexes = [
+  # The RFC 4226 / RFC 6238 published test seed: base32 of the ASCII string
+  # "12345678901234567890", printed verbatim in both RFCs' test-vector appendices. Our TOTP
+  # implementation is verified against those vectors (`totp.test.ts`), which is only possible
+  # by hard-coding the seed the RFC specifies. The short form is the same seed truncated, used
+  # as a fake enrolment response in a web test. Public by definition — it is in the standard.
+  '''GEZDGNBVGY3TQOJQ(GEZDGNBVGY3TQOJQ)?''',
+
+  # The HS256 signing key the API integration tests boot Nest with. It exists only to satisfy
+  # the config schema's 32-character floor inside a testcontainer that is destroyed when the
+  # suite ends, and it says so in its own value. The real secret comes from JWT_SECRET and has
+  # never been in this repository.
+  '''test-signing-key-that-is-long-enough-32''',
+]

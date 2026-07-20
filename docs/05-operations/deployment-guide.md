@@ -8,13 +8,24 @@ Laptop to production. Everything containing personal information lives in **af-s
 
 ### Prerequisites
 
+**Install now** — everything `pnpm verify` and the local loop need:
+
 | | Version | Note |
 |---|---|---|
-| Node | 22 LTS | `nvm use` |
-| pnpm | 9+ | `corepack enable` |
-| Docker | 24+ | Postgres, Redis, PowerSync, testcontainers |
-| Terraform | 1.9+ | Only if touching infra |
-| AWS CLI | v2 | Only if deploying |
+| Node | ≥22.13 | Enforced by `engines`. pnpm 11 refuses to run below it. |
+| pnpm | 11.14.0 | Pinned exactly by `packageManager`; `corepack enable` honours it. Do not install a different major by hand. |
+| Docker | 24+ | Postgres today; Redis and PowerSync join `docker-compose.yml` at Phase 3. Also required for testcontainers, so the API integration tests cannot run without it. |
+| gitleaks | 8.19+ | The `.githooks/pre-commit` secret scan. Without it the hook warns and waves the commit through, leaving CI as the only gate. On Windows pin the source — `winget install --id Gitleaks.Gitleaks --source winget` — because the msstore source fails a certificate check on some machines. |
+| Playwright browsers | chromium | `pnpm exec playwright install chromium`. Chromium only: `playwright.config.ts` declares a single project. |
+
+**Install later, when a phase actually needs them.** Nothing below is required to build, test, or run
+Werf locally, and `hosting-and-cost-control.md` §2 is deliberate about not turning services on early.
+
+| | Version | Needed from |
+|---|---|---|
+| Terraform | 1.9+ | Production infra only. [ADR-0008](../03-architecture/adr/ADR-0008-dev-hosting.md) keeps the whole build on Neon/Render/Cloudflare with synthetic data; AWS re-enters at `af-south-1` before the first real farm onboards. |
+| AWS CLI | v2 | Same — deploying to `af-south-1`, not before. |
+| `psql` | — | Optional. The postgis container ships with it: `docker compose exec postgres psql -U werf werf`. |
 
 ### Start
 

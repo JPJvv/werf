@@ -5,6 +5,9 @@ build
 coverage
 pnpm-lock.yaml
 
+# Drizzle-generated migrations + snapshots (reviewed as SQL, not reformatted)
+**/migrations/
+
 # CI artifacts (e.g. gitleaks writes results.sarif into the workspace)
 *.sarif
 docs/

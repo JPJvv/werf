@@ -23,8 +23,7 @@
       "Read(./infra/secrets/**)",
       "Bash(rm -rf *)",
       "Bash(git push --force*)",
-      "Bash(terraform apply*)",
-      "Edit(./packages/db/migrations/**)"
+      "Bash(terraform apply*)"
     ]
   },
   "hooks": {

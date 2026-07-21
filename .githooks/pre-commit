@@ -9,7 +9,8 @@
 # through — CI remains the hard gate — rather than blocking every commit on a
 # machine that has not installed the tool. Install it to close the local gap:
 #   macOS:   brew install gitleaks
-#   Windows: winget install gitleaks.gitleaks   (or: scoop install gitleaks)
+#   Windows: winget install --id Gitleaks.Gitleaks --source winget
+#            (pin the source: the msstore source fails a cert check on some machines)
 #   Linux:   see https://github.com/gitleaks/gitleaks#installing
 
 if ! command -v gitleaks >/dev/null 2>&1; then
@@ -18,7 +19,16 @@ if ! command -v gitleaks >/dev/null 2>&1; then
   exit 0
 fi
 
-gitleaks protect --staged --redact --verbose
+# `gitleaks protect` was deprecated in v8.18 and REMOVED by v8.19 — on a current
+# gitleaks (8.30 at time of writing) it exits non-zero as an unknown command, which
+# this hook would report as "a potential secret was found" and block every commit on
+# a correctly-installed machine. `git --staged` is the supported spelling. The
+# fallback keeps the hook working for anyone still on a pre-8.19 binary.
+if gitleaks git --help >/dev/null 2>&1; then
+  gitleaks git --staged --redact --verbose
+else
+  gitleaks protect --staged --redact --verbose
+fi
 status=$?
 
 if [ "$status" -ne 0 ]; then

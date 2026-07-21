@@ -1,0 +1,16 @@
+{
+  // Typechecks the api's tests under the module settings Vitest actually runs them with:
+  // ESM + bundler resolution, so "exports" subpaths (@werf/db/testing) resolve and the
+  // ESM-only helpers they pull in parse correctly. Separate from tsconfig.json, which
+  // describes the CommonJS server Nest emits and must not see these files.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "vitest/globals"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "verbatimModuleSyntax": false,
+    "useDefineForClassFields": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}

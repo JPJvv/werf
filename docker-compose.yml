@@ -1,0 +1,25 @@
+# Local dev database. Not production — production is self-hosted Postgres+PostGIS on
+# AWS af-south-1 (no Supabase; there is no SA region — ADR-0002). We use the PostGIS
+# image so later spatial phases need no image swap; Phase 1 uses only citext + pgcrypto,
+# both from postgres contrib. UUIDv7 is provided by a SQL function in migration 0000,
+# not a C extension, so any stock image (and testcontainers) works identically.
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: werf-postgres
+    environment:
+      POSTGRES_USER: werf
+      POSTGRES_PASSWORD: werf
+      POSTGRES_DB: werf
+    ports:
+      - '5432:5432'
+    volumes:
+      - werf_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U werf -d werf']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  werf_pg:

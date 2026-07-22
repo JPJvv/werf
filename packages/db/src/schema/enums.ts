@@ -5,7 +5,8 @@
  */
 
 import { pgEnum } from 'drizzle-orm/pg-core';
-import { ENTERPRISE_TYPES, USER_ROLES } from '@werf/core';
+import { ENTERPRISE_TYPES, LAND_UNIT_KINDS, USER_ROLES } from '@werf/core';
 
 export const enterpriseTypeEnum = pgEnum('enterprise_type', ENTERPRISE_TYPES);
 export const userRoleEnum = pgEnum('user_role', USER_ROLES);
+export const landUnitKindEnum = pgEnum('land_unit_kind', LAND_UNIT_KINDS);

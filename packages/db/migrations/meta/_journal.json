@@ -57,6 +57,13 @@
       "when": 1784600000000,
       "tag": "0007_membership_write_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784733880653,
+      "tag": "0008_land_units",
+      "breakpoints": true
     }
   ]
 }

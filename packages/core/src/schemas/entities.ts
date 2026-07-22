@@ -18,6 +18,7 @@
 
 import { z } from 'zod';
 import {
+  auditTimestampsSchema as auditTimestamps,
   enterpriseTypeSchema,
   jurisdictionSchema,
   timestampSchema,
@@ -37,14 +38,6 @@ export type Locale = z.infer<typeof localeSchema>;
  */
 export const themeSchema = z.enum(['light', 'dark', 'system']);
 export type Theme = z.infer<typeof themeSchema>;
-
-/** Server-owned audit timestamps present on every persisted record. */
-const auditTimestamps = {
-  createdAt: timestampSchema,
-  updatedAt: timestampSchema,
-  /** Soft-delete tombstone. A hard DELETE breaks sync and destroys audit history. */
-  deletedAt: timestampSchema.nullable(),
-};
 
 // ── Business ────────────────────────────────────────────────────────────────
 // The account root. One business owns many farms (FR-001, FR-004).

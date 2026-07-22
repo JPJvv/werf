@@ -99,6 +99,16 @@ export const TENANCY = {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },
+  // Land — camps and blocks (Phase 2). Farm-scoped and bidirectional: the farmer draws and
+  // edits boundaries offline. The canonical PostGIS `boundary` is stripped because SQLite on
+  // the device has no PostGIS; the client reads the denormalised `boundary_geojson` mirror
+  // instead (offline-sync.md). Stripping `boundary` here is the sync half of the dual write;
+  // the sync_geojson trigger is the DB half. Both, always.
+  land_units: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+    neverSyncColumns: ['boundary'],
+  },
   // Regulated reference data: the rate/withdrawal/PHI tables the client must read offline.
   // Read-only, filtered by the FARM's jurisdiction — never the user's or the browser's.
   regulatory_rates: {

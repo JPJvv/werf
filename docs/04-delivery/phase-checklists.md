@@ -182,11 +182,16 @@ unmarked-animal window resolve by `(jurisdiction, code, occurred_at)` through th
 
 ```
 Land foundation (needed before animals have somewhere to live)
-☐ 🇿🇦 land_units table + migration + RLS + TENANCY(farm-scoped); PostGIS geometry(Polygon,4326)
-  + boundary_geojson text with the sync_geojson() trigger enforcing the dual write (FR-150)
-☐ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150)
-☐ @werf/core Zod schema for LandUnit (record + new shapes); terminology "camp"/"block"/"other"
-  read through the terminology layer, not hardcoded
+☑ 🇿🇦 land_units table + migration (0008) + RLS + TENANCY(farm-scoped); PostGIS
+  geometry(Polygon,4326) + boundary_geojson text with the land_units_sync_geojson() trigger
+  enforcing the dual write; `boundary` in neverSyncColumns (SQLite has no PostGIS). Proven end
+  to end against real PostGIS: RLS isolation, WITH CHECK write-guard, trigger derives+updates
+  geojson through the app path. postgis extension enabled here (first geometry table) (FR-150)
+◐ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150) — the DATA
+  layer supports every field; the create ACTION (API endpoint + capture screen) is a later slice
+◐ @werf/core Zod schema for LandUnit (record + new shapes) — DONE, with the boundary crossing
+  the wire as GeoJSON text, never PostGIS. Terminology "camp"/"block"/"other" is still the
+  Phase 1 hardcoded landTerm(); moving it to the terminology layer is its own carry-forward item
 
 Core animal records (apps/api + @werf/core + @werf/db, integration-tested on real Postgres)
 ☐ animals table + animal_identifiers + mobs + enums (animal_status, animal_sex, identifier_type);

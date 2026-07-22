@@ -46,6 +46,7 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   webauthn_challenges: { id: 'chal-b', user_id: USER_B },
   farm_users: { id: 'fu-b', farm_id: FARM_B, user_id: USER_B },
   enterprises: { id: 'ent-b', farm_id: FARM_B },
+  land_units: { id: 'lu-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
 };
 
@@ -63,6 +64,7 @@ describe('sync tenancy — classification vocabulary', () => {
         'enterprises',
         'farm_users',
         'farms',
+        'land_units',
         'regulatory_rates',
         'user_passkeys',
         'user_sessions',
@@ -101,6 +103,12 @@ describe('sync tenancy — no server-only leak', () => {
     expect(TENANCY.users.neverSyncColumns).toEqual(
       expect.arrayContaining(['password_hash', 'totp_secret_encrypted', 'recovery_codes_hashed']),
     );
+  });
+
+  it('strips the PostGIS geometry from land_units — SQLite has no PostGIS', () => {
+    // land_units syncs (the farmer edits camps offline) but the canonical `boundary`
+    // geometry never reaches the device; the client reads `boundary_geojson` instead.
+    expect(TENANCY.land_units.neverSyncColumns).toContain('boundary');
   });
 
   /**

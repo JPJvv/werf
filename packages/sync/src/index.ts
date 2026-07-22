@@ -109,6 +109,24 @@ export const TENANCY = {
     scope: { kind: 'direct', column: 'farm_id' },
     neverSyncColumns: ['boundary'],
   },
+  // Animals, their group model, and their identifiers (Phase 2). All farm-scoped and
+  // bidirectional — the farmer creates and edits stock offline, in the crush, with no signal.
+  // No secrets and no PostGIS here, so nothing is stripped; created_by/updated_by are farm
+  // members' ids, which co-members are already entitled to see.
+  mobs: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  animals: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  // Carries its own farm_id, so it scopes directly rather than through its animal — the same
+  // predicate as every other farm-scoped table, and one fewer join for the sync-rule generator.
+  animal_identifiers: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
   // Regulated reference data: the rate/withdrawal/PHI tables the client must read offline.
   // Read-only, filtered by the FARM's jurisdiction — never the user's or the browser's.
   regulatory_rates: {

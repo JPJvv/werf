@@ -47,6 +47,9 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   farm_users: { id: 'fu-b', farm_id: FARM_B, user_id: USER_B },
   enterprises: { id: 'ent-b', farm_id: FARM_B },
   land_units: { id: 'lu-b', farm_id: FARM_B },
+  mobs: { id: 'mob-b', farm_id: FARM_B },
+  animals: { id: 'animal-b', farm_id: FARM_B },
+  animal_identifiers: { id: 'aid-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
 };
 
@@ -60,11 +63,14 @@ describe('sync tenancy — classification vocabulary', () => {
     }
     expect(Object.keys(SYNC_CLASSIFICATIONS).sort()).toEqual(
       [
+        'animal_identifiers',
+        'animals',
         'businesses',
         'enterprises',
         'farm_users',
         'farms',
         'land_units',
+        'mobs',
         'regulatory_rates',
         'user_passkeys',
         'user_sessions',

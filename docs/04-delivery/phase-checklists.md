@@ -194,16 +194,27 @@ Land foundation (needed before animals have somewhere to live)
   Phase 1 hardcoded landTerm(); moving it to the terminology layer is its own carry-forward item
 
 Core animal records (apps/api + @werf/core + @werf/db, integration-tested on real Postgres)
-☐ animals table + animal_identifiers + mobs + enums (animal_status, animal_sex, identifier_type);
-  migration + RLS + TENANCY; GIN index on attributes (schema is designed in database-schema.md §4)
-☐ Create an individual animal: species, breed, sex, DOB(+estimated), source, acquired_at (FR-101)
-☐ Create a mob/flock and manage it by head_count without individual rows (FR-102)
-☐ Species-specific attributes via Zod-validated JSONB — horn_status (cattle), wool_class (sheep);
-  the per-species schema is the validator, one place (FR-107, ADR-0006 AnimalIdentityRules seam)
-☐ Multiple identifiers per animal; UNIQUE(farm_id, type, value) partial on deleted_at IS NULL (FR-109)
+☑ animals table + animal_identifiers + mobs + enums (animal_status, animal_sex, identifier_type);
+  migration (0009) + RLS (all three farm-scoped, ENABLE+FORCE) + TENANCY; GIN index on attributes.
+  Proven against real PostGIS: RLS isolation, WITH CHECK write-guard, cross-farm hidden. `species`
+  is text (new species = code release, not migration); brand_id deferred to the FR-601 slice
+◐ Create an individual animal: species, breed, sex, DOB(+estimated), source, acquired_at (FR-101)
+  — the DATA layer + @werf/core Animal schema support every field; the create ACTION (API + capture
+  screen) is a later slice. DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard)
+◐ Create a mob/flock and manage it by head_count without individual rows (FR-102) — data layer done
+  and proven (a mob is a complete record with zero animal rows behind it); create ACTION pending
+◐ Species-specific attributes via Zod-validated JSONB (FR-107, ADR-0006 AnimalIdentityRules seam) —
+  the `attributes` jsonb column + GIN index exist and the schema leaves it an open record; the
+  PER-SPECIES validator (horn_status for cattle, wool_class for sheep) is its own later slice
+◐ Multiple identifiers per animal; UNIQUE(farm_id, type, value) partial on deleted_at IS NULL (FR-109)
+  — schema + partial-unique DONE and proven, including reuse of a retired tag after soft-delete;
+  the add-identifier ACTION (API + UI) is a later slice
 ☐ Move animals between mobs and camps; movement retained as an event, never an overwrite (FR-103)
+  — needs the events table (next slice)
 ☐ 📶 Batch operations: apply one event to a selected group in one action, one batch_id (FR-112)
-☐ 📶 Attach photos: stored locally, photo_key set, upload deferred to sync, never blocks a write (FR-108)
+  — needs the events table
+◐ 📶 Attach photos: stored locally, photo_key set, upload deferred to sync, never blocks a write
+  (FR-108) — the photo_key column exists; the local-store + deferred-upload flow is a client slice
 
 Lifecycle events (events table — append-only, the heart; database-schema.md §5)
 ☐ events table + event_type enum + partitioning + the three-timestamp discipline

@@ -10,6 +10,7 @@ import { SUPPORTED_JURISDICTIONS } from '../jurisdiction';
 import { ENTERPRISE_TYPES } from '../enterprise';
 import { USER_ROLES } from '../roles';
 import { LAND_UNIT_KINDS } from '../land';
+import { ANIMAL_SEXES, ANIMAL_STATUSES, IDENTIFIER_TYPES, SPECIES } from '../animals';
 
 /** IDs are client-generated UUIDv7. We validate shape here; ordering is a storage concern. */
 export const uuidSchema = z.string().uuid();
@@ -22,6 +23,14 @@ export const userRoleSchema = z.enum(USER_ROLES);
 
 export const landUnitKindSchema = z.enum(LAND_UNIT_KINDS);
 
+export const animalStatusSchema = z.enum(ANIMAL_STATUSES);
+
+export const animalSexSchema = z.enum(ANIMAL_SEXES);
+
+export const identifierTypeSchema = z.enum(IDENTIFIER_TYPES);
+
+export const speciesSchema = z.enum(SPECIES);
+
 /** Money on the wire is integer cents. */
 export const moneySchema = z.number().int();
 
@@ -29,10 +38,17 @@ export const moneySchema = z.number().int();
 export const timestampSchema = z.string().datetime({ offset: true }).pipe(z.coerce.date());
 
 /**
+ * A calendar date with no time and no zone: 'YYYY-MM-DD'. A date of birth or an acquisition
+ * date is a day on the farm, not an instant — coercing it to a Date (which lands at midnight
+ * in SOME zone) is the classic off-by-one. It stays a string; the display layer formats it.
+ */
+export const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected a YYYY-MM-DD date');
+
+/**
  * Server-owned audit timestamps present on every persisted record. Spread into an entity's
  * record schema. `deletedAt` is a soft-delete tombstone — a hard DELETE breaks sync and
- * destroys audit history the BCEA requires us to keep. Single-sourced here so a new domain
- * schema cannot quietly omit or reshape it.
+ * destroys audit history we are legally required to retain. Single-sourced here so a new
+ * domain schema cannot quietly omit or reshape it.
  */
 export const auditTimestampsSchema = {
   createdAt: timestampSchema,

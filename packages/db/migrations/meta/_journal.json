@@ -64,6 +64,13 @@
       "when": 1784733880653,
       "tag": "0008_land_units",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784735121917,
+      "tag": "0009_animals",
+      "breakpoints": true
     }
   ]
 }

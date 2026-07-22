@@ -244,8 +244,10 @@ Reporting & the grid's live numbers
   fed from the herd summary — closes the Phase 1 ◐. Tiles stop being empty doors.
 
 Phase 1 carry-forward (closing the Phase 1 ◐/deferred items the gate named as Phase 2 work)
-☐ Bundle size gate ENFORCED (not just measured) — the build fails over ≤250KB gz
-  (NFR-009, .claude/rules/frontend.md; Phase 1 named this "a Phase 2 first task")
+☑ Bundle size gate ENFORCED (not just measured) — the build fails over ≤250KB gz
+  (NFR-009, .claude/rules/frontend.md; Phase 1 named this "a Phase 2 first task").
+  apps/web/scripts/check-bundle-size.mjs runs in `pnpm --filter @werf/web build`; fail
+  path proven against the real dist (currently 96.42 KB gz of a 250 KB budget)
 ☐ Terminology moves from landTerm() to a real terminology lookup; tile terminology labels
   (Herd/Blocks/Camps…) become translatable, resolving the Phase 1 vocabulary fork (FR-008 remainder)
 ☐ FR-008 remainders: a language control BEFORE sign-in (so an Afrikaans farmer can onboard in

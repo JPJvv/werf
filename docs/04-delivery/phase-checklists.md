@@ -152,10 +152,142 @@ replication of domain data (Phase 3).
 
 ---
 
-## Phases 2–7 — to be written
+## Phase 2 — Livestock
 
-Detailed checklists for Phase 2 (livestock), Phase 3 (offline sync — the hard one), Phase 4
-(crops/fields), Phase 5 (labour, wages, finance), Phase 6 (compliance packs), and Phase 7 (polish,
-i18n, PWA hardening) are authored at the start of each phase from the SRS and functional-requirements
-backlog, so they reference real FR/story IDs. Do not pre-write them speculatively — write each phase's
-checklist when you reach it, against the requirements as they stand.
+Goal: a farmer on a cattle, sheep, goat, or mixed farm can define camps, create animals
+(individually or as a mob), give them identifiers, record everything that happens to them —
+births, deaths, sales, weaning, movements, treatments, vaccinations, dips, weights, mating,
+pregnancy tests — and see a herd/flock summary, all with the network off. The SA-specific
+spine lands too: the branding register, the unmarked-animal flag, marking an animal missing,
+and the one-action stock-theft evidence pack. The home grid's tiles finally carry the live
+numbers FR-017 promised, because there is now something to count.
+
+**Scope boundary (read first — this is where Phase 2 ends and Phase 3 begins).**
+The **PowerSync replication engine is still Phase 3.** Phase 2 builds livestock as
+offline-first *through the ADR-0003 `packages/sync` seam*, exactly as Phase 1 built the
+session: real capture behaviour against the local-data adapter interface now, the real
+PowerSync SQLite/OPFS engine swapped underneath in Phase 3 with no UI rewrite. That means the
+client's local-state layer in this phase is the adapter, not `usePowerSync` watched queries
+directly (`.claude/rules/frontend.md`, ADR-0003). The server (`apps/api`) remains
+authoritative for the schema, RLS, and anything the client must not compute (withdrawal
+periods, the evidence-pack PDF). Every domain table gets its **PostGIS `geometry` + denormalised
+GeoJSON `text`** pair (camps, event location) and its **sync TENANCY classification** in the
+same commit as the table — both, always (CLAUDE.md gotchas).
+
+**Compliance gate.** FR-131 (withdrawal periods), FR-601–605 (Animal Identification Act,
+stock theft) and FR-614 (`regulatory_rates`) are legal, not cosmetic. Read
+`docs/00-business/legal-compliance.md` FIRST for each, and the `compliance-checker` agent must
+pass before any of them merges. No regulated number in code — withdrawal periods and the
+unmarked-animal window resolve by `(jurisdiction, code, occurred_at)` through the FR-019 seam.
+
+```
+Land foundation (needed before animals have somewhere to live)
+☐ 🇿🇦 land_units table + migration + RLS + TENANCY(farm-scoped); PostGIS geometry(Polygon,4326)
+  + boundary_geojson text with the sync_geojson() trigger enforcing the dual write (FR-150)
+☐ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150)
+☐ @werf/core Zod schema for LandUnit (record + new shapes); terminology "camp"/"block"/"other"
+  read through the terminology layer, not hardcoded
+
+Core animal records (apps/api + @werf/core + @werf/db, integration-tested on real Postgres)
+☐ animals table + animal_identifiers + mobs + enums (animal_status, animal_sex, identifier_type);
+  migration + RLS + TENANCY; GIN index on attributes (schema is designed in database-schema.md §4)
+☐ Create an individual animal: species, breed, sex, DOB(+estimated), source, acquired_at (FR-101)
+☐ Create a mob/flock and manage it by head_count without individual rows (FR-102)
+☐ Species-specific attributes via Zod-validated JSONB — horn_status (cattle), wool_class (sheep);
+  the per-species schema is the validator, one place (FR-107, ADR-0006 AnimalIdentityRules seam)
+☐ Multiple identifiers per animal; UNIQUE(farm_id, type, value) partial on deleted_at IS NULL (FR-109)
+☐ Move animals between mobs and camps; movement retained as an event, never an overwrite (FR-103)
+☐ 📶 Batch operations: apply one event to a selected group in one action, one batch_id (FR-112)
+☐ 📶 Attach photos: stored locally, photo_key set, upload deferred to sync, never blocks a write (FR-108)
+
+Lifecycle events (events table — append-only, the heart; database-schema.md §5)
+☐ events table + event_type enum + partitioning + the three-timestamp discipline
+  (occurred_at ≠ created_at ≠ synced_at); payload Zod-validated per type; PostGIS location pair
+☐ 📶 Record a birth: ease score, birth weight, dam, multiples (FR-104)
+☐ 📶 Record a death with cause → status='dead', retained forever, excluded from live counts (FR-105)
+☐ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106)
+☐ 📶 Record weaning with weight and age (FR-111)
+☐ occurred_at is captured separately from created_at everywhere; reports read occurred_at (CLAUDE.md)
+
+Breeding (P1 only; FR-122/123 deferred)
+☐ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120)
+☐ 📶 Record pregnancy diagnosis: method + result; project due date from species gestation
+  (gestation is reference data, not a magic number in code) (FR-121)
+
+Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-checker before merge)
+☐ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130)
+☐ 📶 Automatic withdrawal period from product reference data: compute + store meat/milk withdrawal
+  ON THE EVENT (not on read — the rule at time of treatment, ADR-0005); block or hard-warn on
+  sale/slaughter within it. Withdrawal periods live in regulatory reference data, by date (FR-131, FR-614)
+☐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132)
+☐ 📶 🇿🇦 Record a dip/tick treatment (required in controlled areas) (FR-133)
+
+Weights & performance
+☐ 📶 Record a weight against an animal or a mob (FR-140)
+☐ 📶 Compute ADG between any two weights (pure @werf/domain, table-driven test); chart the curve (FR-141)
+☐ 📶 Weigh session: sequential capture optimised for the crush — one animal per screen,
+  one thumb, no scrolling, works with a dead network (FR-142)
+
+SA identity & stock theft 🇿🇦 (compliance-gated)
+☐ 🇿🇦 branding_registers table + migration + RLS; mark ≤3 chars enforced in AnimalIdentityRules
+  (ADR-0006), NOT a schema CHECK (Namibia's marks differ); certificate ref, mark type, body position (FR-601)
+☐ 🇿🇦 Link an animal to its mark; flag animals unmarked past the prescribed window after
+  acquisition — the window is reference data resolved by date, never hardcoded (FR-602)
+☐ 🇿🇦 Mark an animal missing: status='missing', timestamped, GPS-anchored (FR-605)
+☐ 🇿🇦 Stock-theft evidence pack (server-side PDF, one action): identification, ownership chain,
+  brand certificate, last-seen GPS+timestamp, movement history, treatment history, SAPS case
+  number field. FACTS ONLY — no "suspect" field (defamation + POPIA s26) (FR-603)
+
+Reporting & the grid's live numbers
+☐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
+☐ 🇿🇦 FR-017 completed: each enterprise tile now carries one live number or one attention badge,
+  fed from the herd summary — closes the Phase 1 ◐. Tiles stop being empty doors.
+
+Phase 1 carry-forward (closing the Phase 1 ◐/deferred items the gate named as Phase 2 work)
+☐ Bundle size gate ENFORCED (not just measured) — the build fails over ≤250KB gz
+  (NFR-009, .claude/rules/frontend.md; Phase 1 named this "a Phase 2 first task")
+☐ Terminology moves from landTerm() to a real terminology lookup; tile terminology labels
+  (Herd/Blocks/Camps…) become translatable, resolving the Phase 1 vocabulary fork (FR-008 remainder)
+☐ FR-008 remainders: a language control BEFORE sign-in (so an Afrikaans farmer can onboard in
+  Afrikaans), and a profile-update endpoint so a later language change writes back and survives reload
+☐ axe widened to the enrolment / recovery-codes / Settings screens (unaudited in Phase 1)
+☐ Delete the stale packages/db/seed path from .gitleaks.toml; fix the AppShell.tsx comment that
+  still says the sync strip lands later (both from the Phase 1 reviewer's carry list)
+
+Quality gates
+☐ Every write path works with the network off; no `if (!navigator.onLine) throw` anywhere
+☐ Domain logic (ADG, gestation projection, withdrawal window, unmarked-animal flag) is pure,
+  unit-tested, table-driven where the rule is table-driven; no mocks of our own code
+☐ API integration tests against real Postgres in testcontainers; no mocking our own DB
+☐ Tenancy: packages/sync/test/tenancy.spec covers every new table; a cross-farm animal/event
+  leak fails the build; sync rules and RLS agree (CLAUDE.md)
+☐ A real offline cold-start e2e on the BUILT PWA — capture an animal and an event with the
+  network off, confirm it survives reload (the Phase 1 reviewer flagged nothing exercised this)
+☐ compliance-checker passes on FR-131 and FR-601–605; legal-compliance.md read first
+☐ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e green
+```
+
+**Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe, including the new
+offline cold-start capture path); CI green on `main`; every checklist line is ☑ **or ◐ with its
+remainder named**; the `reviewer` **and** `compliance-checker` agents pass; a farmer can create a
+camp → create an animal → give it a tag → record a weight and a treatment → wean it → mark another
+missing → generate a stock-theft pack → see the herd count on the home tile, entirely offline for
+the capture paths.
+
+**Deferred to later phases (not a Phase 2 miss):** FR-110 pedigree/breed-% and FR-122/123 breeding
+analytics + reminders (P2); FR-134/135/136/137 injury, notifiable-disease flag, medicine inventory,
+vet access (P2); FR-143/144 Bluetooth EID/scale + sale-weight projection (P3); FR-152/153/154
+rest-period warnings, feed, grazing plan (P2/P3); FR-604 removal certificate, FR-606–613 GlobalGAP/
+SIZA/traceability/QR (P2/P3); FR-615 regulatory-rates admin UI (P2); FR-015 global search (P2);
+FR-706–710 the analytical reports (P2); and the **PowerSync replication engine (Phase 3)** — Phase 2
+livestock is offline-first through the ADR-0003 seam, not through live sync.
+
+---
+
+## Phases 3–7 — to be written
+
+Detailed checklists for Phase 3 (offline sync — the hard one), Phase 4 (crops/fields), Phase 5
+(labour, wages, finance), Phase 6 (compliance packs), and Phase 7 (polish, i18n, PWA hardening)
+are authored at the start of each phase from the SRS and functional-requirements backlog, so they
+reference real FR/story IDs. Do not pre-write them speculatively — write each phase's checklist when
+you reach it, against the requirements as they stand.

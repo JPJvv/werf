@@ -258,8 +258,13 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
 ☐ 📶 🇿🇦 Record a dip/tick treatment (required in controlled areas) (FR-133)
 
 Weights & performance
-☐ 📶 Record a weight against an animal or a mob (FR-140)
-☐ 📶 Compute ADG between any two weights (pure @werf/domain, table-driven test); chart the curve (FR-141)
+◐ 📶 Record a weight against an animal or a mob (FR-140) — capture DOMAIN LOGIC done
+  (@werf/domain recordWeight → a `weight` event; a pure observation, no status transition; insists
+  on exactly one subject, animal xor mob; payload validated at the boundary). API endpoint +
+  crush-optimised capture SCREEN (FR-142) are a later slice
+◐ 📶 Compute ADG between any two weights (pure @werf/domain, table-driven test); chart the curve
+  (FR-141) — averageDailyGain done and table-driven: order-independent, measured on occurred_at,
+  weight LOSS is a real negative signal (drought), same-instant readings throw. The chart is UI, deferred
 ☐ 📶 Weigh session: sequential capture optimised for the crush — one animal per screen,
   one thumb, no scrolling, works with a dead network (FR-142)
 

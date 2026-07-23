@@ -16,3 +16,4 @@ export const IMPLEMENTED_JURISDICTIONS: readonly Jurisdiction[] = ['ZA'];
 export * from './rates/rate-lookup';
 export * from './livestock/status';
 export * from './livestock/lifecycle';
+export * from './livestock/weights';

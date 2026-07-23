@@ -22,4 +22,5 @@ export * from './livestock/batch';
 export * from './livestock/breeding';
 export * from './livestock/health';
 export * from './livestock/branding';
+export * from './livestock/herd-summary';
 export * from './dates';

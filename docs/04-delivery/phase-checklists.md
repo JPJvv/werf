@@ -306,9 +306,15 @@ SA identity & stock theft 🇿🇦 (compliance-gated)
   are a substantial later server slice
 
 Reporting & the grid's live numbers
-☐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
-☐ 🇿🇦 FR-017 completed: each enterprise tile now carries one live number or one attention badge,
-  fed from the herd summary — closes the Phase 1 ◐. Tiles stop being empty doors.
+◐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
+  — pure @werf/domain summariseHerd done: live = alive only (dead/sold/culled/missing retained by
+  status, excluded from live head), mob head counts folded in (FR-102), breakdowns by species / sex /
+  camp / enterprise / status. Age/sex CLASS (weaner/cow/steer) is species-specific (ADR-0006), a later
+  slice; the client read-model wiring (a watched query feeding this) is deferred
+◐ 🇿🇦 FR-017 completed: each enterprise tile now carries one live number or one attention badge,
+  fed from the herd summary — closes the Phase 1 ◐. Tiles stop being empty doors. — the DATA is ready
+  (summariseHerd.byEnterprise is the per-tile live number); the CLIENT wiring (tile rendering the
+  number from a watched query over local state) is the remaining piece, in the reachability slice
 
 Phase 1 carry-forward (closing the Phase 1 ◐/deferred items the gate named as Phase 2 work)
 ☑ Bundle size gate ENFORCED (not just measured) — the build fails over ≤250KB gz

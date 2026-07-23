@@ -209,10 +209,15 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
 ◐ Multiple identifiers per animal; UNIQUE(farm_id, type, value) partial on deleted_at IS NULL (FR-109)
   — schema + partial-unique DONE and proven, including reuse of a retired tag after soft-delete;
   the add-identifier ACTION (API + UI) is a later slice
-☐ Move animals between mobs and camps; movement retained as an event, never an overwrite (FR-103)
-  — needs the events table (next slice)
-☐ 📶 Batch operations: apply one event to a selected group in one action, one batch_id (FR-112)
-  — needs the events table
+◐ Move animals between mobs and camps; movement retained as an event, never an overwrite (FR-103)
+  — capture DOMAIN LOGIC done (@werf/domain recordMove → a `move` event holding before AND after of
+  camp+mob, plus the denormalised land_unit_id/mob_id change to apply; refuses a no-op and an animal
+  that has left the herd; omit=unchanged vs null=cleared). `move` payload is now concrete in @werf/core.
+  API endpoint + capture screen deferred
+◐ 📶 Batch operations: apply one event to a selected group in one action, one batch_id (FR-112)
+  — DOMAIN primitive done (@werf/domain recordBatch: stamps one shared batch_id across a group,
+  overriding any per-animal id, one event per animal; proven against recordWeight + recordMove).
+  The selection UI + the one-action capture screen are a later slice
 ◐ 📶 Attach photos: stored locally, photo_key set, upload deferred to sync, never blocks a write
   (FR-108) — the photo_key column exists; the local-store + deferred-upload flow is a client slice
 

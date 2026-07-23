@@ -87,20 +87,20 @@ describe('eventSchema — the envelope', () => {
     expect(r.success).toBe(false);
   });
 
-  it('accepts an as-yet-untightened type with an open payload (move)', () => {
+  it('accepts an as-yet-untightened type with an open payload (condition_score)', () => {
     const r = eventSchema.safeParse({
       id: ID,
       farmId: ID2,
       enterpriseId: null,
-      type: 'move',
+      type: 'condition_score',
       occurredAt: ON_FARM,
       syncedAt: null,
       animalId: ID3,
       mobId: null,
-      landUnitId: ID2,
+      landUnitId: null,
       employeeId: null,
       batchId: null,
-      payload: { toLandUnitId: ID2, reason: 'rotation' },
+      payload: { score: 3, method: 'BCS' },
       locationGeojson: null,
       notes: null,
       createdBy: null,
@@ -109,6 +109,38 @@ describe('eventSchema — the envelope', () => {
       deletedAt: null,
     });
     expect(r.success).toBe(true);
+  });
+
+  it('validates a move payload against its now-concrete schema (the four location ids)', () => {
+    const move = (payload: unknown) =>
+      eventSchema.safeParse({
+        id: ID,
+        farmId: ID2,
+        enterpriseId: null,
+        type: 'move',
+        occurredAt: ON_FARM,
+        syncedAt: null,
+        animalId: ID3,
+        mobId: ID2,
+        landUnitId: ID2,
+        employeeId: null,
+        batchId: null,
+        payload,
+        locationGeojson: null,
+        notes: null,
+        createdBy: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+        deletedAt: null,
+      }).success;
+
+    expect(move({ fromLandUnitId: ID3, toLandUnitId: ID2, fromMobId: null, toMobId: ID2 })).toBe(
+      true,
+    );
+    // A non-uuid land unit is a bad row, not an open free-for-all any more.
+    expect(
+      move({ fromLandUnitId: 'camp-3', toLandUnitId: ID2, fromMobId: null, toMobId: null }),
+    ).toBe(false);
   });
 
   it('rejects a locationGeojson that is not a JSON object with a type', () => {

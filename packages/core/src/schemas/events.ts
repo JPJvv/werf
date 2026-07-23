@@ -29,9 +29,9 @@ import {
 } from './primitives';
 
 // ── Per-type payloads ─────────────────────────────────────────────────────────
-// Concrete for the lifecycle + weight captures Phase 2 owns (birth, weight, death, sale,
-// purchase, weaning). The remaining types carry an open payload until their own phase pins them
-// down — move/mating/pregnancy_test/condition_score/missing/recovered as they are captured;
+// Concrete for the lifecycle + weight + move captures Phase 2 owns (birth, weight, death, sale,
+// purchase, weaning, move). The remaining types carry an open payload until their own phase pins
+// them down — mating/pregnancy_test/condition_score/missing/recovered as they are captured;
 // treatment/vaccination/dip with the health slice (compliance-gated: withdrawal dates are
 // computed at capture and stored, never on read, and resolve through the regulatory_rates seam
 // by occurredAt — FR-131); spray/harvest with crops; attendance/piece_work with labour. Making
@@ -85,6 +85,20 @@ export const weaningPayloadSchema = z.object({
 });
 export type WeaningPayload = z.infer<typeof weaningPayloadSchema>;
 
+/**
+ * Move (FR-103): an animal's location change kept as an append-only event — the camp (land_unit)
+ * and/or mob it left and the one it joined. `null` is a real target (unassigned from a mob), so
+ * all four ids are nullable; the rule that a move must actually change something is enforced at the
+ * domain capture boundary, not in the shape.
+ */
+export const movePayloadSchema = z.object({
+  fromLandUnitId: uuidSchema.nullable(),
+  toLandUnitId: uuidSchema.nullable(),
+  fromMobId: uuidSchema.nullable(),
+  toMobId: uuidSchema.nullable(),
+});
+export type MovePayload = z.infer<typeof movePayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -95,6 +109,7 @@ const CONCRETE_PAYLOADS = {
   sale: tradePayloadSchema,
   purchase: tradePayloadSchema,
   weaning: weaningPayloadSchema,
+  move: movePayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

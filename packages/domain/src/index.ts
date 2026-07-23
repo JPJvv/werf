@@ -17,3 +17,5 @@ export * from './rates/rate-lookup';
 export * from './livestock/status';
 export * from './livestock/lifecycle';
 export * from './livestock/weights';
+export * from './livestock/movement';
+export * from './livestock/batch';

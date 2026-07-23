@@ -53,6 +53,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-110 | 📶 Pedigree: sire/dam links, ancestor tree, automatic breed-percentage calculation | 2 |
 | FR-111 | 📶 Record weaning with weight and age | 1 |
 | FR-112 | 📶 Batch operations: apply an event to a selected group in one action | 1 |
+| FR-113 | 📶 Every event is scoped to the herd it concerns — the enterprise/species (cattle, sheep, pigs, poultry) or the specific animal/mob it applies to — so a mixed farm files and filters events by the right herd. Capture requires a herd/species selection when the event is not already tied to one animal | 1 |
 
 ### Breeding
 
@@ -115,7 +116,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-210 | 📶 Crop rotation history per block; warn on rotation-rule violation | 2 |
 | FR-211 | 🇿🇦 Auditor-ready spray history report per block, per season | 1 |
 | FR-212 | Weather integration: current, forecast, rainfall record per farm | 2 |
-| FR-213 | 📶 Manual rainfall capture per rain gauge | 1 |
+| FR-213 | 📶 Manual rainfall capture per rain gauge: how much (mm) and when. Modelled as a farm/land-scoped `rainfall` event (not animal-scoped), so grazing and cropping both read it. Cross-cutting — relevant to livestock too | 1 |
 | FR-214 | Packhouse intake-to-dispatch tracking with traceability to block | 3 |
 | FR-215 | Satellite/NDVI block health imagery | 3 |
 | FR-216 | 📶 Irrigation event record with volume | 2 |

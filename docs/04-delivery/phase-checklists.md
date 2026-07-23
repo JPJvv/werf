@@ -217,13 +217,32 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   (FR-108) — the photo_key column exists; the local-store + deferred-upload flow is a client slice
 
 Lifecycle events (events table — append-only, the heart; database-schema.md §5)
-☐ events table + event_type enum + partitioning + the three-timestamp discipline
-  (occurred_at ≠ created_at ≠ synced_at); payload Zod-validated per type; PostGIS location pair
-☐ 📶 Record a birth: ease score, birth weight, dam, multiples (FR-104)
-☐ 📶 Record a death with cause → status='dead', retained forever, excluded from live counts (FR-105)
-☐ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106)
-☐ 📶 Record weaning with weight and age (FR-111)
-☐ occurred_at is captured separately from created_at everywhere; reports read occurred_at (CLAUDE.md)
+☑ events table + event_type enum + partitioning + the three-timestamp discipline
+  (occurred_at ≠ created_at ≠ synced_at); payload Zod-validated per type; PostGIS location pair.
+  Migration 0010 (PARTITION BY LIST(farm_id), composite PK, create_farm_partition + default
+  partition, farm-scoped RLS, events_sync_geojson trigger); TENANCY(farm-scoped, `location`
+  stripped). Proven against real PG (RLS isolation, WITH CHECK, partition routing, default
+  fallback, occurred_at≠created_at, the location trigger). @werf/core event envelope + per-type
+  payload registry
+◐ 📶 Record a birth: ease score, birth weight, dam, multiples (FR-104) — capture DOMAIN LOGIC done
+  (@werf/domain recordBirth + the animal-status state machine, table-driven); the API endpoint +
+  capture SCREEN are a later slice, and must add the FR-113 herd selection
+◐ 📶 Record a death with cause → status='dead', retained forever, excluded from live counts (FR-105)
+  — recordDeath done (→ dead via the state machine); API + screen pending
+◐ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106) — recordSale/
+  recordPurchase done (sale → sold; Money is integer cents); API + screen pending
+◐ 📶 Record weaning with weight and age (FR-111) — recordWeaning done; API + screen pending
+◐ occurred_at is captured separately from created_at everywhere; reports read occurred_at (CLAUDE.md)
+  — enforced in schema + domain (occurred_at is injected, distinct from created_at); the
+  report/herd-summary read model that READS occurred_at is still pending
+☐ 📶 Scope every event to the applicable herd — enterprise/species (cattle/sheep/pig/poultry) or the
+  specific animal/mob — so a mixed farm files/filters events correctly; capture REQUIRES a herd
+  selection when the event is not tied to one animal (FR-113, NEW from the 2026-07-23 mockup review).
+  Mechanism = the events.enterprise_id column that already exists; no schema change (schema §5 note)
+☐ 📶 Manual rainfall capture (FR-213, P1) — a farm/land-scoped `rainfall` event: how much (mm) and
+  when (occurred_at). Needs an additive ALTER TYPE to add 'rainfall' to event_type + a @werf/core
+  payload {mm, gauge?}. Cross-cutting (grazing rest/rotation + cropping both read it), surfaced into
+  Phase 2 from the 2026-07-23 mockup review
 
 Breeding (P1 only; FR-122/123 deferred)
 ☐ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120)

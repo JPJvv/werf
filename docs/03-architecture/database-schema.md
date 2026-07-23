@@ -338,6 +338,11 @@ attendance:{ startAt, endAt, breakMin, pin, gps? }
 
 **Why withdrawal and PHI dates are stored, not computed on read:** the animal is sold two years later and the product's registered withdrawal period has since changed. The rule that applied is the rule *at the time of treatment*. Computing on read would apply today's rule to yesterday's event — the same class of bug that [ADR-0005](adr/ADR-0005-regulatory-rates.md) exists to prevent.
 
+**Planned additions (backlog, from the 2026-07-23 mockup review):**
+
+- **Herd/species scoping on every event (FR-113).** A mixed farm runs cattle *and* sheep *and* pigs; an event must file under the herd it concerns or the capture screen has "nowhere to mark it correctly." The mechanism is the `enterprise_id` column *already on `events`*: an enterprise is species-specific (a "Beef cattle" enterprise is `beef_cattle`, a "Dorper flock" is `sheep`), so tagging the event with `enterprise_id` gives it a herd. For an animal/mob event the species is derivable from `animal_id`/`mob_id`; for a herd-wide husbandry event (dose the whole cattle herd) `enterprise_id` (optionally with `mob_id`) carries it, and **capture must require a herd selection when the event is not tied to a single animal.** No schema change — this is a capture-UX + a not-null-on-non-animal-events convention + a herd filter on the herd-summary read model.
+- **`rainfall` event type (FR-213).** Environmental, **not** species-scoped: a `rainfall` event is farm/`land_unit`-scoped (`animal_id`/`mob_id`/`enterprise_id` all null), payload `{ mm: number, gauge?: string }`, `occurred_at` = the day it rained. Needs one additive migration to add `'rainfall'` to the `event_type` enum (an `ALTER TYPE ... ADD VALUE`, which is why the enum is enumerated) and a concrete payload in `@werf/core`. Both grazing (rest/rotation) and cropping read it, so it is cross-cutting, not crop-only.
+
 ---
 
 ## 6. Labour 🇿🇦

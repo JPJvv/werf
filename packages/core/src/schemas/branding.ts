@@ -81,8 +81,10 @@ export const evidencePackSchema = z.object({
   brandCertificateReference: z.string().min(1).nullable(),
   /** What was found and reported — facts only. */
   observations: z.string().min(1).nullable(),
-  sapsCaseNumber: z.string().min(1).nullable(),
-  sapsStation: z.string().min(1).nullable(),
+  // Jurisdiction-neutral names (ADR-0006): a police case/station reference. In ZA this is the SAPS
+  // case number and station — that word belongs in ZA user-facing copy, never in this shared contract.
+  caseNumber: z.string().min(1).nullable(),
+  reportingStation: z.string().min(1).nullable(),
   // ⛔ There is deliberately NO `suspect` field. Do not add one. See the module header.
 });
 export type EvidencePack = z.infer<typeof evidencePackSchema>;

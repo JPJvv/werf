@@ -505,8 +505,8 @@ CREATE TABLE theft_incidents (
   last_seen_location_geojson text,
   land_unit_id  uuid REFERENCES land_units(id),
   head_count    integer NOT NULL,
-  saps_case_number text,
-  saps_station  text,
+  case_number   text,                            -- ZA copy: "SAPS case number" (ADR-0006: neutral column)
+  reporting_station text,                        -- ZA copy: "SAPS station"
   status        text NOT NULL DEFAULT 'open',   -- 'open','recovered','closed'
   observations  text,                            -- facts only
   evidence_pack_key text,

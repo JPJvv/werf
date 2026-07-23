@@ -260,12 +260,19 @@ Breeding (P1 only; FR-122/123 deferred)
   DATA source (a table/seed the caller reads) + API + screen are a later slice
 
 Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-checker before merge)
-☐ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130)
-☐ 📶 Automatic withdrawal period from product reference data: compute + store meat/milk withdrawal
+◐ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130) — capture
+  DOMAIN LOGIC done (@werf/domain recordTreatment; exactly-one subject animal xor mob). API + screen deferred
+◐ 📶 Automatic withdrawal period from product reference data: compute + store meat/milk withdrawal
   ON THE EVENT (not on read — the rule at time of treatment, ADR-0005); block or hard-warn on
   sale/slaughter within it. Withdrawal periods live in regulatory reference data, by date (FR-131, FR-614)
-☐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132)
-☐ 📶 🇿🇦 Record a dip/tick treatment (required in controlled areas) (FR-133)
+  — withholdUntil computes the clear date at capture from an INJECTED product withdrawal period (never
+  hardcoded) and stores it on the event; isWithinWithdrawal is the sale/slaughter guard. The
+  veterinary_products REFERENCE TABLE (the withdrawal source, like chemical_products for spray) + the
+  sale-flow that consults the guard + the API/screen are a later slice
+◐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132) — recordVaccination
+  done (programme + optional withdrawal); the due/overdue read model is deferred with the herd read models
+◐ 📶 🇿🇦 Record a dip/tick treatment (required in controlled areas) (FR-133) — recordDip done
+  (method + optional withdrawal); API + screen + the controlled-area prompt (§3.4) deferred
 
 Weights & performance
 ◐ 📶 Record a weight against an animal or a mob (FR-140) — capture DOMAIN LOGIC done

@@ -12,6 +12,7 @@
  */
 
 import { ValidationError, schemas } from '@werf/core';
+import { addCalendarDays } from '../dates';
 
 /** Fields a breeding capture carries. `animalId` is the DAM whose timeline the event belongs to. */
 export interface BreedingBase {
@@ -90,14 +91,7 @@ export function projectDueDate(matingDate: string, gestationDays: number): strin
   if (!Number.isInteger(gestationDays) || gestationDays <= 0) {
     throw new ValidationError('Gestation must be a positive whole number of days');
   }
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(matingDate);
-  if (!match) {
-    throw new ValidationError('Service date must be a YYYY-MM-DD calendar date');
-  }
-  const [, y, m, d] = match;
-  const due = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)) + gestationDays * 86_400_000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${due.getUTCFullYear()}-${pad(due.getUTCMonth() + 1)}-${pad(due.getUTCDate())}`;
+  return addCalendarDays(matingDate, gestationDays);
 }
 
 export interface PregnancyDiagnosisInput extends BreedingBase {

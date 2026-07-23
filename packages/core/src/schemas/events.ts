@@ -30,9 +30,9 @@ import {
 } from './primitives';
 
 // ── Per-type payloads ─────────────────────────────────────────────────────────
-// Concrete for the lifecycle + weight + move + breeding captures Phase 2 owns (birth, weight,
-// death, sale, purchase, weaning, move, mating, pregnancy_test). The remaining types carry an open
-// payload until their own phase pins them down — condition_score/missing/recovered as captured;
+// Concrete for the lifecycle + weight + move + breeding + health captures Phase 2 owns (birth,
+// weight, death, sale, purchase, weaning, move, mating, pregnancy_test, treatment, vaccination,
+// dip). The remaining types carry an open payload until their phase — condition_score/missing/recovered;
 // treatment/vaccination/dip with the health slice (compliance-gated: withdrawal dates are
 // computed at capture and stored, never on read, and resolve through the regulatory_rates seam
 // by occurredAt — FR-131); spray/harvest with crops; attendance/piece_work with labour. Making
@@ -129,6 +129,63 @@ export const pregnancyTestPayloadSchema = z.object({
 });
 export type PregnancyTestPayload = z.infer<typeof pregnancyTestPayloadSchema>;
 
+/**
+ * ⭐ Compliance-gated (FR-131, legal-compliance.md § 3, .claude/rules/domain.md). `meatWithholdUntil`
+ * / `milkWithholdUntil` are the calendar dates the animal's meat / milk become safe, COMPUTED AT
+ * CAPTURE from the veterinary product's withdrawal period (product reference data, resolved by the
+ * treatment date — never a number typed into code) and STORED on the event, so a later sale /
+ * slaughter guard reads the rule that applied at treatment time, not on read. Absent when the
+ * product carries no withdrawal (e.g. a zero-withdrawal vaccine).
+ */
+const withholdFields = {
+  meatWithholdUntil: dateSchema.optional(),
+  milkWithholdUntil: dateSchema.optional(),
+} as const;
+
+/** Route a medicine was given by. */
+export const treatmentRouteSchema = z.enum([
+  'oral',
+  'injection_sc',
+  'injection_im',
+  'injection_iv',
+  'topical',
+  'intramammary',
+  'other',
+]);
+export type TreatmentRoute = z.infer<typeof treatmentRouteSchema>;
+
+/** Treatment (FR-130/131): the registered product, batch, dose, route, who gave it, why. */
+export const treatmentPayloadSchema = z.object({
+  product: z.string().min(1),
+  batch: z.string().min(1).optional(),
+  doseValue: z.number().positive().optional(),
+  doseUnit: z.string().min(1).optional(),
+  route: treatmentRouteSchema.optional(),
+  administeredBy: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+  ...withholdFields,
+});
+export type TreatmentPayload = z.infer<typeof treatmentPayloadSchema>;
+
+/** Vaccination (FR-132): the product, the programme it belongs to, batch, who gave it. */
+export const vaccinationPayloadSchema = z.object({
+  product: z.string().min(1),
+  programme: z.string().min(1).optional(),
+  batch: z.string().min(1).optional(),
+  administeredBy: z.string().min(1).optional(),
+  ...withholdFields,
+});
+export type VaccinationPayload = z.infer<typeof vaccinationPayloadSchema>;
+
+/** Dip / tick treatment (FR-133): required in controlled areas (Animal Diseases Act 35 of 1984). */
+export const dipPayloadSchema = z.object({
+  product: z.string().min(1),
+  method: z.enum(['plunge', 'spray', 'pour_on', 'hand']).optional(),
+  reason: z.string().min(1).optional(),
+  ...withholdFields,
+});
+export type DipPayload = z.infer<typeof dipPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -142,6 +199,9 @@ const CONCRETE_PAYLOADS = {
   move: movePayloadSchema,
   mating: matingPayloadSchema,
   pregnancy_test: pregnancyTestPayloadSchema,
+  treatment: treatmentPayloadSchema,
+  vaccination: vaccinationPayloadSchema,
+  dip: dipPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

@@ -20,3 +20,5 @@ export * from './livestock/weights';
 export * from './livestock/movement';
 export * from './livestock/batch';
 export * from './livestock/breeding';
+export * from './livestock/health';
+export * from './dates';

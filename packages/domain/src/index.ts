@@ -19,3 +19,4 @@ export * from './livestock/lifecycle';
 export * from './livestock/weights';
 export * from './livestock/movement';
 export * from './livestock/batch';
+export * from './livestock/breeding';

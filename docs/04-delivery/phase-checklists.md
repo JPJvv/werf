@@ -250,9 +250,14 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   Phase 2 from the 2026-07-23 mockup review
 
 Breeding (P1 only; FR-122/123 deferred)
-☐ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120)
-☐ 📶 Record pregnancy diagnosis: method + result; project due date from species gestation
-  (gestation is reference data, not a magic number in code) (FR-121)
+◐ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120) — capture
+  DOMAIN LOGIC done (@werf/domain recordMating → a `mating` event against the dam; on-farm sireId or
+  external sireCode; bull-in/bull-out period). API + screen deferred
+◐ 📶 Record pregnancy diagnosis: method + result; project due date from species gestation
+  (gestation is reference data, not a magic number in code) (FR-121) — recordPregnancyDiagnosis +
+  projectDueDate done: gestation is INJECTED (never hardcoded), the due date is computed AT CAPTURE
+  and stored on the event, and is absent on an open/uncertain result. The species-gestation REFERENCE
+  DATA source (a table/seed the caller reads) + API + screen are a later slice
 
 Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-checker before merge)
 ☐ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130)

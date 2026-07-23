@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { EVENT_TYPES, type EventType } from '../events';
 import {
   auditTimestampsSchema,
+  dateSchema,
   eventTypeSchema,
   geoJsonStringSchema,
   moneySchema,
@@ -29,9 +30,9 @@ import {
 } from './primitives';
 
 // ── Per-type payloads ─────────────────────────────────────────────────────────
-// Concrete for the lifecycle + weight + move captures Phase 2 owns (birth, weight, death, sale,
-// purchase, weaning, move). The remaining types carry an open payload until their own phase pins
-// them down — mating/pregnancy_test/condition_score/missing/recovered as they are captured;
+// Concrete for the lifecycle + weight + move + breeding captures Phase 2 owns (birth, weight,
+// death, sale, purchase, weaning, move, mating, pregnancy_test). The remaining types carry an open
+// payload until their own phase pins them down — condition_score/missing/recovered as captured;
 // treatment/vaccination/dip with the health slice (compliance-gated: withdrawal dates are
 // computed at capture and stored, never on read, and resolve through the regulatory_rates seam
 // by occurredAt — FR-131); spray/harvest with crops; attendance/piece_work with labour. Making
@@ -99,6 +100,35 @@ export const movePayloadSchema = z.object({
 });
 export type MovePayload = z.infer<typeof movePayloadSchema>;
 
+/**
+ * Mating / service (FR-120): natural service or AI, the sire if known, or a bull-in/bull-out
+ * period for extensive herds where the exact service date is a window rather than a day. Recorded
+ * against the DAM (like a birth). The sire is either an animal on this farm (`sireId`) or an
+ * external bull / AI straw referenced by code (`sireCode`).
+ */
+export const matingPayloadSchema = z.object({
+  method: z.enum(['natural', 'ai']),
+  sireId: uuidSchema.optional(),
+  sireCode: z.string().min(1).optional(),
+  bullInAt: dateSchema.optional(),
+  bullOutAt: dateSchema.optional(),
+});
+export type MatingPayload = z.infer<typeof matingPayloadSchema>;
+
+/**
+ * Pregnancy diagnosis (FR-121): how it was checked, the result, and — when pregnant and a service
+ * date is known — the projected due date. The due date is `matingDate + species gestation`, and the
+ * gestation period is INJECTED reference data (not a magic number in code); the domain capture
+ * computes and stores `dueDate` here so a report never re-derives it from a gestation that may have
+ * been corrected later. A due date on an `open`/`uncertain` result is a contradiction and is absent.
+ */
+export const pregnancyTestPayloadSchema = z.object({
+  method: z.enum(['palpation', 'ultrasound', 'blood', 'visual']),
+  result: z.enum(['pregnant', 'open', 'uncertain']),
+  dueDate: dateSchema.optional(),
+});
+export type PregnancyTestPayload = z.infer<typeof pregnancyTestPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -110,6 +140,8 @@ const CONCRETE_PAYLOADS = {
   purchase: tradePayloadSchema,
   weaning: weaningPayloadSchema,
   move: movePayloadSchema,
+  mating: matingPayloadSchema,
+  pregnancy_test: pregnancyTestPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

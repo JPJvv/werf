@@ -6,11 +6,12 @@ useDefault = true
 
 [allowlist]
 description = "Werf-specific false positives"
-# Synthetic seed data is deliberately fake (see the Phase 0 seed-data plan:
-# invalid SA ID checksums, obviously-fake keys). Add narrowly-scoped entries
-# here — a path, a commit, or a regex — never a blanket allow.
+# Synthetic seed data is deliberately fake (obviously-fake names, example.test
+# contacts, deterministic UUIDv7s; the Phase 5 labour seed will carry invalid SA ID
+# checksums by design). Add narrowly-scoped entries here — a path, a commit, or a
+# regex — never a blanket allow.
 paths = [
-  '''(^|/)packages/db/seed/.*''',
+  '''(^|/)packages/db/scripts/seed\.mjs$''',
 ]
 
 # Two literals in the test suite that the loose `generic-api-key` rule flags. Both are

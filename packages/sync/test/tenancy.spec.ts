@@ -50,6 +50,7 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   mobs: { id: 'mob-b', farm_id: FARM_B },
   animals: { id: 'animal-b', farm_id: FARM_B },
   animal_identifiers: { id: 'aid-b', farm_id: FARM_B },
+  branding_registers: { id: 'brand-b', farm_id: FARM_B },
   events: { id: 'event-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
 };
@@ -66,6 +67,7 @@ describe('sync tenancy — classification vocabulary', () => {
       [
         'animal_identifiers',
         'animals',
+        'branding_registers',
         'businesses',
         'enterprises',
         'events',

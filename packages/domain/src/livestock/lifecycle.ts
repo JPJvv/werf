@@ -194,3 +194,27 @@ export function recordWeaning(input: WeaningInput): LifecycleCapture {
   if (input.ageDays !== undefined) payload.ageDays = input.ageDays;
   return capture(buildEvent(input, 'weaning', schemas.weaningPayloadSchema, payload), statusChange);
 }
+
+// ── Missing (FR-605, stock theft) ───────────────────────────────────────────────────
+// Mark an animal missing: status → 'missing', timestamped (occurredAt), and GPS-anchored. The
+// last-seen location is REQUIRED — a missing record with no point is little use to the Stock Theft
+// Unit (legal-compliance.md § 3.2). 'missing' is more final than 'alive' but less than sold/dead, so
+// you cannot mark a sold or dead animal missing; the state machine enforces that.
+export interface MissingInput extends CaptureBase {
+  /** The last-seen GPS location as GeoJSON. Required — this is what "GPS-anchored" means (FR-605). */
+  readonly lastSeenGeojson: string;
+  readonly cause?: string;
+}
+
+export function recordMissing(input: MissingInput): LifecycleCapture {
+  const statusChange = transitionTo(input, 'missing');
+  const payload: Record<string, unknown> = {};
+  if (input.cause !== undefined) payload.cause = input.cause;
+  const event = buildEvent(
+    { ...input, locationGeojson: input.lastSeenGeojson },
+    'missing',
+    schemas.eventPayloadSchemaFor('missing'),
+    payload,
+  );
+  return capture(event, statusChange);
+}

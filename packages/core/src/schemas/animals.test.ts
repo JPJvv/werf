@@ -64,6 +64,8 @@ describe('newAnimalSchema', () => {
       landUnitId: null,
       source: null,
       acquiredAt: null,
+      brandId: null,
+      brandAppliedAt: null,
       attributes: { horn_status: 'polled' },
       photoKey: null,
       createdAt: NOW,

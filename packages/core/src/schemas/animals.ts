@@ -45,6 +45,9 @@ export const animalSchema = z.object({
   landUnitId: uuidSchema.nullable(),
   source: z.string().min(1).nullable(),
   acquiredAt: dateSchema.nullable(),
+  /** The registered mark this animal carries (FR-602). Null = unmarked. */
+  brandId: uuidSchema.nullable(),
+  brandAppliedAt: dateSchema.nullable(),
   /** Species-specific attributes; validated per species in a later slice (ADR-0006). */
   attributes: z.record(z.string(), z.unknown()),
   /** Local photo key; the image uploads on sync and never blocks a write (FR-108). */
@@ -68,6 +71,8 @@ export const newAnimalSchema = animalSchema
     landUnitId: animalSchema.shape.landUnitId.default(null),
     source: animalSchema.shape.source.default(null),
     acquiredAt: animalSchema.shape.acquiredAt.default(null),
+    brandId: animalSchema.shape.brandId.default(null),
+    brandAppliedAt: animalSchema.shape.brandAppliedAt.default(null),
     attributes: z.record(z.string(), z.unknown()).default({}),
     photoKey: animalSchema.shape.photoKey.default(null),
   });

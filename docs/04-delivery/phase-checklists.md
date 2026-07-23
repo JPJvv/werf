@@ -286,14 +286,24 @@ Weights & performance
   one thumb, no scrolling, works with a dead network (FR-142)
 
 SA identity & stock theft 🇿🇦 (compliance-gated)
-☐ 🇿🇦 branding_registers table + migration + RLS; mark ≤3 chars enforced in AnimalIdentityRules
-  (ADR-0006), NOT a schema CHECK (Namibia's marks differ); certificate ref, mark type, body position (FR-601)
-☐ 🇿🇦 Link an animal to its mark; flag animals unmarked past the prescribed window after
-  acquisition — the window is reference data resolved by date, never hardcoded (FR-602)
-☐ 🇿🇦 Mark an animal missing: status='missing', timestamped, GPS-anchored (FR-605)
-☐ 🇿🇦 Stock-theft evidence pack (server-side PDF, one action): identification, ownership chain,
+☑ 🇿🇦 branding_registers table + migration (0011) + RLS + TENANCY(farm-scoped); certificate ref,
+  mark type, species[], body position. Proven against real PG: RLS isolation, WITH CHECK, cross-farm
+  hidden, the mark CHECK. NOTE the ADR-0006 reconciliation: the ≤3-char rule is a DB CHECK per
+  database-schema.md §7 (authoritative for schema; "fine while ZA is the only country", moves into
+  AnimalIdentityRules when a 2nd jurisdiction arrives) — the @werf/core schema stays jurisdiction-neutral
+  (mark = non-empty string), so no ZA rule is baked into the neutral layer (FR-601)
+◐ 🇿🇦 Link an animal to its mark; flag animals unmarked past the prescribed window after
+  acquisition — the window is reference data resolved by date, never hardcoded (FR-602) — animals.brand_id
+  / brand_applied_at added additively (0011); isUnmarkedPastWindow done (window INJECTED, asOf injected,
+  marked/no-acquisition never flagged). Surfacing the flag in a read model/UI is deferred
+◐ 🇿🇦 Mark an animal missing: status='missing', timestamped, GPS-anchored (FR-605) — recordMissing
+  done (alive→missing via the state machine; last-seen GeoJSON REQUIRED). API + screen deferred
+◐ 🇿🇦 Stock-theft evidence pack (server-side PDF, one action): identification, ownership chain,
   brand certificate, last-seen GPS+timestamp, movement history, treatment history, SAPS case
-  number field. FACTS ONLY — no "suspect" field (defamation + POPIA s26) (FR-603)
+  number field. FACTS ONLY — no "suspect" field (defamation + POPIA s26) (FR-603) — the @werf/core
+  evidencePackSchema CONTRACT is defined, facts-only with NO suspect field (enforced by omission +
+  a guard comment). The server PDF generation, the theft_incidents table, and the one-action endpoint
+  are a substantial later server slice
 
 Reporting & the grid's live numbers
 ☐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)

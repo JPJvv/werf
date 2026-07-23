@@ -12,6 +12,7 @@ import {
   type CaptureBase,
   recordBirth,
   recordDeath,
+  recordMissing,
   recordPurchase,
   recordSale,
   recordWeaning,
@@ -160,5 +161,26 @@ describe('recordBirth (FR-104)', () => {
         multiples: 1,
       }),
     ).toThrow(ValidationError);
+  });
+});
+
+describe('recordMissing (FR-605, stock theft)', () => {
+  const POINT = JSON.stringify({ type: 'Point', coordinates: [26.2, -29.1] });
+
+  it('marks an animal missing, GPS-anchored on the event and timestamped', () => {
+    const { event, statusChange } = recordMissing({ ...base(), lastSeenGeojson: POINT });
+    expect(event.type).toBe('missing');
+    expect(event.animalId).toBe(ANIMAL_ID);
+    expect(event.locationGeojson).toBe(POINT); // the last-seen point
+    expect(event.occurredAt).toBe(OCCURRED);
+    expect(statusChange).toEqual({ animalId: ANIMAL_ID, status: 'missing', statusAt: OCCURRED });
+  });
+
+  it('cannot mark a sold or dead animal missing (state machine guard)', () => {
+    for (const from of ['sold', 'dead', 'culled'] as AnimalStatus[]) {
+      expect(() =>
+        recordMissing({ ...base({ currentStatus: from }), lastSeenGeojson: POINT }),
+      ).toThrow(ValidationError);
+    }
   });
 });

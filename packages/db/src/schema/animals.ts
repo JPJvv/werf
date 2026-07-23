@@ -5,9 +5,8 @@
  * column per species. A `mob` is the group-only model (FR-102).
  *
  * `species` is `text`, not an enum: a new species is a code release, not a migration. The
- * branding link (`brand_id` / `brand_applied_at`, FR-601/602) is deliberately NOT here yet —
- * `branding_registers` arrives with the Animal Identification Act slice, and adding the
- * columns then is additive.
+ * branding link (`brand_id` / `brand_applied_at`, FR-601/602) was added additively with the
+ * Animal Identification Act slice (migration 0011) — `branding_registers` is defined in ./branding.
  */
 
 import { sql } from 'drizzle-orm';
@@ -28,6 +27,7 @@ import { auditColumns, primaryId } from './columns';
 import { animalSexEnum, animalStatusEnum, identifierTypeEnum } from './enums';
 import { enterprises, farms, users } from './core';
 import { landUnits } from './land';
+import { brandingRegisters } from './branding';
 
 /**
  * A group of animals managed without individual records (FR-102). `head_count` is the whole
@@ -68,6 +68,10 @@ export const animals = pgTable(
     landUnitId: uuid('land_unit_id').references(() => landUnits.id),
     source: text('source'),
     acquiredAt: date('acquired_at'),
+    /** The registered mark this animal carries (FR-602). Null = unmarked (a compliance flag once
+     *  past the prescribed window after acquisition). */
+    brandId: uuid('brand_id').references(() => brandingRegisters.id),
+    brandAppliedAt: date('brand_applied_at'),
     attributes: jsonb('attributes').notNull().default({}),
     photoKey: text('photo_key'),
     ...auditColumns,

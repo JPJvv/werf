@@ -127,6 +127,14 @@ export const TENANCY = {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },
+  // Branding registers — the SA identification mark (Phase 2, FR-601). Farm-scoped and
+  // bidirectional: a mark is the farm's own registered mark, and every co-member is entitled to
+  // see it. No PostGIS and no secrets (a mark is a public-facing three characters), so nothing is
+  // stripped. animals.brand_id / brand_applied_at sync as part of the already-classified animals row.
+  branding_registers: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
   // Events — the append-only log (Phase 2). Farm-scoped and bidirectional: the farmer captures
   // births, weights, moves and treatments offline, in the crush, with no signal. Carries its own
   // farm_id, so it scopes directly. The canonical PostGIS `location` is stripped for the same

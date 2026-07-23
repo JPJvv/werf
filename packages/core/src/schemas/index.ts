@@ -14,3 +14,4 @@ export * from './auth';
 export * from './farms';
 export * from './land';
 export * from './animals';
+export * from './events';

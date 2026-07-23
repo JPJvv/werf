@@ -69,6 +69,10 @@ try {
        VALUES ($1, $2, $3, $4, $5::enterprise_type[]) ON CONFLICT (id) DO NOTHING`,
       [id, ID.business, name, province, types],
     );
+    // Every farm gets its own events partition — this is the provisioning path the doc names
+    // (database-schema.md § 5). Without it a farm's events would fall to the default partition;
+    // it works, but dev data should mirror how a real farm is provisioned. Idempotent.
+    await client.query('SELECT create_farm_partition($1::uuid)', [id]);
   }
 
   for (const [id, farmId] of MEMBERSHIPS) {

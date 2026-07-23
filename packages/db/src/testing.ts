@@ -71,7 +71,7 @@ export async function startWerfTestDatabase(): Promise<WerfTestDatabase> {
       // ignore FK ordering.
       await db.execute(sql`
         TRUNCATE TABLE
-          webauthn_challenges, user_sessions, user_passkeys, animal_identifiers, animals,
+          webauthn_challenges, user_sessions, user_passkeys, events, animal_identifiers, animals,
           mobs, land_units, farm_users, enterprises, farms, businesses, users, regulatory_rates
         RESTART IDENTITY CASCADE
       `);

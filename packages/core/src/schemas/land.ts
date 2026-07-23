@@ -15,23 +15,15 @@
  */
 
 import { z } from 'zod';
-import { auditTimestampsSchema, landUnitKindSchema, uuidSchema } from './primitives';
+import {
+  auditTimestampsSchema,
+  geoJsonStringSchema,
+  landUnitKindSchema,
+  uuidSchema,
+} from './primitives';
 
 /** A GeoJSON geometry as a string. Nullable: a camp may exist before it is mapped. */
-const boundaryGeojsonSchema = z
-  .string()
-  .refine(
-    (value) => {
-      try {
-        const parsed: unknown = JSON.parse(value);
-        return typeof parsed === 'object' && parsed !== null && 'type' in parsed;
-      } catch {
-        return false;
-      }
-    },
-    { message: 'boundaryGeojson must be a JSON object with a "type"' },
-  )
-  .nullable();
+const boundaryGeojsonSchema = geoJsonStringSchema.nullable();
 
 export const landUnitSchema = z.object({
   id: uuidSchema,

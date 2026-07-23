@@ -127,6 +127,17 @@ export const TENANCY = {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },
+  // Events — the append-only log (Phase 2). Farm-scoped and bidirectional: the farmer captures
+  // births, weights, moves and treatments offline, in the crush, with no signal. Carries its own
+  // farm_id, so it scopes directly. The canonical PostGIS `location` is stripped for the same
+  // reason land's `boundary` is — SQLite on the device has no PostGIS; the client reads the
+  // denormalised `location_geojson` mirror, kept in step by the events_sync_geojson trigger.
+  // Stripping `location` here is the sync half of that dual write; the trigger is the DB half.
+  events: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+    neverSyncColumns: ['location'],
+  },
   // Regulated reference data: the rate/withdrawal/PHI tables the client must read offline.
   // Read-only, filtered by the FARM's jurisdiction — never the user's or the browser's.
   regulatory_rates: {

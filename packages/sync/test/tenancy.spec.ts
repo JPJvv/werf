@@ -50,6 +50,7 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   mobs: { id: 'mob-b', farm_id: FARM_B },
   animals: { id: 'animal-b', farm_id: FARM_B },
   animal_identifiers: { id: 'aid-b', farm_id: FARM_B },
+  events: { id: 'event-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
 };
 
@@ -67,6 +68,7 @@ describe('sync tenancy — classification vocabulary', () => {
         'animals',
         'businesses',
         'enterprises',
+        'events',
         'farm_users',
         'farms',
         'land_units',
@@ -115,6 +117,12 @@ describe('sync tenancy — no server-only leak', () => {
     // land_units syncs (the farmer edits camps offline) but the canonical `boundary`
     // geometry never reaches the device; the client reads `boundary_geojson` instead.
     expect(TENANCY.land_units.neverSyncColumns).toContain('boundary');
+  });
+
+  it('strips the PostGIS geometry from events — same dual-write as land', () => {
+    // events sync (the farmer captures in the crush, offline) but the canonical `location`
+    // geometry never reaches the device; the client reads `location_geojson` instead.
+    expect(TENANCY.events.neverSyncColumns).toContain('location');
   });
 
   /**

@@ -1,6 +1,7 @@
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
-import { useSyncStatus, type SyncState, type SyncStatus } from './useSyncStatus';
+import type { SyncState, SyncStatus } from './useSyncStatus';
+import { useSyncState } from './Outbox';
 
 /**
  * A persistent, non-modal strip that always says whether work is saved and sent (FR-009).
@@ -29,7 +30,7 @@ function statusText(state: SyncState, t: (key: TranslationKey) => string): strin
 }
 
 export function SyncStatusStrip() {
-  const state = useSyncStatus();
+  const state = useSyncState();
   const { t } = useTranslation();
 
   return (

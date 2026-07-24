@@ -202,10 +202,11 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
 ◐ Create an individual animal: species, breed, sex, DOB(+estimated), source, acquired_at (FR-101)
   — OFFLINE CAPTURE SCREEN done (`/animals/new`, commit bd334d0): writes a `newAnimalSchema` record
   (client uuidv7) through the @werf/sync capture-store adapter with NO network in the path, and the
-  home tile counts it live. Still ◐: only species/sex/breed are captured on the screen (DOB, source,
-  acquired_at, identifiers are later); and the LOCAL write does not yet reach Postgres — the slice-13
-  `POST /livestock/*` API exists but the client flush/sync that links them is Phase 3 (or a best-effort
-  flush slice). DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard)
+  home tile counts it live. The LOCAL write now REACHES POSTGRES: the best-effort outbox flush
+  (`apps/web/src/sync/Outbox.tsx`) sends the queued animal to `POST /livestock/animals` on reconnect,
+  animals first so the events that reference them do not FK-fail. Still ◐: only species/sex/breed are
+  captured on the screen (DOB, source, acquired_at, identifiers are later). DOB stays a YYYY-MM-DD
+  string, never a coerced Date (off-by-one guard)
 ◐ Create a mob/flock and manage it by head_count without individual rows (FR-102) — data layer done
   and proven (a mob is a complete record with zero animal rows behind it); create ACTION pending
 ◐ Species-specific attributes via Zod-validated JSONB (FR-107, ADR-0006 AnimalIdentityRules seam) —
@@ -243,17 +244,20 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   as a lifecycle EVENT (never an edit of the append-only herd row) through the @werf/sync capture
   store (`werf-events:<farmId>`), NO network in `save`. The client PROJECTION (`herd.ts`) folds the
   event onto the herd via the domain state machine so the animal is retained-but-marked in the list
-  and drops from live head — the first time the count can go DOWN. Still ◐: only DEATH (sale/cull/
-  missing follow the same shape, later), and the local write does not yet reach Postgres (Phase 3 /
-  flush). NOTE: sale/purchase (FR-106) + weaning (FR-111) screens now reuse this exact pattern
+  and drops from live head — the first time the count can go DOWN. The local write now REACHES
+  POSTGRES via the best-effort outbox flush (`POST /livestock/deaths`, after its animal). Still ◐:
+  only DEATH (cull/missing follow the same shape, later). NOTE: sale (FR-106) + weaning (FR-111)
+  screens reuse this exact pattern
 ◐ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106) — recordSale/
   recordPurchase done (sale → sold; Money is integer cents). SALE CAPTURE SCREEN done (commit c04bf36,
   in the `/animals/loss` RecordLossScreen — a loss is a death OR a sale): pick the animal, choose Died
   or Sold, give buyer + price; validated through recordSale, written as a lifecycle EVENT through the
   @werf/sync store, NO network in `save`; the projection folds it to 'sold' and destocks the animal
   (retained-but-marked). First CLIENT use of Money — rands rounded to integer cents at the input
-  boundary, never a float. Still ◐: PURCHASE (an acquisition, no status change) has no screen yet, the
-  optional sale weight isn't captured on-screen, and the local write does not yet reach Postgres (flush)
+  boundary, never a float. The local write now REACHES POSTGRES via the best-effort outbox flush
+  (`POST /livestock/sales`, after its animal; Money crosses the wire as integer cents). Still ◐:
+  PURCHASE (an acquisition, no status change) has no screen yet, and the optional sale weight isn't
+  captured on-screen
 ◐ 📶 Record weaning with weight and age (FR-111) — recordWeaning done; API + screen pending
 ◐ occurred_at is captured separately from created_at everywhere; reports read occurred_at (CLAUDE.md)
   — enforced in schema + domain (occurred_at is injected, distinct from created_at); the
@@ -299,10 +303,10 @@ Weights & performance
   (`POST /livestock/weights`, LivestockService writes through RLS, 7 real-PG integration tests,
   commit c70fbd5). OFFLINE CAPTURE SCREEN done (`/weigh`, commit 990c41c): writes each reading
   through the @werf/sync capture-store adapter (`werf-weights:<farmId>`) with NO network in `save`,
-  validated through the domain recordWeight before it persists. Still ◐: only an ANIMAL weight is
-  captured on the screen (a mob weigh is later), the method is fixed to the crush `scale` (tape/
-  visual deferred), and the LOCAL write does not yet reach Postgres — the client flush/sync that
-  links the screen to the slice-13 endpoint is Phase 3 (or a best-effort flush slice)
+  validated through the domain recordWeight before it persists. The LOCAL write now REACHES POSTGRES
+  via the best-effort outbox flush (`POST /livestock/weights`, after the animal it references). Still
+  ◐: only an ANIMAL weight is captured on the screen (a mob weigh is later), and the method is fixed
+  to the crush `scale` (tape/visual deferred)
 ◐ 📶 Compute ADG between any two weights (pure @werf/domain, table-driven test); chart the curve
   (FR-141) — averageDailyGain done and table-driven: order-independent, measured on occurred_at,
   weight LOSS is a real negative signal (drought), same-instant readings throw. NOW SURFACED in the
@@ -372,8 +376,12 @@ Quality gates
 ☐ API integration tests against real Postgres in testcontainers; no mocking our own DB
 ☐ Tenancy: packages/sync/test/tenancy.spec covers every new table; a cross-farm animal/event
   leak fails the build; sync rules and RLS agree (CLAUDE.md)
-☐ A real offline cold-start e2e on the BUILT PWA — capture an animal and an event with the
-  network off, confirm it survives reload (the Phase 1 reviewer flagged nothing exercised this)
+◐ A real offline cold-start e2e on the BUILT PWA — capture an animal and an event with the
+  network off, confirm it survives reload (the Phase 1 reviewer flagged nothing exercised this).
+  jsdom coverage now exists through the real `<App/>` boot path: `apps/web/src/sync/Outbox.test.tsx`
+  proves captures are held offline (nothing sent), flushed animals-first once online, not re-sent
+  after a cold start, and never discarded on a server refusal. Still ☐: the equivalent as a
+  Playwright run against the BUILT PWA (network-off capture → reload → flush) is not yet written
 ☐ compliance-checker passes on FR-131 and FR-601–605; legal-compliance.md read first
 ☐ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e green
 ```

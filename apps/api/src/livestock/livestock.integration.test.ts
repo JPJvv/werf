@@ -67,6 +67,45 @@ const weightBody = (
     ...over,
   });
 
+/** A minimal valid animal-create body; overlay the fields a test cares about. */
+const animalBody = (
+  over: Partial<ZodInput<typeof schemas.recordAnimalRequestSchema>>,
+): schemas.RecordAnimalRequest =>
+  schemas.recordAnimalRequestSchema.parse({
+    id: randomUUID(),
+    farmId: over.farmId,
+    species: 'cattle',
+    sex: 'female',
+    ...over,
+  });
+
+/** A minimal valid death body; overlay the fields a test cares about. */
+const deathBody = (
+  over: Partial<ZodInput<typeof schemas.recordDeathRequestSchema>>,
+): schemas.RecordDeathRequest =>
+  schemas.recordDeathRequestSchema.parse({
+    id: randomUUID(),
+    farmId: over.farmId,
+    animalId: over.animalId,
+    occurredAt: '2026-07-20T06:00:00.000Z',
+    cause: 'Drought',
+    ...over,
+  });
+
+/** A minimal valid sale body; overlay the fields a test cares about. `priceCents` is Money. */
+const saleBody = (
+  over: Partial<ZodInput<typeof schemas.recordSaleRequestSchema>>,
+): schemas.RecordSaleRequest =>
+  schemas.recordSaleRequestSchema.parse({
+    id: randomUUID(),
+    farmId: over.farmId,
+    animalId: over.animalId,
+    occurredAt: '2026-07-20T06:00:00.000Z',
+    counterparty: 'Senekal Abattoir',
+    priceCents: 1_250_000,
+    ...over,
+  });
+
 describe('weight capture (FR-140)', () => {
   let pg: WerfTestDatabase;
   let app: AppDb;
@@ -249,5 +288,149 @@ describe('weight capture (FR-140)', () => {
     await expect(
       service.recordWeight(viewer!.id, weightBody({ farmId: a.farmId, animalId })),
     ).rejects.toThrow(TenancyError);
+  });
+
+  // ── Animal creation (FR-101) — the FK root the flush sends first ──────────────────────
+  describe('animal creation (FR-101)', () => {
+    it('creates a herd row on the farm, readable back through RLS, authored by the caller', async () => {
+      const a = await tenant('Alpha');
+
+      const created = await service.recordAnimal(
+        a.userId,
+        animalBody({ farmId: a.farmId, species: 'cattle', sex: 'male', breed: 'Bonsmara' }),
+      );
+
+      expect(created.species).toBe('cattle');
+      expect(created.breed).toBe('Bonsmara');
+      expect(created.status).toBe('alive');
+      expect(created.createdBy).toBe(a.userId);
+
+      const seen = await app.asUser(a.userId, (tx) => tx.select().from(animals));
+      expect(seen.map((row) => row.id)).toContain(created.id);
+    });
+
+    it('is idempotent: re-sending the same id returns the stored row, never a duplicate', async () => {
+      // A flush is at-least-once — a POST whose 201 was lost is retried on the next reconnect.
+      const a = await tenant('Alpha');
+      const body = animalBody({ farmId: a.farmId, breed: 'Nguni' });
+
+      const first = await service.recordAnimal(a.userId, body);
+      const second = await service.recordAnimal(a.userId, body);
+
+      expect(second.id).toBe(first.id);
+      expect(second.breed).toBe('Nguni');
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(animals));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('refuses a stranger, exactly as if the farm did not exist — and writes nothing', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+
+      await expect(
+        service.recordAnimal(b.userId, animalBody({ farmId: a.farmId })),
+      ).rejects.toThrow(NotFoundError);
+
+      const onAlpha = await app.asUser(a.userId, (tx) => tx.select().from(animals));
+      expect(onAlpha).toHaveLength(0);
+    });
+
+    it('refuses a member whose role does not permit capture', async () => {
+      const a = await tenant('Alpha');
+      const [viewer] = await elevated.db
+        .insert(users)
+        .values({ email: 'viewer-animal@werf.test', fullName: 'Read Only' })
+        .returning();
+      await elevated.db.insert(farmUsers).values({
+        farmId: a.farmId,
+        userId: viewer!.id,
+        role: 'viewer',
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      });
+
+      await expect(
+        service.recordAnimal(viewer!.id, animalBody({ farmId: a.farmId })),
+      ).rejects.toThrow(TenancyError);
+    });
+  });
+
+  // ── Death (FR-105) ──────────────────────────────────────────────────────────────────
+  describe('death capture (FR-105)', () => {
+    it('records a death as an append-only event against a live animal', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const captured = await service.recordDeath(
+        a.userId,
+        deathBody({ farmId: a.farmId, animalId, cause: 'Snakebite' }),
+      );
+
+      expect(captured.type).toBe('death');
+      expect(captured.payload).toEqual({ cause: 'Snakebite' });
+      expect(captured.animalId).toBe(animalId);
+      expect(captured.createdBy).toBe(a.userId);
+    });
+
+    it('is idempotent: a re-flushed death does not duplicate the event', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const body = deathBody({ farmId: a.farmId, animalId });
+
+      const first = await service.recordDeath(a.userId, body);
+      const second = await service.recordDeath(a.userId, body);
+
+      expect(second.id).toBe(first.id);
+      const events_ = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(events_).toHaveLength(1);
+    });
+
+    it('refuses a death against an animal the farm cannot see — and writes nothing', async () => {
+      // The animal is on another farm (or does not exist): the RLS-scoped status lookup finds
+      // nothing, so this is a 404, indistinguishable from a non-existent animal. The event that
+      // would have FK-referenced it never lands.
+      const a = await tenant('Alpha');
+
+      await expect(
+        service.recordDeath(a.userId, deathBody({ farmId: a.farmId, animalId: randomUUID() })),
+      ).rejects.toThrow(NotFoundError);
+
+      const written = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(written).toHaveLength(0);
+    });
+  });
+
+  // ── Sale (FR-106) ───────────────────────────────────────────────────────────────────
+  describe('sale capture (FR-106)', () => {
+    it('records a sale as an append-only event, with Money as integer cents', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const captured = await service.recordSale(
+        a.userId,
+        saleBody({
+          farmId: a.farmId,
+          animalId,
+          counterparty: 'Vrystaat Vleis',
+          priceCents: 1_875_00,
+        }),
+      );
+
+      expect(captured.type).toBe('sale');
+      expect(captured.payload).toEqual({ counterparty: 'Vrystaat Vleis', priceCents: 187_500 });
+      expect(captured.animalId).toBe(animalId);
+    });
+
+    it('carries an optional sale weight onto the event when captured', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const captured = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, weightKg: 465.5 }),
+      );
+
+      expect(captured.payload).toMatchObject({ weightKg: 465.5 });
+    });
   });
 });

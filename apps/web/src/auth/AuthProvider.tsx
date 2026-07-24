@@ -49,11 +49,12 @@ export interface AuthContextValue {
   /** FR-004: switch the farm the shell is showing, without re-authenticating. */
   setActiveFarm(farmId: string): void;
   /**
-   * Re-reads the session from the server. Used after enrolling a second factor, where the
-   * account's posture changes server-side and the cached copy would otherwise still say
-   * the farmer owes an enrolment they have just completed.
+   * Re-reads the session from the server and returns the new access token (null when there is
+   * no refresh token to spend). Used after enrolling a second factor, where the account's
+   * posture changes server-side; and by the capture flush to recover a fresh access token when
+   * a queued POST is refused with a 401 after a long spell offline.
    */
-  refreshSession(): Promise<void>;
+  refreshSession(): Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -156,13 +157,15 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     [sessions],
   );
 
-  const refreshSession = useCallback(async () => {
+  const refreshSession = useCallback(async (): Promise<string | null> => {
     const refreshToken = session?.refreshToken;
-    if (!refreshToken) return;
+    if (!refreshToken) return null;
     // Rotation is single-use, so the response carries a NEW refresh token — adopting the
     // whole session rather than patching a field is what keeps the stored token the live
     // one. Patching would leave a spent token cached and log the farmer out on next use.
-    adopt(await authApi.refresh(refreshToken));
+    const next = await authApi.refresh(refreshToken);
+    adopt(next);
+    return next.accessToken;
   }, [session, adopt]);
 
   const value = useMemo<AuthContextValue>(() => {

@@ -13,7 +13,12 @@
 
 import { z } from 'zod';
 import { uuidSchema, geoJsonStringSchema, timestampSchema } from './primitives';
-import { weightPayloadSchema } from './events';
+import { deathPayloadSchema, tradePayloadSchema, weightPayloadSchema } from './events';
+
+export {
+  newAnimalSchema as recordAnimalRequestSchema,
+  type NewAnimal as RecordAnimalRequest,
+} from './animals';
 
 /**
  * Record a weight (FR-140). The reading (`kg` + `method`) is exactly the `weight` event
@@ -43,3 +48,36 @@ export const recordWeightRequestSchema = z.object({
   ...weightPayloadSchema.shape,
 });
 export type RecordWeightRequest = z.infer<typeof recordWeightRequestSchema>;
+
+/**
+ * Record a death (FR-105). A death is always against an individual animal — the subject is
+ * required here, not the animal-xor-mob of a weight — and drives its status to 'dead' through
+ * the state machine (enforced in the `recordDeath` domain function, not duplicated here). The
+ * cause (+ optional disposal) is exactly the `death` event payload, reused so the two cannot
+ * drift.
+ */
+export const recordDeathRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  animalId: uuidSchema,
+  /** When the animal died, on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  ...deathPayloadSchema.shape,
+});
+export type RecordDeathRequest = z.infer<typeof recordDeathRequestSchema>;
+
+/**
+ * Record a sale (FR-106) — an individual animal leaving the herd for a price. `priceCents` is
+ * Money (integer cents, never a float) and non-negative; counterparty and the optional sale
+ * weight are the `trade` event payload, reused so the wire and the stored event cannot drift.
+ * A sale drives status → 'sold' via the state machine in the `recordSale` domain function.
+ */
+export const recordSaleRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  animalId: uuidSchema,
+  /** When the animal was sold, on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  ...tradePayloadSchema.shape,
+});
+export type RecordSaleRequest = z.infer<typeof recordSaleRequestSchema>;

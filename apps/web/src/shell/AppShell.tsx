@@ -1,6 +1,7 @@
 import { Link, Outlet } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { SyncStatusStrip } from '../sync/SyncStatusStrip';
+import { OutboxProvider } from '../sync/Outbox';
 import { InstallPrompt } from '../pwa/InstallPrompt';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
@@ -10,6 +11,11 @@ import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
  * The persistent frame around every screen. A slim top bar with the product mark and a way
  * into Settings; the sync-status strip (FR-009) sits beneath the header, the routed screen
  * renders in the outlet below, and the PWA install prompt anchors at the foot.
+ *
+ * The capture stores and the outbox wrap BOTH the strip and the routed screens: the screens
+ * write captures to the stores, and the outbox reads those same stores to flush them and to
+ * publish the pending count the strip shows. All three stores are farm-scoped, so switching the
+ * active farm swaps the herd, the events, and the send-state together.
  */
 export function AppShell() {
   const { t } = useTranslation();
@@ -28,18 +34,18 @@ export function AppShell() {
           </Link>
         </nav>
       </header>
-      <SyncStatusStrip />
-      <main>
-        {/* The local herd and weight log live here so every screen inside the shell — the home
-            tile, the animals screens, the weigh session — reads the same farm-scoped stores. */}
-        <LocalHerdProvider>
-          <LocalWeightsProvider>
-            <LocalLifecycleProvider>
-              <Outlet />
-            </LocalLifecycleProvider>
-          </LocalWeightsProvider>
-        </LocalHerdProvider>
-      </main>
+      <LocalHerdProvider>
+        <LocalWeightsProvider>
+          <LocalLifecycleProvider>
+            <OutboxProvider>
+              <SyncStatusStrip />
+              <main>
+                <Outlet />
+              </main>
+            </OutboxProvider>
+          </LocalLifecycleProvider>
+        </LocalWeightsProvider>
+      </LocalHerdProvider>
       <InstallPrompt />
     </div>
   );

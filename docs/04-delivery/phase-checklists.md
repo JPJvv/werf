@@ -247,7 +247,13 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   missing follow the same shape, later), and the local write does not yet reach Postgres (Phase 3 /
   flush). NOTE: sale/purchase (FR-106) + weaning (FR-111) screens now reuse this exact pattern
 ◐ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106) — recordSale/
-  recordPurchase done (sale → sold; Money is integer cents); API + screen pending
+  recordPurchase done (sale → sold; Money is integer cents). SALE CAPTURE SCREEN done (commit c04bf36,
+  in the `/animals/loss` RecordLossScreen — a loss is a death OR a sale): pick the animal, choose Died
+  or Sold, give buyer + price; validated through recordSale, written as a lifecycle EVENT through the
+  @werf/sync store, NO network in `save`; the projection folds it to 'sold' and destocks the animal
+  (retained-but-marked). First CLIENT use of Money — rands rounded to integer cents at the input
+  boundary, never a float. Still ◐: PURCHASE (an acquisition, no status change) has no screen yet, the
+  optional sale weight isn't captured on-screen, and the local write does not yet reach Postgres (flush)
 ◐ 📶 Record weaning with weight and age (FR-111) — recordWeaning done; API + screen pending
 ◐ occurred_at is captured separately from created_at everywhere; reports read occurred_at (CLAUDE.md)
   — enforced in schema + domain (occurred_at is injected, distinct from created_at); the

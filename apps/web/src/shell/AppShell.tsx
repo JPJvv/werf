@@ -4,6 +4,7 @@ import { SyncStatusStrip } from '../sync/SyncStatusStrip';
 import { InstallPrompt } from '../pwa/InstallPrompt';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
+import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -33,7 +34,9 @@ export function AppShell() {
             tile, the animals screens, the weigh session — reads the same farm-scoped stores. */}
         <LocalHerdProvider>
           <LocalWeightsProvider>
-            <Outlet />
+            <LocalLifecycleProvider>
+              <Outlet />
+            </LocalLifecycleProvider>
           </LocalWeightsProvider>
         </LocalHerdProvider>
       </main>

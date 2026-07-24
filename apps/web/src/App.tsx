@@ -10,6 +10,7 @@ import { HomeScreen } from './shell/HomeScreen';
 import { AnimalsScreen } from './livestock/AnimalsScreen';
 import { AddAnimalScreen } from './livestock/AddAnimalScreen';
 import { WeighSessionScreen } from './livestock/WeighSessionScreen';
+import { RecordDeathScreen } from './livestock/RecordDeathScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
 import { SettingsLayout } from './settings/SettingsLayout';
 import { AppearanceSettings } from './settings/AppearanceSettings';
@@ -45,6 +46,7 @@ export function App() {
                 {/* Explicit livestock routes sit BEFORE the `:module` catch-all so they win. */}
                 <Route path="animals" element={<AnimalsScreen />} />
                 <Route path="animals/new" element={<AddAnimalScreen />} />
+                <Route path="animals/loss" element={<RecordDeathScreen />} />
                 <Route path="weigh" element={<WeighSessionScreen />} />
                 <Route path="settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="appearance" replace />} />

@@ -6,10 +6,10 @@
  */
 
 import { Link } from 'react-router-dom';
-import type { Species, AnimalSex } from '@werf/core';
+import type { Species, AnimalSex, AnimalStatus } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
-import { useAnimals, useHerdSummary } from './LocalHerd';
+import { useEffectiveAnimals, useHerdSummary } from './herd';
 
 export function speciesLabel(t: (key: TranslationKey) => string, species: Species): string {
   return t(`species.${species}` as TranslationKey);
@@ -19,10 +19,15 @@ export function sexLabel(t: (key: TranslationKey) => string, sex: AnimalSex): st
   return t(`sex.${sex}` as TranslationKey);
 }
 
+export function statusLabel(t: (key: TranslationKey) => string, status: AnimalStatus): string {
+  return t(`status.${status}` as TranslationKey);
+}
+
 export function AnimalsScreen() {
   const { t } = useTranslation();
-  const animals = useAnimals();
+  const animals = useEffectiveAnimals();
   const summary = useHerdSummary();
+  const hasLive = summary.animalsLive > 0;
 
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
@@ -40,13 +45,21 @@ export function AnimalsScreen() {
         {t('animals.add')}
       </Link>
 
-      {animals.length > 0 && (
-        <Link
-          to="/weigh"
-          className="mb-6 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
-        >
-          {t('animals.weigh')}
-        </Link>
+      {hasLive && (
+        <div className="mb-6 flex flex-col gap-2">
+          <Link
+            to="/weigh"
+            className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+          >
+            {t('animals.weigh')}
+          </Link>
+          <Link
+            to="/animals/loss"
+            className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+          >
+            {t('animals.loss')}
+          </Link>
+        </div>
       )}
 
       {animals.length === 0 ? (
@@ -62,6 +75,7 @@ export function AnimalsScreen() {
               <span className="text-body text-soil-700">
                 {sexLabel(t, animal.sex)}
                 {animal.breed ? ` · ${animal.breed}` : ''}
+                {animal.status !== 'alive' ? ` · ${statusLabel(t, animal.status)}` : ''}
               </span>
             </li>
           ))}

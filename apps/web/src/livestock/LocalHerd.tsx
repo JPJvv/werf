@@ -20,7 +20,6 @@ import {
   type ReactNode,
 } from 'react';
 import { createCaptureStore, type CaptureStore } from '@werf/sync';
-import { summariseHerd, type HerdSummary } from '@werf/domain';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -68,10 +67,4 @@ export function useAnimals(): readonly StoredAnimal[] {
 export function useRecordAnimal(): (animal: StoredAnimal) => void {
   const store = useHerdStore();
   return useCallback((animal) => store.append(animal), [store]);
-}
-
-/** The herd summary (FR-705) over local state — the source of the home tile's live head count. */
-export function useHerdSummary(): HerdSummary {
-  const animals = useAnimals();
-  return useMemo(() => summariseHerd({ animals }), [animals]);
 }

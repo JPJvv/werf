@@ -1,7 +1,7 @@
 import type { EnterpriseType } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { HomeGrid } from '../home/HomeGrid';
-import { useHerdSummary } from '../livestock/LocalHerd';
+import { useHerdSummary } from '../livestock/herd';
 import { FirstRunGuide } from './FirstRunGuide';
 
 /**

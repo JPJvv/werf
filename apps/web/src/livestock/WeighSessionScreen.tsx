@@ -16,7 +16,7 @@ import { uuidv7 } from '@werf/core';
 import { averageDailyGain } from '@werf/domain';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
-import { useAnimals } from './LocalHerd';
+import { useEffectiveAnimals } from './herd';
 import { useAnimalWeights, useRecordWeight, type StoredWeight } from './LocalWeights';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
@@ -37,7 +37,8 @@ interface SavedSummary {
 export function WeighSessionScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const animals = useAnimals();
+  // A weigh session is for animals still in the herd — a lost animal is not in the crush.
+  const animals = useEffectiveAnimals().filter((a) => a.status === 'alive');
   const record = useRecordWeight();
 
   const [index, setIndex] = useState(0);

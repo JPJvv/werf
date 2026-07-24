@@ -3,6 +3,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { SyncStatusStrip } from '../sync/SyncStatusStrip';
 import { InstallPrompt } from '../pwa/InstallPrompt';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
+import { LocalWeightsProvider } from '../livestock/LocalWeights';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -28,10 +29,12 @@ export function AppShell() {
       </header>
       <SyncStatusStrip />
       <main>
-        {/* The local herd lives here so every screen inside the shell — the home tile and the
-            animals screens — reads the same farm-scoped store. */}
+        {/* The local herd and weight log live here so every screen inside the shell — the home
+            tile, the animals screens, the weigh session — reads the same farm-scoped stores. */}
         <LocalHerdProvider>
-          <Outlet />
+          <LocalWeightsProvider>
+            <Outlet />
+          </LocalWeightsProvider>
         </LocalHerdProvider>
       </main>
       <InstallPrompt />

@@ -35,10 +35,19 @@ export function AnimalsScreen() {
 
       <Link
         to="/animals/new"
-        className="mb-6 flex min-h-touch-primary items-center justify-center rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action no-underline"
+        className="mb-3 flex min-h-touch-primary items-center justify-center rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action no-underline"
       >
         {t('animals.add')}
       </Link>
+
+      {animals.length > 0 && (
+        <Link
+          to="/weigh"
+          className="mb-6 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+        >
+          {t('animals.weigh')}
+        </Link>
+      )}
 
       {animals.length === 0 ? (
         <p className="text-body text-soil-700">{t('animals.empty')}</p>

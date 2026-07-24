@@ -238,7 +238,14 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   (@werf/domain recordBirth + the animal-status state machine, table-driven); the API endpoint +
   capture SCREEN are a later slice, and must add the FR-113 herd selection
 ◐ 📶 Record a death with cause → status='dead', retained forever, excluded from live counts (FR-105)
-  — recordDeath done (→ dead via the state machine); API + screen pending
+  — recordDeath done (→ dead via the state machine). OFFLINE CAPTURE SCREEN done (`/animals/loss`,
+  commit a6c4928): pick a live animal, give a cause, record — validated through recordDeath, written
+  as a lifecycle EVENT (never an edit of the append-only herd row) through the @werf/sync capture
+  store (`werf-events:<farmId>`), NO network in `save`. The client PROJECTION (`herd.ts`) folds the
+  event onto the herd via the domain state machine so the animal is retained-but-marked in the list
+  and drops from live head — the first time the count can go DOWN. Still ◐: only DEATH (sale/cull/
+  missing follow the same shape, later), and the local write does not yet reach Postgres (Phase 3 /
+  flush). NOTE: sale/purchase (FR-106) + weaning (FR-111) screens now reuse this exact pattern
 ◐ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106) — recordSale/
   recordPurchase done (sale → sold; Money is integer cents); API + screen pending
 ◐ 📶 Record weaning with weight and age (FR-111) — recordWeaning done; API + screen pending
@@ -326,12 +333,17 @@ Reporting & the grid's live numbers
 ◐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
   — pure @werf/domain summariseHerd done: live = alive only (dead/sold/culled/missing retained by
   status, excluded from live head), mob head counts folded in (FR-102), breakdowns by species / sex /
-  camp / enterprise / status. Age/sex CLASS (weaner/cow/steer) is species-specific (ADR-0006), a later
-  slice; the client read-model wiring (a watched query feeding this) is deferred
+  camp / enterprise / status. CLIENT READ-MODEL WIRING done (commit a6c4928): `apps/web/.../herd.ts`
+  is the projection — it folds the append-only lifecycle log onto the herd through the domain state
+  machine (isMoreFinal, consumed not re-encoded) to derive each animal's current status, then runs
+  summariseHerd over it, reactively (useEffectiveAnimals/useHerdSummary on useSyncExternalStore). So
+  the Animals screen and the home tile now DROP when an animal is lost. Age/sex CLASS (weaner/cow/
+  steer, species-specific ADR-0006) still a later slice; the mob create-action still deferred
 ◐ 🇿🇦 FR-017 completed: each enterprise tile now carries one live number or one attention badge,
-  fed from the herd summary — closes the Phase 1 ◐. Tiles stop being empty doors. — the DATA is ready
-  (summariseHerd.byEnterprise is the per-tile live number); the CLIENT wiring (tile rendering the
-  number from a watched query over local state) is the remaining piece, in the reachability slice
+  fed from the herd summary — closes the Phase 1 ◐. Tiles stop being empty doors. — the animals tile
+  carries the live head count from the projection (moves up on a capture, DOWN on a loss, reactive
+  and surviving a cold start). Still ◐: the OTHER tiles (health "N due", etc.) have no number yet —
+  they populate as their read models land
 
 Phase 1 carry-forward (closing the Phase 1 ◐/deferred items the gate named as Phase 2 work)
 ☑ Bundle size gate ENFORCED (not just measured) — the build fails over ≤250KB gz

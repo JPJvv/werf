@@ -86,10 +86,11 @@ App shell (apps/web + @werf/ui)
 ☑ 📶 Session persists offline for a configurable window (default 30 days) via the sync adapter (FR-006)
 ◐ 🇿🇦 Home = grid of ≥96px tiles GENERATED from farm.enterprise_types; fixed order, never personalised;
   2 cols phone / 3 tablet / 4 desktop; each tile carries ONE live number or ONE badge (FR-017).
-  The grid, sizing, generation and fixed order are done. The live number is NOT: there is no
-  domain data to count until the modules land (stated in the scope boundary above), so a tile is
-  currently a door with a stable identity. `Tile` accepts `metric`/`badge` props and nothing
-  populates them. The FR-017 half lands with Phase 2.
+  The grid, sizing, generation and fixed order are done. FIRST live number now populated (commit
+  bd334d0): the animals tile carries `summariseHerd().liveTotal` from the local herd, live and
+  reactive — capturing an animal moves it, and it survives a cold start. `Tile` metric/badge props
+  are wired via HomeGrid `metrics`. Still ◐: the OTHER tiles (health "N due", etc.) have no number
+  yet — they populate as their read models land.
   NOTE: this line previously read ☑ with the FR-017 clause deleted from it rather than met —
   exactly the rewording the exit gate below warns about. It was caught in review and restored.
 ◐ Terminology engine: "camp" for cattle, "block" for vines — decided in ONE place
@@ -199,8 +200,12 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   Proven against real PostGIS: RLS isolation, WITH CHECK write-guard, cross-farm hidden. `species`
   is text (new species = code release, not migration); brand_id deferred to the FR-601 slice
 ◐ Create an individual animal: species, breed, sex, DOB(+estimated), source, acquired_at (FR-101)
-  — the DATA layer + @werf/core Animal schema support every field; the create ACTION (API + capture
-  screen) is a later slice. DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard)
+  — OFFLINE CAPTURE SCREEN done (`/animals/new`, commit bd334d0): writes a `newAnimalSchema` record
+  (client uuidv7) through the @werf/sync capture-store adapter with NO network in the path, and the
+  home tile counts it live. Still ◐: only species/sex/breed are captured on the screen (DOB, source,
+  acquired_at, identifiers are later); and the LOCAL write does not yet reach Postgres — the slice-13
+  `POST /livestock/*` API exists but the client flush/sync that links them is Phase 3 (or a best-effort
+  flush slice). DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard)
 ◐ Create a mob/flock and manage it by head_count without individual rows (FR-102) — data layer done
   and proven (a mob is a complete record with zero animal rows behind it); create ACTION pending
 ◐ Species-specific attributes via Zod-validated JSONB (FR-107, ADR-0006 AnimalIdentityRules seam) —

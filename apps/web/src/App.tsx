@@ -7,6 +7,8 @@ import { RegisterScreen } from './auth/RegisterScreen';
 import { SecondFactorEnrolmentScreen } from './auth/SecondFactorEnrolmentScreen';
 import { AppShell } from './shell/AppShell';
 import { HomeScreen } from './shell/HomeScreen';
+import { AnimalsScreen } from './livestock/AnimalsScreen';
+import { AddAnimalScreen } from './livestock/AddAnimalScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
 import { SettingsLayout } from './settings/SettingsLayout';
 import { AppearanceSettings } from './settings/AppearanceSettings';
@@ -39,6 +41,9 @@ export function App() {
 
               <Route element={<AppShell />}>
                 <Route index element={<HomeScreen />} />
+                {/* Explicit livestock routes sit BEFORE the `:module` catch-all so they win. */}
+                <Route path="animals" element={<AnimalsScreen />} />
+                <Route path="animals/new" element={<AddAnimalScreen />} />
                 <Route path="settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="appearance" replace />} />
                   <Route path="appearance" element={<AppearanceSettings />} />

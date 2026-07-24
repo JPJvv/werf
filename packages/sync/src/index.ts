@@ -241,3 +241,4 @@ export {
   type SessionStore,
   type SessionStoreOptions,
 } from './session-store';
+export { createCaptureStore, type CaptureStore, type CaptureStoreOptions } from './capture-store';

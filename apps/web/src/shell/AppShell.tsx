@@ -2,6 +2,7 @@ import { Link, Outlet } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { SyncStatusStrip } from '../sync/SyncStatusStrip';
 import { InstallPrompt } from '../pwa/InstallPrompt';
+import { LocalHerdProvider } from '../livestock/LocalHerd';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -27,7 +28,11 @@ export function AppShell() {
       </header>
       <SyncStatusStrip />
       <main>
-        <Outlet />
+        {/* The local herd lives here so every screen inside the shell — the home tile and the
+            animals screens — reads the same farm-scoped store. */}
+        <LocalHerdProvider>
+          <Outlet />
+        </LocalHerdProvider>
       </main>
       <InstallPrompt />
     </div>

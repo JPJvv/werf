@@ -1,6 +1,7 @@
 import type { EnterpriseType } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { HomeGrid } from '../home/HomeGrid';
+import { useHerdSummary } from '../livestock/LocalHerd';
 import { FirstRunGuide } from './FirstRunGuide';
 
 /**
@@ -13,6 +14,10 @@ import { FirstRunGuide } from './FirstRunGuide';
  */
 export function HomeScreen() {
   const { activeFarm } = useAuth();
+  // Live head from the local herd (FR-017/705). Called unconditionally to satisfy the rules of
+  // hooks; it reads the farm-scoped store the shell provides and updates the instant an animal
+  // is captured. Zero on a new farm is the honest number, not a blank.
+  const herd = useHerdSummary();
 
   // A signed-in user with no farm is not a state the product can reach: registration
   // creates a business and its first farm in one transaction, and Phase 1 cannot delete a
@@ -24,7 +29,11 @@ export function HomeScreen() {
 
   return (
     <>
-      <HomeGrid farmName={activeFarm.name} enterpriseTypes={enterpriseTypes} />
+      <HomeGrid
+        farmName={activeFarm.name}
+        enterpriseTypes={enterpriseTypes}
+        metrics={{ animals: String(herd.liveTotal) }}
+      />
       <FirstRunGuide enterpriseTypes={enterpriseTypes} />
     </>
   );

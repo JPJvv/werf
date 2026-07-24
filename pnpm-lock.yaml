@@ -114,6 +114,9 @@ importers:
       '@werf/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@werf/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@werf/sync':
         specifier: workspace:*
         version: link:../../packages/sync

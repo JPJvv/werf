@@ -1,0 +1,99 @@
+/**
+ * Local durable capture store (Phase 2) — the seam the offline capture screens read and
+ * write through, exactly as the session lives behind `createSessionStore`. Application code
+ * reaches local data through THIS, never a storage API (or, later, the PowerSync SDK)
+ * directly: the ADR-0003 exit depends on the app not knowing what backs the store.
+ *
+ * What it is for: a farmer in a crush with no signal taps "Save". The record has to commit
+ * locally, instantly, and still be there after the screen re-renders and after a cold start —
+ * with no network anywhere in that path (.claude/rules/frontend.md: a capture path that
+ * awaits the network is the bug). This store is that local commit. In Phase 1 the backing is
+ * `localStorage`; in Phase 3 it becomes the same OPFS/SQLite the rest of the local data uses,
+ * and nothing above this seam changes — which is the entire point of having the seam.
+ *
+ * It is deliberately append-only and reactive:
+ *  • append-only, because these are captured facts (an animal was recorded, a weight taken),
+ *    and the sync model for events is append-never-merge (.claude/rules/db.md);
+ *  • reactive, because a tile's live number has to move the instant a capture lands — the
+ *    Phase 3 twin of this is a PowerSync watched query, and `subscribe` is the same contract,
+ *    so the tile code that consumes it is written once and survives the swap.
+ *
+ * The in-memory snapshot is replaced (never mutated) on every write, so its identity is
+ * stable between writes — which is exactly what React's `useSyncExternalStore` needs to
+ * avoid tearing and infinite re-render loops.
+ */
+
+import type { SessionStorageLike } from './session-store';
+
+export interface CaptureStore<T> {
+  /**
+   * The current records, oldest first. The returned array's identity is STABLE until the
+   * next `append` — safe to use as a `useSyncExternalStore` snapshot.
+   */
+  all(): readonly T[];
+  /** Commits a record locally and notifies subscribers. Synchronous; never touches the network. */
+  append(record: T): void;
+  /** Subscribe to changes; returns an unsubscribe. The listener fires after each `append`. */
+  subscribe(listener: () => void): () => void;
+}
+
+export interface CaptureStoreOptions {
+  readonly storage: SessionStorageLike;
+  /**
+   * The storage key. The CALLER namespaces it — in particular by farm id, so switching the
+   * active farm reads a different herd and one farm's captures never bleed into another's.
+   */
+  readonly key: string;
+}
+
+export function createCaptureStore<T>(options: CaptureStoreOptions): CaptureStore<T> {
+  const { storage, key } = options;
+
+  // The single in-memory copy. Read once at construction; every mutation replaces it with a
+  // new array so subscribers can compare by identity.
+  let snapshot: readonly T[] = load(storage, key);
+  const listeners = new Set<() => void>();
+
+  return {
+    all(): readonly T[] {
+      return snapshot;
+    },
+
+    append(record: T): void {
+      snapshot = [...snapshot, record];
+      persist(storage, key, snapshot);
+      for (const listener of listeners) listener();
+    },
+
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+function load<T>(storage: SessionStorageLike, key: string): readonly T[] {
+  const raw = storage.getItem(key);
+  if (raw === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    // A corrupt or half-written value is treated as "no captures yet" rather than throwing —
+    // a parse error here would otherwise crash the app on boot, offline, with no way out. It
+    // is NOT discarded: the malformed string stays in storage untouched, and the first
+    // successful append overwrites it. The store never deletes a farmer's data to recover.
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persist<T>(storage: SessionStorageLike, key: string, records: readonly T[]): void {
+  try {
+    storage.setItem(key, JSON.stringify(records));
+  } catch {
+    // Quota exceeded, or storage disabled (private browsing). The record is still live in
+    // memory for this session, so the app keeps working; it just may not survive a cold
+    // start. Failing the capture over this would be the worse outcome — the farmer tapped
+    // Save and saw it land. We never surface this as a lost write.
+  }
+}

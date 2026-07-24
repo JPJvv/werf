@@ -21,24 +21,38 @@ import {
   type ReactNode,
 } from 'react';
 import { createCaptureStore, type CaptureStore } from '@werf/sync';
-import { recordDeath } from '@werf/domain';
+import { recordDeath, recordSale } from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 
-/** A status-changing lifecycle event as held locally. `status` is the status the event moves the
- *  animal TO; `occurredAt` is an ISO string (JSON-safe across a cold start). */
-export interface StoredLifecycleEvent {
+/** Fields every stored lifecycle event carries. `status` is the status it moves the animal TO;
+ *  `occurredAt` is an ISO string (JSON-safe across a cold start). */
+interface StoredEventBase {
   readonly id: string;
   readonly farmId: string;
   readonly animalId: string;
-  /** The kind of event. Only 'death' today; 'sale' / 'cull' / 'missing' follow the same pattern. */
-  readonly type: 'death';
-  /** The status this event moves the animal to — 'dead' for a death. */
+  /** The status this event moves the animal to. */
   readonly status: AnimalStatus;
   /** ISO 8601. When it happened on the farm — read, not synced (CLAUDE.md, § 5). */
   readonly occurredAt: string;
+}
+
+/** A death (FR-105) → 'dead'. */
+export interface StoredDeath extends StoredEventBase {
+  readonly type: 'death';
   readonly cause: string;
 }
+
+/** A sale (FR-106) → 'sold'. `priceCents` is Money — integer cents, never a float (CLAUDE.md). */
+export interface StoredSale extends StoredEventBase {
+  readonly type: 'sale';
+  readonly counterparty: string;
+  readonly priceCents: number;
+  readonly weightKg?: number;
+}
+
+/** A status-changing lifecycle event as held locally. 'cull' / 'missing' extend the union next. */
+export type StoredLifecycleEvent = StoredDeath | StoredSale;
 
 /** What a screen hands the recorder for a death (FR-105). The capture instant is a real Date. */
 export interface DeathCapture {
@@ -49,6 +63,18 @@ export interface DeathCapture {
   /** The animal's status right now — the FROM side of the transition guard. */
   readonly currentStatus: AnimalStatus;
   readonly cause: string;
+}
+
+/** What a screen hands the recorder for a sale (FR-106). `priceCents` is Money — integer cents. */
+export interface SaleCapture {
+  readonly id: string;
+  readonly farmId: string;
+  readonly animalId: string;
+  readonly occurredAt: Date;
+  readonly currentStatus: AnimalStatus;
+  readonly counterparty: string;
+  readonly priceCents: number;
+  readonly weightKg?: number;
 }
 
 export type LifecycleStore = CaptureStore<StoredLifecycleEvent>;
@@ -115,6 +141,42 @@ export function useRecordDeath(): (capture: DeathCapture) => void {
         status: 'dead',
         occurredAt: capture.occurredAt.toISOString(),
         cause: capture.cause,
+      });
+    },
+    [store],
+  );
+}
+
+/**
+ * Record a sale (FR-106) → status 'sold', out of the live herd. Validated through the domain
+ * `recordSale` (a buyer, non-negative integer-cents price, the state-machine transition guard)
+ * before the JSON-safe projection is persisted. Synchronous; never awaits the network (NFR-007).
+ */
+export function useRecordSale(): (capture: SaleCapture) => void {
+  const store = useLifecycleStore();
+  return useCallback(
+    (capture) => {
+      const weight = capture.weightKg === undefined ? {} : { weightKg: capture.weightKg };
+      recordSale({
+        id: capture.id,
+        farmId: capture.farmId,
+        animalId: capture.animalId,
+        occurredAt: capture.occurredAt,
+        currentStatus: capture.currentStatus,
+        counterparty: capture.counterparty,
+        priceCents: capture.priceCents,
+        ...weight,
+      });
+      store.append({
+        id: capture.id,
+        farmId: capture.farmId,
+        animalId: capture.animalId,
+        type: 'sale',
+        status: 'sold',
+        occurredAt: capture.occurredAt.toISOString(),
+        counterparty: capture.counterparty,
+        priceCents: capture.priceCents,
+        ...weight,
       });
     },
     [store],

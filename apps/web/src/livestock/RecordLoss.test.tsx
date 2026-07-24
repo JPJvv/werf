@@ -1,10 +1,9 @@
 /**
- * Recording a loss, and the herd count finally going DOWN. A death is captured offline as a
- * lifecycle event, the projection folds it onto the herd through the domain state machine, and the
- * animal drops from the live count while staying in the list, marked — retained forever (FR-105,
- * FR-705, FR-017). Like the other capture journeys these seed `localStorage` and render the real
- * `<App/>`, so both the herd and the lifecycle log are read through the same boot path a cold start
- * uses; nothing touches the network.
+ * Recording a loss — a death or a sale — and the herd count going DOWN. Either outcome is captured
+ * offline as a lifecycle event, folded onto the herd by the projection through the domain state
+ * machine, and the animal drops from the live count while staying in the list, marked — retained
+ * forever (FR-105, FR-106, FR-705, FR-017). Like the other capture journeys these seed
+ * `localStorage` and render the real `<App/>`; nothing touches the network.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -63,7 +62,7 @@ function seedHerd(...animals: Array<Record<string, unknown>>): void {
   window.localStorage.setItem(HERD_KEY, JSON.stringify(animals));
 }
 
-function seedDeath(animalId: string): void {
+function seedSale(animalId: string): void {
   window.localStorage.setItem(
     EVENTS_KEY,
     JSON.stringify([
@@ -71,10 +70,11 @@ function seedDeath(animalId: string): void {
         id: 'e1',
         farmId: FARM_ID,
         animalId,
-        type: 'death',
-        status: 'dead',
+        type: 'sale',
+        status: 'sold',
         occurredAt: new Date().toISOString(),
-        cause: 'illness',
+        counterparty: 'Vleissentraal',
+        priceCents: 850000,
       },
     ]),
   );
@@ -98,49 +98,61 @@ describe('recording a loss', () => {
     expect(screen.getByText(/no live animals to record a loss against/i)).toBeTruthy();
   });
 
-  it('captures a death offline and takes the animal out of the live herd', async () => {
+  it('records a death offline and takes the animal out of the live herd', async () => {
     cachedSession();
     seedHerd(animal('a1', { sex: 'female' }), animal('a2', { sex: 'male' }));
     const user = userEvent.setup();
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    // Pick the animal that died, give a cause, record it.
     await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Died' }));
     await user.type(screen.getByLabelText(/cause/i), 'Snakebite');
     await user.click(screen.getByRole('button', { name: /record death/i }));
 
     expect(screen.getByText(/marked dead/i)).toBeTruthy();
-    // The dead animal is gone from the live pick list — only the bull is left to record against.
     expect(screen.queryByRole('button', { name: /female/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /male/i })).toBeTruthy();
   });
 
-  it('drops the home tile count when an animal is lost, and it survives a cold start', () => {
+  it('records a sale with a price offline and destocks the animal', async () => {
     cachedSession();
-    seedHerd(animal('a1'), animal('a2'));
-    seedDeath('a1');
+    seedHerd(animal('a1', { sex: 'female' }), animal('a2', { sex: 'male' }));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    // Two animals recorded, one dead: the Herd tile reads one, folded on boot from the log.
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Sold' }));
+    await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
+    await user.type(screen.getByLabelText(/price/i), '8500');
+    await user.click(screen.getByRole('button', { name: /record sale/i }));
+
+    expect(screen.getByText(/marked sold/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /female/i })).toBeNull();
+  });
+
+  it('drops the home tile count when an animal is sold, and it survives a cold start', () => {
+    cachedSession();
+    seedHerd(animal('a1'), animal('a2'));
+    seedSale('a1');
+    render(<App />);
+
     const herd = screen.getByRole('link', { name: /herd/i });
     expect(within(herd).getByText('1')).toBeTruthy();
   });
 
-  it('keeps the dead animal in the list marked, and the weigh session skips it', () => {
+  it('keeps the sold animal in the list marked, and the weigh session skips it', () => {
     cachedSession();
     seedHerd(animal('a1', { sex: 'female' }), animal('a2', { sex: 'male' }));
-    seedDeath('a1');
+    seedSale('a1');
 
     window.history.pushState({}, '', '/animals');
     const { unmount } = render(<App />);
-    // Retained, not erased: still listed, now marked.
-    expect(screen.getByText(/dead/i)).toBeTruthy();
+    expect(screen.getByText(/sold/i)).toBeTruthy();
     unmount();
 
     window.history.pushState({}, '', '/weigh');
     render(<App />);
-    // Only the live animal is offered in the crush.
     expect(screen.getByText('1 of 1')).toBeTruthy();
   });
 });

@@ -277,8 +277,10 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
 Weights & performance
 ◐ 📶 Record a weight against an animal or a mob (FR-140) — capture DOMAIN LOGIC done
   (@werf/domain recordWeight → a `weight` event; a pure observation, no status transition; insists
-  on exactly one subject, animal xor mob; payload validated at the boundary). API endpoint +
-  crush-optimised capture SCREEN (FR-142) are a later slice
+  on exactly one subject, animal xor mob; payload validated at the boundary). API ENDPOINT done
+  (`POST /livestock/weights`, LivestockService writes through RLS, 7 real-PG integration tests,
+  commit c70fbd5). Still missing: the crush-optimised offline capture SCREEN (FR-142) writing
+  through the packages/sync adapter
 ◐ 📶 Compute ADG between any two weights (pure @werf/domain, table-driven test); chart the curve
   (FR-141) — averageDailyGain done and table-driven: order-independent, measured on occurred_at,
   weight LOSS is a real negative signal (drought), same-instant readings throw. The chart is UI, deferred

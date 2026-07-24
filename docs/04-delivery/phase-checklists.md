@@ -284,13 +284,23 @@ Weights & performance
   (@werf/domain recordWeight → a `weight` event; a pure observation, no status transition; insists
   on exactly one subject, animal xor mob; payload validated at the boundary). API ENDPOINT done
   (`POST /livestock/weights`, LivestockService writes through RLS, 7 real-PG integration tests,
-  commit c70fbd5). Still missing: the crush-optimised offline capture SCREEN (FR-142) writing
-  through the packages/sync adapter
+  commit c70fbd5). OFFLINE CAPTURE SCREEN done (`/weigh`, commit 990c41c): writes each reading
+  through the @werf/sync capture-store adapter (`werf-weights:<farmId>`) with NO network in `save`,
+  validated through the domain recordWeight before it persists. Still ◐: only an ANIMAL weight is
+  captured on the screen (a mob weigh is later), the method is fixed to the crush `scale` (tape/
+  visual deferred), and the LOCAL write does not yet reach Postgres — the client flush/sync that
+  links the screen to the slice-13 endpoint is Phase 3 (or a best-effort flush slice)
 ◐ 📶 Compute ADG between any two weights (pure @werf/domain, table-driven test); chart the curve
   (FR-141) — averageDailyGain done and table-driven: order-independent, measured on occurred_at,
-  weight LOSS is a real negative signal (drought), same-instant readings throw. The chart is UI, deferred
-☐ 📶 Weigh session: sequential capture optimised for the crush — one animal per screen,
-  one thumb, no scrolling, works with a dead network (FR-142)
+  weight LOSS is a real negative signal (drought), same-instant readings throw. NOW SURFACED in the
+  weigh session (990c41c): the growth since an animal's previous reading is stated after each save,
+  a loss shown as a real negative, the same-instant throw caught so it never crashes a capture. The
+  CHART/curve (the read model over the full series) is still UI, deferred
+☑ 📶 Weigh session: sequential capture optimised for the crush — one animal per screen, one thumb,
+  no scrolling, works with a dead network (FR-142) — done (`/weigh`, commit 990c41c): walks the
+  local herd one animal at a time, a single large weight field, one ochre Save & next that advances
+  to the next animal, a Skip, an offline commit and a weighed-count at the end. Full-journey web
+  test through the real `<App/>` proves capture survives a cold start with nothing sent
 
 SA identity & stock theft 🇿🇦 (compliance-gated)
 ☑ 🇿🇦 branding_registers table + migration (0011) + RLS + TENANCY(farm-scoped); certificate ref,

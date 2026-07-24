@@ -4,10 +4,13 @@
  */
 
 import { PipeTransform, BadRequestException } from '@nestjs/common';
-import type { ZodSchema } from 'zod';
+import type { ZodType, ZodTypeDef } from 'zod';
 
+// The schema's INPUT is typed `unknown`, not `T`: the pipe validates raw wire input, so a
+// schema that transforms its input (an ISO string parsed to a Date, a defaulted field) is
+// exactly what belongs here — its declared input type must not have to equal its output `T`.
 export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {
-  constructor(private readonly schema: ZodSchema<T>) {}
+  constructor(private readonly schema: ZodType<T, ZodTypeDef, unknown>) {}
 
   transform(value: unknown): T {
     const result = this.schema.safeParse(value);

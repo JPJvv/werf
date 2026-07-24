@@ -17,6 +17,7 @@
     "@simplewebauthn/server": "^13.3.2",
     "@werf/core": "workspace:*",
     "@werf/db": "workspace:*",
+    "@werf/domain": "workspace:*",
     "drizzle-orm": "^0.38.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

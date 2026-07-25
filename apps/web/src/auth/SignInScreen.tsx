@@ -12,6 +12,7 @@ import type { schemas } from '@werf/core';
 import { useAuth } from './AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from './api';
 import { useTranslation } from '../i18n/LocaleProvider';
+import { LanguagePicker } from '../i18n/LanguagePicker';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { Field, FormError, PrimaryButton } from './form';
 
@@ -166,11 +167,19 @@ function messageFor(caught: unknown): TranslationKey {
 }
 
 /** The shared frame for the signed-out screens: centred, single column, nothing else. */
+/**
+ * The frame every signed-out screen shares. The language picker lives HERE, so it is on sign-in,
+ * on registration and on the second-factor step without any of them having to remember it — and so
+ * a farmer can switch the language of the very first screen they ever see (FR-008).
+ */
 export function Screen({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <main className="min-h-screen bg-sand-50 px-4 py-8 text-soil-900">
       <div className="mx-auto w-full max-w-lg">
-        <p className="mb-6 font-ui text-h2 text-soil-900">Werf</p>
+        <div className="mb-6 flex items-center justify-between">
+          <p className="font-ui text-h2 text-soil-900">Werf</p>
+          <LanguagePicker />
+        </div>
         <h1 className="mb-4 font-ui text-h1 text-soil-900">{title}</h1>
         {children}
       </div>

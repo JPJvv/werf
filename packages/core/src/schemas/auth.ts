@@ -65,6 +65,20 @@ export const refreshRequestSchema = z.object({
 export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
 
 /**
+ * Update the signed-in account's own preferences (FR-008). The user is the AUTHENTICATED caller —
+ * there is no id in the body, so this endpoint cannot be aimed at somebody else's account.
+ *
+ * Locale only, for now, and deliberately: language is a property of the PERSON (it follows them
+ * onto a borrowed tablet), which is why it must reach the user row instead of living on a device.
+ * Theme is a genuinely device-shaped preference — the same farmer wants dark on the phone they
+ * use at 5am and light on the office desktop — so it is not here until there is a reason.
+ */
+export const updateProfileRequestSchema = z.object({
+  locale: localeSchema,
+});
+export type UpdateProfileRequest = z.infer<typeof updateProfileRequestSchema>;
+
+/**
  * One of the farm's herds/enterprises, as the client needs it (FR-113). The `enterpriseTypes` array
  * above drives the ADAPTIVE UI — which tiles a farm sees; this carries the enterprise ROWS, because
  * filing a capture under the herd it concerns needs the enterprise's id, and telling two cattle

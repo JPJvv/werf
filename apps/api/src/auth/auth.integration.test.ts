@@ -26,7 +26,13 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { ConflictError, InvalidCredentialsError, SessionInvalidError, schemas } from '@werf/core';
+import {
+  ConflictError,
+  InvalidCredentialsError,
+  NotFoundError,
+  SessionInvalidError,
+  schemas,
+} from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { ACCESS_TOKEN_TTL_SECONDS, REFRESH_TOKEN_TTL_SECONDS } from '../config/config';
 import { AuthGuard } from './auth.guard';
@@ -487,6 +493,49 @@ describe('auth', () => {
 
       await guardFor().canActivate(contextFor(request));
       expect((request.auth as { activeFarmId: string }).activeFarmId).toBe(row!.activeFarmId);
+    });
+  });
+
+  describe('updating your own preferences (FR-008)', () => {
+    it('writes the language to the ACCOUNT, so every device gets it', async () => {
+      const session = await auth.register(REGISTRATION);
+      expect(session.user.locale).toBe('en-ZA');
+
+      const updated = await auth.updateProfile(session.user.id, { locale: 'af-ZA' });
+      expect(updated.locale).toBe('af-ZA');
+
+      // The point of the endpoint: a NEW session — a borrowed tablet, or this phone tomorrow
+      // morning — reads the language off the account, not off the device that set it.
+      const next = await auth.login({
+        email: REGISTRATION.owner.email,
+        password: REGISTRATION.owner.password,
+        deviceLabel: null,
+      });
+      expect('accessToken' in next && next.user.locale).toBe('af-ZA');
+    });
+
+    it('never returns the password hash or the TOTP secret', async () => {
+      // The client CACHES what this returns, on a phone that can be stolen.
+      const session = await auth.register(REGISTRATION);
+      const updated = await auth.updateProfile(session.user.id, { locale: 'af-ZA' });
+
+      expect(Object.keys(updated).sort()).toEqual([
+        'createdAt',
+        'deletedAt',
+        'email',
+        'fullName',
+        'id',
+        'locale',
+        'phone',
+        'theme',
+        'updatedAt',
+      ]);
+    });
+
+    it('refuses an account that does not exist', async () => {
+      await expect(
+        auth.updateProfile('01900000-0000-7000-8000-000000000abc', { locale: 'af-ZA' }),
+      ).rejects.toThrow(NotFoundError);
     });
   });
 

@@ -55,6 +55,13 @@ export interface AuthContextValue {
    * a queued POST is refused with a 401 after a long spell offline.
    */
   refreshSession(): Promise<string | null>;
+  /**
+   * Writes the account's language back to the user row (FR-008) and patches the cached session so
+   * the next cold start re-adopts the NEW locale instead of reverting. Resolves false when the
+   * change could not be persisted (no signal, no session) — the caller has already applied it to
+   * the device, so this reports whether it followed the person or only the phone.
+   */
+  saveLocale(locale: string): Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -168,6 +175,40 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     return next.accessToken;
   }, [session, adopt]);
 
+  /**
+   * FR-008 write-back. The language change has already been applied to the running app by the
+   * locale provider — this makes it stick to the PERSON.
+   *
+   * Failure is not an error to shout about: the farmer's app is already in the language they asked
+   * for, and the only loss is that a different device (or the next cold start) will not know yet.
+   * So it resolves false rather than throwing, and the screen says what that means. Nothing is
+   * queued for retry: a preference is not a capture, and the write-queue rule exists to protect a
+   * farmer's WORK, not their last tap on a radio button.
+   */
+  const saveLocale = useCallback(
+    async (locale: string): Promise<boolean> => {
+      const token = session?.accessToken;
+      if (!token) return false;
+      try {
+        const user = await authApi.updateProfile(token, {
+          locale: locale as schemas.UpdateProfileRequest['locale'],
+        });
+        // Patch the CACHED session too, or the next cold start re-adopts the old locale from it
+        // and silently undoes what the server has just accepted.
+        setSession((current) => {
+          if (!current) return current;
+          const next = { ...current, user };
+          sessions.write(next);
+          return next;
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [session, sessions],
+  );
+
   const value = useMemo<AuthContextValue>(() => {
     const activeFarm =
       session?.farms.find((farm) => farm.id === session.activeFarmId) ?? session?.farms[0] ?? null;
@@ -183,8 +224,18 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
       signOut,
       setActiveFarm,
       refreshSession,
+      saveLocale,
     };
-  }, [session, register, signIn, completeSecondFactor, signOut, setActiveFarm, refreshSession]);
+  }, [
+    session,
+    register,
+    signIn,
+    completeSecondFactor,
+    signOut,
+    setActiveFarm,
+    refreshSession,
+    saveLocale,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

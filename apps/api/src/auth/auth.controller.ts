@@ -3,10 +3,20 @@
  * AuthService and SessionService, which are testable without HTTP.
  */
 
-import { Body, Controller, HttpCode, HttpStatus, Inject, Post, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Patch,
+  Post,
+  UsePipes,
+} from '@nestjs/common';
 import { schemas } from '@werf/core';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { Public } from './auth.guard';
+import { Public, type AuthContext } from './auth.guard';
+import { CurrentUser } from './current-user.decorator';
 import { AuthService } from './auth.service';
 
 @Controller('auth')
@@ -52,6 +62,22 @@ export class AuthController {
     @Body() body: schemas.VerifySecondFactorRequest,
   ): Promise<schemas.AuthSession> {
     return this.auth.verifySecondFactor(body);
+  }
+
+  /**
+   * Update your own preferences (FR-008). NOT public — the account is the authenticated caller, so
+   * there is no id in the body and no way to aim this at someone else. Returns the account as the
+   * client should now cache it, so a language change survives the next cold start instead of being
+   * reverted by the boot path that re-adopts the stored locale.
+   */
+  @Patch('profile')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ZodValidationPipe(schemas.updateProfileRequestSchema))
+  async updateProfile(
+    @CurrentUser() auth: AuthContext,
+    @Body() body: schemas.UpdateProfileRequest,
+  ): Promise<schemas.AuthSession['user']> {
+    return this.auth.updateProfile(auth.userId, body);
   }
 
   /** Idempotent: logging out an already-dead session is the state the caller wanted. */

@@ -33,6 +33,10 @@ const en = {
   'settings.appearance.system.hint': 'Follow your phone’s day/night setting.',
   'settings.language.title': 'Language',
   'settings.language.legend': 'Language',
+  // Shown only when the account could not be told (no signal). Not an error: the app IS in the
+  // chosen language. It says what is true, and answers the next question before it is asked.
+  'settings.language.deviceOnly':
+    'This phone is in the language you chose. Your account will catch up next time you have signal.',
   // Sync-status strip. Never the word "sync" to a farmer — "saved" and "sent". The offline
   // line is the most important string in the product: a farmer unsure their entry survived
   // keeps a paper backup, and then the app is extra work. See .claude/rules/frontend.md.
@@ -243,6 +247,8 @@ const af: Record<TranslationKey, string> = {
   'settings.appearance.system.hint': 'Volg jou foon se dag/nag-instelling.',
   'settings.language.title': 'Taal',
   'settings.language.legend': 'Taal',
+  'settings.language.deviceOnly':
+    'Hierdie foon is in die taal wat jy gekies het. Jou rekening sal bykom sodra jy weer sein het.',
   'sync.status.label': 'Stoorstatus',
   'sync.synced': 'Gestoor en gestuur',
   'sync.offline': 'Aflyn — jou werk is gestoor',

@@ -102,6 +102,33 @@ async function fillRegistration(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/password/i), 'correct horse battery staple');
 }
 
+describe('onboarding in Afrikaans (FR-008)', () => {
+  it('lets a farmer choose their language BEFORE signing in, and creates the account in it', async () => {
+    // The remainder Phase 1 named: the language control sat behind the auth guard, so a farmer on
+    // a fresh device could only ever submit the default. An Afrikaans farmer could not create an
+    // Afrikaans account, and the first thing the product said to them was in the wrong language.
+    const calls = stubApi();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Afrikaans' }));
+
+    // The form itself is now Afrikaans — proven by filling it in with Afrikaans labels.
+    await user.type(screen.getByLabelText('Besigheidsnaam'), 'Rietfontein Boerdery');
+    await user.type(screen.getByLabelText('Plaasnaam'), 'Rietfontein');
+    await user.click(screen.getByRole('checkbox', { name: /beef cattle/i }));
+    await user.type(screen.getByLabelText('Jou volle naam'), 'Thabo Mokoena');
+    await user.type(screen.getByLabelText('E-posadres'), 'thabo@rietfontein.test');
+    await user.type(screen.getByLabelText('Wagwoord'), 'correct horse battery staple');
+    await user.click(screen.getByRole('button', { name: 'Skep my plaas' }));
+
+    const register = calls.find((call) => call.url.endsWith('/auth/register'));
+    const body = register?.body as { owner?: { locale?: string } };
+    // The ACCOUNT is Afrikaans, not just this phone — so it follows them onto a borrowed tablet.
+    expect(body.owner?.locale).toBe('af-ZA');
+  });
+});
+
 describe('registering a farm business', () => {
   it('walks register → enrol → the adaptive grid, with no session hand-seeded', async () => {
     const calls = stubApi();

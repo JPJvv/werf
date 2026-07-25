@@ -41,10 +41,19 @@ export class NetworkUnavailableError extends Error {
 }
 
 async function post<T>(path: string, body: unknown, accessToken?: string): Promise<T> {
+  return send('POST', path, body, accessToken);
+}
+
+async function send<T>(
+  method: 'POST' | 'PATCH',
+  path: string,
+  body: unknown,
+  accessToken?: string,
+): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         'Content-Type': 'application/json',
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -97,4 +106,14 @@ export const authApi = {
     code: string,
   ): Promise<schemas.TotpEnrolmentConfirmResponse> =>
     post('/auth/2fa/totp/confirm', { code }, accessToken),
+
+  /**
+   * Writes a preference back to the ACCOUNT (FR-008), returning the account as it now stands.
+   * Language belongs to the person, so it has to reach the user row — a device-only change is
+   * undone by the next cold start, which re-adopts the stored locale.
+   */
+  updateProfile: (
+    accessToken: string,
+    input: schemas.UpdateProfileRequest,
+  ): Promise<schemas.AuthSession['user']> => send('PATCH', '/auth/profile', input, accessToken),
 };

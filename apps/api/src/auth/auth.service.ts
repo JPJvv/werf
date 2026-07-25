@@ -15,7 +15,7 @@ import {
   type AppDb,
   type ElevatedDb,
 } from '@werf/db';
-import { ConflictError, InvalidCredentialsError, schemas } from '@werf/core';
+import { ConflictError, InvalidCredentialsError, NotFoundError, schemas } from '@werf/core';
 import { ACCESS_TOKEN_TTL_SECONDS } from '../config/config';
 import { APP_DB, ELEVATED_DB } from '../db/db.module';
 import { enterprisesByFarm } from '../common/session-farm';
@@ -252,6 +252,34 @@ export class AuthService {
     if (session) await this.sessions.revokeFamily(session.familyId, 'logout');
   }
 
+  /**
+   * Updates the signed-in account's own preferences (FR-008) and returns the account as the client
+   * should now hold it.
+   *
+   * The user id comes from the verified access token, never from the body, so this cannot be aimed
+   * at another account. It returns the PUBLIC user projection — the same one a session carries, with
+   * no password hash and no TOTP secret — because the client patches its cached session with this
+   * and the cache is a file on a phone that may be stolen.
+   *
+   * Why this endpoint exists at all: language belongs to the person, not the device. Without a
+   * write-back a farmer who switched to Afrikaans in Settings was switched back to English on the
+   * next cold start, because the boot path re-adopts the account's stored locale. The setting looked
+   * like it worked and then silently did not, which is worse than not offering it.
+   */
+  async updateProfile(
+    userId: string,
+    input: schemas.UpdateProfileRequest,
+  ): Promise<schemas.AuthSession['user']> {
+    const [updated] = await this.elevated.db
+      .update(users)
+      .set({ locale: input.locale, updatedAt: new Date() })
+      .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+      .returning();
+
+    if (!updated) throw new NotFoundError('Account not found');
+    return publicUser(updated);
+  }
+
   private async userIdForSession(session: IssuedSession): Promise<string> {
     const live = await this.sessions.findLive(session.sessionId);
     return live!.userId;
@@ -276,17 +304,7 @@ export class AuthService {
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
       refreshToken: session.refreshToken,
       refreshExpiresAt: session.refreshExpiresAt.toISOString(),
-      user: {
-        id: user!.id,
-        email: user!.email,
-        phone: user!.phone,
-        fullName: user!.fullName,
-        locale: user!.locale as schemas.AuthSession['user']['locale'],
-        theme: user!.theme as schemas.AuthSession['user']['theme'],
-        createdAt: user!.createdAt,
-        updatedAt: user!.updatedAt,
-        deletedAt: user!.deletedAt,
-      },
+      user: publicUser(user!),
       farms: memberships,
       activeFarmId: session.activeFarmId,
       secondFactor: await this.twoFactor.statusFor(userId),
@@ -340,6 +358,27 @@ export class AuthService {
       return rows.map((farm) => ({ ...farm, enterprises: herds.get(farm.id) ?? [] }));
     });
   }
+}
+
+/**
+ * The account as a client may hold it. Field-by-field on purpose: the users row also carries the
+ * password hash and the encrypted TOTP secret, and those must never leave the server — a cached
+ * session is a file on a phone that can be stolen (.claude/rules/db.md). Spreading the row and
+ * deleting keys would leave a column added in a later migration exposed by default; this way a new
+ * column is invisible until someone deliberately adds it here.
+ */
+function publicUser(row: typeof users.$inferSelect): schemas.AuthSession['user'] {
+  return {
+    id: row.id,
+    email: row.email,
+    phone: row.phone,
+    fullName: row.fullName,
+    locale: row.locale as schemas.AuthSession['user']['locale'],
+    theme: row.theme as schemas.AuthSession['user']['theme'],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  };
 }
 
 /**

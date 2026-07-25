@@ -48,6 +48,8 @@ export interface AuthContextValue {
   signOut(): Promise<void>;
   /** FR-004: switch the farm the shell is showing, without re-authenticating. */
   setActiveFarm(farmId: string): void;
+  /** FR-004: add another farm to this business. Needs a connection — see the implementation. */
+  addFarm(input: schemas.CreateFarmRequest): Promise<void>;
   /**
    * Re-reads the session from the server and returns the new access token (null when there is
    * no refresh token to spend). Used after enrolling a second factor, where the account's
@@ -152,16 +154,56 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     }
   }, [session, sessions]);
 
+  /**
+   * FR-004. The DEVICE switches first and unconditionally; the server is told afterwards, and a
+   * failure to tell it changes nothing about what the farmer sees.
+   *
+   * That order is the whole design. Which farm you are looking at is a view decision, and a farmer
+   * standing in a camp with no signal must be able to change it — making the switch await a POST
+   * would put the network in front of an action that needs no network. The server-side session
+   * still matters (another device, and the next refresh, should agree), so it is told, best-effort,
+   * and it catches up on its own the next time the app is opened in range.
+   */
   const setActiveFarm = useCallback(
     (farmId: string) => {
+      let token: string | undefined;
       setSession((current) => {
         if (!current || !current.farms.some((farm) => farm.id === farmId)) return current;
+        token = current.accessToken;
         const next = { ...current, activeFarmId: farmId };
         sessions.write(next);
         return next;
       });
+      if (token) {
+        void authApi.switchActiveFarm(token, farmId).catch(() => {
+          // No signal, or a stale token. The device is already showing the right farm, which is
+          // what the farmer asked for; nothing is lost and nothing needs saying.
+        });
+      }
     },
     [sessions],
+  );
+
+  /**
+   * FR-004: add another farm to the business. Unlike a capture this genuinely NEEDS the network —
+   * a farm is a tenancy root with RLS and memberships behind it, and inventing one offline would
+   * create a farm no server has agreed to. So this is one of the few places the app is honest about
+   * requiring a connection, and it says so rather than queuing something it cannot honour.
+   */
+  const addFarm = useCallback(
+    async (input: schemas.CreateFarmRequest): Promise<void> => {
+      const token = session?.accessToken;
+      if (!token) throw new Error('Adding a farm needs a signed-in session');
+      const farm = await authApi.createFarm(token, input);
+      setSession((current) => {
+        if (!current) return current;
+        // Switched to immediately: someone who just created a farm wants to be in it.
+        const next = { ...current, farms: [...current.farms, farm], activeFarmId: farm.id };
+        sessions.write(next);
+        return next;
+      });
+    },
+    [session, sessions],
   );
 
   const refreshSession = useCallback(async (): Promise<string | null> => {
@@ -223,6 +265,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
       completeSecondFactor,
       signOut,
       setActiveFarm,
+      addFarm,
       refreshSession,
       saveLocale,
     };
@@ -233,6 +276,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     completeSecondFactor,
     signOut,
     setActiveFarm,
+    addFarm,
     refreshSession,
     saveLocale,
   ]);

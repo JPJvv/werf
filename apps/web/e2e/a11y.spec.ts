@@ -87,6 +87,19 @@ for (const theme of THEMES) {
     expect(results.violations).toEqual([]);
   });
 
+  test(`settings → farms has no accessibility violations in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme });
+    await page.goto('/settings/farms');
+
+    await expect(page.getByRole('heading', { name: /^farms$/i })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
   test(`settings → language has no accessibility violations in the ${theme} theme`, async ({
     page,
   }) => {

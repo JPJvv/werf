@@ -31,6 +31,18 @@ const en = {
   'settings.appearance.dark.hint': 'Easier on the eyes at night.',
   'settings.appearance.system': 'Match my phone',
   'settings.appearance.system.hint': 'Follow your phone’s day/night setting.',
+  // The farms this business runs (FR-004). In Settings because adding a farm is a once-a-decade
+  // act, and the home grid's fixed tile set is muscle memory it has no claim on.
+  'settings.farms.title': 'Farms',
+  'settings.farms.current': 'You are here',
+  'settings.farms.add': 'Add a farm',
+  'settings.farms.notOwner': 'Only the owner of the business can add a farm.',
+  // States the situation, never blames the network, and says what to do — a farm is a tenancy
+  // root, so it genuinely cannot be created on a phone with no signal.
+  'settings.farms.needsSignal':
+    'Adding a farm needs a connection, because the farm has to be set up on the server too. Everything else in the app keeps working without one.',
+  'settings.farms.failed': 'The farm could not be added just now. Try again.',
+  'shell.farm': 'Farm',
   'settings.language.title': 'Language',
   'settings.language.legend': 'Language',
   // Shown only when the account could not be told (no signal). Not an error: the app IS in the
@@ -420,6 +432,14 @@ const af: Record<TranslationKey, string> = {
   'settings.appearance.dark.hint': 'Sagter vir die oë snags.',
   'settings.appearance.system': 'Pas by my foon',
   'settings.appearance.system.hint': 'Volg jou foon se dag/nag-instelling.',
+  'settings.farms.title': 'Plase',
+  'settings.farms.current': 'Jy is hier',
+  'settings.farms.add': 'Voeg ’n plaas by',
+  'settings.farms.notOwner': 'Net die eienaar van die besigheid kan ’n plaas byvoeg.',
+  'settings.farms.needsSignal':
+    'Om ’n plaas by te voeg het ’n verbinding nodig, want die plaas moet ook op die bediener opgestel word. Alles anders in die app werk steeds daarsonder.',
+  'settings.farms.failed': 'Die plaas kon nie nou bygevoeg word nie. Probeer weer.',
+  'shell.farm': 'Plaas',
   'settings.language.title': 'Taal',
   'settings.language.legend': 'Taal',
   'settings.language.deviceOnly':

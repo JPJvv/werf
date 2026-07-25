@@ -95,6 +95,17 @@ export type SessionEnterprise = z.infer<typeof sessionEnterpriseSchema>;
 /** The farms a signed-in user may act on, and the role they hold on each (roles are per FARM). */
 export const sessionFarmSchema = z.object({
   id: uuidSchema,
+  /**
+   * The business this farm belongs to (FR-004). DEFAULTED to null for the same reason
+   * `enterprises` is defaulted: a session cached before this field existed is re-parsed on every
+   * cold start, and making it mandatory would fail that parse and sign a farmer out — offline,
+   * with captures queued, because of an app update. Null means "this device does not know yet",
+   * and the client simply cannot offer to add a farm until the next sign-in fills it in.
+   *
+   * It is here because adding a SECOND farm needs it, and a client that had to ask the server for
+   * it first would be a client that cannot start the flow offline.
+   */
+  businessId: uuidSchema.nullable().default(null),
   name: z.string().min(1),
   enterpriseTypes: z.array(enterpriseTypeSchema),
   /**

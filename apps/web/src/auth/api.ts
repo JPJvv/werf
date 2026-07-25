@@ -116,4 +116,19 @@ export const authApi = {
     accessToken: string,
     input: schemas.UpdateProfileRequest,
   ): Promise<schemas.AuthSession['user']> => send('PATCH', '/auth/profile', input, accessToken),
+
+  /**
+   * FR-004: point the SERVER-side session at a different farm. The device has already switched —
+   * this is the catch-up, so the next refresh (or another device) agrees. Best-effort by design:
+   * a farmer standing in a camp with no signal must still be able to change which farm they are
+   * looking at.
+   */
+  switchActiveFarm: (accessToken: string, farmId: string): Promise<void> =>
+    send('POST', '/farms/active', { farmId }, accessToken),
+
+  /** FR-004: another farm under a business the caller owns. */
+  createFarm: (
+    accessToken: string,
+    input: schemas.CreateFarmRequest,
+  ): Promise<schemas.SessionFarm> => send('POST', '/farms', input, accessToken),
 };

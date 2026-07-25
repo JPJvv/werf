@@ -18,6 +18,9 @@ export function SettingsLayout() {
         <NavLink to="appearance" className={linkClass}>
           {t('settings.appearance.title')}
         </NavLink>
+        <NavLink to="farms" className={linkClass}>
+          {t('settings.farms.title')}
+        </NavLink>
         <NavLink to="language" className={linkClass}>
           {t('settings.language.title')}
         </NavLink>

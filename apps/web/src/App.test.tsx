@@ -103,6 +103,7 @@ describe('arriving signed in, with no signal', () => {
       farms: [
         {
           id: '0190f3a0-0000-7000-8000-0000000000f2',
+          businessId: null,
           name: 'Vinkel Lande',
           enterpriseTypes: ['vineyards'],
           enterprises: [],
@@ -140,6 +141,7 @@ describe('arriving signed in, with no signal', () => {
       farms: [
         {
           id: '0190f3a0-0000-7000-8000-0000000000f3',
+          businessId: null,
           name: 'Kudu Ranch',
           enterpriseTypes: ['beef_cattle'],
           enterprises: [],

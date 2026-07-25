@@ -50,6 +50,7 @@ export class FarmsService {
       const rows = await tx
         .select({
           id: farms.id,
+          businessId: farms.businessId,
           name: farms.name,
           enterpriseTypes: farms.enterpriseTypes,
           role: farmUsers.role,
@@ -112,6 +113,7 @@ export class FarmsService {
 
       return {
         id: farm!.id,
+        businessId: farm!.businessId,
         name: farm!.name,
         enterpriseTypes: farm!.enterpriseTypes,
         enterprises: created,
@@ -199,6 +201,7 @@ export class FarmsService {
 
       return {
         id: updated!.id,
+        businessId: updated!.businessId,
         name: updated!.name,
         enterpriseTypes: updated!.enterpriseTypes,
         enterprises: herds.get(farmId) ?? [],

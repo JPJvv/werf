@@ -14,25 +14,13 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ENTERPRISE_TYPES, type EnterpriseType } from '@werf/core';
+import { ENTERPRISE_LABELS, PROVINCES } from './farmOptions';
 import { useAuth } from './AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from './api';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { Field, FieldSet, FormError, PrimaryButton } from './form';
 import { Screen } from './SignInScreen';
-
-/** The nine provinces. Jurisdiction is NOT chosen here — it comes from the farm, always 'ZA'. */
-const PROVINCES = [
-  'Eastern Cape',
-  'Free State',
-  'Gauteng',
-  'KwaZulu-Natal',
-  'Limpopo',
-  'Mpumalanga',
-  'North West',
-  'Northern Cape',
-  'Western Cape',
-];
 
 const MINIMUM_PASSWORD_LENGTH = 12;
 
@@ -220,24 +208,3 @@ export function RegisterScreen() {
     </Screen>
   );
 }
-
-/**
- * Enterprise names as a farmer says them. Not translated yet — this intersects the
- * terminology engine (a "camp" for cattle, a "block" for vines), which owns the whole
- * vocabulary and lands with the modules that use it. Translating these here would fork
- * that vocabulary in two places.
- */
-const ENTERPRISE_LABELS: Record<EnterpriseType, string> = {
-  beef_cattle: 'Beef cattle',
-  dairy: 'Dairy',
-  sheep: 'Sheep',
-  goats: 'Goats',
-  pigs: 'Pigs',
-  poultry: 'Poultry',
-  game: 'Game',
-  row_crops: 'Row crops',
-  vegetables: 'Vegetables',
-  orchards: 'Orchards',
-  vineyards: 'Vineyards',
-  other: 'Other',
-};

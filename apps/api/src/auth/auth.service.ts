@@ -341,6 +341,7 @@ export class AuthService {
       const rows = await tx
         .select({
           id: farms.id,
+          businessId: farms.businessId,
           name: farms.name,
           enterpriseTypes: farms.enterpriseTypes,
           role: farmUsers.role,

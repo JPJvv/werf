@@ -4,6 +4,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { SyncStatusStrip } from '../sync/SyncStatusStrip';
 import { OutboxProvider } from '../sync/Outbox';
 import { InstallPrompt } from '../pwa/InstallPrompt';
+import { FarmSwitcher } from './FarmSwitcher';
 import { LocalLandProvider } from '../land/LocalLand';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
@@ -62,7 +63,11 @@ export function AppShell() {
         <Link to="/" className="font-ui text-h2 text-soil-900 no-underline">
           Werf
         </Link>
-        <nav>
+        <nav className="flex items-center gap-2">
+          {/* FR-004. On every screen, because "which farm is this?" is the question behind every
+              number on it — and hidden entirely on a single-farm account, where a picker with one
+              option is furniture. */}
+          <FarmSwitcher />
           <Link
             to="/settings"
             className="flex min-h-touch-min items-center px-3 text-body text-soil-700 no-underline"

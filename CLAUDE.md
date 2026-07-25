@@ -1,5 +1,10 @@
 # Werf — project memory
 
+> **▶ Read [`STATUS.md`](STATUS.md) first.** It is the live pointer between sessions: which phase
+> is where, what is merged, and the open decisions that block the next slice. It carries questions
+> addressed to the repo owner — **ask them, do not guess the answers.** Update it at the end of
+> every session and commit it with the work.
+
 Offline-first PWA for South African farm management. Monorepo, TypeScript everywhere.
 
 ## Commands
@@ -76,6 +81,7 @@ React PWA → local SQLite (via PowerSync web SDK, OPFS) → PowerSync service �
 
 ## Where to look
 
+- **Where are we? What is next? → `STATUS.md`** (read before planning; answer its open decisions with the owner)
 - Working on a phase → `docs/04-delivery/phase-checklists.md`
 - Naming, trademark, the codename → `docs/00-business/naming.md`
 - Anything about the repo, licence, or commits → `docs/04-delivery/github-strategy.md`

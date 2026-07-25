@@ -139,17 +139,24 @@ review. A ◐ that names precisely what is missing is worth more than a ☑ that
 FR-014b (support-channel 2FA reset + 48h delay), FR-015 (global search), and full PowerSync
 replication of domain data (Phase 3).
 
-**Partially delivered — named so they are not mistaken for done:**
+**Partially delivered — named so they are not mistaken for done.** Struck-through entries were
+CLOSED by the Phase 2 carry-forward work; the two that remain are the honest ones.
 - **FR-014c (manage passkeys):** the API enrols, lists and revokes; there is no management UI.
-- **FR-017 "one live number or one badge" per tile:** `Tile` accepts `metric`/`badge` props and
-  nothing populates them, because no domain data exists to count until Phase 2. Tiles are doors.
+- ~~FR-017 "one live number or one badge" per tile~~ — **CLOSED.** The animals tile carries live
+  head, the land tile the camp count, and the health tile a "N withholding" attention badge. Tiles
+  with no true number to carry still carry none, deliberately (see the Phase 2 line).
 - **Passkey enrolment from the client:** the API ceremonies are complete and tested; the client
   enrols TOTP only. A farmer can satisfy FR-014 today, but not with the factor ADR-0007 prefers.
-- **FR-008 write-back:** the account's locale is applied on sign-in and set at onboarding, but a
-  language change made later is device-scoped — there is no profile-update endpoint yet.
-- **FR-004 farm switching:** the API switches active farm; the shell has no switcher UI, and no
-  client path creates a second farm.
-- **Invitation delivery:** `invite` records a membership; nothing emails or SMSes the invitee.
+  **This is the largest remaining Phase 1 gap.**
+- ~~FR-008 write-back~~ — **CLOSED** in Phase 2 (`PATCH /auth/profile` + the pre-sign-in picker).
+- ~~FR-004 farm switching~~ — **CLOSED.** A switcher in the shell header on every screen (hidden on
+  a single-farm account), switching the device FIRST and telling the server best-effort so it works
+  with no signal; and Settings → Farms adds a farm, which is one of the very few screens that
+  honestly requires a connection and says so. `SessionFarm` gained `businessId` (defaulted, so a
+  session cached before it existed still parses).
+- ~~Invitation delivery~~ — **CLOSED for email**, through a provider-agnostic `Mailer` port
+  (`apps/api/src/mail`, `SMTP_*` config). A PHONE-ONLY invitation still reaches nobody, and that is
+  a decision: SMS is ruled out for the same SIM-swap reason it is ruled out as a second factor.
 
 ---
 
@@ -188,8 +195,18 @@ Land foundation (needed before animals have somewhere to live)
   enforcing the dual write; `boundary` in neverSyncColumns (SQLite has no PostGIS). Proven end
   to end against real PostGIS: RLS isolation, WITH CHECK write-guard, trigger derives+updates
   geojson through the app path. postgis extension enabled here (first geometry table) (FR-150)
-◐ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150) — the DATA
-  layer supports every field; the create ACTION (API endpoint + capture screen) is a later slice
+◐ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150) — the create
+  ACTION is DONE (commit 961e2d7): `POST /land-units` + `GET`, and an offline capture screen at
+  `/land/new` reached from the first-run guide's own link, which until now landed on a placeholder.
+  ⭐ The DUAL-WRITE now runs client→server, which nothing enforced: the client authors GeoJSON (it
+  has no PostGIS) and the server derives the canonical `geometry` with ST_GeomFromGeoJSON, SRID
+  forced to 4326 because ST_GeomFromGeoJSON returns 0 and the column type rejects it; the trigger
+  then writes PostGIS' own normalisation back. Proven by comparing the stored mirror to
+  ST_AsGeoJSON(boundary), not by asserting both are non-null. Terminology is not re-decided — the
+  farm's vocabulary picks the word AND the `kind`, and a vineyard is asked nothing about grazing
+  capacity. A duplicate code is refused on the device before it can jam the queue, and refused again
+  server-side with a message. Still ◐: WALKING a boundary (capturing the polygon by GPS) is its own
+  mapping feature — the API accepts and converts one, nothing yet produces one
 ☑ @werf/core Zod schema for LandUnit (record + new shapes) — DONE, with the boundary crossing
   the wire as GeoJSON text, never PostGIS. Terminology now comes from the real terminology layer
   (`apps/web/src/i18n/terminology.ts`), which decides the TERM while the dictionaries hold the word
@@ -210,23 +227,47 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   one, nothing is asked and the herd is stated. Still ◐: only herd/species/sex/breed are captured on
   the screen (DOB, source, acquired_at, identifiers are later). DOB stays a YYYY-MM-DD string, never
   a coerced Date (off-by-one guard)
-◐ Create a mob/flock and manage it by head_count without individual rows (FR-102) — data layer done
-  and proven (a mob is a complete record with zero animal rows behind it); create ACTION pending
+☑ Create a mob/flock and manage it by head_count without individual rows (FR-102) — create ACTION
+  DONE (commit fb74d6e): `POST /livestock/mobs` and a capture screen at `/animals/groups/new`,
+  offered beside "record an animal" rather than buried, because for a smallholder running 300 sheep
+  as a flock it is the only capture they will ever need. The head count feeds the live total, so the
+  home tile shows 300 on a farm with ZERO animal rows — asserted directly, because a tile showing 0
+  there is the whole failure FR-102 exists to prevent. The Animals screen also stops telling such a
+  farm it has "recorded nothing yet"
 ◐ Species-specific attributes via Zod-validated JSONB (FR-107, ADR-0006 AnimalIdentityRules seam) —
   the `attributes` jsonb column + GIN index exist and the schema leaves it an open record; the
   PER-SPECIES validator (horn_status for cattle, wool_class for sheep) is its own later slice
-◐ Multiple identifiers per animal; UNIQUE(farm_id, type, value) partial on deleted_at IS NULL (FR-109)
-  — schema + partial-unique DONE and proven, including reuse of a retired tag after soft-delete;
-  the add-identifier ACTION (API + UI) is a later slice
-◐ Move animals between mobs and camps; movement retained as an event, never an overwrite (FR-103)
-  — capture DOMAIN LOGIC done (@werf/domain recordMove → a `move` event holding before AND after of
-  camp+mob, plus the denormalised land_unit_id/mob_id change to apply; refuses a no-op and an animal
-  that has left the herd; omit=unchanged vs null=cleared). `move` payload is now concrete in @werf/core.
-  API endpoint + capture screen deferred
-◐ 📶 Batch operations: apply one event to a selected group in one action, one batch_id (FR-112)
-  — DOMAIN primitive done (@werf/domain recordBatch: stamps one shared batch_id across a group,
-  overriding any per-animal id, one event per animal; proven against recordWeight + recordMove).
-  The selection UI + the one-action capture screen are a later slice
+☑ Multiple identifiers per animal; UNIQUE(farm_id, type, value) partial on deleted_at IS NULL
+  (FR-109) — the add-identifier ACTION is DONE (commit 2b722e9): `POST /livestock/identifiers` and a
+  crush-shaped tagging session at `/animals/tag`, one animal per screen, Save & next, queue fixed
+  when the session opens so the list does not shrink under a thumb. A number already live on ANOTHER
+  animal is refused in BOTH places for different reasons: on the device before the save, because in
+  a crush the cause is nearly always a misread digit; and on the server, because a second device
+  cannot see this one's captures and because silently moving a live tag corrupts the identity chain
+  an evidence pack and an export audit rest on. Reissuing a retired tag still works, and is tested.
+  The knock-on is the point of FR-109: an animal is now called by its NUMBER everywhere it appears,
+  through ONE lookup, and an untagged animal says "without a number" rather than showing a blank
+☑ Move animals between mobs and camps; movement retained as an event, never an overwrite (FR-103) —
+  API + SCREEN DONE (commit cc91a9b). `POST /livestock/moves` sends only the DESTINATION; the FROM
+  side is read from the animal's own row, so the stored history cannot disagree with the herd. Two
+  writes, two different facts: the append-only `move` event is the history, the animal row's
+  land_unit_id/mob_id are a denormalised "where is it now". The screen is multi-select by design —
+  a farmer opens a gate and a camp empties — so this also closes FR-112's selection UI for the event
+  type where it is unavoidable: one event per animal, ONE shared batch_id.
+  ⭐ TWO BUGS THE TESTS FOUND, both of which would have shipped. (1) A RE-FLUSHED MOVE JAMMED THE
+  QUEUE: the flush is at-least-once, and on the retry the animal is already at the destination, so
+  the domain correctly refuses "a move that changes nothing" — the outbox would never mark it sent
+  and would stall every later capture behind a write that had succeeded. Idempotency for a capture
+  that CHANGES THE STATE ITS OWN VALIDATION READS has to be checked BEFORE validation (`findEvent`).
+  (2) omit-vs-null is load-bearing at every layer, and a default would silently destroy data:
+  sending null for an unnamed destination turns "walk them to Camp 4" into "and take them out of
+  their mob". Asserted at the wire as an ABSENT key, not described
+☑ 📶 Batch operations: apply one event to a selected group in one action, one batch_id (FR-112) —
+  the selection UI + one-action capture are DONE for the two captures that are batches BY NATURE:
+  moving (a gate opens and a camp empties) and dosing (nobody doses one animal and walks away).
+  Both give every animal its own event under one shared batch_id, so the run can be reviewed or
+  corrected as the single action it was. Still ◐: weighing and tagging stay sequential on purpose —
+  they are one-animal-at-a-time in the crush and a multi-select would be slower, not faster
 ◐ 📶 Attach photos: stored locally, photo_key set, upload deferred to sync, never blocks a write
   (FR-108) — the photo_key column exists; the local-store + deferred-upload flow is a client slice
 
@@ -238,9 +279,13 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   stripped). Proven against real PG (RLS isolation, WITH CHECK, partition routing, default
   fallback, occurred_at≠created_at, the location trigger). @werf/core event envelope + per-type
   payload registry
-◐ 📶 Record a birth: ease score, birth weight, dam, multiples (FR-104) — capture DOMAIN LOGIC done
-  (@werf/domain recordBirth + the animal-status state machine, table-driven); the API endpoint +
-  capture SCREEN are a later slice, and must add the FR-113 herd selection
+☑ 📶 Record a birth: ease score, birth weight, dam, multiples (FR-104) — API + SCREEN DONE (commit
+  434db44). TWO records from one action: the calf's herd row and the calving, filed against the DAM,
+  because the calf has no history yet and "which cows calved, and how hard" is the question asked in
+  September. The calf inherits its mother's species, herd and position (FR-113 satisfied without
+  asking), and is the one animal whose date of birth is known exactly rather than estimated. Ease
+  score is five large buttons, not a number field: it is a judgement with five answers, and a 4 or a
+  5 twice on the same cow is a culling decision nobody reconstructs from memory
 ◐ 📶 Record a death with cause → status='dead', retained forever, excluded from live counts (FR-105)
   — recordDeath done (→ dead via the state machine). OFFLINE CAPTURE SCREEN done (`/animals/loss`,
   commit a6c4928): pick a live animal, give a cause, record — validated through recordDeath, written
@@ -251,7 +296,12 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   POSTGRES via the best-effort outbox flush (`POST /livestock/deaths`, after its animal). Still ◐:
   only DEATH (cull/missing follow the same shape, later). NOTE: sale (FR-106) + weaning (FR-111)
   screens reuse this exact pattern
-◐ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106) — recordSale/
+☑ 📶 Record a sale or purchase: counterparty, price (Money/cents), weight (FR-106) — PURCHASE now
+  has a path too (commit 434db44), folded into recording an animal rather than given a screen of its
+  own: a bought animal is not a different KIND of animal, it is the same herd row plus a money
+  event, and `source`/`acquired_at` land on the animal because an evidence pack reads those rather
+  than trawling the event log. Still ◐: the optional sale WEIGHT is still not captured on-screen.
+  Original note follows — recordSale/
   recordPurchase done (sale → sold; Money is integer cents). SALE CAPTURE SCREEN done (commit c04bf36,
   in the `/animals/loss` RecordLossScreen — a loss is a death OR a sale): pick the animal, choose Died
   or Sold, give buyer + price; validated through recordSale, written as a lifecycle EVENT through the
@@ -261,10 +311,19 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   (`POST /livestock/sales`, after its animal; Money crosses the wire as integer cents). Still ◐:
   PURCHASE (an acquisition, no status change) has no screen yet, and the optional sale weight isn't
   captured on-screen
-◐ 📶 Record weaning with weight and age (FR-111) — recordWeaning done; API + screen pending
-◐ occurred_at is captured separately from created_at everywhere; reports read occurred_at (CLAUDE.md)
-  — enforced in schema + domain (occurred_at is injected, distinct from created_at); the
-  report/herd-summary read model that READS occurred_at is still pending
+☑ 📶 Record weaning with weight and age (FR-111) — API + SCREEN DONE (commit 434db44). A crush
+  session, same shape as weighing, because weaning IS a crush day. The AGE is derived from the date
+  of birth rather than asked — a farmer in a race is not going to work out that a calf is 207 days
+  old — and omitted entirely where there is no DOB, because a guessed age is worse than no age in a
+  growth comparison
+☑ occurred_at is captured separately from created_at everywhere; reports read occurred_at
+  (CLAUDE.md) — the READ side now exists: the rainfall season total sums on `occurredAt` (the day
+  the gauge was READ, never the day it was captured), and the client move projection folds position
+  last-write-wins BY `occurredAt` rather than by insertion order. ⭐ Turning an INSTANT into a DAY
+  now goes through `farmTime` in the FARM's zone: `toISOString().slice(0,10)` is the tempting
+  one-liner and it is wrong for two hours out of every twenty-four in South Africa — a calf born at
+  01:00 SAST would be recorded as born the previous day and its weaning age would be a day out
+  forever
 ☑ 📶 Scope every event to the applicable herd — enterprise/species (cattle/sheep/pig/poultry) or the
   specific animal/mob — so a mixed farm files/filters events correctly; capture REQUIRES a herd
   selection when the event is not tied to one animal (FR-113, NEW from the 2026-07-23 mockup review).
@@ -280,7 +339,12 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   and shown where the animal went, and the session carries the farm's enterprises so this works
   offline. Animals screen gains a herd filter; the whole-farm total never filters, so a herdless
   animal is never hidden
-☑ 📶 Manual rainfall capture (FR-213, P1) — a farm/land-scoped `rainfall` event: how much (mm) and
+☑ 📶 Manual rainfall capture (FR-213, P1) — the READ side is now done too (commit 4a492b9): the
+  season total is on the HOME screen beside the link, because "how much have we had this season" is
+  asked every time a farmer thinks about it and a number you must open a screen to see is a number
+  you stop checking. The season starts in JULY — splitting a summer-rainfall year at 1 January would
+  cut every season in half exactly where the comparison matters — and it sums on `occurredAt`, the
+  day the gauge was READ. Still ◐: nothing yet feeds grazing rest. Original note follows — — a farm/land-scoped `rainfall` event: how much (mm) and
   when (occurred_at). Migration **0014** adds 'rainfall' to event_type by `ALTER TYPE … ADD VALUE`
   (the one enum DDL safe across the LIST-partitioned events table), appended LAST so the array and
   the Postgres enum stay in the same order. Pure `recordRainfall` (@werf/domain root, not under
@@ -297,7 +361,8 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
 Breeding (P1 only; FR-122/123 deferred)
 ◐ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120) — capture
   DOMAIN LOGIC done (@werf/domain recordMating → a `mating` event against the dam; on-farm sireId or
-  external sireCode; bull-in/bull-out period). API + screen deferred
+  external sireCode; bull-in/bull-out period). API + screen STILL DEFERRED — not reached this
+  session; it is the largest remaining Phase 2 capture
 ◐ 📶 Record pregnancy diagnosis: method + result; project due date from species gestation
   (gestation is reference data, not a magic number in code) (FR-121) — recordPregnancyDiagnosis +
   projectDueDate done: gestation is INJECTED (never hardcoded), the due date is computed AT CAPTURE
@@ -305,19 +370,40 @@ Breeding (P1 only; FR-122/123 deferred)
   DATA source (a table/seed the caller reads) + API + screen are a later slice
 
 Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-checker before merge)
-◐ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130) — capture
-  DOMAIN LOGIC done (@werf/domain recordTreatment; exactly-one subject animal xor mob). API + screen deferred
+☑ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130) — SCREEN DONE
+  (commit d32451a) on top of the server endpoints that already existed. A dosing run is a batch by
+  nature, so selection is the primary interaction and one batch_id ties the run together; products
+  are filtered to the species actually selected, so a wrong choice is off the screen rather than
+  something the farmer has to notice. Still ◐: dose value/unit and route are not on the screen yet
+  (the wire and the event carry them)
 ◐ 📶 Automatic withdrawal period from product reference data: compute + store meat/milk withdrawal
   ON THE EVENT (not on read — the rule at time of treatment, ADR-0005); block or hard-warn on
   sale/slaughter within it. Withdrawal periods live in regulatory reference data, by date (FR-131, FR-614)
-  — withholdUntil computes the clear date at capture from an INJECTED product withdrawal period (never
-  hardcoded) and stores it on the event; isWithinWithdrawal is the sale/slaughter guard. The
-  veterinary_products REFERENCE TABLE (the withdrawal source, like chemical_products for spray) + the
-  sale-flow that consults the guard + the API/screen are a later slice
-◐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132) — recordVaccination
-  done (programme + optional withdrawal); the due/overdue read model is deferred with the herd read models
-◐ 📶 🇿🇦 Record a dip/tick treatment (required in controlled areas) (FR-133) — recordDip done
-  (method + optional withdrawal); API + screen + the controlled-area prompt (§3.4) deferred
+  — DONE end to end (commits d32451a, e5fc018). The `veterinary_products` register reaches the
+  DEVICE through `GET /reference/veterinary-products` (its own module, because reference data is not
+  a livestock concern — chemical_products and regulatory_rates land there too) and is cached through
+  `createReferenceCache`, a SIBLING of the append-only capture store rather than a widening of it: a
+  capture store holds captured facts and must never be rewritten, while reference data is a
+  replaceable snapshot of something authoritative elsewhere.
+  ⭐ THE CLEAR DATE IS ON SCREEN IN THE CRUSH. "When can I sell this animal?" answered three weeks
+  later is answered too late. A product with NO meat withholding says so explicitly, because silence
+  reads as "the app does not know". What is STORED is a productId and never a withdrawal period —
+  the number is regulated, the server resolves it from the registration in force on the treatment
+  day, and the test asserts the ABSENCE of the withdrawal fields.
+  ⭐ The SALE GUARD now runs at capture as well as on the server. Without it an offline sale of a
+  treated animal commits locally, is refused forever on flush, and jams the queue with nothing on
+  the phone explaining why — days after the truck has gone. It says NO and says WHEN in one panel;
+  the LATEST clear date across all treatments wins; and a DEATH is never withheld, because the rule
+  is about meat entering the food chain, not about recording what happened
+◐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132) — the
+  CAPTURE is done (the health screen records a vaccination against a programme, commit d32451a). The
+  DUE/OVERDUE read model is still ◐ and is named honestly: it needs a vaccination PROGRAMME SCHEDULE
+  that has not been designed, and the Health tile deliberately carries "N withholding" — which is
+  true and derivable today — rather than an "N due" the app cannot actually compute
+◐ 📶 🇿🇦 Record a dip/tick treatment (required in controlled areas) (FR-133) — API + SCREEN DONE
+  (the health screen's third kind, commit d32451a). Still ◐: the dip METHOD is not on the screen
+  (the wire carries it), and the controlled-area prompt (§3.4) needs the controlled-area boundaries
+  as reference data, which do not exist yet
 
 Weights & performance
 ◐ 📶 Record a weight against an animal or a mob (FR-140) — capture DOMAIN LOGIC done
@@ -353,8 +439,14 @@ SA identity & stock theft 🇿🇦 (compliance-gated)
   acquisition — the window is reference data resolved by date, never hardcoded (FR-602) — animals.brand_id
   / brand_applied_at added additively (0011); isUnmarkedPastWindow done (window INJECTED, asOf injected,
   marked/no-acquisition never flagged). Surfacing the flag in a read model/UI is deferred
-◐ 🇿🇦 Mark an animal missing: status='missing', timestamped, GPS-anchored (FR-605) — recordMissing
-  done (alive→missing via the state machine; last-seen GeoJSON REQUIRED). API + screen deferred
+☑ 🇿🇦 Mark an animal missing: status='missing', timestamped, GPS-anchored (FR-605) — API + SCREEN
+  DONE (commit 434db44), as a third outcome on the loss screen. ⭐ It is the stock-theft path, not a
+  third radio button: it asks for the day it was LAST SEEN rather than assuming today (a theft dated
+  to the day it was noticed is dated wrong), and it takes a REAL GPS fix rather than saving without
+  one. Geolocation works with no signal — GPS is a receiver, not a connection — so requiring it
+  costs an offline farmer nothing, and it is what makes "GPS-anchored" a promise rather than a hope.
+  When a fix fails the REASON is named, because "permission denied" and "no signal" need different
+  actions from the person holding the phone
 ◐ 🇿🇦 Stock-theft evidence pack (server-side PDF, one action): identification, ownership chain,
   brand certificate, last-seen GPS+timestamp, movement history, treatment history, SAPS case
   number field. FACTS ONLY — no "suspect" field (defamation + POPIA s26) (FR-603) — the @werf/core
@@ -363,7 +455,15 @@ SA identity & stock theft 🇿🇦 (compliance-gated)
   are a substantial later server slice
 
 Reporting & the grid's live numbers
-◐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
+☑ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
+  — the CLASS breakdown is DONE (commit 4a492b9): cows, weaners, steers and "no age recorded", per
+  species, on the Animals screen. ⭐ The rules are PER SPECIES in a table (ADR-0006) — a weaner
+  becomes a heifer at a different age in cattle than a lamb becomes a hogget in sheep, and
+  hard-coding cattle's answer is how a livestock app ends up quietly wrong for everyone else — and
+  the class NAMES are jurisdiction-neutral tokens so Afrikaans can say "koeie" without English being
+  baked into the rule. An animal with no recorded birth date is NAMED rather than sorted, because on
+  an extensive farm that is a large part of the herd and counting them as cows would invent the
+  number being checked. Original note follows —
   — pure @werf/domain summariseHerd done: live = alive only (dead/sold/culled/missing retained by
   status, excluded from live head), mob head counts folded in (FR-102), breakdowns by species / sex /
   camp / enterprise / status. CLIENT READ-MODEL WIRING done (commit a6c4928): `apps/web/.../herd.ts`
@@ -372,11 +472,16 @@ Reporting & the grid's live numbers
   summariseHerd over it, reactively (useEffectiveAnimals/useHerdSummary on useSyncExternalStore). So
   the Animals screen and the home tile now DROP when an animal is lost. Age/sex CLASS (weaner/cow/
   steer, species-specific ADR-0006) still a later slice; the mob create-action still deferred
-◐ 🇿🇦 FR-017 completed: each enterprise tile now carries one live number or one attention badge,
-  fed from the herd summary — closes the Phase 1 ◐. Tiles stop being empty doors. — the animals tile
-  carries the live head count from the projection (moves up on a capture, DOWN on a loss, reactive
-  and surviving a cold start). Still ◐: the OTHER tiles (health "N due", etc.) have no number yet —
-  they populate as their read models land
+☑ 🇿🇦 FR-017 completed: each enterprise tile carries one live number or one attention badge —
+  closes the Phase 1 ◐ (commit 4a492b9). Animals: live head, moving UP on a capture and DOWN on a
+  loss, reactive and surviving a cold start. Land: the camp count. Health: a "N withholding" BADGE
+  (a dot AND a number AND a word — never colour alone, NFR-411), which outranks a metric because
+  something needing attention beats something being measured.
+  ⭐ Health carries "N withholding" and NOT the "N due" the sketch suggested, for one reason: it is
+  TRUE. A due/overdue count needs a programme schedule that does not exist, and a tile carrying a
+  number the app cannot compute is worse than a tile carrying none — the whole point of FR-017 is
+  that a tile is an instrument rather than a menu item. Labour, Money, Compliance and Sprays
+  deliberately carry NOTHING until their phases give them something true to say
 
 Phase 1 carry-forward (closing the Phase 1 ◐/deferred items the gate named as Phase 2 work)
 ☑ Bundle size gate ENFORCED (not just measured) — the build fails over ≤250KB gz
@@ -460,21 +565,39 @@ camp → create an animal → give it a tag → record a weight and a treatment 
 missing → generate a stock-theft pack → see the herd count on the home tile, entirely offline for
 the capture paths.
 
-**Where the gate stands (2026-07-25, branch `phase-2/livestock`).** `pnpm verify` exits 0 (61 files
-/ 548 tests, bundle ~106 KB gz); `pnpm test:e2e` is green (18 tests, 0 axe violations in both
-themes, including the offline cold-start capture on the built PWA); **no ☐ remains — every line is
-☑ or ◐ with its remainder named**; `compliance-checker` has passed on the gated slices. Still owed
-before the phase PR, and deliberately not claimed here: a `reviewer` pass over this checklist, a
-`sync-auditor` pass over migration 0015 and the derived tenancy table list, and CI green on `main`
-— which cannot happen until the PR exists, because CI does not run on feature branches.
+**Where the gate stands (2026-07-26, branch `phase-2/livestock`).** `pnpm verify` exits 0 (72 files
+/ 645 tests, bundle 119.19 KB gz); `pnpm test:e2e` is green (20 tests, 0 axe violations in both
+themes, including the offline cold-start capture on the built PWA); no ☐ remains — every line is ☑
+or ◐ with its remainder named; `compliance-checker` passed on the gated slices as they were built.
 
-The end-to-end sentence in the gate above is not yet true in one respect, and it is worth stating
-plainly rather than reading the gate generously: a farmer cannot yet CREATE A CAMP or GIVE AN ANIMAL
-A TAG from the app. Both data layers are done and proven, and both are named ◐ above with exactly
-that remainder; the create ACTIONS are the largest thing Phase 2 leaves for its successor, along
-with the API/screens for weaning, birth, movement, purchase, mating, pregnancy diagnosis and the
-health captures (whose SERVER side is done — it is the offline product-selection screen that waits
-on reference-data sync in Phase 3).
+**The end-to-end sentence in the gate above is now TRUE.** A farmer can create a camp → create an
+animal → give it a tag → record a weight and a treatment → wean it → mark another missing → see the
+herd count on the home tile, entirely offline for the capture paths. Generating the stock-theft pack
+is server-side and needs a connection, which the sentence already implied. The two clauses that were
+false when this paragraph was first written — creating a camp, and tagging an animal — were the
+first two slices of this stretch of work.
+
+**Still owed before the phase PR, and deliberately not claimed:**
+- a `reviewer` pass over this checklist, and a `sync-auditor` pass over migrations 0015–0016, the
+  new `assertOwnedReferences` guard and the derived tenancy table list. **Neither has been run** —
+  they are the first action of the next session;
+- a `compliance-checker` pass over the NEW compliance-gated work (the client withdrawal guard, the
+  reference-data endpoint, the missing-report GPS requirement);
+- CI green on `main`, which cannot happen until the PR exists, because CI does not run on feature
+  branches (env-gotchas).
+
+**What Phase 2 still leaves for its successor, named rather than implied:**
+- **FR-120/121 mating and pregnancy diagnosis** — domain logic done, API and screens not started.
+  The largest remaining capture, and the species-gestation reference data it needs does not exist.
+- **FR-108 photos** — `photo_key` exists; the local store and deferred upload do not.
+- **FR-107 species-specific attribute validation** — the `attributes` JSONB and its GIN index exist;
+  the per-species validator behind the ADR-0006 seam does not.
+- **FR-132 due/overdue** — needs a vaccination programme schedule that has not been designed.
+- **FR-602 unmarked-past-window flag** — `isUnmarkedPastWindow` is done and tested, but the
+  prescribed window is dated reference data that `regulatory_rates` does not yet carry, and
+  inventing it in code would be exactly the defect the domain rules forbid.
+- **FR-014/014c passkey enrolment and management from the client** — the Phase 1 gap that remains.
+  The API ceremonies are complete and tested; the client still enrols TOTP only.
 
 **Deferred to later phases (not a Phase 2 miss):** FR-110 pedigree/breed-% and FR-122/123 breeding
 analytics + reminders (P2); FR-134/135/136/137 injury, notifiable-disease flag, medicine inventory,

@@ -18,6 +18,7 @@ import { z } from 'zod';
 import {
   auditTimestampsSchema,
   dateSchema,
+  geoJsonStringSchema,
   jurisdictionSchema,
   timestampSchema,
   uuidSchema,
@@ -88,3 +89,32 @@ export const evidencePackSchema = z.object({
   // ⛔ There is deliberately NO `suspect` field. Do not add one. See the module header.
 });
 export type EvidencePack = z.infer<typeof evidencePackSchema>;
+
+/**
+ * Create a stock-theft incident (FR-603/605) — the record a farmer captures in the field, at the
+ * last-seen location, offline. It is what the evidence pack is later assembled FROM. Facts only:
+ * what was found, when, where, what was reported, and the case number.
+ *
+ * ⛔ NO `suspect` field — same rule as the pack. A farmer naming a neighbour is a defamation
+ * exposure for them and a POPIA s26 criminal-behaviour processing problem for us.
+ */
+export const newTheftIncidentSchema = z.object({
+  /** Client-generated UUIDv7 for the incident row. */
+  id: uuidSchema,
+  farmId: uuidSchema,
+  /** When the loss was discovered. */
+  discoveredAt: timestampSchema,
+  /** When the stock was last seen — the anchor of the possession timeline. */
+  lastSeenAt: timestampSchema.nullable().default(null),
+  /** Last-seen GPS as GeoJSON (never PostGIS on the wire). */
+  lastSeenLocationGeojson: geoJsonStringSchema.nullable().default(null),
+  landUnitId: uuidSchema.nullable().default(null),
+  headCount: z.number().int().positive(),
+  /** ZA copy: "SAPS case number". Neutral name (ADR-0006). */
+  caseNumber: z.string().min(1).nullable().default(null),
+  reportingStation: z.string().min(1).nullable().default(null),
+  observations: z.string().min(1).nullable().default(null),
+  /** The animals this incident concerns — the ownership chain the pack proves. */
+  animalIds: z.array(uuidSchema).default([]),
+});
+export type NewTheftIncident = z.infer<typeof newTheftIncidentSchema>;

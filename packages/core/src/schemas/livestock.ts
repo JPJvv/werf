@@ -12,8 +12,14 @@
  */
 
 import { z } from 'zod';
-import { uuidSchema, geoJsonStringSchema, timestampSchema } from './primitives';
-import { deathPayloadSchema, tradePayloadSchema, weightPayloadSchema } from './events';
+import { uuidSchema, geoJsonStringSchema, dateSchema, timestampSchema } from './primitives';
+import {
+  deathPayloadSchema,
+  dipPayloadSchema,
+  tradePayloadSchema,
+  treatmentRouteSchema,
+  weightPayloadSchema,
+} from './events';
 
 export {
   newAnimalSchema as recordAnimalRequestSchema,
@@ -81,3 +87,66 @@ export const recordSaleRequestSchema = z.object({
   ...tradePayloadSchema.shape,
 });
 export type RecordSaleRequest = z.infer<typeof recordSaleRequestSchema>;
+
+/**
+ * Health capture (FR-130/131/132/133) — COMPLIANCE-GATED (legal-compliance.md § 3). The fields
+ * every treatment / vaccination / dip carries. The sharp part: the client sends a `productId`, NOT
+ * the withdrawal period. The server resolves the veterinary product's REGISTERED meat/milk
+ * withdrawal from reference data (by the farm's jurisdiction) and computes+stores the clear dates on
+ * the event AT CAPTURE (ADR-0005, FR-131). A withdrawal number never crosses the wire and never
+ * appears in code (.claude/rules/domain.md); `product` (the name) is filled server-side too, so a
+ * client cannot claim a shorter withdrawal by naming a different product than the one it selected.
+ */
+const healthCaptureBase = {
+  /** Client-generated UUIDv7 for the event row. */
+  id: uuidSchema,
+  farmId: uuidSchema,
+  /** Exactly one of the two is the subject (a dip/vaccination is often a whole mob) — the rule is
+   *  enforced in the domain fn, not duplicated here. */
+  animalId: uuidSchema.nullable().default(null),
+  mobId: uuidSchema.nullable().default(null),
+  /** When it happened on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  /** The farm-local treatment DAY (YYYY-MM-DD) — the base for the withdrawal clear-date arithmetic. */
+  administeredOn: dateSchema,
+  /** The veterinary_products row the farmer selected. The server resolves the registered withdrawal
+   *  period AND the product name from it — never a withdrawal number on the wire. */
+  productId: uuidSchema,
+  /** Which herd/enterprise this event belongs to (FR-113). */
+  enterpriseId: uuidSchema.nullable().default(null),
+  /** Groups one dosing run across many animals (FR-112). */
+  batchId: uuidSchema.nullable().default(null),
+  locationGeojson: geoJsonStringSchema.nullable().default(null),
+  notes: z.string().min(1).nullable().default(null),
+} as const;
+
+/** Record a treatment (FR-130/131): the registered product, batch, dose, route, who gave it, why. */
+export const recordTreatmentRequestSchema = z.object({
+  ...healthCaptureBase,
+  batch: z.string().min(1).optional(),
+  doseValue: z.number().positive().optional(),
+  doseUnit: z.string().min(1).optional(),
+  // Reused from the treatment payload so the route vocabulary cannot drift between wire and event.
+  route: treatmentRouteSchema.optional(),
+  administeredBy: z.string().min(1).optional(),
+  reason: z.string().min(1).optional(),
+});
+export type RecordTreatmentRequest = z.infer<typeof recordTreatmentRequestSchema>;
+
+/** Record a vaccination (FR-132): the product, the programme it belongs to, batch, who gave it. */
+export const recordVaccinationRequestSchema = z.object({
+  ...healthCaptureBase,
+  programme: z.string().min(1).optional(),
+  batch: z.string().min(1).optional(),
+  administeredBy: z.string().min(1).optional(),
+});
+export type RecordVaccinationRequest = z.infer<typeof recordVaccinationRequestSchema>;
+
+/** Record a dip / tick treatment (FR-133): required in controlled areas (Animal Diseases Act). */
+export const recordDipRequestSchema = z.object({
+  ...healthCaptureBase,
+  // Reused from the dip payload so the method vocabulary cannot drift between wire and event.
+  method: dipPayloadSchema.shape.method,
+  reason: z.string().min(1).optional(),
+});
+export type RecordDipRequest = z.infer<typeof recordDipRequestSchema>;

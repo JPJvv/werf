@@ -53,6 +53,9 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   branding_registers: { id: 'brand-b', farm_id: FARM_B },
   events: { id: 'event-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
+  veterinary_products: { id: 'vet-za', jurisdiction: 'ZA' },
+  theft_incidents: { id: 'theft-b', farm_id: FARM_B },
+  theft_incident_animals: { incident_id: 'theft-b', animal_id: 'animal-b', farm_id: FARM_B },
 };
 
 const userAFarms = [FARM_A];
@@ -76,6 +79,9 @@ describe('sync tenancy — classification vocabulary', () => {
         'land_units',
         'mobs',
         'regulatory_rates',
+        'veterinary_products',
+        'theft_incidents',
+        'theft_incident_animals',
         'user_passkeys',
         'user_sessions',
         'users',
@@ -196,5 +202,16 @@ describe('sync tenancy — reference data by jurisdiction', () => {
     // A ZA phone must not download Namibian withdrawal periods, even though NA farms
     // do not exist in v1 — the filter is the guard, not the absence of data.
     expect(syncsToUser('regulatory_rates', { jurisdiction: 'NA' }, userAFarms, graph)).toBe(false);
+  });
+
+  it('syncs a ZA veterinary product to a ZA farm, never another jurisdiction’s', () => {
+    // The withdrawal-period source (FR-131) is filtered by the farm's jurisdiction, exactly
+    // like regulatory_rates — the crush withdrawal check works offline off ZA products only.
+    expect(syncsToUser('veterinary_products', { jurisdiction: 'ZA' }, userAFarms, graph)).toBe(
+      true,
+    );
+    expect(syncsToUser('veterinary_products', { jurisdiction: 'NA' }, userAFarms, graph)).toBe(
+      false,
+    );
   });
 });

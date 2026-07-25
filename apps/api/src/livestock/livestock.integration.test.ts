@@ -13,19 +13,25 @@ import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { eq } from 'drizzle-orm';
 import {
+  animalIdentifiers,
   animals,
+  brandingRegisters,
   createAppDb,
   createElevatedDb,
   events,
   farmUsers,
   mobs,
+  theftIncidentAnimals,
+  theftIncidents,
   users,
+  veterinaryProducts,
   type AppDb,
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
 import { NotFoundError, TenancyError, ValidationError, schemas } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
+import { renderEvidencePackPdf } from './evidence-pack.pdf';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
 import { TokenService } from '../auth/token.service';
@@ -106,6 +112,60 @@ const saleBody = (
     ...over,
   });
 
+/** A minimal valid treatment body; overlay the fields a test cares about. */
+const treatmentBody = (
+  over: Partial<ZodInput<typeof schemas.recordTreatmentRequestSchema>>,
+): schemas.RecordTreatmentRequest =>
+  schemas.recordTreatmentRequestSchema.parse({
+    id: randomUUID(),
+    farmId: over.farmId,
+    animalId: over.animalId,
+    occurredAt: '2026-07-20T06:00:00.000Z',
+    administeredOn: '2026-07-20',
+    productId: over.productId,
+    ...over,
+  });
+
+/** A minimal valid vaccination body. */
+const vaccinationBody = (
+  over: Partial<ZodInput<typeof schemas.recordVaccinationRequestSchema>>,
+): schemas.RecordVaccinationRequest =>
+  schemas.recordVaccinationRequestSchema.parse({
+    id: randomUUID(),
+    farmId: over.farmId,
+    animalId: over.animalId,
+    occurredAt: '2026-07-20T06:00:00.000Z',
+    administeredOn: '2026-07-20',
+    productId: over.productId,
+    ...over,
+  });
+
+/** A minimal valid dip body. */
+const dipBody = (
+  over: Partial<ZodInput<typeof schemas.recordDipRequestSchema>>,
+): schemas.RecordDipRequest =>
+  schemas.recordDipRequestSchema.parse({
+    id: randomUUID(),
+    farmId: over.farmId,
+    animalId: over.animalId,
+    occurredAt: '2026-07-20T06:00:00.000Z',
+    administeredOn: '2026-07-20',
+    productId: over.productId,
+    ...over,
+  });
+
+/** A minimal valid theft-incident body. */
+const theftIncidentBody = (
+  over: Partial<ZodInput<typeof schemas.newTheftIncidentSchema>>,
+): schemas.NewTheftIncident =>
+  schemas.newTheftIncidentSchema.parse({
+    id: randomUUID(),
+    farmId: over.farmId,
+    discoveredAt: '2026-07-24T04:00:00.000Z',
+    headCount: 2,
+    ...over,
+  });
+
 describe('weight capture (FR-140)', () => {
   let pg: WerfTestDatabase;
   let app: AppDb;
@@ -181,6 +241,27 @@ describe('weight capture (FR-140)', () => {
     const [row] = await elevated.db
       .insert(mobs)
       .values({ farmId, name: 'Flock A', species: 'sheep', headCount: 300 })
+      .returning();
+    return row!.id;
+  }
+
+  /** A ZA veterinary product — reference data, written by the elevated admin path, never a farmer.
+   *  Defaults to a meat-28-day / milk-96-hour antibiotic; overlay the withdrawal a test cares about. */
+  async function aVetProduct(
+    over: Partial<typeof veterinaryProducts.$inferInsert> = {},
+  ): Promise<string> {
+    const [row] = await elevated.db
+      .insert(veterinaryProducts)
+      .values({
+        jurisdiction: 'ZA',
+        name: 'Synthamycin LA (test)',
+        activeIngredients: ['oxytetracycline'],
+        species: ['cattle'],
+        meatWithdrawalDays: 28,
+        milkWithdrawalHours: 96,
+        effectiveFrom: '2020-01-01',
+        ...over,
+      })
       .returning();
     return row!.id;
   }
@@ -431,6 +512,338 @@ describe('weight capture (FR-140)', () => {
       );
 
       expect(captured.payload).toMatchObject({ weightKg: 465.5 });
+    });
+  });
+
+  // ── Health capture (FR-130/131/132/133) — COMPLIANCE-GATED ────────────────────────────
+  describe('health capture (FR-130/131/132/133)', () => {
+    it('computes and stores the meat/milk withdrawal clear dates from the product reference data', async () => {
+      // The client sends a productId and a treatment day — NOT a withdrawal number. The server
+      // resolves the registered periods (meat 28 days, milk 96 hours) and stores the clear dates.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct(); // meat 28d, milk 96h → 4 days
+
+      const captured = await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          administeredOn: '2026-07-20',
+          route: 'injection_im',
+          reason: 'Foot infection',
+        }),
+      );
+
+      expect(captured.type).toBe('treatment');
+      expect(captured.payload).toMatchObject({
+        product: 'Synthamycin LA (test)',
+        route: 'injection_im',
+        reason: 'Foot infection',
+        meatWithholdUntil: '2026-08-17', // 2026-07-20 + 28 days
+        milkWithholdUntil: '2026-07-24', // 2026-07-20 + ceil(96/24)=4 days
+      });
+      expect(captured.animalId).toBe(animalId);
+      expect(captured.createdBy).toBe(a.userId);
+    });
+
+    it('rounds a milk withdrawal given in hours UP to whole days, never releasing milk early', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      // 84 hours = 3.5 days → conservatively 4 days, not 3.
+      const productId = await aVetProduct({ meatWithdrawalDays: null, milkWithdrawalHours: 84 });
+
+      const captured = await service.recordTreatment(
+        a.userId,
+        treatmentBody({ farmId: a.farmId, animalId, productId, administeredOn: '2026-07-20' }),
+      );
+
+      expect(captured.payload).toMatchObject({ milkWithholdUntil: '2026-07-24' });
+      expect(captured.payload).not.toHaveProperty('meatWithholdUntil');
+    });
+
+    it('stores no clear dates for a zero-withdrawal vaccine (FR-132)', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct({
+        name: 'Mockvax (test)',
+        meatWithdrawalDays: null,
+        milkWithdrawalHours: null,
+      });
+
+      const captured = await service.recordVaccination(
+        a.userId,
+        vaccinationBody({ farmId: a.farmId, animalId, productId, programme: 'Annual clostridial' }),
+      );
+
+      expect(captured.type).toBe('vaccination');
+      expect(captured.payload).toMatchObject({ programme: 'Annual clostridial' });
+      expect(captured.payload).not.toHaveProperty('meatWithholdUntil');
+      expect(captured.payload).not.toHaveProperty('milkWithholdUntil');
+    });
+
+    it('records a dip against a whole mob (FR-133)', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const productId = await aVetProduct({
+        name: 'Tickaway (test)',
+        meatWithdrawalDays: 3,
+        milkWithdrawalHours: null,
+      });
+
+      const captured = await service.recordDip(
+        a.userId,
+        dipBody({ farmId: a.farmId, mobId, productId, method: 'plunge' }),
+      );
+
+      expect(captured.type).toBe('dip');
+      expect(captured.mobId).toBe(mobId);
+      expect(captured.animalId).toBeNull();
+      expect(captured.payload).toMatchObject({ method: 'plunge', meatWithholdUntil: '2026-07-23' });
+    });
+
+    it('resolves the product by the farm’s jurisdiction; an unknown product is a 404 and writes nothing', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      await expect(
+        service.recordTreatment(
+          a.userId,
+          treatmentBody({ farmId: a.farmId, animalId, productId: randomUUID() }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const written = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(written).toHaveLength(0);
+    });
+
+    it('refuses a registration not in force on the treatment day (ADR-0005), writing nothing', async () => {
+      // A product whose registration was superseded before the treatment. Resolving by id alone
+      // would apply a withdrawal from a version that did not apply on the day — the exact bug the
+      // date-versioning exists to prevent. It must read as "not found".
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct({
+        effectiveFrom: '2019-01-01',
+        effectiveTo: '2020-01-01',
+      });
+
+      await expect(
+        service.recordTreatment(
+          a.userId,
+          treatmentBody({ farmId: a.farmId, animalId, productId, administeredOn: '2026-07-20' }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const written = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(written).toHaveLength(0);
+    });
+  });
+
+  // ── Sale within a withdrawal period is blocked at capture (FR-131) ─────────────────────
+  describe('sale withdrawal guard (FR-131)', () => {
+    it('blocks a meat sale before the stored clear date, and writes no sale', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct(); // meat 28d
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({ farmId: a.farmId, animalId, productId, administeredOn: '2026-07-20' }),
+      );
+
+      // The withdrawal clears 2026-08-17; a sale the day before is inside it.
+      await expect(
+        service.recordSale(
+          a.userId,
+          saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-16T06:00:00.000Z' }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      // Only the treatment event exists — the sale never landed.
+      const written = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(written).toHaveLength(1);
+      expect(written[0]!.type).toBe('treatment');
+    });
+
+    it('allows the sale on the clear date itself', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct(); // meat 28d, clears 2026-08-17
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({ farmId: a.farmId, animalId, productId, administeredOn: '2026-07-20' }),
+      );
+
+      const sold = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-17T06:00:00.000Z' }),
+      );
+
+      expect(sold.type).toBe('sale');
+    });
+
+    it('leaves an untreated animal free to sell', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const sold = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-20T06:00:00.000Z' }),
+      );
+
+      expect(sold.type).toBe('sale');
+    });
+  });
+
+  // ── Stock-theft incident + evidence pack (FR-603/605) — COMPLIANCE-GATED ───────────────
+  describe('stock-theft evidence pack (FR-603/605)', () => {
+    /** An animal with a full ownership trail: a registered brand, an acquisition record, a tag —
+     *  everything the evidence pack proves. Returns the ids the assertions need. */
+    async function anAnimalWithTrail(farmId: string) {
+      const [brand] = await elevated.db
+        .insert(brandingRegisters)
+        .values({
+          farmId,
+          mark: 'FR',
+          markType: 'hot_brand',
+          species: ['cattle'],
+          certificateReference: 'AIS-FS-0042',
+        })
+        .returning();
+      const [animal] = await elevated.db
+        .insert(animals)
+        .values({
+          farmId,
+          species: 'cattle',
+          sex: 'female',
+          brandId: brand!.id,
+          acquiredAt: '2024-03-01',
+          source: 'Bought at Senekal auction',
+          photoKey: 'photos/heifer.jpg',
+        })
+        .returning();
+      await elevated.db.insert(animalIdentifiers).values({
+        farmId,
+        animalId: animal!.id,
+        type: 'visual_tag',
+        value: 'FS-1024',
+      });
+      return { animalId: animal!.id };
+    }
+
+    it('creates an incident, links its animals, and stores the last-seen GPS mirror via the trigger', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({
+          farmId: a.farmId,
+          headCount: 1,
+          caseNumber: 'CAS 123/07/2026',
+          reportingStation: 'Senekal SAPS',
+          observations: 'Fence cut on the northern boundary of Camp 3.',
+          lastSeenAt: '2026-07-21T15:00:00.000Z',
+          lastSeenLocationGeojson: '{"type":"Point","coordinates":[26.15,-29.1]}',
+          animalIds: [animalId],
+        }),
+      );
+
+      expect(incident.status).toBe('open');
+      expect(incident.headCount).toBe(1);
+      // The client-authored GeoJSON is preserved (the trigger is geometry->geojson; a client write
+      // carries geojson directly, geometry stays null until Phase 3 ingest adds the reverse leg).
+      expect(incident.lastSeenLocationGeojson).toContain('Point');
+
+      const links = await app.asUser(a.userId, (tx) => tx.select().from(theftIncidentAnimals));
+      expect(links.map((l) => l.animalId)).toContain(animalId);
+    });
+
+    it('refuses to link an animal from another farm, and writes no incident', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const foreign = await anAnimalWithTrail(b.farmId);
+
+      await expect(
+        service.createTheftIncident(
+          a.userId,
+          theftIncidentBody({ farmId: a.farmId, animalIds: [foreign.animalId] }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const written = await app.asUser(a.userId, (tx) => tx.select().from(theftIncidents));
+      expect(written).toHaveLength(0);
+    });
+
+    it('refuses a stranger creating an incident on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+
+      await expect(
+        service.createTheftIncident(b.userId, theftIncidentBody({ farmId: a.farmId })),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('assembles a facts-only pack: identification, ownership chain, brand certificate, last-seen', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({
+          farmId: a.farmId,
+          headCount: 1,
+          caseNumber: 'CAS 123/07/2026',
+          reportingStation: 'Senekal SAPS',
+          lastSeenAt: '2026-07-21T15:00:00.000Z',
+          animalIds: [animalId],
+        }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.headCount).toBe(1);
+      expect(pack.brandCertificateReference).toBe('AIS-FS-0042');
+      expect(pack.caseNumber).toBe('CAS 123/07/2026');
+      expect(pack.lastSeenAt?.toISOString()).toBe('2026-07-21T15:00:00.000Z');
+      expect(pack.animals).toHaveLength(1);
+      expect(pack.animals[0]).toMatchObject({
+        animalId,
+        mark: 'FR',
+        acquiredAt: '2024-03-01',
+        source: 'Bought at Senekal auction',
+        identifiers: [{ type: 'visual_tag', value: 'FS-1024' }],
+      });
+      // ⛔ The pack can never carry an accusation (POPIA s26).
+      expect(pack).not.toHaveProperty('suspect');
+    });
+
+    it('renders the pack to a PDF a farmer can hand the Stock Theft Unit', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+      const pdf = await renderEvidencePackPdf(pack);
+
+      expect(pdf.length).toBeGreaterThan(0);
+      expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    });
+
+    it('is a 404 for an incident on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const incident = await service.createTheftIncident(
+        b.userId,
+        theftIncidentBody({ farmId: b.farmId }),
+      );
+
+      await expect(service.buildEvidencePack(a.userId, incident.id)).rejects.toThrow(NotFoundError);
     });
   });
 });

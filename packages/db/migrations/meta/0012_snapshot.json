@@ -1,6 +1,6 @@
 {
-  "id": "a36d0371-8532-4873-91d8-92a25d8a6ab3",
-  "prevId": "6a365633-54ac-43d3-9b24-6b690c2cff9e",
+  "id": "9e782b38-44f2-4f51-abcf-1454008430ef",
+  "prevId": "8104193e-0aff-437f-a236-e758ad464ab0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1094,6 +1094,110 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.branding_registers": {
+      "name": "branding_registers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuid_generate_v7()"
+        },
+        "farm_id": {
+          "name": "farm_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jurisdiction": {
+          "name": "jurisdiction",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ZA'"
+        },
+        "mark": {
+          "name": "mark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mark_type": {
+          "name": "mark_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "species": {
+          "name": "species",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body_position": {
+          "name": "body_position",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "certificate_reference": {
+          "name": "certificate_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "registered_at": {
+          "name": "registered_at",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "branding_registers_farm_id_farms_id_fk": {
+          "name": "branding_registers_farm_id_farms_id_fk",
+          "tableFrom": "branding_registers",
+          "tableTo": "farms",
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "branding_registers_mark_length": {
+          "name": "branding_registers_mark_length",
+          "value": "char_length(\"branding_registers\".\"mark\") <= 3"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.animal_identifiers": {
       "name": "animal_identifiers",
       "schema": "",
@@ -1347,6 +1451,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "brand_id": {
+          "name": "brand_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "brand_applied_at": {
+          "name": "brand_applied_at",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
         "attributes": {
           "name": "attributes",
           "type": "jsonb",
@@ -1529,6 +1645,15 @@
           "tableFrom": "animals",
           "tableTo": "land_units",
           "columnsFrom": ["land_unit_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "animals_brand_id_branding_registers_id_fk": {
+          "name": "animals_brand_id_branding_registers_id_fk",
+          "tableFrom": "animals",
+          "tableTo": "branding_registers",
+          "columnsFrom": ["brand_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -1848,6 +1973,107 @@
           "columns": ["id", "farm_id"]
         }
       },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.veterinary_products": {
+      "name": "veterinary_products",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "uuid_generate_v7()"
+        },
+        "jurisdiction": {
+          "name": "jurisdiction",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ZA'"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration_number": {
+          "name": "registration_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "active_ingredients": {
+          "name": "active_ingredients",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "species": {
+          "name": "species",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "meat_withdrawal_days": {
+          "name": "meat_withdrawal_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "milk_withdrawal_hours": {
+          "name": "milk_withdrawal_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dose_per_kg": {
+          "name": "dose_per_kg",
+          "type": "numeric(10, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "route": {
+          "name": "route",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "effective_from": {
+          "name": "effective_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effective_to": {
+          "name": "effective_to",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

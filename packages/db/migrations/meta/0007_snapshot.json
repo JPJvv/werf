@@ -126,12 +126,8 @@
           "name": "enterprises_farm_id_farms_id_fk",
           "tableFrom": "enterprises",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -223,12 +219,8 @@
           "name": "farm_users_farm_id_farms_id_fk",
           "tableFrom": "farm_users",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -236,12 +228,8 @@
           "name": "farm_users_user_id_users_id_fk",
           "tableFrom": "farm_users",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -251,10 +239,7 @@
         "farm_users_farm_user_unique": {
           "name": "farm_users_farm_user_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "farm_id",
-            "user_id"
-          ]
+          "columns": ["farm_id", "user_id"]
         }
       },
       "policies": {},
@@ -350,12 +335,8 @@
           "name": "farms_business_id_businesses_id_fk",
           "tableFrom": "farms",
           "tableTo": "businesses",
-          "columnsFrom": [
-            "business_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["business_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -474,11 +455,7 @@
         "regulatory_rates_unique": {
           "name": "regulatory_rates_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "jurisdiction",
-            "code",
-            "effective_from"
-          ]
+          "columns": ["jurisdiction", "code", "effective_from"]
         }
       },
       "policies": {},
@@ -559,12 +536,8 @@
           "name": "user_passkeys_user_id_users_id_fk",
           "tableFrom": "user_passkeys",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -574,9 +547,7 @@
         "user_passkeys_credential_id_unique": {
           "name": "user_passkeys_credential_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "credential_id"
-          ]
+          "columns": ["credential_id"]
         }
       },
       "policies": {},
@@ -690,16 +661,12 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         },
         "users_phone_unique": {
           "name": "users_phone_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "phone"
-          ]
+          "columns": ["phone"]
         }
       },
       "policies": {},
@@ -840,12 +807,8 @@
           "name": "user_sessions_user_id_users_id_fk",
           "tableFrom": "user_sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -853,12 +816,8 @@
           "name": "user_sessions_active_farm_id_farms_id_fk",
           "tableFrom": "user_sessions",
           "tableTo": "farms",
-          "columnsFrom": [
-            "active_farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["active_farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -868,9 +827,7 @@
         "user_sessions_refresh_token_hash_unique": {
           "name": "user_sessions_refresh_token_hash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "refresh_token_hash"
-          ]
+          "columns": ["refresh_token_hash"]
         }
       },
       "policies": {},
@@ -954,12 +911,8 @@
           "name": "webauthn_challenges_user_id_users_id_fk",
           "tableFrom": "webauthn_challenges",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -993,14 +946,7 @@
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "owner",
-        "manager",
-        "worker",
-        "bookkeeper",
-        "viewer",
-        "external"
-      ]
+      "values": ["owner", "manager", "worker", "bookkeeper", "viewer", "external"]
     }
   },
   "schemas": {},

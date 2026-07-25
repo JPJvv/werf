@@ -152,6 +152,29 @@ export const TENANCY = {
     classification: 'reference',
     scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
   },
+  // Veterinary products — the withdrawal-period source (Phase 2, FR-131). Reference data, filtered
+  // by the FARM's jurisdiction so the meat/milk withdrawal check works offline in the crush: a ZA
+  // device never downloads another country's withdrawal periods. Read-only on the device; the
+  // registration is authored by the elevated admin path, never a farmer.
+  veterinary_products: {
+    classification: 'reference',
+    scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
+  },
+  // Stock-theft incidents (Phase 2, FR-603/605). Farm-scoped and bidirectional: the farmer captures
+  // the incident at the last-seen location, in the field, offline. The canonical PostGIS
+  // `last_seen_location` is stripped for the same reason land's `boundary` is — SQLite has no
+  // PostGIS; the client reads `last_seen_location_geojson`, kept in step by the sync trigger. There
+  // is no suspect column to leak: the record is facts about the farm's own loss, not a data subject.
+  theft_incidents: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+    neverSyncColumns: ['last_seen_location'],
+  },
+  // The animals a theft incident concerns. Carries its own farm_id, so it scopes directly.
+  theft_incident_animals: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
 } as const satisfies Record<string, TenancyEntry>;
 
 export type SyncedTable = keyof typeof TENANCY;

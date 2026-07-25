@@ -126,12 +126,8 @@
           "name": "enterprises_farm_id_farms_id_fk",
           "tableFrom": "enterprises",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -223,12 +219,8 @@
           "name": "farm_users_farm_id_farms_id_fk",
           "tableFrom": "farm_users",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -236,12 +228,8 @@
           "name": "farm_users_user_id_users_id_fk",
           "tableFrom": "farm_users",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -251,10 +239,7 @@
         "farm_users_farm_user_unique": {
           "name": "farm_users_farm_user_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "farm_id",
-            "user_id"
-          ]
+          "columns": ["farm_id", "user_id"]
         }
       },
       "policies": {},
@@ -350,12 +335,8 @@
           "name": "farms_business_id_businesses_id_fk",
           "tableFrom": "farms",
           "tableTo": "businesses",
-          "columnsFrom": [
-            "business_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["business_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -474,11 +455,7 @@
         "regulatory_rates_unique": {
           "name": "regulatory_rates_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "jurisdiction",
-            "code",
-            "effective_from"
-          ]
+          "columns": ["jurisdiction", "code", "effective_from"]
         }
       },
       "policies": {},
@@ -559,12 +536,8 @@
           "name": "user_passkeys_user_id_users_id_fk",
           "tableFrom": "user_passkeys",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -574,9 +547,7 @@
         "user_passkeys_credential_id_unique": {
           "name": "user_passkeys_credential_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "credential_id"
-          ]
+          "columns": ["credential_id"]
         }
       },
       "policies": {},
@@ -690,16 +661,12 @@
         "users_email_unique": {
           "name": "users_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         },
         "users_phone_unique": {
           "name": "users_phone_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "phone"
-          ]
+          "columns": ["phone"]
         }
       },
       "policies": {},
@@ -840,12 +807,8 @@
           "name": "user_sessions_user_id_users_id_fk",
           "tableFrom": "user_sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -853,12 +816,8 @@
           "name": "user_sessions_active_farm_id_farms_id_fk",
           "tableFrom": "user_sessions",
           "tableTo": "farms",
-          "columnsFrom": [
-            "active_farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["active_farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -868,9 +827,7 @@
         "user_sessions_refresh_token_hash_unique": {
           "name": "user_sessions_refresh_token_hash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "refresh_token_hash"
-          ]
+          "columns": ["refresh_token_hash"]
         }
       },
       "policies": {},
@@ -954,12 +911,8 @@
           "name": "webauthn_challenges_user_id_users_id_fk",
           "tableFrom": "webauthn_challenges",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1105,12 +1058,8 @@
           "name": "land_units_farm_id_farms_id_fk",
           "tableFrom": "land_units",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1118,12 +1067,8 @@
           "name": "land_units_enterprise_id_enterprises_id_fk",
           "tableFrom": "land_units",
           "tableTo": "enterprises",
-          "columnsFrom": [
-            "enterprise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["enterprise_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1131,12 +1076,8 @@
           "name": "land_units_parent_id_land_units_id_fk",
           "tableFrom": "land_units",
           "tableTo": "land_units",
-          "columnsFrom": [
-            "parent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["parent_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1146,10 +1087,7 @@
         "land_units_farm_code_unique": {
           "name": "land_units_farm_code_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "farm_id",
-            "code"
-          ]
+          "columns": ["farm_id", "code"]
         }
       },
       "policies": {},
@@ -1243,12 +1181,8 @@
           "name": "branding_registers_farm_id_farms_id_fk",
           "tableFrom": "branding_registers",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1391,12 +1325,8 @@
           "name": "animal_identifiers_farm_id_farms_id_fk",
           "tableFrom": "animal_identifiers",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1404,12 +1334,8 @@
           "name": "animal_identifiers_animal_id_animals_id_fk",
           "tableFrom": "animal_identifiers",
           "tableTo": "animals",
-          "columnsFrom": [
-            "animal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["animal_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1673,12 +1599,8 @@
           "name": "animals_farm_id_farms_id_fk",
           "tableFrom": "animals",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1686,12 +1608,8 @@
           "name": "animals_enterprise_id_enterprises_id_fk",
           "tableFrom": "animals",
           "tableTo": "enterprises",
-          "columnsFrom": [
-            "enterprise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["enterprise_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1699,12 +1617,8 @@
           "name": "animals_dam_id_animals_id_fk",
           "tableFrom": "animals",
           "tableTo": "animals",
-          "columnsFrom": [
-            "dam_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["dam_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1712,12 +1626,8 @@
           "name": "animals_sire_id_animals_id_fk",
           "tableFrom": "animals",
           "tableTo": "animals",
-          "columnsFrom": [
-            "sire_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sire_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1725,12 +1635,8 @@
           "name": "animals_mob_id_mobs_id_fk",
           "tableFrom": "animals",
           "tableTo": "mobs",
-          "columnsFrom": [
-            "mob_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mob_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1738,12 +1644,8 @@
           "name": "animals_land_unit_id_land_units_id_fk",
           "tableFrom": "animals",
           "tableTo": "land_units",
-          "columnsFrom": [
-            "land_unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["land_unit_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1751,12 +1653,8 @@
           "name": "animals_brand_id_branding_registers_id_fk",
           "tableFrom": "animals",
           "tableTo": "branding_registers",
-          "columnsFrom": [
-            "brand_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["brand_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1764,12 +1662,8 @@
           "name": "animals_created_by_users_id_fk",
           "tableFrom": "animals",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1777,12 +1671,8 @@
           "name": "animals_updated_by_users_id_fk",
           "tableFrom": "animals",
           "tableTo": "users",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["updated_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1867,12 +1757,8 @@
           "name": "mobs_farm_id_farms_id_fk",
           "tableFrom": "mobs",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1880,12 +1766,8 @@
           "name": "mobs_enterprise_id_enterprises_id_fk",
           "tableFrom": "mobs",
           "tableTo": "enterprises",
-          "columnsFrom": [
-            "enterprise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["enterprise_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -1893,12 +1775,8 @@
           "name": "mobs_land_unit_id_land_units_id_fk",
           "tableFrom": "mobs",
           "tableTo": "land_units",
-          "columnsFrom": [
-            "land_unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["land_unit_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2038,12 +1916,8 @@
           "name": "events_farm_id_farms_id_fk",
           "tableFrom": "events",
           "tableTo": "farms",
-          "columnsFrom": [
-            "farm_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["farm_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2051,12 +1925,8 @@
           "name": "events_enterprise_id_enterprises_id_fk",
           "tableFrom": "events",
           "tableTo": "enterprises",
-          "columnsFrom": [
-            "enterprise_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["enterprise_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2064,12 +1934,8 @@
           "name": "events_animal_id_animals_id_fk",
           "tableFrom": "events",
           "tableTo": "animals",
-          "columnsFrom": [
-            "animal_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["animal_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2077,12 +1943,8 @@
           "name": "events_mob_id_mobs_id_fk",
           "tableFrom": "events",
           "tableTo": "mobs",
-          "columnsFrom": [
-            "mob_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mob_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2090,12 +1952,8 @@
           "name": "events_land_unit_id_land_units_id_fk",
           "tableFrom": "events",
           "tableTo": "land_units",
-          "columnsFrom": [
-            "land_unit_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["land_unit_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         },
@@ -2103,12 +1961,8 @@
           "name": "events_created_by_users_id_fk",
           "tableFrom": "events",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2116,10 +1970,7 @@
       "compositePrimaryKeys": {
         "events_id_farm_id_pk": {
           "name": "events_id_farm_id_pk",
-          "columns": [
-            "id",
-            "farm_id"
-          ]
+          "columns": ["id", "farm_id"]
         }
       },
       "uniqueConstraints": {},
@@ -2132,23 +1983,12 @@
     "public.animal_sex": {
       "name": "animal_sex",
       "schema": "public",
-      "values": [
-        "male",
-        "female",
-        "castrated",
-        "unknown"
-      ]
+      "values": ["male", "female", "castrated", "unknown"]
     },
     "public.animal_status": {
       "name": "animal_status",
       "schema": "public",
-      "values": [
-        "alive",
-        "sold",
-        "dead",
-        "missing",
-        "culled"
-      ]
+      "values": ["alive", "sold", "dead", "missing", "culled"]
     },
     "public.enterprise_type": {
       "name": "enterprise_type",
@@ -2202,35 +2042,17 @@
     "public.identifier_type": {
       "name": "identifier_type",
       "schema": "public",
-      "values": [
-        "visual_tag",
-        "eid",
-        "brand",
-        "tattoo",
-        "national_id",
-        "other"
-      ]
+      "values": ["visual_tag", "eid", "brand", "tattoo", "national_id", "other"]
     },
     "public.land_unit_kind": {
       "name": "land_unit_kind",
       "schema": "public",
-      "values": [
-        "camp",
-        "block",
-        "other"
-      ]
+      "values": ["camp", "block", "other"]
     },
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "owner",
-        "manager",
-        "worker",
-        "bookkeeper",
-        "viewer",
-        "external"
-      ]
+      "values": ["owner", "manager", "worker", "bookkeeper", "viewer", "external"]
     }
   },
   "schemas": {},

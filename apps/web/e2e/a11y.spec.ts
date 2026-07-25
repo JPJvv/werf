@@ -122,6 +122,7 @@ const CAPTURE_SCREENS = [
   { path: '/animals/move', heading: /move animals/i },
   { path: '/animals/birth', heading: /record a birth/i },
   { path: '/animals/wean', heading: /weaning session/i },
+  { path: '/animals/health', heading: /treat or vaccinate/i },
   { path: '/weigh', heading: /weigh session/i },
   { path: '/rainfall', heading: /rainfall/i },
 ] as const;

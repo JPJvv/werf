@@ -266,3 +266,8 @@ export {
 } from './session-store';
 export { createCaptureStore, type CaptureStore, type CaptureStoreOptions } from './capture-store';
 export { createSentLog, type SentLog, type SentLogOptions } from './sent-log';
+export {
+  createReferenceCache,
+  type ReferenceCache,
+  type ReferenceCacheOptions,
+} from './reference-cache';

@@ -45,6 +45,7 @@ import { useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
 import { useMoves } from '../livestock/LocalMoves';
+import { useHealthEvents } from '../livestock/LocalHealth';
 import { livestockApi } from '../livestock/livestockApi';
 import { useRainfall } from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
@@ -101,6 +102,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const weights = useWeights();
   const events = useLifecycleEvents();
   const moves = useMoves();
+  const health = useHealthEvents();
   const rainfall = useRainfall();
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
@@ -162,6 +164,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         items.push({ id: move.id, send: (token) => livestockApi.recordMove(move, token) });
       }
     }
+    // Health events reference an animal, so they follow the animals like every other event.
+    for (const event of health) {
+      if (!sent.has(event.id)) {
+        items.push({ id: event.id, send: (token) => livestockApi.recordHealth(event, token) });
+      }
+    }
     // Rainfall references no animal, so it has no place in the FK ordering above — it can go last.
     for (const reading of rainfall) {
       if (!sent.has(reading.id)) {
@@ -172,7 +180,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     }
     return items;
-  }, [landUnits, mobs, animals, identifiers, weights, events, moves, rainfall, sent]);
+  }, [landUnits, mobs, animals, identifiers, weights, events, moves, health, rainfall, sent]);
   const pendingCount = queue.length;
 
   const [flushing, setFlushing] = useState(false);

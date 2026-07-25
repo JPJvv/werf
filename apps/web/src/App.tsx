@@ -15,6 +15,7 @@ import { AddMobScreen } from './livestock/AddMobScreen';
 import { MoveAnimalsScreen } from './livestock/MoveAnimalsScreen';
 import { RecordBirthScreen } from './livestock/RecordBirthScreen';
 import { WeaningSessionScreen } from './livestock/WeaningSessionScreen';
+import { RecordHealthScreen } from './livestock/RecordHealthScreen';
 import { RecordLossScreen } from './livestock/RecordLossScreen';
 import { LandScreen } from './land/LandScreen';
 import { AddLandUnitScreen } from './land/AddLandUnitScreen';
@@ -60,6 +61,7 @@ export function App() {
                 <Route path="animals/move" element={<MoveAnimalsScreen />} />
                 <Route path="animals/birth" element={<RecordBirthScreen />} />
                 <Route path="animals/wean" element={<WeaningSessionScreen />} />
+                <Route path="animals/health" element={<RecordHealthScreen />} />
                 <Route path="weigh" element={<WeighSessionScreen />} />
                 {/* Land is farm-level, not livestock: a camp and a block are one table (FR-150). */}
                 <Route path="land" element={<LandScreen />} />

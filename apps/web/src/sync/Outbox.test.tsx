@@ -99,9 +99,18 @@ function acceptingFetch() {
   );
 }
 
-/** The paths POSTed, in call order — enough to assert the send sequence. */
+/**
+ * The paths POSTed, in call order — enough to assert the send sequence.
+ *
+ * POSTs only, deliberately. The app also makes INBOUND fetches (the regulated product register the
+ * crush needs offline, FR-131), and those are not sends: counting every fetch would make "nothing
+ * was re-sent" fail the moment the app learned to fetch anything at all, which is a test asserting
+ * the implementation rather than the behaviour.
+ */
 function postedPaths(fetchMock: ReturnType<typeof vi.fn>): string[] {
-  return fetchMock.mock.calls.map((call) => String(call[0]));
+  return fetchMock.mock.calls
+    .filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
+    .map((call) => String(call[0]));
 }
 
 beforeEach(() => {
@@ -153,7 +162,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     vi.stubGlobal('fetch', first);
     const { unmount } = render(<App />);
     expect(await screen.findByText('Saved and sent')).toBeTruthy();
-    expect(first.mock.calls.length).toBe(3);
+    expect(postedPaths(first)).toHaveLength(3);
 
     // Close and reopen the app. Everything was already confirmed sent; nothing should go again.
     unmount();
@@ -163,7 +172,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     render(<App />);
 
     expect(await screen.findByText('Saved and sent')).toBeTruthy();
-    expect(second.mock.calls.length).toBe(0);
+    expect(postedPaths(second)).toHaveLength(0);
   });
 
   it('keeps the whole queue when the server refuses it — nothing is marked sent', async () => {

@@ -1,0 +1,218 @@
+/**
+ * Recording a treatment as a farmer does it (FR-130/131) — COMPLIANCE-GATED. Renders the real
+ * `<App/>` against a seeded `localStorage`, including a seeded product register, so the whole thing
+ * runs with no network at all.
+ *
+ * Three assertions carry the compliance design:
+ *  • The CLEAR DATE is on screen before the farmer leaves the crush. "When can I sell this animal?"
+ *    answered three weeks later is answered too late.
+ *  • The stored capture carries a `productId` and NO withdrawal period. The number is regulated;
+ *    the server resolves it from the registration in force on the treatment day (ADR-0005), and a
+ *    client that could send it could claim a shorter withhold by relabelling.
+ *  • A dosing run is one action: one batch id across every animal, one event each.
+ */
+
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { uuidv7, type schemas } from '@werf/core';
+import { App } from '../App';
+
+const SESSION_KEY = 'werf-session';
+const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
+const HERD_KEY = `werf-herd:${FARM_ID}`;
+const HEALTH_KEY = `werf-health:${FARM_ID}`;
+const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
+const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
+
+const SESSION_USER: schemas.AuthSession['user'] = {
+  id: '0190f3a0-0000-7000-8000-000000000001',
+  email: 'thabo@rietfontein.test',
+  phone: null,
+  fullName: 'Thabo Mokoena',
+  locale: 'en-ZA',
+  theme: 'light',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  deletedAt: null,
+};
+
+function cachedSession(): void {
+  const payload = {
+    accessToken: 'access-token',
+    expiresIn: 900,
+    refreshToken: 'refresh-token',
+    refreshExpiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    user: SESSION_USER,
+    farms: [
+      {
+        id: FARM_ID,
+        name: 'Rietfontein',
+        enterpriseTypes: ['beef_cattle'],
+        role: 'owner',
+        enterprises: [],
+      },
+    ],
+    activeFarmId: FARM_ID,
+    secondFactor: 'complete',
+  };
+  window.localStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ payload, confirmedAt: new Date().toISOString() }),
+  );
+}
+
+/** The register, already on the device — which is the state a crush is actually in. */
+function seedProducts(meatWithdrawalDays: number | null): void {
+  window.localStorage.setItem(
+    PRODUCTS_KEY,
+    JSON.stringify([
+      {
+        id: PRODUCT_ID,
+        name: 'Terramycin LA',
+        registrationNumber: 'G1234 Act 36/1947',
+        species: ['cattle'],
+        meatWithdrawalDays,
+        milkWithdrawalHours: 96,
+        route: 'intramuscular',
+      },
+    ]),
+  );
+}
+
+function seedHerd(count: number): string[] {
+  const ids = Array.from({ length: count }, () => uuidv7());
+  window.localStorage.setItem(
+    HERD_KEY,
+    JSON.stringify(
+      ids.map((id) => ({
+        id,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        species: 'cattle',
+        breed: null,
+        sex: 'female',
+        dob: null,
+        dobEstimated: false,
+        status: 'alive',
+        statusAt: null,
+        damId: null,
+        sireId: null,
+        mobId: null,
+        landUnitId: null,
+        source: null,
+        acquiredAt: null,
+        brandId: null,
+        brandAppliedAt: null,
+        attributes: {},
+        photoKey: null,
+      })),
+    ),
+  );
+  return ids;
+}
+
+function storedHealth(): Array<Record<string, unknown>> {
+  return JSON.parse(window.localStorage.getItem(HEALTH_KEY) ?? '[]') as Array<
+    Record<string, unknown>
+  >;
+}
+
+beforeEach(() => {
+  window.localStorage.clear();
+  window.history.pushState({}, '', '/');
+});
+
+afterEach(() => {
+  window.localStorage.clear();
+});
+
+describe('recording a treatment (FR-130/131)', () => {
+  it('tells the farmer when the animals may be sold, before they leave the crush', async () => {
+    cachedSession();
+    seedProducts(28);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+
+    // 28 days from today, computed through the same pure domain function the server uses.
+    const clear = new Date(Date.now() + 28 * 86_400_000).toISOString().slice(0, 10);
+    expect(screen.getByText(/may be sold for slaughter from/i)).toBeTruthy();
+    expect(screen.getByText(clear)).toBeTruthy();
+  });
+
+  it('says so when a product carries no meat withholding, rather than staying silent', async () => {
+    // "No withholding" is an answer a farmer needs just as much as a date — silence reads as
+    // "the app does not know", which is what sends someone back to a paper book.
+    cachedSession();
+    seedProducts(null);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+    expect(screen.getByText(/no meat withholding period/i)).toBeTruthy();
+  });
+
+  it('doses a whole group in one action, and stores a product id but never a withdrawal', async () => {
+    cachedSession();
+    seedProducts(28);
+    seedHerd(3);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+    await user.type(screen.getByLabelText(/who gave it/i), 'Thabo');
+    await user.click(screen.getByRole('button', { name: /record it/i }));
+
+    const saved = storedHealth();
+    expect(saved).toHaveLength(3);
+    // One action: one batch id, three events.
+    expect(new Set(saved.map((e) => e['batchId'])).size).toBe(1);
+    expect(new Set(saved.map((e) => e['id'])).size).toBe(3);
+
+    for (const event of saved) {
+      expect(event).toMatchObject({ kind: 'treatment', productId: PRODUCT_ID });
+      // ⭐ The regulated number is NOT here. It is resolved server-side from the registration in
+      // force on the treatment day; a client that stored one would freeze a cached figure into a
+      // record that outlives it.
+      expect(event).not.toHaveProperty('meatWithdrawalDays');
+      expect(event).not.toHaveProperty('meatWithholdUntil');
+      // The treatment DAY is stored, because the withdrawal arithmetic is based on it.
+      expect(String(event['administeredOn'])).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it('will not record without a product or without animals', async () => {
+    cachedSession();
+    seedProducts(28);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    expect(screen.getByRole('button', { name: /record it/i }).hasAttribute('disabled')).toBe(true);
+
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+    // A product but no animals selected is still not a dosing run.
+    expect(screen.getByRole('button', { name: /record it/i }).hasAttribute('disabled')).toBe(true);
+    expect(storedHealth()).toHaveLength(0);
+  });
+
+  it('says what to do when the register has not reached this phone yet', () => {
+    // Not the farmer's fault and not an error — an empty picker with no explanation is what makes
+    // someone give up on the app in a crush.
+    cachedSession();
+    seedHerd(1);
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    expect(screen.getByText(/has not reached this phone yet/i)).toBeTruthy();
+  });
+});

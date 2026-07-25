@@ -17,6 +17,7 @@ import type {
   StoredSale,
   StoredWeaning,
 } from './LocalLifecycle';
+import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMove } from './LocalMoves';
 
 /**
@@ -26,6 +27,13 @@ import type { StoredMove } from './LocalMoves';
  * a weight, death or sale event references `animals(id)`, and an event that arrived before its
  * animal would fail the foreign key.
  */
+/** One endpoint per health kind, keyed by the union so a new kind cannot be silently misrouted. */
+const HEALTH_ENDPOINTS: Record<StoredHealthEvent['kind'], string> = {
+  treatment: '/livestock/treatments',
+  vaccination: '/livestock/vaccinations',
+  dip: '/livestock/dips',
+};
+
 export const livestockApi = {
   createAnimal: (animal: schemas.NewAnimal, token: string): Promise<void> =>
     post('/livestock/animals', animal, token),
@@ -143,6 +151,32 @@ export const livestockApi = {
         counterparty: purchase.counterparty,
         priceCents: purchase.priceCents,
         ...(purchase.weightKg === undefined ? {} : { weightKg: purchase.weightKg }),
+      },
+      token,
+    ),
+
+  /**
+   * A health event (FR-130/131/132/133). Each kind has its own endpoint. Note what is NOT sent: no
+   * withdrawal period, only the `productId` the server resolves it from. A client that could send
+   * the number could claim a shorter withhold by relabelling.
+   */
+  recordHealth: (event: StoredHealthEvent, token: string): Promise<void> =>
+    post(
+      HEALTH_ENDPOINTS[event.kind],
+      {
+        id: event.id,
+        farmId: event.farmId,
+        animalId: event.animalId,
+        occurredAt: event.occurredAt,
+        administeredOn: event.administeredOn,
+        productId: event.productId,
+        batchId: event.batchId,
+        ...(event.doseValue === undefined ? {} : { doseValue: event.doseValue }),
+        ...(event.doseUnit === undefined ? {} : { doseUnit: event.doseUnit }),
+        ...(event.administeredBy === undefined ? {} : { administeredBy: event.administeredBy }),
+        ...(event.reason === undefined ? {} : { reason: event.reason }),
+        ...(event.programme === undefined ? {} : { programme: event.programme }),
+        ...(event.method === undefined ? {} : { method: event.method }),
       },
       token,
     ),

@@ -87,9 +87,13 @@ graph TB
 | **Livestock** | Individual + group records, breeding, health, weights, movements, grazing |
 | **Crops** | Blocks, plantings, sprays, fertiliser, harvest, PHI enforcement |
 | **Labour** | Employees, attendance, tasks, piece work, leave, payroll, statutory documents |
+| **Delegation** | Owner→manager→worker chain, task assignment, to-do calendar (day/week/month), progress views |
+| **Worker self-service** | Own hours, payslips, leave balances and requests, payslip queries, **confidential grievances**, document acknowledgement, **lone-worker panic alert** |
 | **Finance** | Income, expenses, per-enterprise P&L, budgets, cost of production |
 | **Inventory** | Chemicals, feed, spares, equipment, maintenance |
-| **Compliance** | Animal ID register, stock theft evidence, GlobalGAP/SIZA checklists, obligations |
+| **Fleet & fuel** | Vehicle register, bulk reserves, deliveries, dispensing, dip reconciliation, 🇿🇦 SARS diesel refund |
+| **Compliance** | Animal ID register, stock theft evidence, GlobalGAP/SIZA checklists, obligations, restricted document store |
+| **Market prices** | 🔒 Fuel, SAFEX grain, red meat — read-only, licence-tiered, no advice |
 | **Reporting** | Dashboards, statutory reports, exports |
 | **Platform** | Auth, RBAC, sync, offline, i18n, audit |
 
@@ -97,9 +101,9 @@ graph TB
 
 | Class | Frequency | Technical skill | Environment | Key constraint |
 |---|---|---|---|---|
-| Owner | Weekly | Medium | Office, desktop | Wants profit answers, not data entry. **2FA mandatory** — sees money and PII |
-| Manager | Daily | Medium | Bakkie, phone, patchy signal | Speed of capture is everything |
-| Worker | Daily | **Low** | Camp/crush/orchard, gloves, sun | Must not be able to break anything |
+| Owner | Weekly | Medium | Office, desktop | Wants profit answers, not data entry. **2FA mandatory** — sees money and PII. Delegates to managers and workers; the only role that creates another owner |
+| Manager | Daily | Medium | Bakkie, phone, patchy signal | Speed of capture is everything. Delegates to workers and administers their accounts — **without** access to wage, ID, banking, or health data |
+| Worker | Daily | **Low** | Camp/crush/orchard, gloves, sun | Must not be able to break anything. Also a **data subject with rights**: sees their own records, raises grievances in confidence, and is never continuously tracked ([ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md)) |
 | Bookkeeper | Monthly | High | Office, desktop | Correctness, exports. **2FA mandatory** |
 | External (vet, auditor, SAPS) | Rare | Varies | Anywhere | Read-only, scoped, time-limited |
 
@@ -176,9 +180,17 @@ Functional requirements are catalogued separately in [functional-requirements.md
 
 **SRS-12.** Permissions are per-farm, not per-account. A person may be `manager` on farm A and `worker` on farm B.
 
-**SRS-13.** Financial data is visible to `owner` and `bookkeeper` only. Health data (worker IOD) to `owner` and designated H&S role only. Enforced in **three** places: sync rules (what reaches the device), RLS (what the database returns), and API guards (what the server permits). All three, because any one alone is a single point of failure.
+**SRS-13.** Financial data is visible to `owner` and `bookkeeper` only. Health data (worker IOD **and medical certificates**) to `owner` and designated H&S role only. Enforced in **three** places: sync rules (what reaches the device), RLS (what the database returns), and API guards (what the server permits). All three, because any one alone is a single point of failure.
 
 **SRS-14.** `external` grants are scoped to a resource set and expire. A vet gets treatment history for a herd for 30 days, not the farm.
+
+**SRS-14a.** **Administering a user account is a separate grant from reading that person's employee record.** A `manager` may create, edit, and deactivate `worker` accounts and reset attendance PINs; a `manager` may not read wage rate, ID number, banking details, payslips, or medical certificates for the same person. Conflating the two is the defect this requirement exists to prevent (FR-322, FR-323).
+
+**SRS-14b.** A user may administer only roles **strictly below** their own. Nobody creates or elevates a peer or a superior; only an `owner` creates another `owner`.
+
+**SRS-14c.** 🇿🇦 **A grievance is not visible to the user it names** — no row, no notification, and no count or badge that changes. Enforced by RLS policy rather than UI filtering, because an inference channel defeats the guarantee as completely as a read. A grievance naming the `owner` routes to a designated alternate recipient (FR-331, FR-332).
+
+**SRS-14d.** Location is captured only as part of a work record and never as a continuous stream. No screen reconstructs an individual's movements over time. The single exception is the worker-**initiated** panic alert (FR-340). See [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md).
 
 ### 3.4 Audit
 

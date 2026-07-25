@@ -233,14 +233,77 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
 
 ---
 
+## UC-060 · A worker raises a grievance about their manager 🇿🇦
+
+**Primary actor:** Farm worker
+**Preconditions:** Worker has an account and has been shown the grievance procedure in their own language.
+**Postcondition:** The grievance is recorded, routed to someone who is not its subject, and retained as SIZA evidence. The subject learns nothing.
+**Trigger:** A worker believes they have been treated unfairly.
+
+### Main flow
+
+1. Worker opens self-service and chooses "raise a grievance".
+2. System explains, in the worker's language, who will see it and who will not.
+3. Worker selects a category, writes the grievance, and optionally names who it concerns.
+4. Worker chooses **confidential** (identity visible to the recipient) or **anonymous**.
+5. System routes to the owner — or, where the grievance concerns the owner, to the designated alternate recipient.
+6. Recipient acknowledges; status moves to `acknowledged`.
+7. Recipient investigates and records a resolution.
+8. Grievance and its resolution become evidence in the SIZA pack (FR-320), **de-identified where lodged anonymously**.
+
+### Alternates
+
+- **A3.1 — The grievance names the owner.** Route to the designated alternate. If a farm has not designated one, onboarding requires it before the module is enabled — a grievance procedure with nowhere to send a complaint about the owner is not a grievance procedure.
+- **A4.1 — Lodged anonymously.** No `raised_by_employee_id`, no `created_by`, no device identifier, and no `audit_log` row attributing the insert to a session.
+
+### Exceptions
+
+- **E5.1 — The named subject queries the API directly by id.** Excluded by RLS, and there is deliberately no `GET /grievances/{id}` — a distinguishable 403 and 404 is itself the leak.
+- **E5.2 — The subject infers from a count or badge.** Counts visible to a user exclude grievances naming them. **A number that changes is a disclosure.**
+- **E8.1 — Anonymity cannot be guaranteed end-to-end** for a given deployment. The UI must offer *confidential* only, and must not use the word *anonymous*. Overclaiming here gets a worker identified.
+
+> **Design note.** This use case exists because the SIZA Social Standard requires a grievance mechanism with confidentiality protected, and because a mechanism the subject can see is worse than none — the worker has been exposed by the tool that promised protection. Every exception above is about closing an inference channel, not a read path. See [legal-compliance.md §5.4](../00-business/legal-compliance.md).
+
+---
+
+## UC-070 · Claim the diesel refund for a tax period 🇿🇦
+
+**Primary actor:** Farm owner (with bookkeeper)
+**Preconditions:** Fuel has been dispensed and logged over the period; vehicles are marked for road use or not.
+**Postcondition:** A refund return with a defensible logbook behind it. Nothing is filed on the farmer's behalf.
+**Trigger:** The tax period closes.
+
+### Main flow
+
+1. Owner selects a period and requests a diesel refund return.
+2. Server sums eligible and non-eligible litres from `fuel_transactions`.
+3. **For each litre, the server resolves the refund percentage and levies by that litre's `occurred_at`** — not the period end.
+4. Server computes the refundable amount and pins the exact `regulatory_rates` rows applied.
+5. Server generates the return with the logbook as an annexure.
+6. Owner reviews, exports, and hands it to their accountant or SARS. **Werf does not submit.**
+
+### Alternates
+
+- **A3.1 — The period spans a rate change** (the onland percentage moved 80% → 100% on 2026-04-01). March litres refund at 80%, April litres at 100%, in one return. This is the ordinary case in that tax year, not an edge case.
+- **A2.1 — Unclassified litres exist.** The return is blocked, and the capture rows needing an eligible/non-eligible decision are listed. A guessed classification is the thing that fails the audit.
+
+### Exceptions
+
+- **E3.1 — No rate covers a dispense date.** `lookup()` throws; the return fails loudly naming the date and the missing code. A silent fallback to the current percentage over-claims on the farmer's behalf, which is the direction SARS audits.
+- **E5.1 — A dip variance falls in the period.** It appears in the logbook as its own row with its reason. Unexplained shrinkage is a question the farmer should answer before SARS asks, not something the return quietly absorbs.
+
+> **Design note.** This is a rates-and-dates problem wearing a fuel costume, and it fails exactly the way payroll fails. Step 3 is the whole use case: per litre, by the date it was burnt. See [legal-compliance.md §5.1](../00-business/legal-compliance.md).
+
+---
+
 ## Actor summary
 
 | Actor | Use cases |
 |---|---|
-| Farm owner | UC-001, UC-020, UC-030, UC-040 |
-| Farm manager | UC-010, UC-030 |
-| Herdsman / worker | UC-010 |
-| Bookkeeper | UC-020 |
+| Farm owner | UC-001, UC-020, UC-030, UC-040, UC-060, UC-070 |
+| Farm manager | UC-010, UC-030, UC-060 |
+| Herdsman / worker | UC-010, UC-060 |
+| Bookkeeper | UC-020, UC-070 |
 | External auditor | UC-040 |
 | Vet | UC-010 (read) |
 | SAPS | UC-030 (recipient) |

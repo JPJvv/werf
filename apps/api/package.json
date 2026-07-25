@@ -19,6 +19,7 @@
     "@werf/db": "workspace:*",
     "@werf/domain": "workspace:*",
     "drizzle-orm": "^0.38.4",
+    "nodemailer": "^9.0.3",
     "pdfkit": "^0.19.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@nestjs/testing": "^11.0.0",
     "@types/express": "^5.0.6",
+    "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

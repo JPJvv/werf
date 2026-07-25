@@ -30,6 +30,26 @@ import { TwoFactorService } from '../auth/two-factor.service';
 import { PasskeyService } from '../auth/passkey.service';
 import { RecoveryCodeService } from '../auth/recovery-code.service';
 import { FarmsService } from './farms.service';
+import { MAILER, type Mailer, type OutboundMessage } from '../mail/mailer';
+
+/**
+ * A relay that records what it was asked to send, and can be told to fail.
+ *
+ * A fake rather than a mock of our own code: this is the PORT's contract standing in for a real
+ * SMTP server, which is the boundary the tests are allowed to substitute. `send` never rejects,
+ * exactly as the port promises — which is precisely the property the "a failed relay must not
+ * destroy the membership" test is checking is honoured all the way up.
+ */
+class RecordingMailer implements Mailer {
+  readonly sent: OutboundMessage[] = [];
+  failing = false;
+
+  send(message: OutboundMessage): Promise<void> {
+    if (this.failing) return Promise.resolve(); // the real adapter swallows and logs
+    this.sent.push(message);
+    return Promise.resolve();
+  }
+}
 
 const BOOT_TIMEOUT_MS = 180_000;
 
@@ -56,6 +76,7 @@ describe('farm management', () => {
   let elevated: ElevatedDb;
   let auth: AuthService;
   let service: FarmsService;
+  let mailer: RecordingMailer;
 
   beforeAll(async () => {
     pg = await startWerfTestDatabase();
@@ -84,15 +105,19 @@ describe('farm management', () => {
         },
         { provide: APP_DB, useValue: app },
         { provide: ELEVATED_DB, useValue: elevated },
+        { provide: MAILER, useFactory: () => new RecordingMailer() },
       ],
     }).compile();
 
     auth = moduleRef.get(AuthService);
     service = moduleRef.get(FarmsService);
+    mailer = moduleRef.get<RecordingMailer>(MAILER);
   }, BOOT_TIMEOUT_MS);
 
   afterEach(async () => {
     await pg.reset();
+    mailer.sent.length = 0;
+    mailer.failing = false;
   });
 
   afterAll(async () => {
@@ -447,6 +472,64 @@ describe('farm management', () => {
           role: 'owner',
         }),
       ).rejects.toThrow(NotFoundError);
+    });
+
+    // ── Delivery (FR-005) ─────────────────────────────────────────────────────────────
+    it('actually reaches the invitee, naming the farm and the role', async () => {
+      // Before this, the membership existed and nothing ever reached the person it named.
+      const a = await tenant('Alpha');
+
+      await service.invite(a.userId, a.farmId, SIPHO);
+
+      expect(mailer.sent).toHaveLength(1);
+      const [message] = mailer.sent;
+      expect(message!.to).toBe(SIPHO.email);
+      // The farm and the role are in the message, because "someone has invited you to something"
+      // is the shape of a phishing email AND the shape of an email people ignore.
+      expect(message!.subject).toMatch(/Alpha Plaas/);
+      expect(message!.body).toMatch(/Alpha Plaas/);
+      expect(message!.body).toMatch(new RegExp(SIPHO.role));
+      // It promises nothing until they accept, which is what the membership actually does.
+      expect(message!.body).toMatch(/nothing is shared with you/i);
+    });
+
+    it('keeps the invitation when the relay fails — the membership is the durable fact', async () => {
+      // Rolling back a real record to report a transient mail failure would be the wrong trade,
+      // and it would do it after the invitee's user row had already been written. The invitation
+      // stays pending and can be re-sent.
+      const a = await tenant('Alpha');
+      mailer.failing = true;
+
+      const result = await service.invite(a.userId, a.farmId, SIPHO);
+
+      expect(result.status).toBe('pending');
+      expect(mailer.sent).toHaveLength(0);
+      const [membership] = await elevated.db
+        .select()
+        .from(farmUsers)
+        .where(
+          and(eq(farmUsers.farmId, a.farmId), eq(farmUsers.userId, await inviteeId(SIPHO.email))),
+        );
+      expect(membership).toBeDefined();
+      expect(membership!.acceptedAt).toBeNull();
+    });
+
+    it('sends nothing for a phone-only invitation, rather than falling back to SMS', async () => {
+      // Deliberate. SIM swap is industrialised in South Africa (CLAUDE.md), and an invitation link
+      // is a credential-shaped thing; the reasoning that rules SMS out as a second factor does not
+      // stop applying because this one is not called a factor. The membership is still recorded —
+      // a phone invitation is handed over in person.
+      const a = await tenant('Alpha');
+
+      const result = await service.invite(a.userId, a.farmId, {
+        fullName: 'Nomsa Dlamini',
+        email: null,
+        phone: '+27821234567',
+        role: 'worker',
+      });
+
+      expect(result.status).toBe('pending');
+      expect(mailer.sent).toHaveLength(0);
     });
   });
 

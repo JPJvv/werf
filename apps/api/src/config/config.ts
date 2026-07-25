@@ -34,6 +34,30 @@ export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
  */
 export const SECOND_FACTOR_CHALLENGE_TTL_SECONDS = 5 * 60;
 
+/**
+ * The outbound mail relay (FR-005). Entirely optional: with no host configured the API boots with
+ * the logging adapter, which is what development and tests use. That is a deliberate default —
+ * requiring a mail server to work on livestock capture would be a tax on every developer, and an
+ * API that silently sent nothing would make a missing invitation impossible to diagnose.
+ *
+ * SMTP rather than a provider SDK, so the provider is a deployment decision. ADR-0002 already
+ * pins this deployment to af-south-1 over data residency; binding the code to one mail vendor
+ * would repeat that mistake a layer up.
+ */
+const smtpSchema = z.object({
+  host: z.string().min(1),
+  port: z.coerce.number().int().positive().default(587),
+  // 587 with STARTTLS is the common case; `true` is implicit TLS on 465.
+  secure: z
+    .string()
+    .optional()
+    .transform((value) => value === 'true'),
+  user: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+  /** The envelope sender. Must be an address the relay is allowed to send as. */
+  from: z.string().min(1),
+});
+
 const configSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
 
@@ -97,6 +121,9 @@ const configSchema = z.object({
     .min(1)
     .default('http://localhost:5173')
     .transform((value) => value.split(',').map((origin) => origin.trim())),
+
+  /** Null when no relay is configured — see `smtpSchema`. */
+  smtp: smtpSchema.nullable(),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -112,6 +139,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     webauthnRpId: env.WEBAUTHN_RP_ID,
     webauthnRpName: env.WEBAUTHN_RP_NAME,
     webauthnOrigin: env.WEBAUTHN_ORIGIN,
+    // All-or-nothing: a half-configured relay (a host with no from-address) is a misconfiguration
+    // worth failing on, not something to paper over by falling back to the log.
+    smtp:
+      env.SMTP_HOST === undefined
+        ? null
+        : {
+            host: env.SMTP_HOST,
+            port: env.SMTP_PORT,
+            secure: env.SMTP_SECURE,
+            user: env.SMTP_USER,
+            password: env.SMTP_PASSWORD,
+            from: env.SMTP_FROM,
+          },
   });
 
   if (!parsed.success) {

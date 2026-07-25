@@ -17,6 +17,7 @@ import { enterprises, farmUsers, farms, users, type AppDb, type ElevatedDb } fro
 import { ConflictError, NotFoundError, TenancyError, schemas } from '@werf/core';
 import type { EnterpriseType } from '@werf/core';
 import { APP_DB, ELEVATED_DB } from '../db/db.module';
+import { MAILER, type Mailer } from '../mail/mailer';
 import { enterprisesByFarm } from '../common/session-farm';
 import { SessionService } from '../auth/session.service';
 
@@ -42,6 +43,7 @@ export class FarmsService {
     @Inject(APP_DB) private readonly app: AppDb,
     @Inject(ELEVATED_DB) private readonly elevated: ElevatedDb,
     @Inject(SessionService) private readonly sessions: SessionService,
+    @Inject(MAILER) private readonly mailer: Mailer,
   ) {}
 
   /** The farms the caller may act on, with their per-farm role. */
@@ -227,6 +229,19 @@ export class FarmsService {
    * 2. It does not report whether the address already had an account. The response is the
    *    same either way, because a differing response is a membership oracle: try an
    *    address, read the answer, learn who banks with us.
+   *
+   * ⭐ The invitation is now actually DELIVERED (FR-005), which it was not before: the membership
+   * existed and nothing ever reached the person it named. Two properties of how that is done:
+   *
+   *  • Delivery is BEST-EFFORT and outside the transaction. The durable fact is the pending
+   *    membership; if the relay is down the invitation still exists, is still pending, and can
+   *    still be re-sent. Rolling back a real record to report a transient mail failure would be
+   *    the wrong trade, and it would do it after the invitee's user row had already been written.
+   *  • The email is sent only when an EMAIL address was given. A phone-only invitation records the
+   *    membership and reaches nobody, and that is stated rather than papered over — SMS is ruled
+   *    out deliberately (CLAUDE.md: SIM swap is industrialised in SA, and an invitation link is a
+   *    credential-shaped thing), so a phone invitation is handed over in person or by a channel we
+   *    do not operate.
    */
   async invite(
     userId: string,
@@ -235,7 +250,7 @@ export class FarmsService {
   ): Promise<{ status: 'pending'; role: string }> {
     await this.assertMembership(userId, farmId, ['owner']);
 
-    return this.elevated.db.transaction(async (tx) => {
+    const result = await this.elevated.db.transaction(async (tx) => {
       const existing = input.email
         ? await tx.select().from(users).where(eq(users.email, input.email))
         : await tx.select().from(users).where(eq(users.phone, input.phone!));
@@ -296,6 +311,45 @@ export class FarmsService {
       });
 
       return { status: 'pending' as const, role: input.role };
+    });
+
+    // Outside the transaction, and awaited only so a failure is logged before the response
+    // returns. `send` never rejects (see the Mailer port), so this cannot fail the invitation.
+    await this.notifyInvitee(farmId, input);
+
+    return result;
+  }
+
+  /**
+   * Tells the invitee an invitation is waiting. The message names the FARM and the ROLE, because
+   * "someone has invited you to something" is the shape of a phishing email and the shape of an
+   * email people ignore.
+   *
+   * It says nothing about whether the address already had an account. That is not the enumeration
+   * concern — only the invitee reads this — it is that "you already have an account" is not a
+   * useful sentence to someone who is about to find out either way by following the link.
+   */
+  private async notifyInvitee(farmId: string, input: schemas.InviteUserRequest): Promise<void> {
+    if (!input.email) return;
+
+    const [farm] = await this.elevated.db
+      .select({ name: farms.name })
+      .from(farms)
+      .where(eq(farms.id, farmId));
+
+    await this.mailer.send({
+      to: input.email,
+      subject: `You have been invited to ${farm?.name ?? 'a farm'} on Werf`,
+      body: [
+        `${input.fullName ?? 'Hello'},`,
+        '',
+        `You have been invited to help with ${farm?.name ?? 'a farm'} on Werf, as ${input.role}.`,
+        '',
+        'Open the app and sign in with this email address to accept. Nothing is shared with you',
+        'until you do — an invitation is a request, not access.',
+        '',
+        'If you were not expecting this, you can ignore it. No account has been given away.',
+      ].join('\n'),
     });
   }
 

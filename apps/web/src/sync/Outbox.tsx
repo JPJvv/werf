@@ -40,6 +40,8 @@ import { useAnimals } from '../livestock/LocalHerd';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents } from '../livestock/LocalLifecycle';
 import { livestockApi } from '../livestock/livestockApi';
+import { useRainfall } from '../rainfall/LocalRainfall';
+import { rainfallApi } from '../rainfall/rainfallApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
 
 /** One queued capture: its id (for the sent-log) and how to send it with a given access token. */
@@ -67,6 +69,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const animals = useAnimals();
   const weights = useWeights();
   const events = useLifecycleEvents();
+  const rainfall = useRainfall();
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
   const online = useSyncStatus().status !== 'offline';
@@ -99,8 +102,17 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           : { id: event.id, send: (token) => livestockApi.recordDeath(event, token) },
       );
     }
+    // Rainfall references no animal, so it has no place in the FK ordering above — it can go last.
+    for (const reading of rainfall) {
+      if (!sent.has(reading.id)) {
+        items.push({
+          id: reading.id,
+          send: (token) => rainfallApi.recordRainfall(reading, token),
+        });
+      }
+    }
     return items;
-  }, [animals, weights, events, sent]);
+  }, [animals, weights, events, rainfall, sent]);
   const pendingCount = queue.length;
 
   const [flushing, setFlushing] = useState(false);

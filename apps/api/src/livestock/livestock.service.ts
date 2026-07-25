@@ -27,20 +27,13 @@ import {
   animals,
   brandingRegisters,
   events,
-  farmUsers,
   farms,
   theftIncidentAnimals,
   theftIncidents,
   veterinaryProducts,
   type AppDb,
 } from '@werf/db';
-import {
-  NotFoundError,
-  TenancyError,
-  ValidationError,
-  type UserRole,
-  type schemas,
-} from '@werf/core';
+import { NotFoundError, ValidationError, type schemas } from '@werf/core';
 import {
   assembleEvidencePack,
   isWithinWithdrawal,
@@ -52,36 +45,12 @@ import {
   recordWeight,
 } from '@werf/domain';
 import { APP_DB } from '../db/db.module';
-
-/**
- * Roles that may capture livestock events — the people who work stock. A bookkeeper (finance
- * only), a viewer (read only) and an external party (e.g. an auditor) cannot. The reference
- * user, a worker in the crush, is deliberately included: capture is the job.
- */
-const CAPTURE_ROLES: readonly UserRole[] = ['owner', 'manager', 'worker'];
-
-/** The `events` columns returned to the caller — every column EXCEPT the PostGIS `location`,
- *  which is geometry (neverSyncColumns), has no meaning to the client, and never goes on the wire. */
-const eventProjection = {
-  id: events.id,
-  farmId: events.farmId,
-  enterpriseId: events.enterpriseId,
-  type: events.type,
-  occurredAt: events.occurredAt,
-  syncedAt: events.syncedAt,
-  animalId: events.animalId,
-  mobId: events.mobId,
-  landUnitId: events.landUnitId,
-  employeeId: events.employeeId,
-  batchId: events.batchId,
-  payload: events.payload,
-  locationGeojson: events.locationGeojson,
-  notes: events.notes,
-  createdBy: events.createdBy,
-  createdAt: events.createdAt,
-  updatedAt: events.updatedAt,
-  deletedAt: events.deletedAt,
-} as const;
+import {
+  assertCanCapture,
+  insertEvent,
+  type CaptureTx,
+  type CapturedEvent,
+} from '../common/event-capture';
 
 /** The `theft_incidents` columns returned to the caller — every column EXCEPT the PostGIS
  *  `last_seen_location`, which is geometry (neverSyncColumns) and never goes on the wire. */
@@ -103,12 +72,9 @@ const theftIncidentProjection = {
   deletedAt: theftIncidents.deletedAt,
 } as const;
 
-type CaptureTx = Parameters<Parameters<AppDb['asUser']>[1]>[0];
-
 /** The persisted animal as returned to the caller. */
 export type CapturedAnimal = Awaited<ReturnType<LivestockService['recordAnimal']>>;
-/** The persisted event as returned to the caller — the PostGIS `location` column is never on the wire. */
-export type CapturedEvent = Awaited<ReturnType<LivestockService['recordWeight']>>;
+export type { CapturedEvent };
 /** The persisted theft incident — the PostGIS `last_seen_location` column is never on the wire. */
 export type CapturedTheftIncident = Awaited<ReturnType<LivestockService['createTheftIncident']>>;
 
@@ -511,43 +477,6 @@ export class LivestockService {
 }
 
 /**
- * Insert an event append-only and return the projected row. Idempotent on the composite
- * primary key `(id, farm_id)`: a re-flushed event does not create a duplicate or crash on the
- * key — the existing row is read back through the same RLS-bound connection.
- */
-async function insertEvent(tx: CaptureTx, event: schemas.NewEvent) {
-  const [row] = await tx
-    .insert(events)
-    .values({
-      id: event.id,
-      farmId: event.farmId,
-      enterpriseId: event.enterpriseId,
-      type: event.type,
-      occurredAt: event.occurredAt,
-      syncedAt: event.syncedAt,
-      animalId: event.animalId,
-      mobId: event.mobId,
-      landUnitId: event.landUnitId,
-      employeeId: event.employeeId,
-      batchId: event.batchId,
-      payload: event.payload,
-      locationGeojson: event.locationGeojson,
-      notes: event.notes,
-      createdBy: event.createdBy,
-    })
-    .onConflictDoNothing()
-    .returning(eventProjection);
-
-  if (row) return row;
-
-  const [existing] = await tx
-    .select(eventProjection)
-    .from(events)
-    .where(and(eq(events.id, event.id), eq(events.farmId, event.farmId)));
-  return existing!;
-}
-
-/**
  * The current status of an animal on this farm, through the RLS-bound connection — so an animal
  * on another farm is invisible and reads as "not found", indistinguishable from one that does
  * not exist. A lifecycle event needs it as the FROM side of the state-machine transition guard.
@@ -707,25 +636,4 @@ function healthBaseInput(userId: string, input: HealthRequest, product: VetProdu
       ? {}
       : { milkWithdrawalDays: Math.ceil(product.milkWithdrawalHours / 24) }),
   };
-}
-
-/**
- * Confirms the caller may capture on this farm, through the RLS-bound connection. The SELECT
- * only sees the caller's ACCEPTED memberships (a pending invitation is invisible to
- * `app_user_farm_ids`), so a non-member — and a not-yet-accepted invitee — arrives as
- * "no such farm", indistinguishable from a farm that does not exist. A genuine member whose
- * role does not permit capture gets a role refusal, which says so.
- */
-async function assertCanCapture(tx: CaptureTx, userId: string, farmId: string): Promise<void> {
-  const [membership] = await tx
-    .select({ role: farmUsers.role })
-    .from(farmUsers)
-    .where(
-      and(eq(farmUsers.farmId, farmId), eq(farmUsers.userId, userId), isNull(farmUsers.deletedAt)),
-    );
-
-  if (!membership) throw new NotFoundError('Farm not found');
-  if (!CAPTURE_ROLES.includes(membership.role)) {
-    throw new TenancyError(`Role ${membership.role} may not capture livestock events`);
-  }
 }

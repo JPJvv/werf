@@ -32,7 +32,7 @@ import {
 // ── Per-type payloads ─────────────────────────────────────────────────────────
 // Concrete for the lifecycle + weight + move + breeding + health captures Phase 2 owns (birth,
 // weight, death, sale, purchase, weaning, move, mating, pregnancy_test, treatment, vaccination,
-// dip). The remaining types carry an open payload until their phase — condition_score/missing/recovered;
+// dip) plus the cross-cutting rainfall. The remaining types carry an open payload until their phase — condition_score/missing/recovered;
 // treatment/vaccination/dip with the health slice (compliance-gated: withdrawal dates are
 // computed at capture and stored, never on read, and resolve through the regulatory_rates seam
 // by occurredAt — FR-131); spray/harvest with crops; attendance/piece_work with labour. Making
@@ -186,6 +186,21 @@ export const dipPayloadSchema = z.object({
 });
 export type DipPayload = z.infer<typeof dipPayloadSchema>;
 
+/**
+ * Rainfall (FR-213): how much fell, and — when the farm reads more than one gauge — which gauge.
+ * Cross-cutting, not livestock: grazing rest/rotation and cropping both read it, which is why the
+ * event is scoped to the FARM (and optionally a land unit), never to a herd or an animal.
+ *
+ * `mm` is NON-NEGATIVE, not positive. A dry reading is a real observation: "I checked the gauge on
+ * Tuesday and it was empty" is the fact that distinguishes a drought from a farmer who forgot to
+ * look, and a rest-period calculation that cannot tell those apart is worthless. Zero is data.
+ */
+export const rainfallPayloadSchema = z.object({
+  mm: z.number().nonnegative().finite(),
+  gauge: z.string().min(1).optional(),
+});
+export type RainfallPayload = z.infer<typeof rainfallPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -202,6 +217,7 @@ const CONCRETE_PAYLOADS = {
   treatment: treatmentPayloadSchema,
   vaccination: vaccinationPayloadSchema,
   dip: dipPayloadSchema,
+  rainfall: rainfallPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

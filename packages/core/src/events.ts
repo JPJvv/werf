@@ -10,6 +10,7 @@
  * single source of history for animals, land, and labour alike. Only the livestock group is in
  * Phase 2 scope; the crop and labour types exist in the enum from day one (so no ALTER TYPE is
  * needed across partitioned farms later) but their payloads are tightened in their own phases.
+ * `rainfall` is the exception that proves the rule — it was not foreseen, so it cost a migration.
  */
 
 export const EVENT_TYPES = [
@@ -41,6 +42,13 @@ export const EVENT_TYPES = [
   'attendance',
   'piece_work',
   'task_complete',
+  // ── Cross-cutting: the farm itself, not one enterprise ───────────────────
+  // Appended LAST on purpose. This value did not exist when the enum was created (rainfall was
+  // surfaced by the 2026-07-23 mockup review), so it arrives by `ALTER TYPE … ADD VALUE`, which is
+  // the one enum DDL that is safe across partitioned farms: it rewrites no table and takes no
+  // exclusive lock. Appending here keeps this array in the same order as the Postgres enum, so a
+  // future schema diff sees no change. Adding a value in the MIDDLE would not.
+  'rainfall',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 

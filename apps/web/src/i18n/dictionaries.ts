@@ -193,6 +193,18 @@ const en = {
   'sex.female': 'Female',
   'sex.castrated': 'Castrated',
   'sex.unknown': 'Unknown',
+  // Rainfall (FR-213). A farm fact, not a livestock one — grazing and cropping both read it, so
+  // the copy says "the farm", never "the herd". The DAY is asked for because the reading is
+  // usually yesterday's: a gauge read on Sunday is captured on Monday.
+  'rain.record': 'Record rainfall',
+  'rain.title': 'Rainfall',
+  'rain.mm': 'How much (mm)',
+  'rain.mmUnit': 'mm',
+  'rain.day': 'When was the gauge read?',
+  'rain.gauge': 'Which gauge (optional)',
+  'rain.save': 'Save reading',
+  'rain.saved': 'saved — your work is saved',
+  'rain.back': 'Back to home',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -353,6 +365,15 @@ const af: Record<TranslationKey, string> = {
   'sex.female': 'Vroulik',
   'sex.castrated': 'Gekastreer',
   'sex.unknown': 'Onbekend',
+  'rain.record': 'Teken reënval aan',
+  'rain.title': 'Reënval',
+  'rain.mm': 'Hoeveel (mm)',
+  'rain.mmUnit': 'mm',
+  'rain.day': 'Wanneer is die meter gelees?',
+  'rain.gauge': 'Watter meter (opsioneel)',
+  'rain.save': 'Stoor lesing',
+  'rain.saved': 'gestoor — jou werk is gestoor',
+  'rain.back': 'Terug na tuis',
 };
 
 export const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

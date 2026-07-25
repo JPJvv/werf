@@ -1,5 +1,7 @@
+import { Link } from 'react-router-dom';
 import type { EnterpriseType } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { useTranslation } from '../i18n/LocaleProvider';
 import { HomeGrid } from '../home/HomeGrid';
 import { useHerdSummary } from '../livestock/herd';
 import { FirstRunGuide } from './FirstRunGuide';
@@ -14,6 +16,7 @@ import { FirstRunGuide } from './FirstRunGuide';
  */
 export function HomeScreen() {
   const { activeFarm } = useAuth();
+  const { t } = useTranslation();
   // Live head from the local herd (FR-017/705). Called unconditionally to satisfy the rules of
   // hooks; it reads the farm-scoped store the shell provides and updates the instant an animal
   // is captured. Zero on a new farm is the honest number, not a blank.
@@ -34,6 +37,15 @@ export function HomeScreen() {
         enterpriseTypes={enterpriseTypes}
         metrics={{ animals: String(herd.liveTotal) }}
       />
+      {/* Rainfall (FR-213) is reached from here, as a SECONDARY link and never as a tile. The
+          grid's tile set and order are fixed — muscle memory is its entire value — and rain is a
+          farm fact that belongs to no enterprise, so it has no tile to live in. A plain link keeps
+          the ochre action budget (one per screen) intact too. */}
+      <p className="px-4 pb-2">
+        <Link to="/rainfall" className="text-body text-dam-700">
+          {t('rain.record')}
+        </Link>
+      </p>
       <FirstRunGuide enterpriseTypes={enterpriseTypes} />
     </>
   );

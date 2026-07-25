@@ -6,6 +6,7 @@ import { InstallPrompt } from '../pwa/InstallPrompt';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
 import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
+import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -14,8 +15,8 @@ import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
  *
  * The capture stores and the outbox wrap BOTH the strip and the routed screens: the screens
  * write captures to the stores, and the outbox reads those same stores to flush them and to
- * publish the pending count the strip shows. All three stores are farm-scoped, so switching the
- * active farm swaps the herd, the events, and the send-state together.
+ * publish the pending count the strip shows. Every store is farm-scoped, so switching the active
+ * farm swaps the herd, the weights, the events, the rain and the send-state together.
  */
 export function AppShell() {
   const { t } = useTranslation();
@@ -37,12 +38,14 @@ export function AppShell() {
       <LocalHerdProvider>
         <LocalWeightsProvider>
           <LocalLifecycleProvider>
-            <OutboxProvider>
-              <SyncStatusStrip />
-              <main>
-                <Outlet />
-              </main>
-            </OutboxProvider>
+            <LocalRainfallProvider>
+              <OutboxProvider>
+                <SyncStatusStrip />
+                <main>
+                  <Outlet />
+                </main>
+              </OutboxProvider>
+            </LocalRainfallProvider>
           </LocalLifecycleProvider>
         </LocalWeightsProvider>
       </LocalHerdProvider>

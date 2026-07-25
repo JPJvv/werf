@@ -11,6 +11,7 @@ import { AnimalsScreen } from './livestock/AnimalsScreen';
 import { AddAnimalScreen } from './livestock/AddAnimalScreen';
 import { WeighSessionScreen } from './livestock/WeighSessionScreen';
 import { RecordLossScreen } from './livestock/RecordLossScreen';
+import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
 import { SettingsLayout } from './settings/SettingsLayout';
 import { AppearanceSettings } from './settings/AppearanceSettings';
@@ -48,6 +49,8 @@ export function App() {
                 <Route path="animals/new" element={<AddAnimalScreen />} />
                 <Route path="animals/loss" element={<RecordLossScreen />} />
                 <Route path="weigh" element={<WeighSessionScreen />} />
+                {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
+                <Route path="rainfall" element={<RecordRainfallScreen />} />
                 <Route path="settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="appearance" replace />} />
                   <Route path="appearance" element={<AppearanceSettings />} />

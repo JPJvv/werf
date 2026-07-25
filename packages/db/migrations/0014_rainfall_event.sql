@@ -1,0 +1,15 @@
+-- Rainfall (FR-213): add 'rainfall' to the event_type enum.
+--
+-- Additive, and deliberately the ONLY kind of enum change that is safe here. `events` is
+-- PARTITIONED BY LIST(farm_id) (0010), so a DDL that rewrote the table would take an exclusive lock
+-- across every farm's partition. `ALTER TYPE … ADD VALUE` rewrites nothing and rehashes nothing —
+-- it appends a label to the type's value list. That is why the value is appended at the END of
+-- EVENT_TYPES in @werf/core rather than filed next to its neighbours: the array and the Postgres
+-- enum stay in the same order, so a later schema diff sees no change (.claude/rules/db.md,
+-- "additive-only", "never rename in one step").
+--
+-- No new table, so no new RLS policy and no new TENANCY classification: a rainfall event is an
+-- `events` row and inherits the farm-scoped policy and the classification the events table already
+-- carries. The reading is scoped to the FARM (and optionally a land unit) — never to a herd, which
+-- is the documented exception to FR-113 herd scoping, because grazing and cropping both read rain.
+ALTER TYPE "public"."event_type" ADD VALUE 'rainfall';

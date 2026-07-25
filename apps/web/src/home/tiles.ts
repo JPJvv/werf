@@ -83,7 +83,9 @@ export function homeTiles(enterpriseTypes: readonly EnterpriseType[]): HomeTile[
   }
 
   if (hasLivestock) {
-    tiles.push({ key: 'health', labelKey: 'tile.health', icon: '⚕', to: '/health' });
+    // Points at the capture screen rather than a placeholder module: the thing a farmer opens
+    // "Health" to DO is record a treatment, and a door onto a real room beats a door onto a sign.
+    tiles.push({ key: 'health', labelKey: 'tile.health', icon: '⚕', to: '/animals/health' });
   }
   if (hasCrop) {
     tiles.push({ key: 'sprays', labelKey: 'tile.sprays', icon: '💧', to: '/sprays' });

@@ -11,12 +11,23 @@
  */
 
 import { useMemo } from 'react';
-import { isMoreFinal, summariseHerd, type HerdSummary } from '@werf/domain';
+import {
+  calendarDaysBetween,
+  isMoreFinal,
+  summariseByClass,
+  summariseHerd,
+  type AnimalClass,
+  type HerdSummary,
+} from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
 import { useAnimals, type StoredAnimal } from './LocalHerd';
 import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
 import { useMobs, type StoredMob } from './LocalMobs';
 import { useMoves, type StoredMove } from './LocalMoves';
+import { useHealthEvents } from './LocalHealth';
+import { useVetProducts } from './LocalVetProducts';
+import { meatWithdrawalFor } from './withdrawal';
+import { farmDay } from '../farmTime';
 
 /** The most-final status each animal has been moved to by a lifecycle event, keyed by animal id. */
 function mostFinalByAnimal(
@@ -122,4 +133,71 @@ export function useHerdSummary(herdId?: string): HerdSummary {
   const animals = useEffectiveAnimals(herdId);
   const mobs = useEffectiveMobs(herdId);
   return useMemo(() => summariseHerd({ animals, mobs }), [animals, mobs]);
+}
+
+/**
+ * Live head by CLASS, per species (FR-705) — cows, heifers, weaners, and the ones with no recorded
+ * birth date. This is the breakdown a farmer thinks in; a flat head count answers "how many" and
+ * nothing else.
+ *
+ * Age is computed here rather than in the domain, because the domain may not read a clock — it
+ * takes the age in days and the caller supplies it (.claude/rules/domain.md).
+ */
+export function useHerdClasses(
+  herdId?: string,
+): Readonly<Record<string, Readonly<Record<AnimalClass, number>>>> {
+  const animals = useEffectiveAnimals(herdId);
+  return useMemo(() => {
+    const today = farmDay(new Date());
+    return summariseByClass(
+      animals
+        .filter((a) => a.status === 'alive')
+        .map((a) => ({
+          species: a.species,
+          sex: a.sex,
+          ageDays: ageInDays(a.dob, today),
+        })),
+    );
+  }, [animals]);
+}
+
+/**
+ * Age in whole days, or undefined when there is no usable date of birth.
+ *
+ * Defensive on purpose, and not merely for tidiness. This reads rows the DEVICE persisted, possibly
+ * composed by an earlier version of the app that did not write `dob` at all — an offline-first app
+ * has to expect exactly that, because a farmer can be six weeks behind an update. A read model that
+ * threw on one malformed row would take the whole Animals screen down, offline, with no way out;
+ * 'no age recorded' is already a class this summary reports honestly, so an unreadable date lands
+ * in the group that exists for it.
+ */
+function ageInDays(dob: unknown, today: string): number | undefined {
+  if (typeof dob !== 'string') return undefined;
+  try {
+    return Math.max(0, calendarDaysBetween(dob, today));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * How many live animals are currently inside a meat withholding (FR-131).
+ *
+ * This is the number the Health tile carries, and it was chosen over the "N due" the design sketch
+ * suggested for one reason: it is TRUE. A due/overdue count needs a vaccination programme schedule
+ * that does not exist yet, and a tile carrying a number the app cannot actually compute is worse
+ * than a tile carrying none — the whole point of FR-017 is that a tile is an instrument rather than
+ * a menu item. "3 withholding" is a fact the device can derive today, and it is the one that stops
+ * a farmer loading the wrong animal onto a truck.
+ */
+export function useWithholdingCount(herdId?: string): number {
+  const animals = useEffectiveAnimals(herdId);
+  const healthEvents = useHealthEvents();
+  const products = useVetProducts();
+  return useMemo(() => {
+    const today = farmDay(new Date());
+    return animals.filter(
+      (a) => a.status === 'alive' && meatWithdrawalFor(a.id, today, healthEvents, products).blocked,
+    ).length;
+  }, [animals, healthEvents, products]);
 }

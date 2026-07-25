@@ -8,10 +8,11 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { enterpriseSpecies, type Species, type AnimalSex, type AnimalStatus } from '@werf/core';
+import { ANIMAL_CLASSES } from '@werf/domain';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
-import { useEffectiveAnimals, useEffectiveMobs, useHerdSummary } from './herd';
+import { useEffectiveAnimals, useEffectiveMobs, useHerdClasses, useHerdSummary } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 
 export function speciesLabel(t: (key: TranslationKey) => string, species: Species): string {
@@ -43,6 +44,7 @@ export function AnimalsScreen() {
   const mobs = useEffectiveMobs(filter);
   const labels = useAnimalLabels();
   const summary = useHerdSummary(filter);
+  const classes = useHerdClasses(filter);
   const hasLive = summary.animalsLive > 0;
 
   return (
@@ -93,10 +95,37 @@ export function AnimalsScreen() {
         {t('animals.addGroup')}
       </Link>
 
+      {/* FR-705. The breakdown a farmer actually thinks in: nobody has "42 female cattle", they
+          have 18 cows, 9 heifers and 15 weaners. Zero classes are not shown — an empty row is
+          noise — but 'unknown' IS, because animals with no recorded birth date are a real group
+          and hiding them would make this disagree with the head count above. */}
+      {Object.entries(classes).map(([species, counts]) => {
+        const shown = ANIMAL_CLASSES.filter((c) => counts[c] > 0);
+        if (shown.length === 0) return null;
+        return (
+          <div key={species} className="mb-4">
+            <p className="mb-1 text-label uppercase text-soil-700">
+              {speciesLabel(t, species as Species)}
+            </p>
+            <ul
+              aria-label={`${speciesLabel(t, species as Species)} ${t('animals.classes')}`}
+              className="flex list-none flex-wrap gap-3 p-0"
+            >
+              {shown.map((c) => (
+                <li key={c} className="text-body text-soil-900">
+                  <span className="font-data tabular-nums">{counts[c]}</span>{' '}
+                  <span className="text-soil-700">{t(`class.${c}` as TranslationKey)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+
       {mobs.length > 0 && (
         <>
           <h2 className="mb-2 font-ui text-h2 text-soil-900">{t('animals.groups')}</h2>
-          <ul className="mb-6 flex list-none flex-col gap-2 p-0">
+          <ul aria-label={t('animals.groups')} className="mb-6 flex list-none flex-col gap-2 p-0">
             {mobs.map((mob) => (
               <li
                 key={mob.id}
@@ -168,7 +197,7 @@ export function AnimalsScreen() {
           <p className="text-body text-soil-700">{t('animals.empty')}</p>
         ) : null
       ) : (
-        <ul className="flex list-none flex-col gap-2 p-0">
+        <ul aria-label={t('animals.title')} className="flex list-none flex-col gap-2 p-0">
           {animals.map((animal) => (
             <li
               key={animal.id}

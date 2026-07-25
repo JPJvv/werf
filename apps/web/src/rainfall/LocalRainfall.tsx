@@ -109,3 +109,33 @@ export function useRecordRainfall(): (capture: RainfallCapture) => void {
     [store],
   );
 }
+
+/**
+ * The season's rainfall so far, in millimetres (FR-213, read side).
+ *
+ * The SEASON, not the calendar year. A South African summer-rainfall season runs from July: rain
+ * that fell in December and rain that fell in February belong to the same season, and splitting
+ * them at 1 January would cut every season in half exactly where the comparison matters. The
+ * boundary is a farming fact, not a regulated one, so it lives here rather than in reference data.
+ *
+ * Summed on `occurredAt` — the day the gauge was READ — never on when the row was captured. A
+ * fortnight of readings entered on one evening after a trip to town must land in the days they
+ * happened, which is the entire reason the capture screen asks for the day.
+ */
+const SEASON_START_MONTH = 7; // July
+
+export function seasonStart(on: Date): string {
+  const year = on.getUTCFullYear();
+  const month = on.getUTCMonth() + 1;
+  return `${month >= SEASON_START_MONTH ? year : year - 1}-07-01`;
+}
+
+export function useSeasonRainfall(on: Date = new Date()): number {
+  const readings = useRainfall();
+  return useMemo(() => {
+    const from = seasonStart(on);
+    return readings
+      .filter((r) => r.occurredAt.slice(0, 10) >= from)
+      .reduce((total, r) => total + r.mm, 0);
+  }, [readings, on]);
+}

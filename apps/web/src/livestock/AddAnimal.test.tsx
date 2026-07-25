@@ -98,7 +98,10 @@ describe('recording an animal', () => {
 
     // Through the list…
     await user.click(screen.getByRole('link', { name: /done/i }));
-    expect(screen.getByText('Cattle')).toBeTruthy();
+    // Scoped to the LIST: the screen also shows a per-species class breakdown (FR-705) now.
+    expect(
+      within(screen.getByRole('list', { name: /^animals$/i })).getByText('Cattle'),
+    ).toBeTruthy();
 
     // …and home, where the Herd tile now reads one.
     await user.click(screen.getByRole('link', { name: /back to home/i }));
@@ -167,7 +170,12 @@ describe('recording an animal', () => {
 
     expect(capturedHerdId()).toBe(FLOCK.id);
     await user.click(screen.getByRole('link', { name: /done/i }));
-    expect(screen.getByText('Sheep')).toBeTruthy(); // species derived from the herd
+    // Scoped to the LIST: the screen now also shows a per-species class breakdown (FR-705), so a
+    // bare getByText('Sheep') would match the breakdown heading too.
+    // The species was derived from the herd, never asked for.
+    expect(
+      within(screen.getByRole('list', { name: /^animals$/i })).getByText('Sheep'),
+    ).toBeTruthy();
   });
 
   it('tells two herds of the SAME species apart — which a species picker never could', async () => {

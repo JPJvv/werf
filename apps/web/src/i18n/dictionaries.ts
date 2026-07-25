@@ -148,6 +148,10 @@ const en = {
   'tile.labour': 'Labour',
   'tile.money': 'Money',
   'tile.compliance': 'Compliance',
+  // The Health tile's attention badge (FR-017/131). Deliberately NOT "N due": a due/overdue count
+  // needs a vaccination programme schedule that does not exist yet, and a tile carrying a number
+  // the app cannot compute is worse than a tile carrying none.
+  'tile.withholding': 'withholding',
   'module.comingSoon': 'This part of the farm arrives in a later phase.',
   'module.notFound.title': 'Not found',
   'module.notFound.body': 'There is nothing here.',
@@ -274,6 +278,7 @@ const en = {
   'move.nowhere.block': 'There are no blocks yet, so there is nowhere to move animals to.',
   'animals.addGroup': 'Record a group',
   'animals.groups': 'Groups',
+  'animals.classes': 'by class',
   // Mobs / flocks (FR-102) — the group-only model. "Flock A: 300 head" is a complete record with
   // no individual animals behind it, and for most smallholders it is the whole answer.
   'mob.title': 'Record a group',
@@ -368,6 +373,16 @@ const en = {
   'weigh.done.count': 'weighed',
   'weigh.done.link': 'Done',
   // Species and sex, in the farmer's words rather than the enum's.
+  // Age/sex classes (FR-705). Tokens, not words, all the way from the domain — so Afrikaans can
+  // say "koeie" without the English "cow" being baked into the rule that decides the class.
+  'class.female': 'cows/ewes',
+  'class.male': 'bulls/rams',
+  'class.castrate': 'steers/wethers',
+  'class.weaner': 'weaners',
+  'class.young': 'calves/lambs',
+  // Named honestly rather than folded into another class: an animal with no recorded birth date
+  // cannot be classified, and quietly counting it as a cow would invent the number being checked.
+  'class.unknown': 'no age recorded',
   'species.cattle': 'Cattle',
   'species.sheep': 'Sheep',
   'species.goat': 'Goats',
@@ -389,6 +404,7 @@ const en = {
   'rain.gauge': 'Which gauge (optional)',
   'rain.save': 'Save reading',
   'rain.saved': 'saved — your work is saved',
+  'rain.season': 'this season',
   'rain.back': 'Back to home',
 } as const;
 
@@ -503,6 +519,7 @@ const af: Record<TranslationKey, string> = {
   'tile.labour': 'Arbeid',
   'tile.money': 'Geld',
   'tile.compliance': 'Nakoming',
+  'tile.withholding': 'weerhou',
   'module.comingSoon': 'Hierdie deel van die plaas kom in ’n latere fase.',
   'module.notFound.title': 'Nie gevind nie',
   'module.notFound.body': 'Daar is niks hier nie.',
@@ -616,6 +633,7 @@ const af: Record<TranslationKey, string> = {
     'Daar is nog geen blokke nie, so daar is nêrens om diere heen te skuif nie.',
   'animals.addGroup': 'Teken ’n groep aan',
   'animals.groups': 'Groepe',
+  'animals.classes': 'volgens klas',
   'mob.title': 'Teken ’n groep aan',
   'mob.name': 'Wat noem jy hierdie groep?',
   'mob.head': 'Hoeveel stuks',
@@ -695,6 +713,12 @@ const af: Record<TranslationKey, string> = {
   'weigh.emptyAction': 'Teken ’n dier aan',
   'weigh.done.count': 'geweeg',
   'weigh.done.link': 'Klaar',
+  'class.female': 'koeie/ooie',
+  'class.male': 'bulle/ramme',
+  'class.castrate': 'osse/hamels',
+  'class.weaner': 'speenkalwers',
+  'class.young': 'kalwers/lammers',
+  'class.unknown': 'geen ouderdom aangeteken',
   'species.cattle': 'Beeste',
   'species.sheep': 'Skape',
   'species.goat': 'Bokke',
@@ -713,6 +737,7 @@ const af: Record<TranslationKey, string> = {
   'rain.gauge': 'Watter meter (opsioneel)',
   'rain.save': 'Stoor lesing',
   'rain.saved': 'gestoor — jou werk is gestoor',
+  'rain.season': 'hierdie seisoen',
   'rain.back': 'Terug na tuis',
 };
 

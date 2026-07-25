@@ -24,6 +24,7 @@ export * from './livestock/health';
 export * from './livestock/branding';
 export * from './livestock/evidence';
 export * from './livestock/herd-summary';
+export * from './livestock/classes';
 export * from './rainfall';
 export * from './herd-scope';
 export * from './dates';

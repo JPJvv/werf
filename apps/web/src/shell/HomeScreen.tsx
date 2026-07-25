@@ -3,7 +3,9 @@ import type { EnterpriseType } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { HomeGrid } from '../home/HomeGrid';
-import { useHerdSummary } from '../livestock/herd';
+import { useHerdSummary, useWithholdingCount } from '../livestock/herd';
+import { useLandUnits } from '../land/LocalLand';
+import { useSeasonRainfall } from '../rainfall/LocalRainfall';
 import { FirstRunGuide } from './FirstRunGuide';
 
 /**
@@ -21,6 +23,12 @@ export function HomeScreen() {
   // hooks; it reads the farm-scoped store the shell provides and updates the instant an animal
   // is captured. Zero on a new farm is the honest number, not a blank.
   const herd = useHerdSummary();
+  // FR-017: every tile that CAN carry a true number does. The ones that cannot yet carry none —
+  // an empty tile is honest, and a tile carrying a number the app cannot actually compute is the
+  // failure the requirement exists to prevent. See `useWithholdingCount`.
+  const withholding = useWithholdingCount();
+  const camps = useLandUnits();
+  const seasonRain = useSeasonRainfall();
 
   // A signed-in user with no farm is not a state the product can reach: registration
   // creates a business and its first farm in one transaction, and Phase 1 cannot delete a
@@ -35,7 +43,15 @@ export function HomeScreen() {
       <HomeGrid
         farmName={activeFarm.name}
         enterpriseTypes={enterpriseTypes}
-        metrics={{ animals: String(herd.liveTotal) }}
+        metrics={{
+          animals: String(herd.liveTotal),
+          land: String(camps.length),
+        }}
+        // A badge, not a metric: animals inside a withholding are an ATTENTION state, not a
+        // measurement, and the form has to say so on its own (NFR-411 — never colour alone).
+        badges={
+          withholding > 0 ? { health: { count: withholding, label: t('tile.withholding') } } : {}
+        }
       />
       {/* Rainfall (FR-213) is reached from here, as a SECONDARY link and never as a tile. The
           grid's tile set and order are fixed — muscle memory is its entire value — and rain is a
@@ -45,6 +61,16 @@ export function HomeScreen() {
         <Link to="/rainfall" className="text-body text-dam-700">
           {t('rain.record')}
         </Link>
+        {/* The season total, beside the link rather than on a tile: rain belongs to no enterprise
+            so it has no tile, but "how much have we had this season" is the question a farmer asks
+            every time they think about it, and a number they have to open a screen to see is a
+            number they stop checking. */}
+        {seasonRain > 0 && (
+          <span className="ml-3 text-body text-soil-700">
+            <span className="font-data tabular-nums text-soil-900">{seasonRain}</span>{' '}
+            {t('rain.mmUnit')} {t('rain.season')}
+          </span>
+        )}
       </p>
       <FirstRunGuide enterpriseTypes={enterpriseTypes} />
     </>

@@ -170,7 +170,7 @@ describe('tagging animals (FR-109)', () => {
     window.history.pushState({}, '', '/animals');
     render(<App />);
 
-    const row = screen.getByRole('listitem');
+    const row = within(screen.getByRole('list', { name: /^animals$/i })).getByRole('listitem');
     expect(within(row).getByText('4021')).toBeTruthy();
   });
 

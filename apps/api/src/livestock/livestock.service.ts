@@ -68,6 +68,8 @@ const theftIncidentProjection = {
   status: theftIncidents.status,
   observations: theftIncidents.observations,
   evidencePackKey: theftIncidents.evidencePackKey,
+  createdBy: theftIncidents.createdBy,
+  updatedBy: theftIncidents.updatedBy,
   createdAt: theftIncidents.createdAt,
   updatedAt: theftIncidents.updatedAt,
   deletedAt: theftIncidents.deletedAt,
@@ -358,6 +360,8 @@ export class LivestockService {
           caseNumber: input.caseNumber,
           reportingStation: input.reportingStation,
           observations: input.observations,
+          // Who filed it, from the session and never the body. Part of the evidence, not metadata.
+          createdBy: userId,
         })
         .onConflictDoNothing({ target: theftIncidents.id })
         .returning(theftIncidentProjection);

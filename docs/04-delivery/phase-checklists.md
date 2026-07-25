@@ -190,9 +190,10 @@ Land foundation (needed before animals have somewhere to live)
   geojson through the app path. postgis extension enabled here (first geometry table) (FR-150)
 ◐ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150) — the DATA
   layer supports every field; the create ACTION (API endpoint + capture screen) is a later slice
-◐ @werf/core Zod schema for LandUnit (record + new shapes) — DONE, with the boundary crossing
-  the wire as GeoJSON text, never PostGIS. Terminology "camp"/"block"/"other" is still the
-  Phase 1 hardcoded landTerm(); moving it to the terminology layer is its own carry-forward item
+☑ @werf/core Zod schema for LandUnit (record + new shapes) — DONE, with the boundary crossing
+  the wire as GeoJSON text, never PostGIS. Terminology now comes from the real terminology layer
+  (`apps/web/src/i18n/terminology.ts`), which decides the TERM while the dictionaries hold the word
+  — so "camp"/"block" is one decision, translatable, and shared by the grid and the first-run guide
 
 Core animal records (apps/api + @werf/core + @werf/db, integration-tested on real Postgres)
 ☑ animals table + animal_identifiers + mobs + enums (animal_status, animal_sex, identifier_type);
@@ -204,9 +205,11 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   (client uuidv7) through the @werf/sync capture-store adapter with NO network in the path, and the
   home tile counts it live. The LOCAL write now REACHES POSTGRES: the best-effort outbox flush
   (`apps/web/src/sync/Outbox.tsx`) sends the queued animal to `POST /livestock/animals` on reconnect,
-  animals first so the events that reference them do not FK-fail. Still ◐: only species/sex/breed are
-  captured on the screen (DOB, source, acquired_at, identifiers are later). DOB stays a YYYY-MM-DD
-  string, never a coerced Date (off-by-one guard)
+  animals first so the events that reference them do not FK-fail. The animal is also FILED UNDER ITS HERD at capture (FR-113): on a farm with
+  several the herd is the only subject question asked and the species follows from it; on a farm with
+  one, nothing is asked and the herd is stated. Still ◐: only herd/species/sex/breed are captured on
+  the screen (DOB, source, acquired_at, identifiers are later). DOB stays a YYYY-MM-DD string, never
+  a coerced Date (off-by-one guard)
 ◐ Create a mob/flock and manage it by head_count without individual rows (FR-102) — data layer done
   and proven (a mob is a complete record with zero animal rows behind it); create ACTION pending
 ◐ Species-specific attributes via Zod-validated JSONB (FR-107, ADR-0006 AnimalIdentityRules seam) —
@@ -262,14 +265,34 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
 ◐ occurred_at is captured separately from created_at everywhere; reports read occurred_at (CLAUDE.md)
   — enforced in schema + domain (occurred_at is injected, distinct from created_at); the
   report/herd-summary read model that READS occurred_at is still pending
-☐ 📶 Scope every event to the applicable herd — enterprise/species (cattle/sheep/pig/poultry) or the
+☑ 📶 Scope every event to the applicable herd — enterprise/species (cattle/sheep/pig/poultry) or the
   specific animal/mob — so a mixed farm files/filters events correctly; capture REQUIRES a herd
   selection when the event is not tied to one animal (FR-113, NEW from the 2026-07-23 mockup review).
-  Mechanism = the events.enterprise_id column that already exists; no schema change (schema §5 note)
-☐ 📶 Manual rainfall capture (FR-213, P1) — a farm/land-scoped `rainfall` event: how much (mm) and
-  when (occurred_at). Needs an additive ALTER TYPE to add 'rainfall' to event_type + a @werf/core
-  payload {mm, gauge?}. Cross-cutting (grazing rest/rotation + cropping both read it), surfaced into
-  Phase 2 from the 2026-07-23 mockup review
+  No schema change, as designed. Three parts, all in: (a) `assertHerdScoped` (@werf/domain,
+  table-driven) refuses an event naming neither an animal, a mob, nor an enterprise, called inside
+  the ONE shared `insertEvent` so a capture added in a later phase cannot skip it; the exception is
+  a closed list (`FARM_SCOPED_EVENT_TYPES` — rainfall), so a new type is herd-scoped by default.
+  (b) The herd is STAMPED at capture from the SUBJECT's own row, server-side, never from the body —
+  an animal can be moved between herds, so joining on read would re-file last season's dosing under
+  today's herd (the ADR-0005 reasoning; database-schema.md §5 corrected accordingly). (c) Capture
+  asks ONCE: an animal is filed under a herd when created (the herd picker replaces the species
+  picker — it answers both, and tells two cattle herds apart), a single-herd farm is asked nothing
+  and shown where the animal went, and the session carries the farm's enterprises so this works
+  offline. Animals screen gains a herd filter; the whole-farm total never filters, so a herdless
+  animal is never hidden
+☑ 📶 Manual rainfall capture (FR-213, P1) — a farm/land-scoped `rainfall` event: how much (mm) and
+  when (occurred_at). Migration **0014** adds 'rainfall' to event_type by `ALTER TYPE … ADD VALUE`
+  (the one enum DDL safe across the LIST-partitioned events table), appended LAST so the array and
+  the Postgres enum stay in the same order. Pure `recordRainfall` (@werf/domain root, not under
+  livestock/ — it is cross-cutting); `mm` is NON-NEGATIVE because a dry gauge is a real reading.
+  Its OWN api module at `POST /rainfall` rather than a /livestock endpoint, so the crop side never
+  reaches into livestock for its own rainfall; the shared write discipline (idempotency, capture
+  role, the events projection) moved to `common/event-capture.ts`. Offline capture screen at
+  `/rainfall` with its own store (`werf-rainfall:<farmId>`) + outbox flush, reached from home as a
+  SECONDARY link and never a tile (the grid's set and order are muscle memory, and rain belongs to
+  no enterprise). The screen ASKS for the reading day rather than assuming today — the common case
+  is yesterday's gauge read at the house this morning. 6 real-PG integration tests + 5 web journey
+  tests. Still ◐ on the READ side: nothing yet reports a season total or feeds grazing rest
 
 Breeding (P1 only; FR-122/123 deferred)
 ◐ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120) — capture
@@ -360,30 +383,74 @@ Phase 1 carry-forward (closing the Phase 1 ◐/deferred items the gate named as 
   (NFR-009, .claude/rules/frontend.md; Phase 1 named this "a Phase 2 first task").
   apps/web/scripts/check-bundle-size.mjs runs in `pnpm --filter @werf/web build`; fail
   path proven against the real dist (currently 96.42 KB gz of a 250 KB budget)
-☐ Terminology moves from landTerm() to a real terminology lookup; tile terminology labels
+☑ Terminology moves from landTerm() to a real terminology lookup; tile terminology labels
   (Herd/Blocks/Camps…) become translatable, resolving the Phase 1 vocabulary fork (FR-008 remainder)
-☐ FR-008 remainders: a language control BEFORE sign-in (so an Afrikaans farmer can onboard in
-  Afrikaans), and a profile-update endpoint so a later language change writes back and survives reload
-☐ axe widened to the enrolment / recovery-codes / Settings screens (unaudited in Phase 1)
+  — `apps/web/src/i18n/terminology.ts` is the layer: it answers which TERM a farm uses
+  ('camp'/'block', 'herd'/'flock'/'livestock') and NOTHING about words; the dictionaries hold the
+  word per term per language, so a term with no word fails the build. tiles.ts carries a translation
+  key instead of an English string and decides only which doors exist and in what order; the fixed
+  labels (Health, Sprays, Money…) are translated too, because a half-Afrikaans grid is its own fork.
+  Afrikaans makes the case: "herd" and "flock" are both "Trop", which only a token can express.
+  Also fixed a real gap found while moving the rule — a farm running BOTH herd and flock species now
+  says "Livestock" instead of being wrong half the time. Becomes a lookup against a terminology
+  TABLE (via the sync adapter) when the vocabulary outgrows a closed token set; callers do not
+  change then, because they already ask the layer
+☑ FR-008 remainders: a language control BEFORE sign-in (so an Afrikaans farmer can onboard in
+  Afrikaans), and a profile-update endpoint so a later language change writes back and survives
+  reload — the picker lives in the shared signed-out `Screen` frame, so it is on sign-in,
+  registration AND the second-factor step without any of them remembering it, and each language is
+  named in ITSELF (someone who cannot read the current language cannot read a label describing
+  theirs). Registration already submitted the live UI locale, so choosing there makes the ACCOUNT
+  Afrikaans — an e2e-style web test walks it. `PATCH /auth/profile` is guarded with NO id in the
+  body (the account is the authenticated caller), returns the public user projection built
+  field-by-field so a later migration's column is invisible until deliberately exposed, and the
+  client patches its CACHED session — which is the part that actually fixes the bug, because the
+  boot path re-adopts the stored locale. Applied to the device FIRST and written back second: a
+  farmer in a dead zone must still read the app in their language, and when the write-back cannot
+  happen the screen says what is true rather than raising an error
+☑ axe widened to the enrolment / recovery-codes / Settings screens (unaudited in Phase 1) — plus
+  the five Phase 2 capture screens, in BOTH themes, zero violations (`apps/web/e2e/a11y.spec.ts`).
+  Each screen is asserted to have RENDERED before it is audited: axe reports zero violations on a
+  blank page, so an audit without that assertion passes hardest when the screen is broken
 ☑ Re-pointed the stale packages/db/seed allowlist path in .gitleaks.toml to the real
   packages/db/scripts/seed.mjs (intent kept, not just deleted); fixed the AppShell.tsx comment
   that still claimed the sync strip lands later — it renders now (both from the Phase 1 reviewer's carry list)
 
 Quality gates
-☐ Every write path works with the network off; no `if (!navigator.onLine) throw` anywhere
-☐ Domain logic (ADG, gestation projection, withdrawal window, unmarked-animal flag) is pure,
-  unit-tested, table-driven where the rule is table-driven; no mocks of our own code
-☐ API integration tests against real Postgres in testcontainers; no mocking our own DB
-☐ Tenancy: packages/sync/test/tenancy.spec covers every new table; a cross-farm animal/event
-  leak fails the build; sync rules and RLS agree (CLAUDE.md)
-◐ A real offline cold-start e2e on the BUILT PWA — capture an animal and an event with the
+☑ Every write path works with the network off; no `if (!navigator.onLine) throw` anywhere — every
+  capture (`save`) commits to a local store synchronously with no network in the path; the ONLY
+  `navigator.onLine` read is the outbox's send DECISION, which is a reconciliation path, not a
+  write. Confirmed by the sync-auditor agent on the slice that introduced the flush
+☑ Domain logic (ADG, gestation projection, withdrawal window, unmarked-animal flag) is pure,
+  unit-tested, table-driven where the rule is table-driven; no mocks of our own code — @werf/domain
+  has no I/O and no clock anywhere: ids, `occurredAt`, gestation periods, withdrawal periods and
+  `asOf` are all INJECTED, which is what makes the table-driven tests possible
+☑ API integration tests against real Postgres in testcontainers; no mocking our own DB — every
+  apps/api and @werf/db suite starts its own Postgres. (Enough of them that the gate needed
+  `maxWorkers: 4` and `hookTimeout: 60_000` to stay reproducible — see vitest.workspace.ts)
+☑ Tenancy: packages/sync/test/tenancy.spec covers every new table; a cross-farm animal/event
+  leak fails the build; sync rules and RLS agree (CLAUDE.md) — and the table list is now DERIVED
+  from the drizzle schema (`SCHEMA_TABLE_NAMES` in @werf/db) rather than maintained by hand, so an
+  unclassified table genuinely breaks the build instead of breaking it only if someone remembered
+  this file existed (sync-auditor finding N3). Compared in BOTH directions, so a stale registry
+  entry for a dropped table fails too
+☑ A real offline cold-start e2e on the BUILT PWA — capture an animal and an event with the
   network off, confirm it survives reload (the Phase 1 reviewer flagged nothing exercised this).
-  jsdom coverage now exists through the real `<App/>` boot path: `apps/web/src/sync/Outbox.test.tsx`
-  proves captures are held offline (nothing sent), flushed animals-first once online, not re-sent
-  after a cold start, and never discarded on a server refusal. Still ☐: the equivalent as a
-  Playwright run against the BUILT PWA (network-off capture → reload → flush) is not yet written
-☐ compliance-checker passes on FR-131 and FR-601–605; legal-compliance.md read first
-☐ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e green
+  `apps/web/e2e/offline-capture.spec.ts`: captures an animal AND a weight with the browser
+  genuinely offline, reloads ON THE CAPTURE ROUTE (so the service worker must serve a deep route
+  from its precached shell — the assertion that would catch a missing navigation fallback), then
+  lets the signal return and watches the queue drain animals-before-events. The flush assertion is
+  an ORDER, not an exact call list, because it is deliberately at-least-once and every endpoint is
+  idempotent on the client id; what IS strict is that a later open sends nothing. The jsdom
+  coverage (`src/sync/Outbox.test.tsx`) remains as the fast, detailed version
+☑ compliance-checker passes on FR-131 and FR-601–605; legal-compliance.md read first — run
+  2026-07-23 (health, SA identity) and 2026-07-25 (withdrawal periods + evidence pack). One real
+  finding, fixed: product registrations must resolve by the TREATMENT day, not today. Its two
+  carry-forwards are now closed as well — `created_by`/`updated_by` on `theft_incidents` and
+  `branding_registers` (migration 0015), because on a document handed to the SAPS Stock Theft Unit
+  the reporter is part of the evidence, not metadata
+☑ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e
+  green — 18 e2e tests, 0 violations; verify green at 61 files / 548 tests, bundle ~106 KB gz
 ```
 
 **Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe, including the new
@@ -392,6 +459,22 @@ remainder named**; the `reviewer` **and** `compliance-checker` agents pass; a fa
 camp → create an animal → give it a tag → record a weight and a treatment → wean it → mark another
 missing → generate a stock-theft pack → see the herd count on the home tile, entirely offline for
 the capture paths.
+
+**Where the gate stands (2026-07-25, branch `phase-2/livestock`).** `pnpm verify` exits 0 (61 files
+/ 548 tests, bundle ~106 KB gz); `pnpm test:e2e` is green (18 tests, 0 axe violations in both
+themes, including the offline cold-start capture on the built PWA); **no ☐ remains — every line is
+☑ or ◐ with its remainder named**; `compliance-checker` has passed on the gated slices. Still owed
+before the phase PR, and deliberately not claimed here: a `reviewer` pass over this checklist, a
+`sync-auditor` pass over migration 0015 and the derived tenancy table list, and CI green on `main`
+— which cannot happen until the PR exists, because CI does not run on feature branches.
+
+The end-to-end sentence in the gate above is not yet true in one respect, and it is worth stating
+plainly rather than reading the gate generously: a farmer cannot yet CREATE A CAMP or GIVE AN ANIMAL
+A TAG from the app. Both data layers are done and proven, and both are named ◐ above with exactly
+that remainder; the create ACTIONS are the largest thing Phase 2 leaves for its successor, along
+with the API/screens for weaning, birth, movement, purchase, mating, pregnancy diagnosis and the
+health captures (whose SERVER side is done — it is the offline product-selection screen that waits
+on reference-data sync in Phase 3).
 
 **Deferred to later phases (not a Phase 2 miss):** FR-110 pedigree/breed-% and FR-122/123 breeding
 analytics + reminders (P2); FR-134/135/136/137 injury, notifiable-disease flag, medicine inventory,

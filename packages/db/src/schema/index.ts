@@ -7,3 +7,4 @@ export * from './animals';
 export * from './events';
 export * from './veterinary';
 export * from './theft';
+export * from './tables';

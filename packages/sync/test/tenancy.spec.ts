@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-// Dev-only dependency, and only for the credential-column check below: the point of that
-// test is to compare the registry against the REAL schema, so a hand-copied column list
-// would defeat it.
-import { users } from '@werf/db';
+// Dev-only dependency, and only for the checks that compare the registry against the REAL
+// schema — the table list and the credential columns below. A hand-copied list would defeat
+// the point of both.
+import { SCHEMA_TABLE_NAMES, users } from '@werf/db';
 import {
   SERVER_ONLY_TABLES,
   SYNC_CLASSIFICATIONS,
@@ -66,28 +66,15 @@ describe('sync tenancy — classification vocabulary', () => {
     for (const c of Object.values(SYNC_CLASSIFICATIONS)) {
       expect(allowed).toContain(c);
     }
-    expect(Object.keys(SYNC_CLASSIFICATIONS).sort()).toEqual(
-      [
-        'animal_identifiers',
-        'animals',
-        'branding_registers',
-        'businesses',
-        'enterprises',
-        'events',
-        'farm_users',
-        'farms',
-        'land_units',
-        'mobs',
-        'regulatory_rates',
-        'veterinary_products',
-        'theft_incidents',
-        'theft_incident_animals',
-        'user_passkeys',
-        'user_sessions',
-        'users',
-        'webauthn_challenges',
-      ].sort(),
-    );
+
+    // Sanity: an empty derivation would make the comparison below pass vacuously and the
+    // guard would silently stop guarding.
+    expect(SCHEMA_TABLE_NAMES.length).toBeGreaterThan(10);
+
+    // Both directions on purpose. A table in the schema but not the registry is the leak this
+    // guards against; a table in the registry but not the schema is a stale entry that would keep
+    // emitting a sync rule for something that no longer exists.
+    expect(Object.keys(SYNC_CLASSIFICATIONS).sort()).toEqual([...SCHEMA_TABLE_NAMES].sort());
   });
 
   it('gives farm-scoped and reference tables a scope, and server-only tables none', () => {

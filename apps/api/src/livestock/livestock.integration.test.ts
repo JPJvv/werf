@@ -859,6 +859,9 @@ describe('weight capture (FR-140)', () => {
 
       expect(incident.status).toBe('open');
       expect(incident.headCount).toBe(1);
+      // WHO filed it, taken from the session and never the body. On a document handed to the SAPS
+      // Stock Theft Unit, the reporter is part of the evidence rather than metadata.
+      expect(incident.createdBy).toBe(a.userId);
       // The client-authored GeoJSON is preserved (the trigger is geometry->geojson; a client write
       // carries geojson directly, geometry stays null until Phase 3 ingest adds the reverse leg).
       expect(incident.lastSeenLocationGeojson).toContain('Point');

@@ -17,7 +17,7 @@
 
 import { integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { auditColumns, geometry, primaryId } from './columns';
-import { farms } from './core';
+import { farms, users } from './core';
 import { animals } from './animals';
 import { landUnits } from './land';
 
@@ -45,6 +45,14 @@ export const theftIncidents = pgTable('theft_incidents', {
   observations: text('observations'),
   /** Storage key of the generated evidence-pack PDF, once produced. */
   evidencePackKey: text('evidence_pack_key'),
+  /**
+   * ⭐ WHO filed this, and who last touched it. Not decoration on this table: an evidence pack is
+   * handed to the SAPS Stock Theft Unit, and "who reported it, and when" is part of what makes the
+   * document worth anything. db.md requires created_by/updated_by on every table; here it is
+   * evidentiary. Added additively in migration 0015 — never by editing an applied migration.
+   */
+  createdBy: uuid('created_by').references(() => users.id),
+  updatedBy: uuid('updated_by').references(() => users.id),
   ...auditColumns,
 });
 

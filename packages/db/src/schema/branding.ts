@@ -14,7 +14,7 @@
 import { sql } from 'drizzle-orm';
 import { char, check, date, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { auditColumns, primaryId } from './columns';
-import { farms } from './core';
+import { farms, users } from './core';
 
 export const brandingRegisters = pgTable(
   'branding_registers',
@@ -34,6 +34,11 @@ export const brandingRegisters = pgTable(
     bodyPosition: text('body_position'),
     certificateReference: text('certificate_reference'),
     registeredAt: date('registered_at'),
+    /** Who registered the mark and who last amended it. A mark registration is the ownership
+     *  claim an evidence pack rests on, so its authorship is worth keeping (db.md; added
+     *  additively in migration 0015). */
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
     ...auditColumns,
   },
   (t) => [

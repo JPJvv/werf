@@ -16,6 +16,7 @@ import type { AnimalStatus } from '@werf/core';
 import { useAnimals, type StoredAnimal } from './LocalHerd';
 import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
 import { useMobs, type StoredMob } from './LocalMobs';
+import { useMoves, type StoredMove } from './LocalMoves';
 
 /** The most-final status each animal has been moved to by a lifecycle event, keyed by animal id. */
 function mostFinalByAnimal(
@@ -29,16 +30,54 @@ function mostFinalByAnimal(
   return map;
 }
 
-/** Fold the lifecycle events onto the animals, overriding status only where an event is more final. */
+/**
+ * Where each animal is NOW, after every walk the device holds (FR-103).
+ *
+ * Status and position are folded by different rules, and the difference is the point. A status
+ * moves through a state machine and only ever gets MORE final — a sold animal cannot become alive
+ * again. A position is last-write-wins by `occurredAt`: an animal walked to Camp 4 and then to Camp
+ * 7 is in Camp 7, and there is nothing "more final" about either camp. Using the status rule for
+ * position would freeze an animal in whichever camp sorted highest.
+ *
+ * A destination that is ABSENT leaves that dimension where it was, which is why this folds forward
+ * through the moves in time order rather than reading only the latest one: "walked to Camp 4", then
+ * "taken out of its mob" must end with both applied.
+ */
+function positionByAnimal(
+  moves: readonly StoredMove[],
+): ReadonlyMap<string, { landUnitId: string | null; mobId: string | null }> {
+  const ordered = [...moves].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const map = new Map<string, { landUnitId: string | null; mobId: string | null }>();
+  for (const move of ordered) {
+    const held = map.get(move.animalId);
+    map.set(move.animalId, {
+      landUnitId: move.toLandUnitId === undefined ? (held?.landUnitId ?? null) : move.toLandUnitId,
+      mobId: move.toMobId === undefined ? (held?.mobId ?? null) : move.toMobId,
+    });
+  }
+  return map;
+}
+
+/**
+ * Fold the captured events onto the herd: the lifecycle log decides each animal's STATUS (state
+ * machine, most-final wins) and the move log decides its POSITION (last write by `occurredAt`).
+ * The herd store itself is never mutated — it holds animals as first captured.
+ */
 export function projectHerd(
   animals: readonly StoredAnimal[],
   events: readonly StoredLifecycleEvent[],
+  moves: readonly StoredMove[] = [],
 ): readonly StoredAnimal[] {
   const byAnimal = mostFinalByAnimal(events);
+  const positions = positionByAnimal(moves);
   return animals.map((a) => {
     const evStatus = byAnimal.get(a.id);
-    if (evStatus === undefined || !isMoreFinal(evStatus, a.status)) return a;
-    return { ...a, status: evStatus };
+    const position = positions.get(a.id);
+    const status = evStatus !== undefined && isMoreFinal(evStatus, a.status) ? evStatus : a.status;
+    if (status === a.status && position === undefined) return a;
+    return position === undefined
+      ? { ...a, status }
+      : { ...a, status, landUnitId: position.landUnitId, mobId: position.mobId };
   });
 }
 
@@ -54,10 +93,11 @@ export function projectHerd(
 export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
   const animals = useAnimals();
   const events = useLifecycleEvents();
+  const moves = useMoves();
   return useMemo(() => {
-    const projected = projectHerd(animals, events);
+    const projected = projectHerd(animals, events, moves);
     return herdId === undefined ? projected : projected.filter((a) => a.enterpriseId === herdId);
-  }, [animals, events, herdId]);
+  }, [animals, events, moves, herdId]);
 }
 
 /**

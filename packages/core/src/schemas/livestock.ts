@@ -89,6 +89,37 @@ export const recordSaleRequestSchema = z.object({
 export type RecordSaleRequest = z.infer<typeof recordSaleRequestSchema>;
 
 /**
+ * Record a move (FR-103) — an animal walked to another camp and/or another mob.
+ *
+ * ⭐ Only the DESTINATION crosses the wire. The FROM side is read from the animal's own row
+ * server-side, exactly as the herd is stamped from the subject (FR-113): the animal already knows
+ * where it is, so asking the client to restate it only creates a way for the two to disagree, and a
+ * `move` event whose "from" is wrong corrupts the movement history that a grazing rotation and a
+ * stock-theft trail are both read from.
+ *
+ * The two destination fields are `.optional()` rather than defaulted, and the distinction is
+ * load-bearing: OMITTING one leaves that dimension unchanged, while sending `null` is a real target
+ * — taken off a mapped camp, or unassigned from its mob. A default of null would silently turn
+ * "move it to Camp 4" into "move it to Camp 4 and take it out of its mob".
+ */
+export const recordMoveRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  animalId: uuidSchema,
+  /** When the animal was walked, on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  /** Destination camp. Omit to leave the camp unchanged; `null` to take it off a mapped camp. */
+  toLandUnitId: uuidSchema.nullable().optional(),
+  /** Destination mob. Omit to leave the mob unchanged; `null` to unassign it from its mob. */
+  toMobId: uuidSchema.nullable().optional(),
+  /** Ties one walk across many animals together as a single action (FR-112). */
+  batchId: uuidSchema.nullable().default(null),
+  locationGeojson: geoJsonStringSchema.nullable().default(null),
+  notes: z.string().min(1).nullable().default(null),
+});
+export type RecordMoveRequest = z.infer<typeof recordMoveRequestSchema>;
+
+/**
  * Health capture (FR-130/131/132/133) — COMPLIANCE-GATED (legal-compliance.md § 3). The fields
  * every treatment / vaccination / dip carries. The sharp part: the client sends a `productId`, NOT
  * the withdrawal period. The server resolves the veterinary product's REGISTERED meat/milk

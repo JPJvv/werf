@@ -10,6 +10,7 @@ import type { schemas } from '@werf/core';
 import { postCapture as post } from '../sync/captureApi';
 import type { StoredWeight } from './LocalWeights';
 import type { StoredDeath, StoredSale } from './LocalLifecycle';
+import type { StoredMove } from './LocalMoves';
 
 /**
  * The capture endpoints, one per thing the client can compose offline. Each takes the stored
@@ -40,6 +41,25 @@ export const livestockApi = {
         occurredAt: weight.occurredAt,
         kg: weight.kg,
         method: weight.method,
+      },
+      token,
+    ),
+
+  /** A move (FR-103). Only the DESTINATION is sent; the server reads where the animal is from its
+   *  own row, so the stored history cannot disagree with the herd. */
+  recordMove: (move: StoredMove, token: string): Promise<void> =>
+    post(
+      '/livestock/moves',
+      {
+        id: move.id,
+        farmId: move.farmId,
+        animalId: move.animalId,
+        occurredAt: move.occurredAt,
+        batchId: move.batchId,
+        // Omitted vs null is load-bearing all the way to the wire: an absent destination means
+        // "leave that dimension alone", and sending null instead would clear it.
+        ...(move.toLandUnitId === undefined ? {} : { toLandUnitId: move.toLandUnitId }),
+        ...(move.toMobId === undefined ? {} : { toMobId: move.toMobId }),
       },
       token,
     ),

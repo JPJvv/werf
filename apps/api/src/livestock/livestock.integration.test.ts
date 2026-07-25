@@ -543,6 +543,182 @@ describe('weight capture (FR-140)', () => {
     });
   });
 
+  // ── Movement (FR-103) ───────────────────────────────────────────────────────────────
+  describe('movement (FR-103)', () => {
+    const moveBody = (
+      over: Partial<ZodInput<typeof schemas.recordMoveRequestSchema>> & {
+        farmId: string;
+        animalId: string;
+      },
+    ): schemas.RecordMoveRequest =>
+      schemas.recordMoveRequestSchema.parse({
+        id: randomUUID(),
+        occurredAt: '2026-04-02T06:00:00.000Z',
+        ...over,
+      });
+
+    async function aCamp(farmId: string, code: string): Promise<string> {
+      const [row] = await elevated.db
+        .insert(landUnits)
+        .values({ farmId, kind: 'camp', code })
+        .returning();
+      return row!.id;
+    }
+
+    it('keeps the walk as history AND updates where the animal is now', async () => {
+      // Two different facts. The event is how it got there; the animal row is only where it is.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const from = await aCamp(a.farmId, 'Camp 1');
+      const to = await aCamp(a.farmId, 'Camp 4');
+      await elevated.db.update(animals).set({ landUnitId: from }).where(eq(animals.id, animalId));
+
+      const moved = await service.recordMove(
+        a.userId,
+        moveBody({ farmId: a.farmId, animalId, toLandUnitId: to }),
+      );
+
+      expect(moved.type).toBe('move');
+      // The FROM side was read from the animal, never sent — this is what makes the history true.
+      expect(moved.payload).toMatchObject({
+        fromLandUnitId: from,
+        toLandUnitId: to,
+        fromMobId: null,
+        toMobId: null,
+      });
+      // The event's own scope column points at the DESTINATION, so a per-camp feed shows arrivals.
+      expect(moved.landUnitId).toBe(to);
+
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      expect(now!.landUnitId).toBe(to);
+    });
+
+    it('leaves the mob alone when only the camp is named', async () => {
+      // Omit vs null is the whole contract: "move it to Camp 4" must not also empty its mob.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Weaners', species: 'cattle' })
+        .returning();
+      await elevated.db.update(animals).set({ mobId: mob!.id }).where(eq(animals.id, animalId));
+      const to = await aCamp(a.farmId, 'Camp 4');
+
+      const moved = await service.recordMove(
+        a.userId,
+        moveBody({ farmId: a.farmId, animalId, toLandUnitId: to }),
+      );
+
+      expect(moved.payload).toMatchObject({ fromMobId: mob!.id, toMobId: mob!.id });
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      expect(now!.mobId).toBe(mob!.id);
+    });
+
+    it('takes an animal OUT of its mob when null is sent, which is a real destination', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Weaners', species: 'cattle' })
+        .returning();
+      await elevated.db.update(animals).set({ mobId: mob!.id }).where(eq(animals.id, animalId));
+
+      await service.recordMove(a.userId, moveBody({ farmId: a.farmId, animalId, toMobId: null }));
+
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      expect(now!.mobId).toBeNull();
+    });
+
+    it('refuses a move that changes nothing', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      await elevated.db.update(animals).set({ landUnitId: camp }).where(eq(animals.id, animalId));
+
+      await expect(
+        service.recordMove(a.userId, moveBody({ farmId: a.farmId, animalId, toLandUnitId: camp })),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses to move an animal that has left the herd', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      await elevated.db.update(animals).set({ status: 'sold' }).where(eq(animals.id, animalId));
+      const to = await aCamp(a.farmId, 'Camp 4');
+
+      await expect(
+        service.recordMove(a.userId, moveBody({ farmId: a.farmId, animalId, toLandUnitId: to })),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses to walk an animal into a neighbour’s camp', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const animalId = await anAnimal(a.farmId);
+      const theirs = await aCamp(b.farmId, 'Camp 9');
+
+      await expect(
+        service.recordMove(
+          a.userId,
+          moveBody({ farmId: a.farmId, animalId, toLandUnitId: theirs }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      expect(now!.landUnitId).toBeNull();
+    });
+
+    it('ties one walk across a group together with a shared batch id (FR-112)', async () => {
+      // A farmer walks a mob, not an animal. The shared id is what lets the group be reviewed or
+      // corrected as the single action it was.
+      const a = await tenant('Alpha');
+      const first = await anAnimal(a.farmId);
+      const second = await anAnimal(a.farmId);
+      const to = await aCamp(a.farmId, 'Camp 4');
+      const batchId = randomUUID();
+
+      const moves = await Promise.all(
+        [first, second].map((animalId) =>
+          service.recordMove(
+            a.userId,
+            moveBody({ farmId: a.farmId, animalId, toLandUnitId: to, batchId }),
+          ),
+        ),
+      );
+
+      expect(moves.map((m) => m.batchId)).toEqual([batchId, batchId]);
+      expect(new Set(moves.map((m) => m.id)).size).toBe(2);
+    });
+
+    it('is idempotent on the client id even though the first move changed what it validates', async () => {
+      // ⭐ The case that breaks the naive implementation. After the first move the animal IS in the
+      // destination, so re-running the domain would correctly refuse "a move that changes nothing"
+      // — and the flush, which is at-least-once by design, would retry a 400 forever with the whole
+      // queue stuck behind a write that already succeeded.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const to = await aCamp(a.farmId, 'Camp 4');
+      const body = moveBody({ farmId: a.farmId, animalId, toLandUnitId: to });
+
+      const first = await service.recordMove(a.userId, body);
+      const again = await service.recordMove(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.type, 'move')),
+      );
+      expect(rows).toHaveLength(1);
+    });
+  });
+
   // ── Identifiers (FR-109) ────────────────────────────────────────────────────────────
   describe('animal identifiers (FR-109)', () => {
     const identifierBody = (

@@ -128,6 +128,12 @@ export function AnimalsScreen() {
             {t('animals.tag')}
           </Link>
           <Link
+            to="/animals/move"
+            className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+          >
+            {t('animals.move')}
+          </Link>
+          <Link
             to="/animals/loss"
             className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
           >

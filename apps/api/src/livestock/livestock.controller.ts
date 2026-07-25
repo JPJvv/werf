@@ -90,6 +90,20 @@ export class LivestockController {
   }
 
   /**
+   * Record a move (FR-103) — an animal walked to another camp and/or mob. Only the DESTINATION is
+   * sent; the server reads where the animal is from its own row. Idempotent on the id.
+   */
+  @Post('moves')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMove(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMoveRequestSchema))
+    body: schemas.RecordMoveRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMove(auth.userId, body);
+  }
+
+  /**
    * Record a death (FR-105) → the animal's status becomes 'dead'. An append-only event; the
    * animal it references must already exist (the flush sends animals first). Idempotent on the id.
    */

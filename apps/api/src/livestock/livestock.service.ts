@@ -40,6 +40,7 @@ import {
   isWithinWithdrawal,
   recordDeath,
   recordDip,
+  recordMove,
   recordSale,
   recordTreatment,
   recordVaccination,
@@ -49,6 +50,7 @@ import { APP_DB } from '../db/db.module';
 import {
   assertCanCapture,
   assertOwnedReferences,
+  findEvent,
   herdOfSubject,
   insertEvent,
   type CaptureTx,
@@ -290,6 +292,91 @@ export class LivestockService {
       });
 
       return insertEvent(tx, event);
+    });
+  }
+
+  /**
+   * Records a move (FR-103) — an animal walked to another camp and/or another mob.
+   *
+   * Two writes in one transaction, and they are NOT the same fact. The `move` event is the history:
+   * append-only, holding the before AND after of both dimensions, and it is what a grazing rotation
+   * or a stock-theft trail is read from. The animal row's `land_unit_id` / `mob_id` are a
+   * DENORMALISED "where is it now", overwritten each time — the position, not the record of how it
+   * got there (database-schema.md § 4). Losing the distinction is how a movement history quietly
+   * becomes a single current value.
+   *
+   * The FROM side is read from the animal's own row here, never taken from the request: the animal
+   * already knows where it is, and letting the client restate it only creates a way for the stored
+   * history to disagree with reality.
+   */
+  async recordMove(userId: string, input: schemas.RecordMoveRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+
+      // Idempotency is checked FIRST here, unlike the append-only captures. A move overwrites the
+      // animal's position, so on a retry the animal is already at the destination and the domain
+      // would correctly refuse "a move that changes nothing" — jamming the queue behind a write
+      // that actually succeeded. See `findEvent`.
+      const already = await findEvent(tx, input.farmId, input.id);
+      if (already) return already;
+
+      // The destination must be on this farm — the foreign keys do not check that (see
+      // `assertOwnedReferences`), and "walk the herd into the neighbour's camp" is not a move.
+      await assertOwnedReferences(tx, input.farmId, {
+        landUnitId: input.toLandUnitId,
+        mobId: input.toMobId,
+      });
+
+      const [current] = await tx
+        .select({
+          status: animals.status,
+          enterpriseId: animals.enterpriseId,
+          landUnitId: animals.landUnitId,
+          mobId: animals.mobId,
+        })
+        .from(animals)
+        .where(
+          and(
+            eq(animals.id, input.animalId),
+            eq(animals.farmId, input.farmId),
+            isNull(animals.deletedAt),
+          ),
+        );
+      if (!current) throw new NotFoundError('Animal not found');
+
+      const { event, animalChange } = recordMove({
+        id: input.id,
+        farmId: input.farmId,
+        animalId: input.animalId,
+        occurredAt: input.occurredAt,
+        currentStatus: current.status,
+        enterpriseId: current.enterpriseId,
+        fromLandUnitId: current.landUnitId,
+        fromMobId: current.mobId,
+        // Omit vs null is load-bearing all the way down: spreading an undefined key would make the
+        // domain read it as "unchanged", which is what we want, but only if it is genuinely absent.
+        ...(input.toLandUnitId === undefined ? {} : { toLandUnitId: input.toLandUnitId }),
+        ...(input.toMobId === undefined ? {} : { toMobId: input.toMobId }),
+        batchId: input.batchId,
+        locationGeojson: input.locationGeojson,
+        notes: input.notes,
+        createdBy: userId,
+      });
+
+      const stored = await insertEvent(tx, event);
+
+      // The denormalised position follows the history, not the other way round.
+      await tx
+        .update(animals)
+        .set({
+          landUnitId: animalChange.landUnitId,
+          mobId: animalChange.mobId,
+          updatedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(animals.id, input.animalId), eq(animals.farmId, input.farmId)));
+
+      return stored;
     });
   }
 

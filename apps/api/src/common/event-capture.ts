@@ -95,6 +95,28 @@ export async function insertEvent(tx: CaptureTx, event: schemas.NewEvent) {
 }
 
 /**
+ * An already-stored event with this client id, or undefined.
+ *
+ * ⭐ Needed by any capture that CHANGES THE STATE ITS OWN VALIDATION READS. `insertEvent`'s
+ * onConflictDoNothing makes a re-flush harmless for a capture that only appends — but a move also
+ * overwrites the animal's denormalised position, so on the retry the animal is ALREADY in the
+ * destination and the domain correctly refuses "a move that changes nothing". The capture would
+ * then 400 forever: the outbox never marks it sent, retries it on every reconnect, and the queue
+ * jams behind a write that in fact succeeded the first time.
+ *
+ * So an idempotent capture of this shape has to ask "have I already stored this?" BEFORE it
+ * validates, not rely on the insert to absorb the duplicate. The flush is at-least-once by design
+ * (a 201 lost on the way home is retried), which makes this a certainty rather than an edge case.
+ */
+export async function findEvent(tx: CaptureTx, farmId: string, id: string) {
+  const [row] = await tx
+    .select(eventProjection)
+    .from(events)
+    .where(and(eq(events.id, id), eq(events.farmId, farmId)));
+  return row;
+}
+
+/**
  * The herd (enterprise) an animal- or mob-scoped event belongs to, read from the SUBJECT's own row
  * through the RLS-bound connection (FR-113).
  *
@@ -158,11 +180,14 @@ export async function herdOfSubject(
 export async function assertOwnedReferences(
   tx: CaptureTx,
   farmId: string,
+  // `undefined` is spelled out because `exactOptionalPropertyTypes` is on: a caller passing a
+  // maybe-absent destination ("omit = leave it where it is") must not have to spread conditionally
+  // just to ask this question. Absent and null both mean "nothing to check" here.
   refs: {
-    landUnitId?: string | null;
-    mobId?: string | null;
-    damId?: string | null;
-    sireId?: string | null;
+    landUnitId?: string | null | undefined;
+    mobId?: string | null | undefined;
+    damId?: string | null | undefined;
+    sireId?: string | null | undefined;
   },
 ): Promise<void> {
   const checks: Array<[string | null | undefined, () => Promise<unknown[]>, string]> = [

@@ -5,6 +5,7 @@ import { OutboxProvider } from '../sync/Outbox';
 import { InstallPrompt } from '../pwa/InstallPrompt';
 import { LocalLandProvider } from '../land/LocalLand';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
+import { LocalMobsProvider } from '../livestock/LocalMobs';
 import { LocalIdentifiersProvider } from '../livestock/LocalIdentifiers';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
 import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
@@ -40,22 +41,24 @@ export function AppShell() {
       {/* Land is outermost of the capture stores because it is the one thing the others point AT:
           an animal is put in a camp, and the outbox sends camps before animals for the same reason. */}
       <LocalLandProvider>
-        <LocalHerdProvider>
-          <LocalIdentifiersProvider>
-            <LocalWeightsProvider>
-              <LocalLifecycleProvider>
-                <LocalRainfallProvider>
-                  <OutboxProvider>
-                    <SyncStatusStrip />
-                    <main>
-                      <Outlet />
-                    </main>
-                  </OutboxProvider>
-                </LocalRainfallProvider>
-              </LocalLifecycleProvider>
-            </LocalWeightsProvider>
-          </LocalIdentifiersProvider>
-        </LocalHerdProvider>
+        <LocalMobsProvider>
+          <LocalHerdProvider>
+            <LocalIdentifiersProvider>
+              <LocalWeightsProvider>
+                <LocalLifecycleProvider>
+                  <LocalRainfallProvider>
+                    <OutboxProvider>
+                      <SyncStatusStrip />
+                      <main>
+                        <Outlet />
+                      </main>
+                    </OutboxProvider>
+                  </LocalRainfallProvider>
+                </LocalLifecycleProvider>
+              </LocalWeightsProvider>
+            </LocalIdentifiersProvider>
+          </LocalHerdProvider>
+        </LocalMobsProvider>
       </LocalLandProvider>
       <InstallPrompt />
     </div>

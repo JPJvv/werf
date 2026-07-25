@@ -18,6 +18,7 @@ import {
   type CapturedAnimal,
   type CapturedEvent,
   type CapturedIdentifier,
+  type CapturedMob,
   type CapturedTheftIncident,
 } from './livestock.service';
 import { renderEvidencePackPdf } from './evidence-pack.pdf';
@@ -41,6 +42,21 @@ export class LivestockController {
     body: schemas.RecordAnimalRequest,
   ): Promise<CapturedAnimal> {
     return this.livestock.recordAnimal(auth.userId, body);
+  }
+
+  /**
+   * Create a mob / flock (FR-102) — the group-only model, managed by head count with no individual
+   * animal rows behind it. Sent after land units by the flush (a mob can carry `land_unit_id`) and
+   * before animals (an animal can carry `mob_id`). Idempotent on the id.
+   */
+  @Post('mobs')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMob(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.newMobSchema))
+    body: schemas.NewMob,
+  ): Promise<CapturedMob> {
+    return this.livestock.recordMob(auth.userId, body);
   }
 
   /**

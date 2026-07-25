@@ -11,7 +11,7 @@ import { enterpriseSpecies, type Species, type AnimalSex, type AnimalStatus } fr
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
-import { useEffectiveAnimals, useHerdSummary } from './herd';
+import { useEffectiveAnimals, useEffectiveMobs, useHerdSummary } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 
 export function speciesLabel(t: (key: TranslationKey) => string, species: Species): string {
@@ -40,6 +40,7 @@ export function AnimalsScreen() {
   const filter = herdId === '' ? undefined : herdId;
 
   const animals = useEffectiveAnimals(filter);
+  const mobs = useEffectiveMobs(filter);
   const labels = useAnimalLabels();
   const summary = useHerdSummary(filter);
   const hasLive = summary.animalsLive > 0;
@@ -82,6 +83,36 @@ export function AnimalsScreen() {
         {t('animals.add')}
       </Link>
 
+      {/* Recording a GROUP is offered beside recording one animal, not buried: for a smallholder
+          running 300 sheep as a flock it is the only capture they will ever need (FR-102). It is a
+          secondary form, because the ochre action budget is one per screen. */}
+      <Link
+        to="/animals/groups/new"
+        className="mb-3 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+      >
+        {t('animals.addGroup')}
+      </Link>
+
+      {mobs.length > 0 && (
+        <>
+          <h2 className="mb-2 font-ui text-h2 text-soil-900">{t('animals.groups')}</h2>
+          <ul className="mb-6 flex list-none flex-col gap-2 p-0">
+            {mobs.map((mob) => (
+              <li
+                key={mob.id}
+                className="flex items-center justify-between rounded border border-soil-200 bg-sand-100 p-3"
+              >
+                <span className="text-body text-soil-900">{mob.name}</span>
+                <span className="text-body text-soil-700">
+                  <span className="font-data tabular-nums text-soil-900">{mob.headCount ?? 0}</span>{' '}
+                  {t('mob.headUnit')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       {hasLive && (
         <div className="mb-6 flex flex-col gap-2">
           <Link
@@ -105,8 +136,13 @@ export function AnimalsScreen() {
         </div>
       )}
 
+      {/* "Nothing recorded yet" has to mean nothing AT ALL — a farm running one flock as a group
+          has 300 head and no individual rows, and telling them they have recorded nothing is the
+          exact insult FR-102 exists to avoid. */}
       {animals.length === 0 ? (
-        <p className="text-body text-soil-700">{t('animals.empty')}</p>
+        mobs.length === 0 ? (
+          <p className="text-body text-soil-700">{t('animals.empty')}</p>
+        ) : null
       ) : (
         <ul className="flex list-none flex-col gap-2 p-0">
           {animals.map((animal) => (

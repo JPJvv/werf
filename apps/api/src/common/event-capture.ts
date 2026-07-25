@@ -12,7 +12,7 @@
  */
 
 import { and, eq, isNull } from 'drizzle-orm';
-import { animals, events, farmUsers, mobs, type AppDb } from '@werf/db';
+import { animals, events, farmUsers, landUnits, mobs, type AppDb } from '@werf/db';
 import { NotFoundError, TenancyError, type UserRole, type schemas } from '@werf/core';
 import { assertHerdScoped } from '@werf/domain';
 
@@ -136,6 +136,76 @@ export async function herdOfSubject(
   // No subject to derive from. The caller supplies the enterprise itself (a herd-wide event), and
   // the FR-113 guard in `insertEvent` refuses the event if it names no herd at all.
   return null;
+}
+
+/**
+ * The rows a capture may point AT, checked to be on the SAME farm.
+ *
+ * ⭐ This closes a hole that neither RLS nor the foreign keys catch. `animals.land_unit_id`
+ * references `land_units(id)` with no farm qualifier, and Postgres performs referential-integrity
+ * checks as the system rather than as the querying role — so RLS does not filter them. A WITH CHECK
+ * policy validates the ROW's own `farm_id` and says nothing about what its columns reference. The
+ * result is that a client could put its own animal in a NEIGHBOUR'S camp, or into their mob: the
+ * insert is on the right farm, the FK target genuinely exists, and every policy is satisfied.
+ *
+ * Nothing leaks outward from that — the neighbour still cannot see the animal — but it corrupts
+ * exactly the per-camp head counts and movement history the grazing and theft features are built on,
+ * and a foreign key pointing across a tenancy boundary is the kind of thing that becomes unfixable
+ * once there is data on it. So every reference is resolved through the RLS-bound connection with an
+ * explicit farm match: a row on another farm is invisible and reads as "not found", the same answer
+ * as one that does not exist.
+ */
+export async function assertOwnedReferences(
+  tx: CaptureTx,
+  farmId: string,
+  refs: {
+    landUnitId?: string | null;
+    mobId?: string | null;
+    damId?: string | null;
+    sireId?: string | null;
+  },
+): Promise<void> {
+  const checks: Array<[string | null | undefined, () => Promise<unknown[]>, string]> = [
+    [
+      refs.landUnitId,
+      () =>
+        tx
+          .select({ id: landUnits.id })
+          .from(landUnits)
+          .where(
+            and(
+              eq(landUnits.id, refs.landUnitId!),
+              eq(landUnits.farmId, farmId),
+              isNull(landUnits.deletedAt),
+            ),
+          ),
+      'Camp not found',
+    ],
+    [
+      refs.mobId,
+      () =>
+        tx
+          .select({ id: mobs.id })
+          .from(mobs)
+          .where(and(eq(mobs.id, refs.mobId!), eq(mobs.farmId, farmId), isNull(mobs.deletedAt))),
+      'Mob not found',
+    ],
+    [refs.damId, () => animalOnFarm(tx, farmId, refs.damId!), 'Dam not found'],
+    [refs.sireId, () => animalOnFarm(tx, farmId, refs.sireId!), 'Sire not found'],
+  ];
+
+  for (const [id, query, message] of checks) {
+    if (id === null || id === undefined) continue;
+    const rows = await query();
+    if (rows.length === 0) throw new NotFoundError(message);
+  }
+}
+
+function animalOnFarm(tx: CaptureTx, farmId: string, animalId: string) {
+  return tx
+    .select({ id: animals.id })
+    .from(animals)
+    .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId), isNull(animals.deletedAt)));
 }
 
 /**

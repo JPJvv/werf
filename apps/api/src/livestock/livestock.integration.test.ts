@@ -21,6 +21,7 @@ import {
   enterprises,
   events,
   farmUsers,
+  landUnits,
   mobs,
   theftIncidentAnimals,
   theftIncidents,
@@ -434,6 +435,111 @@ describe('weight capture (FR-140)', () => {
       await expect(
         service.recordAnimal(viewer!.id, animalBody({ farmId: a.farmId })),
       ).rejects.toThrow(TenancyError);
+    });
+  });
+
+  // ── Mobs (FR-102) ───────────────────────────────────────────────────────────────────
+  describe('mob creation (FR-102)', () => {
+    const mobBody = (over: Partial<schemas.NewMob> & { farmId: string }): schemas.NewMob =>
+      schemas.newMobSchema.parse({
+        id: randomUUID(),
+        name: 'Flock A',
+        species: 'sheep',
+        headCount: 300,
+        ...over,
+      });
+
+    /** A camp on the farm, so a mob has somewhere to be. */
+    async function aCamp(farmId: string, code = 'Camp 1'): Promise<string> {
+      const [row] = await elevated.db
+        .insert(landUnits)
+        .values({ farmId, kind: 'camp', code })
+        .returning();
+      return row!.id;
+    }
+
+    it('is a complete record with ZERO animal rows behind it', async () => {
+      // The whole point of FR-102: a farmer with 300 sheep does not have 300 ear tags, and
+      // demanding individual rows before the app is useful loses the user it was built for.
+      const a = await tenant('Alpha');
+
+      const mob = await service.recordMob(a.userId, mobBody({ farmId: a.farmId, headCount: 300 }));
+
+      expect(mob.headCount).toBe(300);
+      expect(mob.name).toBe('Flock A');
+      expect(mob.createdBy).toBe(a.userId);
+
+      const individuals = await app.asUser(a.userId, (tx) => tx.select().from(animals));
+      expect(individuals).toHaveLength(0);
+    });
+
+    it('is idempotent on the client id, so a re-flush does not double the flock', async () => {
+      const a = await tenant('Alpha');
+      const body = mobBody({ farmId: a.farmId });
+
+      const first = await service.recordMob(a.userId, body);
+      const again = await service.recordMob(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(mobs));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('puts a mob in a camp on its OWN farm, and refuses a neighbour’s camp', async () => {
+      // ⭐ The hole neither the foreign key nor RLS catches: `mobs.land_unit_id` references
+      // land_units(id) with no farm qualifier, and Postgres runs referential checks as the system,
+      // so RLS does not filter them. Without the explicit check this insert succeeds — right farm
+      // on the row, real FK target, every policy satisfied — and quietly points across a tenancy
+      // boundary.
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const alphasCamp = await aCamp(a.farmId);
+      const bravosCamp = await aCamp(b.farmId);
+
+      const ours = await service.recordMob(
+        a.userId,
+        mobBody({ farmId: a.farmId, landUnitId: alphasCamp }),
+      );
+      expect(ours.landUnitId).toBe(alphasCamp);
+
+      await expect(
+        service.recordMob(a.userId, mobBody({ farmId: a.farmId, landUnitId: bravosCamp })),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(mobs));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('refuses an ANIMAL that points at a neighbour’s camp or mob', async () => {
+      // Same hole, on the table that has the most references. An animal on the right farm sitting
+      // in someone else's camp corrupts exactly the per-camp counts grazing and theft rest on.
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const bravosCamp = await aCamp(b.farmId);
+      const bravosMob = await service.recordMob(b.userId, mobBody({ farmId: b.farmId }));
+
+      await expect(
+        service.recordAnimal(a.userId, animalBody({ farmId: a.farmId, landUnitId: bravosCamp })),
+      ).rejects.toThrow(NotFoundError);
+
+      await expect(
+        service.recordAnimal(a.userId, animalBody({ farmId: a.farmId, mobId: bravosMob.id })),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(animals));
+      expect(rows).toHaveLength(0);
+    });
+
+    it('refuses a stranger, exactly as if the farm did not exist', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+
+      await expect(service.recordMob(b.userId, mobBody({ farmId: a.farmId }))).rejects.toThrow(
+        NotFoundError,
+      );
+
+      const rows = await elevated.db.select().from(mobs);
+      expect(rows).toHaveLength(0);
     });
   });
 

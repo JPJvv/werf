@@ -15,6 +15,7 @@ import { isMoreFinal, summariseHerd, type HerdSummary } from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
 import { useAnimals, type StoredAnimal } from './LocalHerd';
 import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
+import { useMobs, type StoredMob } from './LocalMobs';
 
 /** The most-final status each animal has been moved to by a lifecycle event, keyed by animal id. */
 function mostFinalByAnimal(
@@ -59,8 +60,23 @@ export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
   }, [animals, events, herdId]);
 }
 
+/**
+ * The mobs counted in a summary (FR-102), narrowed to one herd the same way the animals are.
+ *
+ * A mob is head a farmer has, so it belongs in the total: leaving it out would make the home tile
+ * say 0 on a farm running 300 sheep as a flock, which is the exact farm FR-102 exists for.
+ */
+export function useEffectiveMobs(herdId?: string): readonly StoredMob[] {
+  const mobs = useMobs();
+  return useMemo(
+    () => (herdId === undefined ? mobs : mobs.filter((m) => m.enterpriseId === herdId)),
+    [mobs, herdId],
+  );
+}
+
 /** The herd summary (FR-705/017), for one herd or (unfiltered) the whole farm. */
 export function useHerdSummary(herdId?: string): HerdSummary {
   const animals = useEffectiveAnimals(herdId);
-  return useMemo(() => summariseHerd({ animals }), [animals]);
+  const mobs = useEffectiveMobs(herdId);
+  return useMemo(() => summariseHerd({ animals, mobs }), [animals, mobs]);
 }

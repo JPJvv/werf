@@ -40,6 +40,7 @@ import { AuthApiError, NetworkUnavailableError } from '../auth/api';
 import { useLandUnits } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useAnimals } from '../livestock/LocalHerd';
+import { useMobs } from '../livestock/LocalMobs';
 import { useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents } from '../livestock/LocalLifecycle';
@@ -71,6 +72,7 @@ export interface OutboxProviderProps {
 export function OutboxProvider({ children, factory = defaultSentLogFactory }: OutboxProviderProps) {
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
+  const mobs = useMobs();
   const animals = useAnimals();
   const identifiers = useIdentifiers();
   const weights = useWeights();
@@ -96,6 +98,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     for (const unit of landUnits) {
       if (!sent.has(unit.id)) {
         items.push({ id: unit.id, send: (token) => landApi.createLandUnit(unit, token) });
+      }
+    }
+    // A mob sits between the two: it can carry `land_unit_id`, and an animal can carry `mob_id`.
+    for (const mob of mobs) {
+      if (!sent.has(mob.id)) {
+        items.push({ id: mob.id, send: (token) => livestockApi.createMob(mob, token) });
       }
     }
     for (const animal of animals) {
@@ -135,7 +143,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     }
     return items;
-  }, [landUnits, animals, identifiers, weights, events, rainfall, sent]);
+  }, [landUnits, mobs, animals, identifiers, weights, events, rainfall, sent]);
   const pendingCount = queue.length;
 
   const [flushing, setFlushing] = useState(false);

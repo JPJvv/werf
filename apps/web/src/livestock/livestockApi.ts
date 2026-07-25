@@ -22,6 +22,10 @@ export const livestockApi = {
   createAnimal: (animal: schemas.NewAnimal, token: string): Promise<void> =>
     post('/livestock/animals', animal, token),
 
+  /** Sent after land units (a mob can carry `land_unit_id`) and before animals (FR-102). */
+  createMob: (mob: schemas.NewMob, token: string): Promise<void> =>
+    post('/livestock/mobs', mob, token),
+
   /** Sent after its animal: an identifier references `animals(id)` (FR-109). */
   createIdentifier: (identifier: schemas.NewAnimalIdentifier, token: string): Promise<void> =>
     post('/livestock/identifiers', identifier, token),

@@ -28,6 +28,7 @@ import {
   brandingRegisters,
   events,
   farms,
+  mobs,
   theftIncidentAnimals,
   theftIncidents,
   veterinaryProducts,
@@ -47,6 +48,7 @@ import {
 import { APP_DB } from '../db/db.module';
 import {
   assertCanCapture,
+  assertOwnedReferences,
   herdOfSubject,
   insertEvent,
   type CaptureTx,
@@ -102,6 +104,8 @@ function rethrowDuplicateIdentifier(value: string) {
 
 /** The persisted animal as returned to the caller. */
 export type CapturedAnimal = Awaited<ReturnType<LivestockService['recordAnimal']>>;
+/** The persisted mob as returned to the caller. */
+export type CapturedMob = Awaited<ReturnType<LivestockService['recordMob']>>;
 /** The persisted identifier as returned to the caller. */
 export type CapturedIdentifier = Awaited<ReturnType<LivestockService['recordIdentifier']>>;
 export type { CapturedEvent };
@@ -125,6 +129,14 @@ export class LivestockService {
   ): Promise<typeof animals.$inferSelect> {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
+      // Everything this animal POINTS AT must be on the same farm. The foreign keys do not check
+      // that and RLS cannot — see `assertOwnedReferences`.
+      await assertOwnedReferences(tx, input.farmId, {
+        landUnitId: input.landUnitId,
+        mobId: input.mobId,
+        damId: input.damId,
+        sireId: input.sireId,
+      });
 
       const [row] = await tx
         .insert(animals)
@@ -162,6 +174,45 @@ export class LivestockService {
         .select()
         .from(animals)
         .where(and(eq(animals.id, input.id), eq(animals.farmId, input.farmId)));
+      return existing!;
+    });
+  }
+
+  /**
+   * Creates a mob / flock (FR-102) — the GROUP-ONLY model, and the one most South African
+   * smallholders actually need. "Flock A: 300 head" is a complete, valid record with zero `animals`
+   * rows behind it: a farmer with 300 sheep does not have 300 ear tags, and demanding individual
+   * rows before the app is useful is how a product loses the user it was built for. The head count
+   * feeds the live total exactly as individual animals do (FR-705).
+   *
+   * Idempotent on the client-generated id, and its camp must be on this farm.
+   */
+  async recordMob(userId: string, input: schemas.NewMob) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      await assertOwnedReferences(tx, input.farmId, { landUnitId: input.landUnitId });
+
+      const [row] = await tx
+        .insert(mobs)
+        .values({
+          id: input.id,
+          farmId: input.farmId,
+          enterpriseId: input.enterpriseId,
+          name: input.name,
+          species: input.species,
+          landUnitId: input.landUnitId,
+          headCount: input.headCount,
+          createdBy: userId,
+        })
+        .onConflictDoNothing({ target: mobs.id })
+        .returning();
+
+      if (row) return row;
+
+      const [existing] = await tx
+        .select()
+        .from(mobs)
+        .where(and(eq(mobs.id, input.id), eq(mobs.farmId, input.farmId)));
       return existing!;
     });
   }

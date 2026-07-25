@@ -216,3 +216,93 @@ describe('recording a treatment (FR-130/131)', () => {
     expect(screen.getByText(/has not reached this phone yet/i)).toBeTruthy();
   });
 });
+
+describe('the withdrawal guard on a sale (FR-131)', () => {
+  /** A treatment already on the device, `daysAgo` days back. */
+  function seedTreatment(animalId: string, daysAgo: number): void {
+    const administeredOn = new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+    window.localStorage.setItem(
+      HEALTH_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          animalId,
+          kind: 'treatment',
+          occurredAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
+          administeredOn,
+          productId: PRODUCT_ID,
+          batchId: null,
+        },
+      ]),
+    );
+  }
+
+  it('refuses the sale of a treated animal, and says when it may be sold', async () => {
+    // Without this the capture commits offline, the flush is refused forever, and the queue jams
+    // with nothing on the phone explaining why — days after the truck has gone.
+    cachedSession();
+    seedProducts(28);
+    const [animalId] = seedHerd(1);
+    seedTreatment(animalId!, 3);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+
+    // It says no AND says when: a refusal with no way forward is what makes someone stop
+    // recording treatments at all.
+    expect(screen.getByText(/cannot be sold for slaughter yet/i)).toBeTruthy();
+    const clear = new Date(Date.now() + 25 * 86_400_000).toISOString().slice(0, 10);
+    expect(screen.getByText(clear)).toBeTruthy();
+
+    await user.type(screen.getByLabelText(/buyer/i), 'Bloem Abattoir');
+    await user.type(screen.getByLabelText(/price/i), '18450');
+    expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+  });
+
+  it('lets a cleared animal be sold, and never blocks a death', async () => {
+    cachedSession();
+    seedProducts(28);
+    const [animalId] = seedHerd(1);
+    // Treated well outside the withholding.
+    seedTreatment(animalId!, 40);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+
+    expect(screen.queryByText(/cannot be sold for slaughter yet/i)).toBeNull();
+    await user.type(screen.getByLabelText(/buyer/i), 'Bloem Abattoir');
+    await user.type(screen.getByLabelText(/price/i), '18450');
+    expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
+      false,
+    );
+  });
+
+  it('never withholds a DEATH — an animal that dies inside a withdrawal still died', async () => {
+    // The rule is about meat entering the food chain, not about recording what happened. Blocking
+    // a death capture would lose the record entirely.
+    cachedSession();
+    seedProducts(28);
+    const [animalId] = seedHerd(1);
+    seedTreatment(animalId!, 3);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    await user.click(screen.getByRole('button', { name: /^died$/i }));
+    await user.type(screen.getByLabelText(/cause/i), 'Snakebite');
+
+    expect(screen.getByRole('button', { name: /record death/i }).hasAttribute('disabled')).toBe(
+      false,
+    );
+  });
+});

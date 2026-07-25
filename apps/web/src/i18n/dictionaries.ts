@@ -316,6 +316,10 @@ const en = {
   'loss.outcome': 'What happened?',
   'loss.died': 'Died',
   'loss.sold': 'Sold',
+  // FR-131. Says no AND says when — a refusal with no way forward is what makes someone stop
+  // recording treatments at all.
+  'loss.withheld':
+    'This animal was treated and cannot be sold for slaughter yet. It may be sold from',
   'loss.missing': 'Missing',
   'loss.causeMissing': 'What did you find? (optional)',
   'loss.lastSeenDay': 'When was it last seen?',
@@ -646,6 +650,8 @@ const af: Record<TranslationKey, string> = {
   'loss.outcome': 'Wat het gebeur?',
   'loss.died': 'Gevrek',
   'loss.sold': 'Verkoop',
+  'loss.withheld':
+    'Hierdie dier is behandel en kan nog nie vir slag verkoop word nie. Dit mag verkoop word vanaf',
   'loss.missing': 'Vermis',
   'loss.causeMissing': 'Wat het jy gekry? (opsioneel)',
   'loss.lastSeenDay': 'Wanneer laas gesien?',

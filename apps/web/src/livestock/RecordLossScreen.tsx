@@ -24,11 +24,14 @@ import { uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
-import { farmToday } from '../farmTime';
+import { farmDay, farmToday } from '../farmTime';
 import { useEffectiveAnimals } from './herd';
 import { useRecordDeath, useRecordMissing, useRecordSale } from './LocalLifecycle';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { currentPoint, type FixFailure } from './geolocation';
+import { useHealthEvents } from './LocalHealth';
+import { useVetProducts } from './LocalVetProducts';
+import { meatWithdrawalFor } from './withdrawal';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 type Outcome = 'died' | 'sold' | 'missing';
@@ -60,6 +63,8 @@ export function RecordLossScreen() {
   const recordSale = useRecordSale();
   const recordMissing = useRecordMissing();
   const labels = useAnimalLabels();
+  const healthEvents = useHealthEvents();
+  const products = useVetProducts();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -75,6 +80,14 @@ export function RecordLossScreen() {
   if (!activeFarm) return null;
 
   const selected = live.find((a) => a.id === selectedId) ?? null;
+
+  // FR-131. Checked at capture, not only on the server: a sale refused days later, after the truck
+  // has gone, is a rule that reached nobody. See ./withdrawal.
+  const withdrawal =
+    selected === null
+      ? null
+      : meatWithdrawalFor(selected.id, farmDay(new Date()), healthEvents, products);
+  const withheld = outcome === 'sold' && withdrawal !== null && withdrawal.blocked;
 
   const reset = () => {
     setSelectedId(null);
@@ -154,7 +167,7 @@ export function RecordLossScreen() {
     outcome === 'died'
       ? cause.trim().length > 0
       : outcome === 'sold'
-        ? counterparty.trim().length > 0 && priceIsValid(priceRands)
+        ? counterparty.trim().length > 0 && priceIsValid(priceRands) && !withheld
         : outcome === 'missing'
           ? lastSeenDay !== '' && !locating
           : false;
@@ -285,6 +298,18 @@ export function RecordLossScreen() {
                     </p>
                   )}
                 </>
+              )}
+
+              {/* ⭐ The withholding warning, shown the moment "Sold" is chosen and BEFORE the
+                  buyer's name is typed. It answers "so when CAN I sell?" in the same breath as
+                  saying no, which is the whole point of the rule existing in the app rather than
+                  in a document. Warning FORM — tinted panel, left rule — never the ochre action
+                  shape (NFR-411). */}
+              {withheld && withdrawal?.clearFrom !== null && (
+                <p className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                  {t('loss.withheld')}{' '}
+                  <span className="font-data tabular-nums">{withdrawal!.clearFrom}</span>
+                </p>
               )}
 
               {outcome === 'sold' && (

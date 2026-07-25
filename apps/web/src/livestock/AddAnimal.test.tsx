@@ -30,8 +30,17 @@ const SESSION_USER: schemas.AuthSession['user'] = {
   deletedAt: null,
 };
 
-/** Signs in a cattle farm (so the animals tile reads "Herd") with no signal, via cached state. */
-function cachedSession(enterpriseTypes: string[] = ['beef_cattle']): void {
+/**
+ * Signs in a cattle farm (so the animals tile reads "Herd") with no signal, via cached state.
+ *
+ * `enterprises` defaults to EMPTY on purpose: that is what a session cached before herd scoping
+ * (FR-113) existed looks like, and the tests below that leave it empty are exercising exactly that
+ * device — it must still capture, falling back to asking for a species.
+ */
+function cachedSession(
+  enterpriseTypes: string[] = ['beef_cattle'],
+  enterprises: Array<{ id: string; name: string; type: string }> = [],
+): void {
   const payload = {
     accessToken: 'access-token',
     expiresIn: 900,
@@ -43,6 +52,7 @@ function cachedSession(enterpriseTypes: string[] = ['beef_cattle']): void {
         id: '0190f3a0-0000-7000-8000-0000000000f1',
         name: 'Rietfontein',
         enterpriseTypes,
+        enterprises,
         role: 'owner',
       },
     ],
@@ -120,5 +130,69 @@ describe('recording an animal', () => {
 
     const species = within(screen.getByLabelText(/species/i)).getAllByRole('option');
     expect(species.map((o) => o.textContent)).toEqual(['Sheep']);
+  });
+
+  // ── Herd scoping (FR-113) ───────────────────────────────────────────────────────────────
+  const CATTLE_HERD = {
+    id: '0190f3a0-0000-7000-8000-00000000e001',
+    name: 'Bonsmara cows',
+    type: 'beef_cattle',
+  };
+  const FEEDLOT = {
+    id: '0190f3a0-0000-7000-8000-00000000e002',
+    name: 'Feedlot',
+    type: 'beef_cattle',
+  };
+  const FLOCK = { id: '0190f3a0-0000-7000-8000-00000000e003', name: 'Dorper flock', type: 'sheep' };
+
+  /** The herd the last captured animal was filed under. */
+  function capturedHerdId(): unknown {
+    const herd = JSON.parse(
+      window.localStorage.getItem('werf-herd:0190f3a0-0000-7000-8000-0000000000f1') ?? '[]',
+    ) as Array<Record<string, unknown>>;
+    return herd[0]?.['enterpriseId'];
+  }
+
+  it('asks which herd on a mixed farm, and files the animal under it', async () => {
+    cachedSession(['beef_cattle', 'sheep'], [CATTLE_HERD, FLOCK]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    // The herd is the only subject question — the species follows from it, so a sheep can no
+    // longer be filed under the cattle enterprise by picking the wrong one of two controls.
+    expect(screen.queryByLabelText(/species/i)).toBeNull();
+    await user.selectOptions(screen.getByLabelText(/herd/i), FLOCK.id);
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    expect(capturedHerdId()).toBe(FLOCK.id);
+    await user.click(screen.getByRole('link', { name: /done/i }));
+    expect(screen.getByText('Sheep')).toBeTruthy(); // species derived from the herd
+  });
+
+  it('tells two herds of the SAME species apart — which a species picker never could', async () => {
+    cachedSession(['beef_cattle'], [CATTLE_HERD, FEEDLOT]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText(/herd/i), FEEDLOT.id);
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    expect(capturedHerdId()).toBe(FEEDLOT.id);
+  });
+
+  it('asks nothing on a single-herd farm, but says where the animal is filed', async () => {
+    cachedSession(['beef_cattle'], [CATTLE_HERD]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    // A question with one answer is an obstacle in a crush, not a decision. It is still stated.
+    expect(screen.queryByRole('combobox', { name: /herd/i })).toBeNull();
+    expect(screen.getByText(/bonsmara cows/i)).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+    expect(capturedHerdId()).toBe(CATTLE_HERD.id);
   });
 });

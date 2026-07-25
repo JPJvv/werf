@@ -47,6 +47,7 @@ import {
 import { APP_DB } from '../db/db.module';
 import {
   assertCanCapture,
+  herdOfSubject,
   insertEvent,
   type CaptureTx,
   type CapturedEvent,
@@ -154,7 +155,7 @@ export class LivestockService {
         occurredAt: input.occurredAt,
         kg: input.kg,
         method: input.method,
-        enterpriseId: input.enterpriseId,
+        enterpriseId: (await herdOfSubject(tx, input.farmId, input)) ?? input.enterpriseId,
         batchId: input.batchId,
         locationGeojson: input.locationGeojson,
         notes: input.notes,
@@ -175,7 +176,11 @@ export class LivestockService {
   async recordDeath(userId: string, input: schemas.RecordDeathRequest) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
-      const currentStatus = await animalStatus(tx, input.farmId, input.animalId);
+      const { status: currentStatus, enterpriseId } = await animalFacts(
+        tx,
+        input.farmId,
+        input.animalId,
+      );
 
       const base = {
         id: input.id,
@@ -183,6 +188,7 @@ export class LivestockService {
         animalId: input.animalId,
         occurredAt: input.occurredAt,
         currentStatus,
+        enterpriseId,
         cause: input.cause,
         createdBy: userId,
       };
@@ -202,7 +208,11 @@ export class LivestockService {
   async recordSale(userId: string, input: schemas.RecordSaleRequest) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
-      const currentStatus = await animalStatus(tx, input.farmId, input.animalId);
+      const { status: currentStatus, enterpriseId } = await animalFacts(
+        tx,
+        input.farmId,
+        input.animalId,
+      );
       // FR-131: a meat sale within an active withdrawal is blocked at capture. The clear date was
       // computed and stored on the treatment event AT THE TIME OF TREATMENT (ADR-0005), so this
       // reads the rule that applied then, not today's registration.
@@ -214,6 +224,7 @@ export class LivestockService {
         animalId: input.animalId,
         occurredAt: input.occurredAt,
         currentStatus,
+        enterpriseId,
         counterparty: input.counterparty,
         priceCents: input.priceCents,
         createdBy: userId,
@@ -245,7 +256,7 @@ export class LivestockService {
       );
 
       const event = recordTreatment({
-        ...healthBaseInput(userId, input, product),
+        ...healthBaseInput(userId, input, product, await herdOfSubject(tx, input.farmId, input)),
         ...(input.batch === undefined ? {} : { batch: input.batch }),
         ...(input.doseValue === undefined ? {} : { doseValue: input.doseValue }),
         ...(input.doseUnit === undefined ? {} : { doseUnit: input.doseUnit }),
@@ -273,7 +284,7 @@ export class LivestockService {
       );
 
       const event = recordVaccination({
-        ...healthBaseInput(userId, input, product),
+        ...healthBaseInput(userId, input, product, await herdOfSubject(tx, input.farmId, input)),
         ...(input.programme === undefined ? {} : { programme: input.programme }),
         ...(input.batch === undefined ? {} : { batch: input.batch }),
         ...(input.administeredBy === undefined ? {} : { administeredBy: input.administeredBy }),
@@ -298,7 +309,7 @@ export class LivestockService {
       );
 
       const event = recordDip({
-        ...healthBaseInput(userId, input, product),
+        ...healthBaseInput(userId, input, product, await herdOfSubject(tx, input.farmId, input)),
         ...(input.method === undefined ? {} : { method: input.method }),
         ...(input.reason === undefined ? {} : { reason: input.reason }),
       });
@@ -479,19 +490,21 @@ export class LivestockService {
 /**
  * The current status of an animal on this farm, through the RLS-bound connection — so an animal
  * on another farm is invisible and reads as "not found", indistinguishable from one that does
- * not exist. A lifecycle event needs it as the FROM side of the state-machine transition guard.
+ * not exist. Two facts in one query: the status a lifecycle event needs as the FROM side of the
+ * state-machine transition guard, and the herd the animal is in, which the event is filed under
+ * (FR-113) — stamped from the animal's row at capture, never restated by the client.
  */
-async function animalStatus(
+async function animalFacts(
   tx: CaptureTx,
   farmId: string,
   animalId: string,
-): Promise<schemas.Animal['status']> {
+): Promise<{ status: schemas.Animal['status']; enterpriseId: string | null }> {
   const [row] = await tx
-    .select({ status: animals.status })
+    .select({ status: animals.status, enterpriseId: animals.enterpriseId })
     .from(animals)
     .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId), isNull(animals.deletedAt)));
   if (!row) throw new NotFoundError('Animal not found');
-  return row.status;
+  return row;
 }
 
 type VetProduct = typeof veterinaryProducts.$inferSelect;
@@ -612,7 +625,12 @@ async function assertClearOfMeatWithdrawal(
  * so a client cannot claim a shorter withhold by relabelling. The domain computes and stores the
  * clear dates from these — this function supplies the inputs, it does not do the arithmetic.
  */
-function healthBaseInput(userId: string, input: HealthRequest, product: VetProduct) {
+function healthBaseInput(
+  userId: string,
+  input: HealthRequest,
+  product: VetProduct,
+  herdId: string | null,
+) {
   return {
     id: input.id,
     farmId: input.farmId,
@@ -621,7 +639,9 @@ function healthBaseInput(userId: string, input: HealthRequest, product: VetProdu
     occurredAt: input.occurredAt,
     administeredOn: input.administeredOn,
     product: product.name,
-    enterpriseId: input.enterpriseId,
+    // FR-113: the herd the subject is in, stamped at capture. A herd-wide dose with no individual
+    // subject falls back to the enterprise the farmer selected — which the FR-113 guard requires.
+    enterpriseId: herdId ?? input.enterpriseId,
     batchId: input.batchId,
     locationGeojson: input.locationGeojson,
     notes: input.notes,

@@ -18,6 +18,7 @@ import {
 import { ConflictError, InvalidCredentialsError, schemas } from '@werf/core';
 import { ACCESS_TOKEN_TTL_SECONDS } from '../config/config';
 import { APP_DB, ELEVATED_DB } from '../db/db.module';
+import { enterprisesByFarm } from '../common/session-farm';
 import { SessionService, type IssuedSession } from './session.service';
 import { TokenService } from './token.service';
 import { TwoFactorService } from './two-factor.service';
@@ -318,8 +319,8 @@ export class AuthService {
    * cannot show up in their session as a farm they own.
    */
   private async loadFarms(userId: string): Promise<schemas.SessionFarm[]> {
-    return this.app.asUser(userId, async (tx) =>
-      tx
+    return this.app.asUser(userId, async (tx) => {
+      const rows = await tx
         .select({
           id: farms.id,
           name: farms.name,
@@ -328,8 +329,16 @@ export class AuthService {
         })
         .from(farmUsers)
         .innerJoin(farms, eq(farms.id, farmUsers.farmId))
-        .where(and(eq(farmUsers.userId, userId), isNull(farmUsers.deletedAt))),
-    );
+        .where(and(eq(farmUsers.userId, userId), isNull(farmUsers.deletedAt)));
+
+      // The farm's herds travel with the session because a capture must file itself under one
+      // OFFLINE (FR-113), and a device in a dead zone cannot ask for the list at capture time.
+      const herds = await enterprisesByFarm(
+        tx,
+        rows.map((farm) => farm.id),
+      );
+      return rows.map((farm) => ({ ...farm, enterprises: herds.get(farm.id) ?? [] }));
+    });
   }
 }
 

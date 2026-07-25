@@ -18,6 +18,7 @@ import {
   brandingRegisters,
   createAppDb,
   createElevatedDb,
+  enterprises,
   events,
   farmUsers,
   mobs,
@@ -433,6 +434,110 @@ describe('weight capture (FR-140)', () => {
       await expect(
         service.recordAnimal(viewer!.id, animalBody({ farmId: a.farmId })),
       ).rejects.toThrow(TenancyError);
+    });
+  });
+
+  // ── Herd scoping (FR-113) ───────────────────────────────────────────────────────────
+  describe('herd scoping (FR-113)', () => {
+    /** A herd on the farm, and an animal filed under it. */
+    async function aHerdWithAnimal(farmId: string): Promise<{ herdId: string; animalId: string }> {
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId, name: 'Bonsmara cows', type: 'beef_cattle' })
+        .returning();
+      const [animal] = await elevated.db
+        .insert(animals)
+        .values({ farmId, enterpriseId: herd!.id, species: 'cattle', sex: 'female' })
+        .returning();
+      return { herdId: herd!.id, animalId: animal!.id };
+    }
+
+    it('stamps a weight with the herd its animal is in, without being told', async () => {
+      const a = await tenant('Alpha');
+      const { herdId, animalId } = await aHerdWithAnimal(a.farmId);
+
+      // The body carries no enterprise. The server reads it off the animal — so a per-herd report
+      // is correct even for a capture composed by a client that never heard of herd scoping.
+      const captured = await service.recordWeight(
+        a.userId,
+        weightBody({ farmId: a.farmId, animalId }),
+      );
+
+      expect(captured.enterpriseId).toBe(herdId);
+    });
+
+    it('files a death and a sale under the herd too', async () => {
+      const a = await tenant('Alpha');
+      const first = await aHerdWithAnimal(a.farmId);
+      const second = await aHerdWithAnimal(a.farmId);
+
+      const death = await service.recordDeath(
+        a.userId,
+        deathBody({ farmId: a.farmId, animalId: first.animalId }),
+      );
+      const sale = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId: second.animalId }),
+      );
+
+      expect(death.enterpriseId).toBe(first.herdId);
+      expect(sale.enterpriseId).toBe(second.herdId);
+    });
+
+    it('ignores an enterprise the client claims that is not the animal’s', async () => {
+      const a = await tenant('Alpha');
+      const { herdId, animalId } = await aHerdWithAnimal(a.farmId);
+      const other = await aHerdWithAnimal(a.farmId);
+
+      const captured = await service.recordWeight(
+        a.userId,
+        weightBody({ farmId: a.farmId, animalId, enterpriseId: other.herdId }),
+      );
+
+      // The animal's own herd wins. Trusting the body would let a weight be filed against the
+      // wrong herd, corrupting exactly the per-herd history FR-113 exists to produce.
+      expect(captured.enterpriseId).toBe(herdId);
+    });
+
+    it('files a mob dip under the mob’s herd', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Dorper flock', type: 'sheep' })
+        .returning();
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({
+          farmId: a.farmId,
+          enterpriseId: herd!.id,
+          name: 'Flock A',
+          species: 'sheep',
+          headCount: 300,
+        })
+        .returning();
+      const productId = await aVetProduct({ species: ['sheep'] });
+
+      const captured = await service.recordDip(
+        a.userId,
+        dipBody({ farmId: a.farmId, animalId: null, mobId: mob!.id, productId, method: 'plunge' }),
+      );
+
+      expect(captured.enterpriseId).toBe(herd!.id);
+    });
+
+    it('leaves the herd unset when the animal itself has none, and still records', async () => {
+      // An animal captured before the farm's herds reached the device. The event still names the
+      // animal, so it is filed — losing the capture over a missing herd would be far worse.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const captured = await service.recordWeight(
+        a.userId,
+        weightBody({ farmId: a.farmId, animalId }),
+      );
+
+      expect(captured.enterpriseId).toBeNull();
+      expect(captured.animalId).toBe(animalId);
     });
   });
 

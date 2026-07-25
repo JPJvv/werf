@@ -5,10 +5,12 @@
  * were captured.
  */
 
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Species, AnimalSex, AnimalStatus } from '@werf/core';
+import { enterpriseSpecies, type Species, type AnimalSex, type AnimalStatus } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
+import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveAnimals, useHerdSummary } from './herd';
 
 export function speciesLabel(t: (key: TranslationKey) => string, species: Species): string {
@@ -25,8 +27,19 @@ export function statusLabel(t: (key: TranslationKey) => string, status: AnimalSt
 
 export function AnimalsScreen() {
   const { t } = useTranslation();
-  const animals = useEffectiveAnimals();
-  const summary = useHerdSummary();
+  const { activeFarm } = useAuth();
+
+  // FR-113: on a farm with several herds, the screen can be narrowed to one. "All herds" is the
+  // default, because the whole-farm number is the one the home tile shows and the two must agree.
+  const herds = useMemo(
+    () => (activeFarm?.enterprises ?? []).filter((e) => enterpriseSpecies(e.type) !== null),
+    [activeFarm],
+  );
+  const [herdId, setHerdId] = useState('');
+  const filter = herdId === '' ? undefined : herdId;
+
+  const animals = useEffectiveAnimals(filter);
+  const summary = useHerdSummary(filter);
   const hasLive = summary.animalsLive > 0;
 
   return (
@@ -37,6 +50,28 @@ export function AnimalsScreen() {
           {summary.liveTotal} <span className="text-body text-soil-700">{t('animals.head')}</span>
         </p>
       </div>
+
+      {herds.length > 1 && (
+        <div className="mb-4 flex flex-col">
+          <label htmlFor="herd-filter" className="mb-1 text-label uppercase text-soil-700">
+            {t('animals.herdFilter')}
+          </label>
+          <select
+            id="herd-filter"
+            name="herd-filter"
+            value={herdId}
+            onChange={(e) => setHerdId(e.target.value)}
+            className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+          >
+            <option value="">{t('animals.allHerds')}</option>
+            {herds.map((herd) => (
+              <option key={herd.id} value={herd.id}>
+                {herd.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <Link
         to="/animals/new"

@@ -12,8 +12,9 @@
  */
 
 import { and, eq, isNull } from 'drizzle-orm';
-import { events, farmUsers, type AppDb } from '@werf/db';
+import { animals, events, farmUsers, mobs, type AppDb } from '@werf/db';
 import { NotFoundError, TenancyError, type UserRole, type schemas } from '@werf/core';
+import { assertHerdScoped } from '@werf/domain';
 
 /** The RLS-bound transaction handle a capture runs inside (from `AppDb.asUser`). */
 export type CaptureTx = Parameters<Parameters<AppDb['asUser']>[1]>[0];
@@ -58,6 +59,10 @@ export type CapturedEvent = Awaited<ReturnType<typeof insertEvent>>;
  * The existing row is read back through the same RLS-bound connection.
  */
 export async function insertEvent(tx: CaptureTx, event: schemas.NewEvent) {
+  // FR-113: nothing enters the log unfiled. Checked HERE rather than in each capture so a capture
+  // added in a later phase cannot skip it — the only way into `events` is through this function.
+  assertHerdScoped(event);
+
   const [row] = await tx
     .insert(events)
     .values({
@@ -87,6 +92,50 @@ export async function insertEvent(tx: CaptureTx, event: schemas.NewEvent) {
     .from(events)
     .where(and(eq(events.id, event.id), eq(events.farmId, event.farmId)));
   return existing!;
+}
+
+/**
+ * The herd (enterprise) an animal- or mob-scoped event belongs to, read from the SUBJECT's own row
+ * through the RLS-bound connection (FR-113).
+ *
+ * Derived, never taken from the request. An animal is already filed under one herd, so asking the
+ * client to restate it only creates a way for the two to disagree: a weight filed under the sheep
+ * flock for a cow would corrupt exactly the per-herd history FR-113 exists to produce. It also means
+ * a capture composed by an older client — which never knew about herd scoping — still files itself
+ * correctly on arrival, which matters when a farmer syncs a fortnight of work after an app update.
+ *
+ * A subject this farm cannot see reads as "not found", indistinguishable from one that does not
+ * exist. Returns null when the subject genuinely has no enterprise yet (an animal captured before
+ * the farm split its herds); the FR-113 guard still passes, because the event names the animal.
+ */
+export async function herdOfSubject(
+  tx: CaptureTx,
+  farmId: string,
+  subject: { animalId?: string | null; mobId?: string | null },
+): Promise<string | null> {
+  const animalId = subject.animalId ?? null;
+  if (animalId !== null) {
+    const [row] = await tx
+      .select({ enterpriseId: animals.enterpriseId })
+      .from(animals)
+      .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId), isNull(animals.deletedAt)));
+    if (!row) throw new NotFoundError('Animal not found');
+    return row.enterpriseId;
+  }
+
+  const mobId = subject.mobId ?? null;
+  if (mobId !== null) {
+    const [row] = await tx
+      .select({ enterpriseId: mobs.enterpriseId })
+      .from(mobs)
+      .where(and(eq(mobs.id, mobId), eq(mobs.farmId, farmId), isNull(mobs.deletedAt)));
+    if (!row) throw new NotFoundError('Mob not found');
+    return row.enterpriseId;
+  }
+
+  // No subject to derive from. The caller supplies the enterprise itself (a herd-wide event), and
+  // the FR-113 guard in `insertEvent` refuses the event if it names no herd at all.
+  return null;
 }
 
 /**

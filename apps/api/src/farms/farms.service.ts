@@ -17,6 +17,7 @@ import { enterprises, farmUsers, farms, users, type AppDb, type ElevatedDb } fro
 import { ConflictError, NotFoundError, TenancyError, schemas } from '@werf/core';
 import type { EnterpriseType } from '@werf/core';
 import { APP_DB, ELEVATED_DB } from '../db/db.module';
+import { enterprisesByFarm } from '../common/session-farm';
 import { SessionService } from '../auth/session.service';
 
 /** Default names for the enterprise row each chosen type creates. The farmer renames them. */
@@ -56,7 +57,13 @@ export class FarmsService {
         .from(farmUsers)
         .innerJoin(farms, eq(farms.id, farmUsers.farmId))
         .where(and(eq(farmUsers.userId, userId), isNull(farmUsers.deletedAt)));
-      return rows;
+
+      // The farm's herds, so a capture can file itself under one offline (FR-113).
+      const herds = await enterprisesByFarm(
+        tx,
+        rows.map((farm) => farm.id),
+      );
+      return rows.map((farm) => ({ ...farm, enterprises: herds.get(farm.id) ?? [] }));
     });
   }
 
@@ -92,18 +99,22 @@ export class FarmsService {
         acceptedAt: new Date(),
       });
 
-      await tx.insert(enterprises).values(
-        input.enterpriseTypes.map((type) => ({
-          farmId: farm!.id,
-          name: ENTERPRISE_DEFAULT_NAMES[type],
-          type,
-        })),
-      );
+      const created = await tx
+        .insert(enterprises)
+        .values(
+          input.enterpriseTypes.map((type) => ({
+            farmId: farm!.id,
+            name: ENTERPRISE_DEFAULT_NAMES[type],
+            type,
+          })),
+        )
+        .returning({ id: enterprises.id, name: enterprises.name, type: enterprises.type });
 
       return {
         id: farm!.id,
         name: farm!.name,
         enterpriseTypes: farm!.enterpriseTypes,
+        enterprises: created,
         role: 'owner',
       };
     });
@@ -182,10 +193,15 @@ export class FarmsService {
         .from(farmUsers)
         .where(and(eq(farmUsers.farmId, farmId), eq(farmUsers.userId, userId)));
 
+      // Re-read rather than reason about what was just added or retired: this is the list the
+      // client will file captures against (FR-113), so it has to be what the table actually says.
+      const herds = await enterprisesByFarm(tx, [farmId]);
+
       return {
         id: updated!.id,
         name: updated!.name,
         enterpriseTypes: updated!.enterpriseTypes,
+        enterprises: herds.get(farmId) ?? [],
         role: role!.role,
       };
     });

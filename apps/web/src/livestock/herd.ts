@@ -41,15 +41,26 @@ export function projectHerd(
   });
 }
 
-/** The herd with each animal's current status applied — the basis for every live/loss read. */
-export function useEffectiveAnimals(): readonly StoredAnimal[] {
+/**
+ * The herd with each animal's current status applied — the basis for every live/loss read.
+ *
+ * `herdId` narrows it to ONE enterprise (FR-113): a mixed farm's cattle screen must not count its
+ * sheep. Omit it for the whole farm, which is what the home tile wants. Animals with no enterprise
+ * (captured before the farm's herds were known to the device) belong to no herd and so appear only
+ * in the unfiltered view — hiding them would be worse than the alternative, which is why the farm
+ * total never filters.
+ */
+export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
   const animals = useAnimals();
   const events = useLifecycleEvents();
-  return useMemo(() => projectHerd(animals, events), [animals, events]);
+  return useMemo(() => {
+    const projected = projectHerd(animals, events);
+    return herdId === undefined ? projected : projected.filter((a) => a.enterpriseId === herdId);
+  }, [animals, events, herdId]);
 }
 
-/** The herd summary (FR-705/017) over the current herd — the source of the home tile's live count. */
-export function useHerdSummary(): HerdSummary {
-  const animals = useEffectiveAnimals();
+/** The herd summary (FR-705/017), for one herd or (unfiltered) the whole farm. */
+export function useHerdSummary(herdId?: string): HerdSummary {
+  const animals = useEffectiveAnimals(herdId);
   return useMemo(() => summariseHerd({ animals }), [animals]);
 }

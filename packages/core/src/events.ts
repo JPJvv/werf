@@ -61,6 +61,24 @@ export function isEventType(value: string): value is EventType {
  * capture screen can iterate only the types a livestock farmer sees, without hard-coding a
  * slice of the array by index.
  */
+/**
+ * The event types that belong to the FARM rather than to a herd — the closed list of exceptions to
+ * FR-113 herd scoping. Every other event must file under the herd it concerns (an animal, a mob, or
+ * an enterprise), because a mixed farm that cannot tell its cattle events from its sheep events has
+ * no usable history. These cannot: rain falls on the whole farm, and both the grazing and the
+ * cropping side read the same reading — filing it under one enterprise would hide it from the other.
+ *
+ * Kept as a list rather than a per-capture decision so the rule has one home. Adding a type here is
+ * a deliberate statement that the fact is not about a herd; the FR-113 guard in @werf/domain reads
+ * it, so a new event type is herd-scoped by default and must be named here to escape that.
+ */
+export const FARM_SCOPED_EVENT_TYPES = ['rainfall'] as const satisfies readonly EventType[];
+export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
+
+export function isFarmScopedEventType(type: EventType): type is FarmScopedEventType {
+  return (FARM_SCOPED_EVENT_TYPES as readonly EventType[]).includes(type);
+}
+
 export const LIVESTOCK_EVENT_TYPES = [
   'birth',
   'death',

@@ -64,11 +64,33 @@ export const refreshRequestSchema = z.object({
 });
 export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
 
+/**
+ * One of the farm's herds/enterprises, as the client needs it (FR-113). The `enterpriseTypes` array
+ * above drives the ADAPTIVE UI — which tiles a farm sees; this carries the enterprise ROWS, because
+ * filing a capture under the herd it concerns needs the enterprise's id, and telling two cattle
+ * herds apart needs its name. A farm may run two enterprises of the same type ("Bonsmara cows",
+ * "Feedlot"), which is precisely why the type alone cannot do this job.
+ */
+export const sessionEnterpriseSchema = z.object({
+  id: uuidSchema,
+  name: z.string().min(1),
+  type: enterpriseTypeSchema,
+});
+export type SessionEnterprise = z.infer<typeof sessionEnterpriseSchema>;
+
 /** The farms a signed-in user may act on, and the role they hold on each (roles are per FARM). */
 export const sessionFarmSchema = z.object({
   id: uuidSchema,
   name: z.string().min(1),
   enterpriseTypes: z.array(enterpriseTypeSchema),
+  /**
+   * The farm's active herds/enterprises. DEFAULTED, not required: a session cached before this
+   * field existed is re-parsed on every cold start, and making it mandatory would fail that parse
+   * and sign a farmer out — offline, with captures queued, because of an app update. An empty list
+   * means "this device does not know the herds yet", which the capture screens handle by asking for
+   * a species instead; the next sign-in fills it in.
+   */
+  enterprises: z.array(sessionEnterpriseSchema).default([]),
   role: z.string().min(1),
 });
 export type SessionFarm = z.infer<typeof sessionFarmSchema>;

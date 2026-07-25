@@ -44,6 +44,14 @@ export interface CaptureBase {
   readonly locationGeojson?: string | null;
   /** Set when this capture is one of a batch applied to many animals in one action (FR-112). */
   readonly batchId?: string | null;
+  /**
+   * The herd this event is filed under (FR-113) — the animal's enterprise, resolved by the caller at
+   * capture time and STAMPED here rather than joined on read. An animal can be moved between herds;
+   * a report that joined events to the animal's CURRENT enterprise would quietly re-file last
+   * season's dosing under the herd the animal is in today. The herd at the time of the event is the
+   * fact worth keeping, for the same reason a withdrawal date is computed at capture (ADR-0005).
+   */
+  readonly enterpriseId?: string | null;
 }
 
 /**
@@ -66,7 +74,7 @@ function buildEvent(
     type,
     occurredAt: base.occurredAt,
     payload,
-    enterpriseId: null,
+    enterpriseId: base.enterpriseId ?? null,
     syncedAt: null,
     animalId: base.animalId,
     mobId: null,

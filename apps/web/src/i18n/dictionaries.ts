@@ -133,9 +133,13 @@ const en = {
   // Animals module (FR-101, FR-705). Captured offline; "head" is the count word a farmer uses.
   'animals.title': 'Animals',
   'animals.head': 'head',
+  'animals.allHerds': 'All herds',
+  'animals.herdFilter': 'Show herd',
   'animals.empty': 'No animals recorded yet. Record your first one — it saves with no signal.',
   'animals.add': 'Record an animal',
   'animals.new.title': 'Record an animal',
+  // FR-113: an animal (and every event on it) is filed under the herd it belongs to.
+  'animals.new.herd': 'Herd',
   'animals.new.species': 'Species',
   'animals.new.sex': 'Sex',
   'animals.new.breed': 'Breed (optional)',
@@ -309,10 +313,13 @@ const af: Record<TranslationKey, string> = {
   'home.back': 'Terug na tuis',
   'animals.title': 'Diere',
   'animals.head': 'stuks',
+  'animals.allHerds': 'Alle troppe',
+  'animals.herdFilter': 'Wys trop',
   'animals.empty':
     'Nog geen diere aangeteken nie. Teken jou eerste een aan — dit stoor sonder sein.',
   'animals.add': 'Teken ’n dier aan',
   'animals.new.title': 'Teken ’n dier aan',
+  'animals.new.herd': 'Trop',
   'animals.new.species': 'Spesie',
   'animals.new.sex': 'Geslag',
   'animals.new.breed': 'Ras (opsioneel)',

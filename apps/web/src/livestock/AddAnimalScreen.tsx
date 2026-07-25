@@ -4,10 +4,20 @@
  * LOCALLY and instantly — there is no network anywhere in `save`, so it works with the phone
  * in aeroplane mode (.claude/rules/frontend.md, NFR-007).
  *
- * The species offered are only the ones this farm runs (derived from its enterprise types),
- * so a cattle farm is never asked to choose "poultry". After a save the form stays put with
- * the species and sex kept, because a farmer in a race records twenty of the same in a row —
- * "Save" then "Record another" is the rhythm, not a round-trip back to a list each time.
+ * ⭐ The animal is filed under a HERD (FR-113), and that is the only question asked when the farm
+ * runs more than one: the species follows from the herd, so "Dorper flock" answers both at once and
+ * a sheep can no longer be filed in the cattle enterprise. Picking a herd rather than a species also
+ * tells two cattle herds apart ("Bonsmara cows" vs "Feedlot"), which a species never could — and it
+ * is what makes every later event on this animal file itself correctly, since the server stamps the
+ * event with the herd the animal is in.
+ *
+ * A farm with ONE herd is asked nothing: a question with a single answer is not a decision, it is an
+ * obstacle in a crush. A device whose cached session predates herd scoping falls back to choosing a
+ * species — the animal is still captured, unfiled, and the next sign-in fills the herd list in.
+ *
+ * After a save the form stays put with the herd and sex kept, because a farmer in a race records
+ * twenty of the same in a row — "Save" then "Record another" is the rhythm, not a round-trip back
+ * to a list each time.
  */
 
 import { useMemo, useState, type FormEvent } from 'react';
@@ -25,6 +35,13 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useRecordAnimal } from './LocalHerd';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
+
+type Herd = schemas.SessionEnterprise;
+
+/** The farm's herds that keep animals — a crop enterprise is not somewhere to file an animal. */
+function livestockHerds(enterprises: readonly Herd[]): Herd[] {
+  return enterprises.filter((e) => enterpriseSpecies(e.type) !== null);
+}
 
 /** The distinct species a farm's enterprises keep, in enterprise order (cattle once, not twice). */
 function farmSpecies(enterpriseTypes: readonly EnterpriseType[]): Species[] {
@@ -45,11 +62,13 @@ export function AddAnimalScreen() {
   const { activeFarm } = useAuth();
   const recordAnimal = useRecordAnimal();
 
+  const herds = useMemo(() => livestockHerds(activeFarm?.enterprises ?? []), [activeFarm]);
   const speciesOptions = useMemo(
     () => farmSpecies((activeFarm?.enterpriseTypes as EnterpriseType[]) ?? []),
     [activeFarm],
   );
 
+  const [herdId, setHerdId] = useState('');
   const [species, setSpecies] = useState<Species | ''>('');
   const [sex, setSex] = useState<AnimalSex>('female');
   const [breed, setBreed] = useState('');
@@ -57,8 +76,13 @@ export function AddAnimalScreen() {
 
   if (!activeFarm) return null;
 
-  // The effective choice: whatever the farmer picked, else the farm's first species.
-  const selectedSpecies: Species | '' = species || speciesOptions[0] || '';
+  // The herd this animal belongs to: whichever the farmer picked, else the farm's only one.
+  const selectedHerd = herds.find((h) => h.id === herdId) ?? herds[0];
+  // Species follows the herd when there is one; otherwise it is asked for directly (an older
+  // cached session that predates herd scoping, or a farm whose herds have not synced yet).
+  const selectedSpecies: Species | '' = selectedHerd
+    ? (enterpriseSpecies(selectedHerd.type) ?? '')
+    : species || speciesOptions[0] || '';
 
   const save = (event: FormEvent) => {
     event.preventDefault();
@@ -67,18 +91,24 @@ export function AddAnimalScreen() {
     const animal = schemas.newAnimalSchema.parse({
       id: uuidv7(),
       farmId: activeFarm.id,
+      // FR-113: filed under its herd at capture, so every later event on this animal inherits it.
+      enterpriseId: selectedHerd?.id ?? null,
       species: selectedSpecies,
       sex,
       breed: breed.trim() || null,
     });
     recordAnimal(animal);
 
-    // Kept: species and sex. Cleared: the per-animal breed. Ready for the next one in the race.
+    // Kept: herd/species and sex. Cleared: the per-animal breed. Ready for the next in the race.
     setBreed('');
     setJustSaved(true);
   };
 
   // Any edit after a save dismisses the confirmation — it belongs to the last thing saved.
+  const pickHerd = (value: string) => {
+    setJustSaved(false);
+    setHerdId(value);
+  };
   const pickSpecies = (value: string) => {
     setJustSaved(false);
     setSpecies(value as Species);
@@ -106,24 +136,58 @@ export function AddAnimalScreen() {
       )}
 
       <form onSubmit={save}>
-        <div className="mb-4 flex flex-col">
-          <label htmlFor="species" className="mb-1 text-label uppercase text-soil-700">
-            {t('animals.new.species')}
-          </label>
-          <select
-            id="species"
-            name="species"
-            value={selectedSpecies}
-            onChange={(e) => pickSpecies(e.target.value)}
-            className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
-          >
-            {speciesOptions.map((option) => (
-              <option key={option} value={option}>
-                {speciesLabel(t, option)}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* FR-113. One herd = no question asked; the species is not asked either, because the herd
+            already answers it. Only a farm running several is asked, and then only once. */}
+        {herds.length > 1 && (
+          <div className="mb-4 flex flex-col">
+            <label htmlFor="herd" className="mb-1 text-label uppercase text-soil-700">
+              {t('animals.new.herd')}
+            </label>
+            <select
+              id="herd"
+              name="herd"
+              value={selectedHerd?.id ?? ''}
+              onChange={(e) => pickHerd(e.target.value)}
+              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+            >
+              {herds.map((herd) => (
+                <option key={herd.id} value={herd.id}>
+                  {herd.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* One herd: stated, not asked. The farmer still needs to see where the animal is filed —
+            "no question" must not become "no idea". */}
+        {herds.length === 1 && (
+          <p className="mb-4 text-body text-soil-700">
+            <span className="text-label uppercase">{t('animals.new.herd')}</span>{' '}
+            {selectedHerd!.name}
+          </p>
+        )}
+
+        {herds.length === 0 && (
+          <div className="mb-4 flex flex-col">
+            <label htmlFor="species" className="mb-1 text-label uppercase text-soil-700">
+              {t('animals.new.species')}
+            </label>
+            <select
+              id="species"
+              name="species"
+              value={selectedSpecies}
+              onChange={(e) => pickSpecies(e.target.value)}
+              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+            >
+              {speciesOptions.map((option) => (
+                <option key={option} value={option}>
+                  {speciesLabel(t, option)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="mb-4 flex flex-col">
           <label htmlFor="sex" className="mb-1 text-label uppercase text-soil-700">

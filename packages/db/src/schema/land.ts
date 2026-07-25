@@ -22,7 +22,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { auditColumns, geometry, primaryId } from './columns';
 import { landUnitKindEnum } from './enums';
-import { enterprises, farms } from './core';
+import { enterprises, farms, users } from './core';
 
 export const landUnits = pgTable(
   'land_units',
@@ -48,6 +48,8 @@ export const landUnits = pgTable(
     irrigation: text('irrigation'),
     attributes: jsonb('attributes').notNull().default({}),
     ...auditColumns,
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
   },
   (t) => [
     unique('land_units_farm_code_unique').on(t.farmId, t.code),

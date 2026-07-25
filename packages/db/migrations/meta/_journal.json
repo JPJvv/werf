@@ -113,6 +113,13 @@
       "when": 1784990371489,
       "tag": "0015_evidence_authorship",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785076771489,
+      "tag": "0016_capture_authorship",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,8 @@ import { AnimalsScreen } from './livestock/AnimalsScreen';
 import { AddAnimalScreen } from './livestock/AddAnimalScreen';
 import { WeighSessionScreen } from './livestock/WeighSessionScreen';
 import { RecordLossScreen } from './livestock/RecordLossScreen';
+import { LandScreen } from './land/LandScreen';
+import { AddLandUnitScreen } from './land/AddLandUnitScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
 import { SettingsLayout } from './settings/SettingsLayout';
@@ -49,6 +51,9 @@ export function App() {
                 <Route path="animals/new" element={<AddAnimalScreen />} />
                 <Route path="animals/loss" element={<RecordLossScreen />} />
                 <Route path="weigh" element={<WeighSessionScreen />} />
+                {/* Land is farm-level, not livestock: a camp and a block are one table (FR-150). */}
+                <Route path="land" element={<LandScreen />} />
+                <Route path="land/new" element={<AddLandUnitScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
                 <Route path="settings" element={<SettingsLayout />}>

@@ -12,8 +12,9 @@
  *  1. The queue is NEVER discarded. A record leaves "pending" only when the server has CONFIRMED
  *     it (its id joins the sent-log). A failed, refused, or interrupted flush leaves everything
  *     else pending and untouched; nothing is dropped to make an error go away.
- *  2. Animals go FIRST. A weight, death or sale event references `animals(id)`; sending an event
- *     before its animal would fail the foreign key against a row the server has never seen.
+ *  2. The queue is ordered by the FOREIGN KEY graph, not by when things were captured. Land units
+ *     first (an animal can carry `land_unit_id`), then animals, then the events that reference
+ *     them; sending a child before its parent fails against a row the server has never seen.
  *  3. Sending is idempotent and at-least-once. A 201 lost on the way home is retried on the next
  *     reconnect; every endpoint is a no-op on a re-send, so a retry never duplicates a row.
  *
@@ -36,6 +37,8 @@ import {
 import { createSentLog, type SentLog } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
+import { useLandUnits } from '../land/LocalLand';
+import { landApi } from '../land/landApi';
 import { useAnimals } from '../livestock/LocalHerd';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents } from '../livestock/LocalLifecycle';
@@ -66,6 +69,7 @@ export interface OutboxProviderProps {
 
 export function OutboxProvider({ children, factory = defaultSentLogFactory }: OutboxProviderProps) {
   const { session, activeFarm, refreshSession } = useAuth();
+  const landUnits = useLandUnits();
   const animals = useAnimals();
   const weights = useWeights();
   const events = useLifecycleEvents();
@@ -84,6 +88,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // them. A record is pending until its id is confirmed in the sent-log.
   const queue = useMemo<readonly FlushItem[]>(() => {
     const items: FlushItem[] = [];
+    // Land goes before animals: a herd row can carry `land_unit_id`, so an animal that arrived
+    // ahead of its camp would fail the foreign key against ground the server has never seen. Same
+    // rule as animals-before-events, one level further up the graph.
+    for (const unit of landUnits) {
+      if (!sent.has(unit.id)) {
+        items.push({ id: unit.id, send: (token) => landApi.createLandUnit(unit, token) });
+      }
+    }
     for (const animal of animals) {
       if (!sent.has(animal.id)) {
         items.push({ id: animal.id, send: (token) => livestockApi.createAnimal(animal, token) });
@@ -112,7 +124,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     }
     return items;
-  }, [animals, weights, events, rainfall, sent]);
+  }, [landUnits, animals, weights, events, rainfall, sent]);
   const pendingCount = queue.length;
 
   const [flushing, setFlushing] = useState(false);

@@ -44,6 +44,8 @@ export const mobs = pgTable('mobs', {
   landUnitId: uuid('land_unit_id').references(() => landUnits.id),
   headCount: integer('head_count'),
   ...auditColumns,
+  createdBy: uuid('created_by').references(() => users.id),
+  updatedBy: uuid('updated_by').references(() => users.id),
 });
 
 export const animals = pgTable(
@@ -112,6 +114,8 @@ export const animalIdentifiers = pgTable(
     isPrimary: boolean('is_primary').notNull().default(false),
     appliedAt: date('applied_at'),
     ...auditColumns,
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
   },
   (t) => [
     uniqueIndex('animal_identifiers_unique')

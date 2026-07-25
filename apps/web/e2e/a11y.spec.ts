@@ -109,6 +109,11 @@ for (const theme of THEMES) {
  * blank page, so an audit without that assertion passes hardest when the screen is broken.
  */
 const CAPTURE_SCREENS = [
+  // The seeded farm is MIXED (cattle + row crops), so its word for a piece of ground is "block" —
+  // crop naming wins on a mixed farm, because a block is the audited unit. Asserting the camp
+  // wording here would be asserting the wrong farm's vocabulary.
+  { path: '/land', heading: /blocks/i },
+  { path: '/land/new', heading: /add a block/i },
   { path: '/animals', heading: /animals/i },
   { path: '/animals/new', heading: /record an animal/i },
   { path: '/animals/loss', heading: /record a loss/i },

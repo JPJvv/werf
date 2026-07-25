@@ -150,6 +150,64 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-319 | 📶 Worker self-view: own hours, own payslips. Nothing else. | 3 |
 | FR-320 | 🇿🇦 **SIZA social evidence pack** generated from labour records | 2 |
 
+### Delegation & task management
+
+> Three working roles, one chain: **owner → manager → worker**. The chain governs who may assign work and who may administer whom. It does **not** govern who may see money or health data — those are separate grants, and conflating them is how a manager ends up reading a sick note.
+
+| ID | Requirement | P |
+|---|---|---|
+| FR-321 | 📶 **Delegation chain**: an owner assigns to managers and workers; a manager assigns to workers; a worker assigns to nobody. Every task records who assigned it and when | 2 |
+| FR-322 | **A user may administer only roles strictly below their own.** An owner manages managers and workers; a manager manages workers; nobody creates or elevates a peer or a superior. Only an owner creates another owner | 1 |
+| FR-323 | 🇿🇦 **Administering a user account is not administering an employee record.** A manager may add a worker, reset their PIN, and assign them work; a manager may **never** see or edit ID number, banking details, wage rate, or payslips. Those stay owner + bookkeeper | 1 |
+| FR-324 | 📶 **To-do list per user**, with day / week / month views across the calendar year. Recurring tasks (weekly dip, monthly meter read) generate instances | 2 |
+| FR-325 | 📶 Task carries: title, description, due date, assignee or team, priority, enterprise/camp/block, and completion state with `completed_at` | 2 |
+| FR-326 | 📶 **Progress view**: an owner sees task state across managers and workers; a manager sees their own workers. Task **status**, not a productivity score — see the note below | 2 |
+| FR-327 | Task templates and seasonal work plans; generate a season's tasks from a template | 3 |
+
+> ⚠️ **FR-326 is a work tracker, not a performance-management system.** It shows what is assigned, what is done, and what is overdue. It does **not** rank workers, compute output scores, or produce a metric that could be used as evidence in a dismissal without the worker ever having seen it. Performance management in South Africa has LRA procedural requirements that a dashboard does not satisfy and must not appear to. See [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md).
+
+### Worker self-service 🇿🇦
+
+> Farm workers are the least-powerful data subjects in this system and the ones with the least access to their own records. Every requirement here gives a worker something about **themselves**.
+
+| ID | Requirement | P |
+|---|---|---|
+| FR-328 | 📶 Worker self-view, extending FR-319: own hours, own payslips, own leave balances, own tasks, own captured locations. **Nothing about anyone else** | 2 |
+| FR-329 | 📶 **Leave request**: worker applies, manager or owner approves or declines with a reason, balance updates. Works offline and queues | 2 |
+| FR-330 | 🇿🇦 **Payslip query**: a worker raises a question against a specific payslip line; it routes to the owner/bookkeeper with the payslip attached, and the thread is retained as a record | 2 |
+| FR-331 | 🇿🇦 **Grievance mechanism** (SIZA Social Standard requirement 6): a worker lodges a grievance, **optionally anonymously**, and it is retained with its resolution. Required for the SIZA pack (FR-320) | 2 |
+| FR-332 | 🇿🇦 **A grievance is never visible to the person it names.** If a worker grieves about their manager, that manager cannot see it, cannot be notified of it, and cannot infer it from a count. A grievance against the owner routes to a designated alternate recipient | **1** |
+| FR-333 | 🇿🇦 **Sick note / medical certificate upload**: worker photographs or uploads a certificate against a sick-leave request. **Health data — POPIA s26.** Restricted to owner + H&S role, encrypted at rest, **never synced to a device** | 2 |
+| FR-334 | 🇿🇦 **An approver sees the decision, not the diagnosis.** A manager approving sick leave sees dates, "certificate on file", and the issuing practitioner's registration status — never the certificate image, never the condition | **1** |
+| FR-335 | 📶 Document register: contracts, certificates, licences, training records, induction records — per employee, per farm, with expiry and renewal reminders. The document evidence base the SIZA and GlobalGAP packs draw on | 2 |
+| FR-336 | Worker acknowledgement of a document (contract, policy, safety briefing), recorded with timestamp and the language it was presented in | 2 |
+
+### Safety 🇿🇦
+
+| ID | Requirement | P |
+|---|---|---|
+| FR-340 | 📶 **Lone-worker panic alert**: a worker triggers it, and their current location goes to the owner and manager immediately, with escalation if unacknowledged. **Worker-initiated always**; it is the only feature that sends a worker's location without a work record attached, and the worker is the one who sends it | 2 |
+| FR-341 | Panic alert queues offline and fires on reconnect, with the original trigger time preserved and clearly shown as delayed | 2 |
+| FR-342 | An employer cannot silently disable panic alerting; a change is visible to the worker | 3 |
+
+> **What is deliberately absent from this section: continuous worker location, live staff maps, and geofence alerts on people.** Three independent reasons — a PWA cannot do reliable background geolocation, POPIA minimality is not satisfied when event-stamped location serves the same purpose, and worker surveillance contradicts the SIZA compliance the product sells. Fully argued in [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md). **Geofences attach to animals and assets, never people.**
+
+### Field reporting & photo evidence 🧪
+
+> Marked 🧪 **experimental**: ships behind a feature flag to pilot farms first (Phase 5), and earns its place or is removed. The capture is easy; whether it survives contact with a farm that has 40 workers and a data cap is the open question.
+
+| ID | Requirement | P |
+|---|---|---|
+| FR-337 | 📶 **Photo report**: a worker photographs a problem — broken fence, sick animal, blocked pipe, damaged gate — adds a note and a category, and it routes to their manager and the owner as a task. Captured offline, uploaded when there is signal, **never blocking the capture** | 2 |
+| FR-338 | 📶 **Completion photo**: a task may require a photo of the finished work to close. The evidence is of the **work**, not the worker | 2 |
+| FR-339 | Photo reports feed the GlobalGAP and SIZA evidence base (FR-606…608) — a dated, located, attributed photo of a corrective action is exactly what a control point asks for | 3 |
+
+> ⚠️ **Two constraints on FR-337/338, both easy to get wrong.**
+>
+> **1. Photograph the work, not the person.** A photo identifying a worker is personal information, and one that incidentally captures colleagues is worse — they never agreed to anything. Capture guidance says *show the fence, not the person who fixed it*, and the completion-photo requirement must never be satisfiable only by photographing a human being.
+>
+> **2. EXIF is a location channel, and it is the back door into [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md).** Every phone photo carries GPS coordinates and a timestamp. Retaining them silently would rebuild exactly the worker-location stream we refused, through a feature nobody flagged as tracking. **The rule: location is retained only where the photo attaches to a work record that already captures location with the worker's knowledge, and is stripped otherwise.** Not a preference — the decision that keeps ADR-0010 true in practice rather than only on paper.
+
 ---
 
 ## FR-4xx · Finance
@@ -167,7 +225,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-409 | Export to accounting software (Xero/Sage/QuickBooks CSV) | 2 |
 | FR-410 | Livestock inventory reconciliation and valuation | 2 |
 | FR-411 | Cash flow forecast from budget and known commitments | 3 |
-| FR-412 | 📶 Fuel/diesel usage per vehicle and enterprise (diesel rebate matters here) | 2 |
+| FR-412 | 📶 Fuel cost allocated to enterprise, camp, block, or activity from the fuel log — feeds FR-405 cost of production. Capture lives in [FR-5xx Fleet & fuel](#fleet--fuel); this is the money side of it | 2 |
 
 ---
 
@@ -183,6 +241,25 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-506 | 📶 Equipment check-out with GPS | 3 |
 | FR-507 | 📶 Stock take with variance report | 2 |
 | FR-508 | 🇿🇦 Chemical reference data: registered product, registration number, actives, PHI, re-entry interval — versioned, synced from a maintained source | 1 |
+
+### Fleet & fuel
+
+> Diesel is typically the second or third largest cash cost on a South African farm, it is bought in bulk and held on the property, and it is the input most often stolen. It is also the one input that pays a statutory refund back — see [FR-616…619](#fr-6xx--compliance-) and [legal-compliance.md §5.1](../00-business/legal-compliance.md).
+>
+> **The whole capture path is 📶.** A farmer fills a tractor at a farm tank in a shed with no signal. If dispensing requires a network, the log is fiction and the refund claim fails at audit.
+
+| ID | Requirement | P |
+|---|---|---|
+| FR-509 | 📶 **Vehicle & machine register**: registration/fleet number, type (tractor, bakkie, truck, harvester, pump, genset), make, model, tank capacity, and whether it is metered by **odometer**, **hour meter**, or **neither**. Extends the equipment register (FR-504) rather than duplicating it | 2 |
+| FR-510 | 📶 **Fuel reserve register**: one or more bulk tanks per farm, each with fuel type, capacity, location, and current calculated balance. A farm may have several (main diesel, workshop petrol, remote camp) | 2 |
+| FR-511 | 📶 **Record a bulk delivery** into a reserve: supplier, litres, price per litre, invoice reference, photographed delivery note, and the dip/meter reading before and after. This is the *"fuel reserves are filled up"* action and it must be one screen | 2 |
+| FR-512 | 📶 **Record a dispense** from a reserve to a vehicle, implement, or activity: litres, meter reading (odometer km or engine hours), operator, and destination — vehicle *and* the enterprise/camp/block the work was for. Litres and meter reading are the only two mandatory fields | 2 |
+| FR-513 | 📶 **Record a direct purchase** — fuel bought at a filling station straight into a vehicle, never touching a reserve. Same record, no tank movement | 2 |
+| FR-514 | 📶 **Running tank balance**, computed from deliveries minus dispenses, shown on the tile. Low-reserve warning at a per-tank threshold | 2 |
+| FR-515 | 📶 **Dip / stock-take reconciliation**: enter a measured tank reading, system computes variance against the calculated balance, and the variance is recorded as an event with a reason. **Variance is recorded against the tank, never against a named person** — the same rule as FR-603. A shrinkage report that names an employee is an accusation, and it carries the identical defamation and POPIA s26 exposure | 2 |
+| FR-516 | 📶 Consumption metrics per vehicle: ℓ/100km, ℓ/engine-hour, ℓ/hectare worked; trend against that vehicle's own history. A machine drifting off its own baseline is the signal — a leak, a worn injector, or a siphon | 3 |
+| FR-517 | 📶 Fuel attributed to enterprise, camp, block, or activity at the moment of dispensing, so cost-of-production (FR-405) and the eligible/non-eligible split (FR-616) both fall out of one capture, not a reconstruction at year end | 2 |
+| FR-518 | Fuel and fleet costs flow to the expense ledger (FR-402) without re-keying; a delivery is an expense and a dispense is an allocation | 2 |
 
 ---
 
@@ -207,6 +284,10 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-613 | 🇿🇦 QR ownership verification: scan → verify ownership and missing status | 3 |
 | FR-614 | 🇿🇦 **`regulatory_rates` table**: every regulated value with `effective_from`/`effective_to`, looked up by event date | 1 |
 | FR-615 | 🇿🇦 Admin UI for updating regulatory rates without a deploy | 2 |
+| FR-616 | 🇿🇦 **SARS diesel refund logbook** (Customs & Excise Act 91 of 1964, Schedule 6 Part 3, Note 6): every litre classified **eligible** or **non-eligible** at capture, with the activity, the vehicle, and the meter reading that substantiates it. Distillate fuel used on a public road is not eligible; a farm that also does contract haulage must separate the two, and the separation must exist in the record, not in an explanation | 2 |
+| FR-617 | 🇿🇦 **Diesel refund return generation** for a tax period: eligible litres, non-eligible litres, the refundable amount, and the supporting logbook as an annexure. Farmer submits; we generate. **We never file on their behalf** | 2 |
+| FR-618 | 🇿🇦 **Five-year retention hold** on fuel records, from date of use or date of the refund return, whichever is later. Longer than the BCEA 3-year hold and it overrides a deletion request the same way (see [legal-compliance.md §1.6](../00-business/legal-compliance.md)) | 2 |
+| FR-619 | 🇿🇦 Diesel refund percentages and levy rates resolve from `regulatory_rates` by `occurred_at` — **never a constant**. The onland farming percentage moved from 80% to 100% on 1 April 2026 and the levies change most February budgets. A return spanning a change must apply both rates to their own litres, exactly as a pay period spanning 1 March applies both wages | 2 |
 
 ---
 
@@ -238,6 +319,36 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-803 | Per-user, per-category notification preferences | 2 |
 | FR-804 | Email digest | 3 |
 | FR-805 | 🇿🇦 SMS fallback for users without smartphones | 3 |
+| FR-806 | 📶 **Scheduled husbandry alerts**: vaccination and booster due, dip interval, dosing, pregnancy test due, calving/lambing window, weaning age, withdrawal expiry. Derived from the animal's own event history plus the protocol, **computed on the device** | 2 |
+| FR-807 | 📶 **The alert engine runs locally, not as a server cron.** An alert that needs a network to fire is useless to a farmer in a dead zone, which is the farmer most likely to miss a booster. Server-side scheduling is a *second* channel for the same alert, never the only one | 2 |
+| FR-808 | 📶 Vaccination protocol per herd/species: product, interval, booster offset, age triggers. Seeded with sensible SA defaults, editable per farm | 2 |
+| FR-809 | 📶 Operational alerts: task overdue, document/licence expiring, low inventory (FR-503), low fuel reserve (FR-514), stock-take due | 2 |
+| FR-810 | Alert acknowledgement and snooze, per user, retained — so "nobody told me" is answerable | 3 |
+
+> **FR-806 due-dates obey the `occurred_at` rule.** A booster is due relative to *when the first dose was given on the farm*, not when the row synced. A device that was offline for three weeks computes the same due date as one that was not, because both read the same `occurred_at`.
+
+---
+
+## FR-9xx · Market & input prices
+
+> **What this is.** A read-only board of the prices that decide whether a farming year worked: what the farmer sells (SAFEX grain, carcass classes, weaners) and what they buy (diesel). It exists so that a decision to sell, hold, or fill the tank is made against a number rather than a rumour at the co-op.
+>
+> **What this is not.** It is not a marketplace and it is not advice. See the boundary note below — both limits are deliberate and both are load-bearing.
+>
+> **Every requirement here is 🔒 online-only by nature and every one must degrade to a cached last-known value.** Price data is the one thing in this product that genuinely cannot be produced offline, which makes FR-904 the requirement that keeps the rest honest.
+
+| ID | Requirement | P |
+|---|---|---|
+| FR-901 | 🔒 **Fuel price card**: current DMRE/DMPR pump price for diesel (0.05% and 0.005%) and petrol, by coastal/inland pricing zone, with the movement since last adjustment. Official, monthly, government-published — the one feed with no licensing question | 3 |
+| FR-902 | 🔒 **SAFEX grain prices**: white maize, yellow maize, wheat, soybeans, sunflower — spot/nearby contract, movement, and the contract month. **Subject to a JSE market data agreement** ([ADR-0009](../03-architecture/adr/ADR-0009-market-data-feeds.md)) | 3 |
+| FR-903 | 🔒 **Red meat prices**: beef and mutton carcass classes (A2/A3, B2/B3, C2/C3), weaner calf and feeder lamb, weekly. **Subject to a source agreement** with RMAA/AMT — this data is published weekly in arrears and the dashboard must say so | 3 |
+| FR-904 | 📶 **Last-known value with an explicit "as at" timestamp on every price, always visible — not on hover, not in a tooltip.** A stale price presented as current is worse than no price, because a farmer will act on it. Offline shows the cached value, greyed, with its age in days | 3 |
+| FR-905 | **Data only. No recommendation, no signal, no "good time to sell".** Rendering a price is publishing information; suggesting a course of action on a financial instrument is advice under FAIS and we are not an authorised FSP. This is a code-review rejection criterion, not a copy guideline. See [legal-compliance.md §5.2](../00-business/legal-compliance.md) | 3 |
+| FR-906 | The board shows only what this farm actually farms, derived from `farm.enterprise_types` — the same rule as the home grid (FR-017). A sheep farmer does not need a soybean contract | 3 |
+| FR-907 | Price alert: notify when a watched commodity crosses a farmer-set threshold. The alert states the price and nothing else (FR-905 applies to notifications too) | 3 |
+| FR-908 | Every price series carries its **source, licence, and update cadence** in the UI, and the attribution the source contractually requires | 3 |
+
+**Boundary — read this before extending the section.** The roadmap deliberately excludes marketplaces and auctions; SwiftVEE has the liquidity and we would lose. A price board is on the correct side of that line because it moves information, not livestock or money. It stops being on the correct side the moment it lets someone place, accept, or broker an order. If a feature request starts with "and then they could just sell it from here", the answer is the integration in Phase 6, not this section.
 
 ---
 
@@ -245,6 +356,6 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 
 Every FR maps to ≥1 user story and ≥1 automated test. The matrix is **generated** — `pnpm test:trace` fails CI if a P1 or P2 FR has no covering test. See [testing-strategy.md](../04-delivery/testing-strategy.md).
 
-**Count:** 125 FRs. P1: 66 · P2: 43 · P3: 16.
+**Count:** 174 FRs. P1: 70 · P2: 75 · P3: 29.
 
 **Jurisdiction note.** Every FR marked 🇿🇦 is South African law and lives behind a jurisdiction interface ([ADR-0006](../03-architecture/adr/ADR-0006-multi-jurisdiction.md)). v1 registers exactly one implementation, `ZA`. **Do not implement a second jurisdiction speculatively** — a guessed `NA` makes tests pass against fiction and calcifies the abstraction around a country nobody has researched.

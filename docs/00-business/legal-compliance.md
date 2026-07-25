@@ -51,7 +51,7 @@ Section 26 prohibits processing special personal information unless a s27 or s28
 |---|---|---|
 | **Biometric data** (fingerprint, face) | s26 explicit | **DO NOT COLLECT FROM WORKERS IN V1.** Attendance uses worker PIN + optional GPS. Biometric clock-in is the obvious feature and it is a trap: it requires explicit consent, and consent obtained from a farm worker by their employer is of questionable voluntariness given the power asymmetry. If we build it later, it needs a full DPIA and a genuine non-biometric alternative offered without disadvantage.<br><br>**Note the asymmetry with owner passkeys** ([ADR-0007](../03-architecture/adr/ADR-0007-authentication.md)): an owner choosing to use *their own phone's* fingerprint to protect *their own account* is free consent, and the biometric never leaves their device — WebAuthn sends us a public key, not a fingerprint. A worker required to fingerprint into *their employer's* tablet to get paid is a different thing entirely. Same technology, opposite consent posture. |
 | **Race / ethnic origin** | s26 explicit | Collect **only** where an employment-equity or B-BBEE report legally requires it, with the legal basis recorded, and never as a default field. |
-| **Health information** | s26 explicit | Injury-on-duty records are health data. Restrict to owner + designated H&S role. Never syncs to a general worker device. |
+| **Health information** | s26 explicit | Injury-on-duty records are health data. Restrict to owner + designated H&S role. Never syncs to a general worker device.<br><br>**Medical certificates / sick notes (FR-333) are health data too, and this is the one people miss.** A sick note names a condition, or lets one be inferred, and it arrives through an ordinary-looking leave workflow that a manager runs. Same treatment as an IOD record: encrypted, owner + H&S only, never synced to a device.<br><br>⭐ **The approver sees the decision, not the diagnosis** (FR-334). A manager approving sick leave needs the dates, that a valid certificate exists, and who issued it. They do not need — and must not get — the certificate image or the condition. A leave module that shows the manager the note is a s26 breach wearing an HR workflow. |
 | **Criminal behaviour** | s26 explicit | Stock theft incidents may name suspects. **Record facts, not accusations.** A "suspect" field is a defamation and POPIA risk. Record what was observed and what was reported to SAPS, with the case number. |
 | **Trade union membership** | s26 explicit | Deduction of union dues reveals membership. Restrict visibility to payroll role only. |
 
@@ -260,6 +260,90 @@ Spray records must name the **registered** product and the **active ingredient**
 
 ## 5. Other
 
+### 5.1 Customs & Excise Act 91 of 1964 — the diesel refund 🇿🇦
+
+The one place in this product where compliance **pays the farmer** rather than costing them. Diesel used in primary farming activities carries a refund of the fuel levy and the Road Accident Fund levy. On a grain farm it is a five- or six-figure annual amount, and it is routinely under-claimed because the logbook does not exist.
+
+**The instrument:** Schedule No. 6, Part 3, Note 6. It prescribes both the eligibility and the record-keeping, and the record-keeping is where claims fail.
+
+| | As at July 2026 — **and already decaying** |
+|---|---|
+| Fuel levy refund | 148.0 c/ℓ |
+| RAF levy refund | 218.0 c/ℓ |
+| Combined | 366.0 c/ℓ |
+| Eligible portion, onland farming | **100%** of eligible purchases — **raised from 80% effective 1 April 2026** |
+| Claim window | Within **2 years** of the date of purchase |
+| Record retention | **5 years** from date of use or disposal, or the refund return, **whichever is later** |
+
+> ⚠️ **These are `regulatory_rates` rows, not constants.** Codes `FUEL_LEVY_REFUND_CPL`, `RAF_LEVY_REFUND_CPL`, `DIESEL_REFUND_PCT_ONLAND`, each with `effective_from`, `effective_to`, and a Gazette reference. The levies move in most February budgets and the percentage moved on 1 April 2026 — which means **a return covering a period spanning that date must apply 80% to the litres before it and 100% to the litres after.** This is the same structure as a pay period spanning 1 March, it is not an edge case, and it must be table-tested the same way ([ADR-0005](../03-architecture/adr/ADR-0005-regulatory-rates.md), FR-619).
+
+**Eligibility, and why capture must ask at the nozzle.** Fuel burnt in primary production on the farm is eligible. Fuel burnt on a public road is not. A farm that also runs contract haulage, or whose bakkie does the school run, must separate the two — and SARS expects the separation to be *in the logbook*, substantiated by meter readings and operational detail, not explained afterwards in a spreadsheet. Reconstructing the split in June for the year just gone is precisely the practice that fails an audit.
+
+| Build requirement | FR |
+|---|---|
+| Every litre classified eligible / non-eligible **at capture**, with vehicle and meter reading | FR-616 |
+| Refund return per tax period, with the logbook as annexure | FR-617 |
+| 5-year retention hold that overrides a deletion request | FR-618 |
+| Levies and percentage from `regulatory_rates`, resolved per litre by `occurred_at` | FR-619 |
+
+**We generate; the farmer submits.** We do not file with SARS on a farmer's behalf and we do not represent them. Producing a return is bookkeeping output; submitting one is an act with consequences that belong to the taxpayer.
+
+### 5.2 FAIS 37 of 2002 — the line the price dashboard must not cross 🇿🇦
+
+FR-9xx puts SAFEX grain, carcass, and fuel prices in front of farmers. **Publishing a price is information. Suggesting what to do about it is advice on a financial product, and it is licensed.** Grain futures and options are financial products under the FAIS Act; we are not an authorised Financial Services Provider and have no intention of becoming one.
+
+| Allowed | Not allowed |
+|---|---|
+| "White maize, Dec contract: R4,285/t, as at 24 Jul 2026" | "Prices are strong — good time to sell" |
+| A chart of the last 12 months | "Consider hedging 40% of your crop" |
+| An alert: "WMAZ crossed R4,300" | An alert: "Sell signal triggered" |
+| Naming the source and the licence | Anything phrased as a recommendation, score, or signal |
+
+**This is a code-review rejection criterion (FR-905), not a copy guideline.** The distinction is not about the sophistication of the analysis — a simple moving-average crossover presented as a signal is advice; a complex chart presented as data is not. When in doubt, render the number and stop.
+
+### 5.3 Employee monitoring — POPIA, RICA, and the LRA 🇿🇦
+
+The request that produces this section is always some version of *"the workers have farm phones; can we see where they are?"*. The engineering answer is [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md); this is the legal reasoning behind it.
+
+**Consent is the wrong instrument, and reaching for it is the standard mistake.** POPIA s11 offers six lawful grounds. In an employment relationship the power imbalance means consent is rarely freely given, and current practitioner guidance in South Africa is explicit that legitimate interest — not consent — is the appropriate basis for most employment processing. **This is the same reasoning that already excludes biometric attendance (§1.3), and it applies with more force to a farm worker than to an office employee.** A tick-box in onboarding paperwork signed as a condition of getting the job is not voluntary, specific, and informed.
+
+**Legitimate interest is available but it is not a formality.** It requires a documented **Legitimate Interests Assessment**: state the purpose, show the processing is *necessary* for that purpose, and show the data subject's rights do not override it. POPIA s10 independently requires minimality — no more intrusive than the purpose needs.
+
+> **Continuous worker location fails the necessity limb, and that is where the assessment ends.** Every purpose an owner names — was the work done, was the person on the farm, is the lone worker safe — is served by location stamped at a work event (FR-303) or by a worker-initiated panic alert (FR-340). Where a materially less intrusive means achieves the purpose, the more intrusive means is not necessary.
+
+| Instrument | The exposure |
+|---|---|
+| **POPIA s10, s11** | Minimality and lawful basis. Continuous tracking is disproportionate to the stated purposes and cannot rest on employee consent. |
+| **POPIA s19, s21** | We would be the **operator**. The farm's unlawful monitoring becomes our processing and our breach exposure. |
+| **RICA 70 of 2002** | Engaged where communications are intercepted. Monitoring an employee's messages without a lawful basis or informed consent is an offence, not a policy failure. |
+| **LRA 66 of 1995** | Covert monitoring taints any dismissal that relies on it. Employers have lost CCMA matters on evidence gathered by surveillance the employee was never told about. |
+| **Constitution s14** | The right to privacy does not stop at the farm gate, and it survives the employment contract. |
+
+**Build requirements, all of them enforced in code rather than policy:**
+
+| Requirement | Where |
+|---|---|
+| Location captured only as part of a work record; no standalone location table | ADR-0010 rule 2 |
+| No background location acquisition, ever | ADR-0010 rule 1 |
+| No screen reconstructs one person's movements over time | ADR-0010 rule 5 |
+| A worker can see every location captured about them | FR-328 |
+| Geofences attach to animals and assets, never people | FR-340 note |
+| Photo EXIF location stripped unless the record already captures location knowingly | FR-337 |
+
+**The commercial argument points the same way, which is worth stating because it is the one that survives a change of counsel.** The product sells SIZA and GlobalGAP compliance — SIZA being an *ethical trade* standard about how workers are treated. Worker surveillance inside a product whose proposition is "prove you treat your people properly" is a contradiction a social auditor is trained to find.
+
+### 5.4 Grievance mechanisms — a SIZA requirement, not a nice-to-have 🇿🇦
+
+The **SIZA Social Standard requires an effective grievance procedure** (requirement 6): grievances can be lodged, received, and resolved; every employee knows how it works regardless of seniority; and **the confidentiality and anonymity of the person using it is protected.** Unresolved or absent grievance handling is a finding at a social audit.
+
+This makes FR-331/332 an evidence generator for the SIZA pack (FR-320), not merely a worker-welfare feature. It also sets a hard access-control rule:
+
+> ⚠️ **A grievance must never be visible to the person it names, and that includes inferable visibility.** If a worker grieves about their manager and the manager sees it — or sees a count that went up, or a notification that something was filed — the mechanism is worse than absent, because the worker has been exposed by the tool that promised confidentiality. A grievance naming the owner needs a designated alternate recipient, or the confidentiality guarantee is void at the top of the chain where it matters most.
+
+Anonymity must be real: an anonymous grievance must not be re-identifiable through metadata — who was logged in, which device, what time. If we cannot deliver that, we say the grievance is *confidential* rather than *anonymous* and do not overclaim.
+
+### 5.5 Other instruments
+
 | Instrument | Relevance | Build requirement |
 |---|---|---|
 | **Consumer Protection Act 68 of 2008** | Our own T&Cs, cancellation, plain language | Plain-language T&Cs; no auto-renewal traps |
@@ -287,8 +371,14 @@ The system needs a live `compliance_obligations` table so the *farm* can see wha
 | Report notifiable disease | Diagnosis | Per event | Health event → prompt |
 | Removal certificate | Stock movement off-property | Per movement | Movement record |
 | Honour pre-harvest interval | Spray → harvest | Per event | Spray capture block |
+| Operate a grievance procedure | Employment | Continuous | Grievance module (FR-331) |
+| Retain medical certificates lawfully | Sick leave | Per event | Restricted document store (FR-333) |
+| Record training and induction | Per worker | Per hire + refresh | Document register (FR-335) |
 | GlobalGAP audit | Certification cycle | Annual | Checklist engine |
 | SIZA audit | Buyer requirement | Annual | Labour module → evidence pack |
+| Classify diesel use eligible / non-eligible | Every dispense | Per event | `fuel_transactions.refund_eligible` |
+| Submit diesel refund claim | Tax period | Per period, within 2 years of purchase | Refund return (FR-617) |
+| Retain fuel records 5 years | Diesel purchase or use | Continuous | Retention hold (FR-618) |
 
 ---
 
@@ -299,8 +389,10 @@ This is not a legal appendix. It is a **recurring release with a legislated dead
 | When | What | Owner |
 |---|---|---|
 | **February** | Watch for the NMW gazette. Update `regulatory_rates`. Test. Deploy before 1 March. | Backend |
+| **February** | **Budget speech: fuel levy and RAF levy.** Update `FUEL_LEVY_REFUND_CPL` / `RAF_LEVY_REFUND_CPL`. Usually effective early April. | Backend |
 | **March** | New wage rate live. Verify a real payroll run against a hand-calculated example. | Backend + QA |
 | **April** | Watch for the BCEA threshold gazette. Update. Deploy before 1 May. | Backend |
+| **April** | Fuel levy changes take effect. Verify a refund return spanning the change date applies **both** rates to their own litres. | Backend + QA |
 | **Ongoing** | Public holidays for the following year (including any proclaimed once-off days — elections have created these before). | Backend |
 | **Ongoing** | Chemical registrations and PHIs. | Data |
 | **Ongoing** | Notifiable disease list. | Data |
@@ -322,5 +414,11 @@ Primary sources should be consulted directly; these were the basis for this docu
 - Animal Identification Act 6 of 2002; Stock Theft Act 57 of 1959; Animal Diseases Act 35 of 1984
 - GlobalG.A.P. IFA standard (current version); SIZA Social and Environmental standards
 - Agricultural Remedies Act 36 of 1947 (pesticide registration)
+- Customs & Excise Act 91 of 1964, Schedule No. 6 Part 3 Note 6 — diesel refund system; SARS *Diesel Refund Scheme* guidance, including the increase to 100% for onland primary-sector claimants effective 1 April 2026
+- Financial Advisory and Intermediary Services Act 37 of 2002 — scope of "advice" on financial products (§5.2)
+- Regulation of Interception of Communications and Provision of Communication-Related Information Act 70 of 2002 (RICA) — workplace monitoring (§5.3)
+- Labour Relations Act 66 of 1995 — procedural fairness; evidence obtained by covert monitoring (§5.3)
+- SIZA Social Standard, requirement 6 — grievance procedures, including the confidentiality and anonymity obligation (§5.4)
+- Information Regulator / practitioner guidance on legitimate interest as the appropriate lawful basis in employment, in preference to consent (§5.3)
 
 **Currency check:** if today's date is materially later than July 2026, assume §2.2 is wrong and re-verify before writing code.

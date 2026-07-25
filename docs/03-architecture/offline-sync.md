@@ -45,10 +45,14 @@ They differ by **weeks**. A manager records a calving on 1 March, stays offline 
 
 | Class | Tables | Direction | Why |
 |---|---|---|---|
-| **Full** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers` | ↕ | This is the farm. It must work offline. |
-| **Reference** | `chemical_products`, `veterinary_products`, `regulatory_rates`, `notifiable_diseases`, `public_holidays` | ↓ read-only | **The PHI and withdrawal checks must work in the crush.** Without this on the device, US-032 and UC-010 are impossible. |
-| **Filtered** | `employees` (minus encrypted columns), attendance events | ↕ role-gated | Attendance is captured in the field; ID numbers and banking are not. |
-| **Never** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items` | ✗ | Money, health, audit. A stolen phone must not contain 40 workers' payslips (NFR-215). |
+| **Full** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers`, `vehicles`, `fuel_tanks`, `fuel_transactions` | ↕ | This is the farm. It must work offline. |
+| **Reference** | `chemical_products`, `veterinary_products`, `regulatory_rates`, `notifiable_diseases`, `public_holidays`, `market_price_series`, `market_prices` | ↓ read-only | **The PHI and withdrawal checks must work in the crush.** Without this on the device, US-032 and UC-010 are impossible. |
+| **Filtered** | `employees` (minus encrypted columns), attendance events, `tasks` (assignee's own + team), `documents` (metadata, health rows excluded) | ↕ role-gated | Attendance is captured in the field; ID numbers and banking are not. A worker's to-do list must work offline; the farm's whole task board must not be on their phone. |
+| **Never** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items`, `diesel_refund_returns`, `grievances` | ✗ | Money, health, audit. A stolen phone must not contain 40 workers' payslips (NFR-215) — or a grievance the manager it names could read off it. |
+
+**Fuel is full-sync and the refund return is not, deliberately.** The nozzle is in a shed with no signal, so `fuel_transactions` must be writable offline or the logbook is a reconstruction — and a reconstruction is what fails a SARS audit (FR-616). The *claim* computed from that logbook is a money artefact and sits with `payroll_runs` on the never list.
+
+**`market_prices` is the one reference feed with a second filter.** Beyond `jurisdiction`, the rule must also test `market_price_series.syncable`, because some series are licensed for display but not for redistribution to devices. A permissive rule here is a **licence breach** rather than a tenancy leak — different consequence, identical root cause — and `packages/sync/test/tenancy.spec.ts` asserts a non-syncable series never reaches a device. See [ADR-0009](adr/ADR-0009-market-data-feeds.md).
 
 **The retention window.** A farm with 50,000 animals and ten years of events will not fit in OPFS on a mid-range phone. Sync rules bound the client to a rolling window (default 24 months of events; all live animals; all reference data). The window is configurable per farm and degrades the *read* set only — **the write queue is never bounded and never evicted.**
 

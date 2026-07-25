@@ -281,6 +281,9 @@ Full detail: [deployment-guide.md](../05-operations/deployment-guide.md).
 | [0005](adr/ADR-0005-regulatory-rates.md) | Regulated values are data with effective dates | Accepted · amended by 0006 |
 | [0006](adr/ADR-0006-multi-jurisdiction.md) | SA-locked, jurisdiction-ready. Seams, not abstractions | Accepted |
 | [0007](adr/ADR-0007-authentication.md) | Passkeys + TOTP. Never SMS as a second factor | Accepted |
+| [0008](adr/ADR-0008-dev-hosting.md) | Development hosting | Accepted |
+| [0009](adr/ADR-0009-market-data-feeds.md) | Market price feeds tiered by licence; every feed optional | Accepted |
+| [0010](adr/ADR-0010-worker-monitoring.md) | We locate work, not workers. No continuous tracking, no geofences on people | Accepted |
 
 ---
 

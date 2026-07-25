@@ -64,6 +64,82 @@ assume §2.2 is wrong and say so rather than coding against it.
 - No `suspect` field on theft records. Ever. Defamation exposure for our customer,
   POPIA s26 criminal-behaviour processing exposure for us. Record facts.
 
+## Worker privacy, monitoring & voice (see legal-compliance.md §5.3, §5.4, ADR-0010)
+
+- NO BACKGROUND LOCATION. Ever. Location is acquired only when the user takes an
+  action that records one, and is written only as part of a work record —
+  attendance, task, event, photo. There is no location table and no location stream.
+
+- NO screen reconstructs one person's movements over time. The per-record data
+  exists; the PRODUCT must not assemble it into a track. If you are writing a query
+  that groups locations by user and orders by time, stop — that is ADR-0010 being
+  relitigated in code.
+
+- Geofences attach to ANIMALS and ASSETS, never people.
+
+- A GRIEVANCE IS INVISIBLE TO THE PERSON IT NAMES. Not filtered in the UI —
+  excluded by the RLS policy, with no notification and no count that changes.
+  An inference channel defeats it as completely as a read does.
+
+- Anonymous means anonymous END TO END: no employee id, no created_by, no audit_log
+  row pinning the insert to a session, no device identifier. If any of those cannot
+  be dropped, the UI says "confidential", never "anonymous". Overclaiming here
+  gets a worker identified.
+
+- MEDICAL CERTIFICATES ARE POPIA s26 HEALTH DATA. Same posture as injury_records:
+  owner + H&S only, encrypted, never synced to a device. The approver sees dates
+  and "certificate on file" — never the image, never the condition. A leave screen
+  that shows the manager the note is a s26 breach wearing an HR workflow.
+
+- ADMINISTERING A USER ACCOUNT ≠ ADMINISTERING AN EMPLOYEE RECORD. A manager may
+  add a worker, reset a PIN, assign work. A manager may NEVER read wage rate,
+  ID number, banking, or payslips. Two grants that look like one.
+
+- Task dashboards show STATUS, not productivity scores or rankings. A dismissal
+  cannot rest on a metric the worker never saw (LRA procedural fairness).
+
+- Photo EXIF: strip location UNLESS the photo attaches to a work record that
+  already captures location with the worker's knowledge. Retaining it silently
+  rebuilds the tracking ADR-0010 refused, through a feature nobody called tracking.
+
+## Fuel & the diesel refund (see legal-compliance.md §5.1)
+
+- The diesel refund levies and percentage are REGULATED VALUES. No exceptions:
+    rates.lookup(farm.jurisdiction, 'DIESEL_REFUND_PCT_ONLAND', txn.occurredAt)  ✅
+    const REFUND_PCT = 1.0                                                       ❌
+  The onland percentage moved 80% → 100% on 2026-04-01 and the levies move in
+  most February budgets.
+
+- A refund return spanning a rate change applies BOTH rates, PER LITRE, by the
+  date that litre was burnt. Never one percentage against a period total. This is
+  the same shape as a pay period spanning 1 March and it fails the same way —
+  confidently, in the farmer's favour, which is the direction SARS audits.
+
+- SARS / Customs & Excise naming lives ONLY in jurisdictions/za/, per ADR-0006.
+  A diesel refund module is a ZA implementation behind a generic interface,
+  not a `SarsDieselService` in packages/core.
+
+- Fuel volume is INTEGER MILLILITRES. Fuel unit price is INTEGER TENTHS OF A CENT
+  per litre (R21.95/ℓ = 21950). Totals are Money cents, rounded once. No floats,
+  same reasoning as money — a litre becomes a rand becomes a refund claim.
+
+- Tank balances are DERIVED from signed transactions, never a stored counter.
+  A counter and a ledger will disagree, and the ledger is the one SARS reads.
+
+- A dip variance is a fact about a TANK, never an allegation about a PERSON.
+  No employee on a `dip_adjustment`, no employee in a shrinkage report. Identical
+  reasoning to the theft `suspect` rule above, and asserted by test in both places.
+
+## Market prices (see legal-compliance.md §5.2)
+
+- Render the number. NEVER a recommendation, signal, score, or "good time to sell".
+  Grain futures are financial products under FAIS; we are not an authorised FSP.
+  This is a review rejection, not a copy preference. A moving-average crossover
+  presented as a signal is advice; a complex chart presented as data is not.
+
+- Every price carries its `asAt` in the visible layout — not a tooltip. A price
+  without its date is a liability, because a farmer will act on it.
+
 ## Tests
 
 - Table-driven, from the worked examples in legal-compliance.md §2.4.

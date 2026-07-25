@@ -305,6 +305,198 @@ Scenario: The block works offline
 
 ---
 
+## Epic: Delegation, worker voice & safety 🇿🇦
+
+### US-080 · A manager runs the team without seeing the payroll
+
+> **As a** farm owner
+> **I want** my manager to assign work and manage worker accounts
+> **So that** I am not the bottleneck — without handing them everyone's wages
+
+**FRs:** FR-321, FR-322, FR-323
+
+```gherkin
+Scenario: A manager administers a worker but not their money
+  Given I am a manager on Rietfontein
+  When I open worker "Petrus M"
+  Then I can assign tasks, reset the attendance PIN, and edit contact details
+  And I CANNOT see wage rate, ID number, banking details, or any payslip
+
+Scenario: Nobody elevates a peer or a superior
+  Given I am a manager
+  Then I can create and edit users with role "worker"
+  And I CANNOT create a manager, an owner, or a bookkeeper
+  And I CANNOT change my own role
+```
+
+### US-081 · A grievance about the manager
+
+> **As a** farm worker
+> **I want** to raise a grievance without the person it concerns finding out
+> **So that** using the procedure does not cost me my job
+
+**FRs:** FR-331, FR-332 · SIZA Social Standard requirement 6
+
+```gherkin
+Scenario: The subject of a grievance cannot see it
+  Given worker "Petrus M" lodges a grievance naming manager "Johan K"
+  When "Johan K" opens the grievance list
+  Then he sees NO row for it
+  And he receives NO notification
+  And any count or badge visible to him is UNCHANGED
+  And the grievance is visible to the owner
+
+Scenario: A grievance about the owner still has somewhere to go
+  Given a grievance names the farm owner
+  Then it routes to the designated alternate recipient
+  And the owner cannot see it
+
+Scenario: Anonymous means anonymous
+  Given a worker lodges a grievance anonymously
+  Then no employee id is stored on the row
+  And no audit_log row attributes the insert to a session
+  And no device identifier is retained
+```
+
+> **The third scenario is the one that gets skipped, and it is the one that matters.** Hiding a name in the UI while the audit trail records who inserted the row is not anonymity — it is a promise we broke without noticing. If we cannot pass this test, the UI must say *confidential*, not *anonymous*.
+
+### US-082 · Sick leave without disclosing the diagnosis
+
+> **As a** farm worker
+> **I want** my medical certificate seen only by the people who must see it
+> **So that** my health is not workplace conversation
+
+**FRs:** FR-333, FR-334 · POPIA s26
+
+```gherkin
+Scenario: The approver sees a decision, not a diagnosis
+  Given a worker uploads a medical certificate with a sick leave request
+  When a manager opens the request to approve it
+  Then they see the dates, the leave balance, and "certificate on file"
+  And they CANNOT open, download, or preview the certificate
+  And they CANNOT see the condition or the practitioner's notes
+
+Scenario: The certificate never reaches a device
+  Given the certificate is stored
+  Then it is not present in any device's local database
+  And a stolen phone contains no medical certificate
+```
+
+### US-083 · The panic button in a far camp
+
+> **As a** farm worker alone in a distant camp
+> **I want** to summon help and have my location go with it
+> **So that** being alone is not being unreachable
+
+**FRs:** FR-340, FR-341 · [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md)
+
+```gherkin
+Scenario: The worker sends their location, nobody takes it
+  Given I am a worker with the app installed
+  When I trigger the panic alert
+  Then my current location is sent to the owner and manager immediately
+  And it escalates if nobody acknowledges within the configured window
+
+Scenario: It queues when there is no signal
+  Given the device is offline when I trigger the alert
+  Then the alert queues and fires on reconnect
+  And it shows the ORIGINAL trigger time, clearly marked as delayed
+
+Scenario: No location is taken without me
+  Given I have not triggered an alert and am not capturing a work record
+  Then the app acquires no location
+  And no screen anywhere reconstructs my movements over time
+```
+
+> **The third scenario is the executable form of [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md).** It is written as a test because the constraint is a product decision, and product decisions do not enforce themselves.
+
+---
+
+## Epic: Fuel & fleet 🇿🇦
+
+### US-070 · Filling a tractor at the diesel tank
+
+> **As a** farm manager
+> **I want** to log fuel out of the bulk tank in the time it takes the nozzle to run
+> **So that** the logbook is a record of what happened rather than a reconstruction in June
+
+**FRs:** FR-510, FR-512, FR-514, FR-517, FR-616
+
+```gherkin
+Scenario: Dispense with no signal at the fuel shed
+  Given the device is offline
+  And the farm has a bulk tank "Main diesel" with a calculated balance of 4,200 ℓ
+  When I record 180 ℓ dispensed to tractor "T-04" at odometer-hours 3,412
+  Then the transaction is written locally without a server round trip
+  And the tank balance shows 4,020 ℓ immediately
+  And the litres are classified eligible because "T-04" is not marked road_use
+
+Scenario: The bulk delivery is one screen
+  Given a tanker has delivered into "Main diesel"
+  When I record 10,000 ℓ at R21.95 per litre with the delivery note photographed
+  Then the tank balance increases by 10,000 ℓ
+  And the photo is queued for upload without blocking the capture
+  And an expense is recorded against the farm at R219,500.00
+
+Scenario: A road-use vehicle defaults to non-eligible
+  Given bakkie "B-02" is marked road_use
+  When I dispense 60 ℓ to "B-02"
+  Then the litres default to NON-eligible for the diesel refund
+  And I may override with a reason, which is recorded
+```
+
+### US-071 · The dip does not match the book
+
+> **As a** farm owner
+> **I want** to see the gap between what the tank should hold and what it holds
+> **So that** I find a leak or a loss in the week it happens, not at year end
+
+**FRs:** FR-515
+
+```gherkin
+Scenario: A measured reading reconciles the calculated balance
+  Given "Main diesel" has a calculated balance of 4,020 ℓ
+  When I enter a measured dip reading of 3,890 ℓ
+  Then a dip_adjustment of −130 ℓ is recorded with a reason
+  And the variance remains visible as its own row, not absorbed into a corrected total
+
+Scenario: The shrinkage report accuses nobody
+  Given a dip_adjustment of −130 ℓ exists
+  When I open the fuel variance report
+  Then it names the tank, the period, and the litres
+  And it names NO employee
+```
+
+> **The second scenario is the same rule as US-031's missing suspect field, and it is asserted by test for the same two reasons** — defamation exposure for our customer, POPIA s26 exposure for us. A farmer may well have a suspicion. The system records the litres.
+
+### US-072 · The diesel refund return
+
+> **As a** farm owner
+> **I want** a refund return I can hand to my accountant with the logbook behind it
+> **So that** I claim what I am owed and survive the audit if it comes
+
+**FRs:** FR-617, FR-619
+
+```gherkin
+Scenario: A period spanning the 1 April 2026 percentage change
+  Given the diesel refund percentage for onland farming was 80% before 2026-04-01
+  And 100% from 2026-04-01
+  And the farm dispensed 5,000 eligible ℓ in March 2026 and 6,000 eligible ℓ in April 2026
+  When I generate a refund return for 2026-03-01 to 2026-04-30
+  Then the March litres are refunded at 80%
+  And the April litres are refunded at 100%
+  And the return pins the exact regulatory_rates rows it applied
+
+Scenario: The return is generated, never filed
+  When the return is complete
+  Then I can export it with the logbook as an annexure
+  And nothing is submitted to SARS on my behalf
+```
+
+> The first scenario is structurally the payroll period spanning 1 March. If it is written as a single percentage applied to a period total, it is wrong, and it is wrong in the farmer's favour — which is the direction SARS audits.
+
+---
+
 ## Epic: Sync & conflict
 
 ### US-040 · Two devices record the same event
@@ -444,10 +636,12 @@ Scenario: Scoped, time-limited grant
 | Livestock core, offline capture | 2 |
 | Crops core | 2 |
 | Labour & wages 🇿🇦 | 3 |
+| Delegation, worker voice & safety 🇿🇦 | 3 |
 | Finance & inventory | 4 |
 | Compliance 🇿🇦 | 4 |
+| Fuel & fleet 🇿🇦 | 4 |
 | Reporting, import/export, hardening | 5 |
-| Integrations | 6 |
+| Integrations (incl. market price board) | 6 |
 | Intelligence | 7 |
 
 Full detail: [roadmap.md](../04-delivery/roadmap.md).

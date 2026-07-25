@@ -11,7 +11,7 @@ These are not style preferences. Each one exists because violating it breaks syn
 | Rule | Why |
 |---|---|
 | **UUIDv7 primary keys, client-generated** | The client is offline. It cannot ask a sequence for an ID. v7 (not v4) because it is time-ordered, so index locality survives. |
-| **`farm_id` on every domain table** | Tenancy. RLS depends on it. A table without it cannot be secured. |
+| **`farm_id` on every domain table** | Tenancy. RLS depends on it. A table without it cannot be secured. **The only exemption is reference data that belongs to nobody** — `regulatory_rates`, `chemical_products`, `market_prices`. These carry `jurisdiction` instead and are read-only to every client. If you are reaching for this exemption for anything a farmer typed, you are wrong. |
 | **Soft delete (`deleted_at timestamptz`)** | Sync needs tombstones; audit needs history; compliance needs retention. A hard `DELETE` breaks replication *and* destroys records the BCEA requires us to keep. |
 | **`created_at`, `updated_at`, `created_by`, `updated_by`** | Audit. Non-negotiable. |
 | **`occurred_at` on anything that happened** | **The most important column in the database.** When it happened on the farm ≠ when the row was written. They differ by weeks. Reports use `occurred_at`. Sync uses `updated_at`. Confusing them puts a March calving in the April report. |
@@ -470,6 +470,116 @@ CREATE TABLE injury_records (
 );
 ```
 
+### Delegation and tasks
+
+```sql
+CREATE TYPE task_status AS ENUM ('open','in_progress','blocked','done','cancelled');
+
+CREATE TABLE tasks (
+  id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  farm_id       uuid NOT NULL REFERENCES farms(id),
+  title         text NOT NULL,
+  description   text,
+  status        task_status NOT NULL DEFAULT 'open',
+  priority      smallint NOT NULL DEFAULT 2,
+
+  -- ⭐ The delegation chain, recorded rather than inferred. "Who told me to do
+  --    this" is the question that matters when work goes wrong.
+  assigned_by_user_id uuid NOT NULL REFERENCES users(id),
+  assigned_to_user_id uuid REFERENCES users(id),
+  team_id             uuid,
+  parent_task_id      uuid REFERENCES tasks(id),   -- manager re-delegates a slice
+
+  due_at        timestamptz,
+  occurred_at   timestamptz,                        -- when the work was actually done
+  completed_at  timestamptz,
+  completed_by_user_id uuid REFERENCES users(id),
+  requires_completion_photo boolean NOT NULL DEFAULT false,   -- FR-338
+
+  enterprise_id uuid REFERENCES enterprises(id),
+  land_unit_id  uuid REFERENCES land_units(id),
+  recurrence_rule text,                             -- RFC 5545 RRULE; NULL = one-off
+  recurrence_parent_id uuid REFERENCES tasks(id),
+
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid REFERENCES users(id),
+  deleted_at timestamptz
+);
+CREATE INDEX tasks_assignee ON tasks (farm_id, assigned_to_user_id, status, due_at);
+CREATE INDEX tasks_due      ON tasks (farm_id, due_at) WHERE status <> 'done';
+```
+
+**Role administration is a rule, not a column** (FR-322/323). A user may create or edit a `farm_users` row only for a role strictly below their own, enforced in a policy — and it is separate from access to the `employees` row for the same person. **A manager may administer a worker's account and may not see their wage, ID number, or banking.** Two different grants that look like one; keeping them separate is the whole of FR-323.
+
+### Grievances 🇿🇦
+
+```sql
+CREATE TYPE grievance_status AS ENUM ('lodged','acknowledged','investigating','resolved','withdrawn');
+
+CREATE TABLE grievances (
+  id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  farm_id       uuid NOT NULL REFERENCES farms(id),
+
+  -- ⭐ NULL when lodged anonymously, and it must be genuinely null — not a
+  --    "hidden" flag over a populated column that a support query can read back.
+  raised_by_employee_id uuid REFERENCES employees(id),
+  is_anonymous  boolean NOT NULL DEFAULT false,
+
+  -- ⭐ Who this grievance is ABOUT. This column exists solely so the row can be
+  --    HIDDEN from them (FR-332). It is never used to display anything to them.
+  concerns_user_id uuid REFERENCES users(id),
+  routed_to_user_id uuid NOT NULL REFERENCES users(id),
+
+  category      text NOT NULL,
+  body          text NOT NULL,
+  status        grievance_status NOT NULL DEFAULT 'lodged',
+  resolution    text,
+  resolved_at   timestamptz,
+  occurred_at   timestamptz NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  deleted_at    timestamptz
+);
+```
+
+> ⚠️ **`grievances` is server-only and it is exempt from the `audit_log` pattern in one respect: the audit row must not leak the body to a farm-scoped reader.** The confidentiality guarantee (FR-332) is worthless if the manager complained about can read the grievance out of the audit trail, and "the audit log is admin-only" is not an answer on a farm where the owner's brother is the manager.
+>
+> **Anonymity must survive metadata.** If `is_anonymous`, then no `created_by`, no device identifier, and no `audit_log` row that pins the insert to a session. If we cannot deliver that end-to-end, the UI says **confidential**, not **anonymous**, because overclaiming here gets a worker identified.
+
+### Documents 🇿🇦
+
+```sql
+CREATE TYPE document_kind AS ENUM (
+  'contract','payslip_ack','policy','induction','training_certificate',
+  'licence','permit','id_document','medical_certificate','other'
+);
+
+CREATE TABLE documents (
+  id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  farm_id       uuid NOT NULL REFERENCES farms(id),
+  employee_id   uuid REFERENCES employees(id),
+  kind          document_kind NOT NULL,
+  title         text NOT NULL,
+  object_key    text NOT NULL,          -- object store; same convention as photo_key
+  issued_at     date,
+  expires_at    date,                   -- drives the renewal alert (FR-809)
+  -- ⭐ POPIA s26. TRUE for medical_certificate, always. Restricts every read path.
+  is_health_data boolean NOT NULL DEFAULT false,
+  acknowledged_at timestamptz,          -- FR-336
+  acknowledged_language char(5),        -- which language it was presented in
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid REFERENCES users(id),
+  deleted_at timestamptz,
+  CHECK (kind <> 'medical_certificate' OR is_health_data)
+);
+CREATE INDEX documents_expiry ON documents (farm_id, expires_at)
+  WHERE expires_at IS NOT NULL AND deleted_at IS NULL;
+```
+
+**The `CHECK` is the point.** A medical certificate cannot be inserted as ordinary data by an endpoint that forgot, because the constraint refuses it. Health-data restriction (FR-334) is then one predicate on one column rather than a rule every read path has to remember — and the approver's leave screen selects the leave row and `expires_at`, never the `object_key`.
+
 ---
 
 ## 7. Compliance 🇿🇦
@@ -591,7 +701,208 @@ CREATE TABLE compliance_items (
 
 ---
 
-## 8. Audit
+## 8. Fleet & fuel
+
+FR-509…518, FR-616…619. Bulk diesel is bought, stored on the property, drawn down vehicle by vehicle, stolen, and refunded by SARS. Four of those five need a ledger with a balance.
+
+```sql
+CREATE TYPE fuel_type    AS ENUM ('diesel_50ppm','diesel_500ppm','petrol_93','petrol_95','lpg','other');
+CREATE TYPE meter_type   AS ENUM ('odometer','hour_meter','none');
+CREATE TYPE vehicle_kind AS ENUM ('tractor','bakkie','truck','harvester','loader','atv',
+                                  'implement','pump','generator','other');
+
+CREATE TABLE vehicles (
+  id             uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  farm_id        uuid NOT NULL,
+  enterprise_id  uuid REFERENCES enterprises(id),  -- default attribution, overridable per dispense
+  fleet_number   text NOT NULL,                    -- what is painted on the door
+  registration   text,                             -- NULL for an unlicensed implement
+  kind           vehicle_kind NOT NULL,
+  make           text, model text, year int,
+  fuel_type      fuel_type,
+  tank_capacity_ml  integer,
+  meter           meter_type NOT NULL DEFAULT 'none',
+  meter_reading   integer,                         -- last known: km, or engine hours
+  road_use        boolean NOT NULL DEFAULT false,  -- ⭐ drives the SARS eligible/non-eligible default
+  -- FR-504 equipment register is specified but not yet schema'd (Phase 4). When it
+  -- lands, a vehicle IS equipment: add `equipment_id uuid REFERENCES equipment(id)`
+  -- additively and backfill. Do NOT duplicate maintenance scheduling here.
+  photo_key       text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz,
+  UNIQUE (farm_id, fleet_number)
+);
+
+CREATE TABLE fuel_tanks (
+  id             uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  farm_id        uuid NOT NULL,
+  name           text NOT NULL,                    -- 'Main diesel', 'Workshop petrol'
+  fuel_type      fuel_type NOT NULL,
+  capacity_ml    integer NOT NULL,
+  low_threshold_ml integer,                        -- FR-514 warning
+  land_unit_id   uuid REFERENCES land_units(id),
+  location          geometry(Point,4326),
+  location_geojson  text,                          -- ⭐ PostGIS does not sync. Both, always.
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz,
+  UNIQUE (farm_id, name)
+);
+```
+
+### The ledger
+
+```sql
+CREATE TYPE fuel_txn_type AS ENUM (
+  'delivery',        -- bulk fill INTO a reserve            (+ tank)
+  'dispense',        -- reserve OUT to a vehicle/activity   (− tank)
+  'direct_purchase', -- filling station straight to vehicle (no tank)
+  'transfer',        -- tank to tank
+  'dip_adjustment',  -- measured reading reconciles the calculated balance
+  'return'           -- fuel put back (drained, over-drawn)  (+ tank)
+);
+
+CREATE TABLE fuel_transactions (
+  id             uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  farm_id        uuid NOT NULL,
+  type           fuel_txn_type NOT NULL,
+
+  occurred_at    timestamptz NOT NULL,             -- when the nozzle was in the tank
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  synced_at      timestamptz,
+
+  tank_id        uuid REFERENCES fuel_tanks(id),   -- NULL only for 'direct_purchase'
+  counter_tank_id uuid REFERENCES fuel_tanks(id),  -- 'transfer' destination
+  vehicle_id     uuid REFERENCES vehicles(id),
+  fuel_type      fuel_type NOT NULL,
+
+  -- ⭐ SIGNED millilitres. The tank balance is one SUM, and it cannot disagree
+  --    with itself. Never store a magnitude plus a direction flag.
+  volume_ml      integer NOT NULL,
+  meter_reading  integer,                          -- odometer km / engine hours at the nozzle
+  price_per_litre_tc integer,                      -- ⭐ TENTHS of a cent. R21.95/ℓ = 21950
+  total_cost_cents   bigint,                       -- Money. Rounded once, here.
+
+  -- attribution (FR-517) — captured at the nozzle, not reconstructed in June
+  enterprise_id  uuid REFERENCES enterprises(id),
+  land_unit_id   uuid REFERENCES land_units(id),
+  activity       text,
+  operator_employee_id uuid REFERENCES employees(id),
+
+  -- SARS (FR-616)
+  refund_eligible boolean,                         -- NULL = not yet classified
+  eligibility_reason text,
+
+  supplier       text,
+  invoice_ref    text,
+  attachment_keys text[],                          -- photographed delivery note; same
+                                                   -- object-store convention as animals.photo_key
+  location          geometry(Point,4326),
+  location_geojson  text,
+  notes          text,
+  created_by     uuid REFERENCES users(id),
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  deleted_at     timestamptz,
+
+  CHECK (type = 'direct_purchase' OR tank_id IS NOT NULL),
+  CHECK (volume_ml <> 0)
+);
+
+CREATE INDEX fuel_txn_farm_occurred ON fuel_transactions (farm_id, occurred_at DESC);
+CREATE INDEX fuel_txn_tank    ON fuel_transactions (tank_id, occurred_at DESC) WHERE tank_id IS NOT NULL;
+CREATE INDEX fuel_txn_vehicle ON fuel_transactions (vehicle_id, occurred_at DESC) WHERE vehicle_id IS NOT NULL;
+CREATE INDEX fuel_txn_refund  ON fuel_transactions (farm_id, refund_eligible, occurred_at);
+```
+
+**Why this is not in `events`, when §5 says everything is an event.** Because the tank balance is arithmetic, and `events.payload` is deliberately opaque jsonb. A running reserve level, a dip variance, and an eligible-litre total for a tax period are all `SUM()` over a signed integer column — that wants a typed column and a partial index, not a GIN lookup into jsonb on every read. The cost of this decision is explicit and must be paid, not assumed: `fuel_transactions` needs its **own** PowerSync sync rule, its **own** RLS policy, and its **own** row in `packages/sync/test/tenancy.spec.ts`. A new table that quietly skips those is exactly the leak §12 warns about.
+
+**Tank balance** — one query, derived, never a stored counter that drifts:
+
+```sql
+CREATE VIEW fuel_tank_balances AS
+  SELECT t.id AS tank_id, t.farm_id, t.capacity_ml,
+         COALESCE(SUM(x.volume_ml), 0) AS balance_ml
+  FROM fuel_tanks t
+  LEFT JOIN fuel_transactions x
+         ON x.tank_id = t.id AND x.deleted_at IS NULL
+  WHERE t.deleted_at IS NULL
+  GROUP BY t.id;
+```
+
+A `dip_adjustment` is how a measured reading meets the calculated one: the farmer enters what the dipstick says, and the system writes the **difference** as a signed transaction with a reason. The variance is therefore visible forever as its own row rather than silently absorbed into a corrected total.
+
+> **⚠️ A dip variance is a fact about a tank, never an allegation about a person.** `fuel_transactions` has an `operator_employee_id` on a *dispense* because a farmer needs to know which machine drew fuel; a `dip_adjustment` has none, and the shrinkage report must not name one. This is the same rule, for the same two reasons — defamation exposure for our customer and POPIA s26 exposure for us — that keeps a suspect field off the stock theft pack (FR-603). It is asserted by test in both places.
+
+### SARS diesel refund
+
+```sql
+CREATE TABLE diesel_refund_returns (
+  id             uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  farm_id        uuid NOT NULL,
+  period_start   date NOT NULL,
+  period_end     date NOT NULL,
+  eligible_ml     bigint NOT NULL,
+  non_eligible_ml bigint NOT NULL,
+  refund_cents    bigint NOT NULL,
+  -- ⭐ The rate rows actually applied, pinned. A return regenerated in 2029
+  --    must reproduce to the cent, and the percentage changed on 2026-04-01.
+  rate_refs      jsonb NOT NULL,
+  generated_at   timestamptz NOT NULL DEFAULT now(),
+  generated_by   uuid REFERENCES users(id),
+  submitted_at   timestamptz,                      -- farmer tells us; we never file
+  UNIQUE (farm_id, period_start, period_end)
+);
+```
+
+Rates resolve through `rates.lookup(farm.jurisdiction, code, occurred_at)` per [ADR-0005](adr/ADR-0005-regulatory-rates.md) — codes `DIESEL_REFUND_PCT_ONLAND`, `FUEL_LEVY_REFUND_CPL`, `RAF_LEVY_REFUND_CPL`. **Per litre, by the date that litre was burnt, not by the return's end date.** A return for the period spanning 1 April 2026 refunds 80% of the litres before it and 100% of the litres after. This is structurally identical to a pay period spanning 1 March and it is tested the same way.
+
+---
+
+## 9. Market prices (reference)
+
+FR-901…908. Server-populated, read-only on the device, and the only data in the product that cannot be produced offline.
+
+```sql
+CREATE TABLE market_price_series (
+  id             uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  jurisdiction   char(2) NOT NULL DEFAULT 'ZA',
+  code           text NOT NULL UNIQUE,   -- 'SAFEX_WMAZ','BEEF_A2','DIESEL_50PPM_INLAND'
+  label_en text NOT NULL, label_af text NOT NULL,
+  unit           text NOT NULL,          -- 'ZAR_PER_TONNE','ZAR_PER_KG','ZAR_PER_LITRE'
+  enterprise_types text[] NOT NULL,      -- FR-906: which farms ever see this
+  source         text NOT NULL,          -- 'DMRE','JSE','RMAA'
+  source_url     text,
+  attribution    text,                   -- FR-908: what the licence obliges us to display
+  cadence        text NOT NULL,          -- 'monthly','weekly','daily','intraday_delayed'
+  -- ⭐ Licence enforced as DATA, not as a thing someone remembers.
+  --    A series we may display but NOT redistribute to devices sets this false,
+  --    and the sync rule reads it. See ADR-0009.
+  syncable       boolean NOT NULL DEFAULT false,
+  active         boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE market_prices (
+  id             uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  series_id      uuid NOT NULL REFERENCES market_price_series(id),
+  contract_month date,                   -- SAFEX only; NULL for spot
+  value_micros   bigint NOT NULL,        -- millionths of the unit. No floats, ever.
+  -- ⭐ THREE timestamps, and the first one is the one the UI must show (FR-904).
+  as_at          timestamptz NOT NULL,   -- what the SOURCE says the price is as at
+  fetched_at     timestamptz NOT NULL,   -- when we pulled it
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (series_id, contract_month, as_at)
+);
+CREATE INDEX market_prices_series_asat ON market_prices (series_id, as_at DESC);
+```
+
+**No `farm_id`, and that is correct** — a maize price is not farm data. It is the same class as `regulatory_rates`: reference data, filtered on sync by the farm's `jurisdiction`, never written by a client. It is therefore the one table in this document exempt from the `farm_id` rule in §1, and the exemption is stated here so a reviewer does not have to guess.
+
+**`as_at` vs `fetched_at` is the whole feature.** A weekly carcass price fetched this morning is still last week's price, and a farmer who reads it as today's will price a load wrong. The UI renders `as_at`; `fetched_at` exists so we can tell a stale *feed* from a stale *market*.
+
+---
+
+## 10. Audit
 
 ```sql
 CREATE TABLE audit_log (
@@ -619,7 +930,7 @@ REVOKE UPDATE, DELETE ON audit_log FROM werf_app;
 
 ---
 
-## 9. RLS
+## 11. RLS
 
 Every domain table. No exceptions.
 
@@ -652,7 +963,67 @@ CREATE POLICY injury_role ON injury_records
       AND role IN ('owner')
       AND deleted_at IS NULL
   ));
+
+-- Fuel: the LOG is operational, the CLAIM is financial. Different policies,
+-- on purpose — a manager must be able to dispense, and must not see the refund.
+CREATE POLICY fuel_txn_tenant ON fuel_transactions
+  USING (farm_id IN (
+    SELECT farm_id FROM farm_users
+    WHERE user_id = current_setting('app.user_id')::uuid
+      AND deleted_at IS NULL
+      AND (expires_at IS NULL OR expires_at > now())
+  ));
+
+CREATE POLICY diesel_refund_role ON diesel_refund_returns
+  USING (farm_id IN (
+    SELECT farm_id FROM farm_users
+    WHERE user_id = current_setting('app.user_id')::uuid
+      AND role IN ('owner','bookkeeper')
+      AND deleted_at IS NULL
+  ));
+
+-- ⭐ Grievances: tenant scope is NOT enough. The person a grievance names must
+--    not see it, even though they are a legitimate user of that farm (FR-332).
+--    This is the only policy in the system that excludes a user from their OWN
+--    farm's data, and it is deliberate.
+CREATE POLICY grievance_access ON grievances
+  USING (
+    farm_id IN (
+      SELECT farm_id FROM farm_users
+      WHERE user_id = current_setting('app.user_id')::uuid
+        AND role IN ('owner','manager')
+        AND deleted_at IS NULL
+    )
+    AND (concerns_user_id IS NULL
+         OR concerns_user_id <> current_setting('app.user_id')::uuid)
+    AND (routed_to_user_id = current_setting('app.user_id')::uuid
+         OR EXISTS (SELECT 1 FROM farm_users fu
+                    WHERE fu.farm_id = grievances.farm_id
+                      AND fu.user_id = current_setting('app.user_id')::uuid
+                      AND fu.role = 'owner'))
+  );
+
+-- Health documents: POPIA s26. Same posture as injury_records.
+CREATE POLICY documents_health ON documents
+  USING (
+    farm_id IN (
+      SELECT farm_id FROM farm_users
+      WHERE user_id = current_setting('app.user_id')::uuid
+        AND deleted_at IS NULL
+    )
+    AND (NOT is_health_data
+         OR EXISTS (SELECT 1 FROM farm_users fu
+                    WHERE fu.farm_id = documents.farm_id
+                      AND fu.user_id = current_setting('app.user_id')::uuid
+                      AND fu.role = 'owner'))
+  );
 ```
+
+**`grievance_access` deserves the extra reading it demands.** Every other policy in this file answers "is this user in this farm". This one also answers "is this user the subject of this row", and excludes them if so. That is unusual enough to be worth a test with a name that says what it protects: a manager who is the subject of a grievance sees zero rows, zero notifications, and **no count that changed**. An inference channel defeats the guarantee as thoroughly as a read does.
+
+`tasks` takes the ordinary tenant policy, plus a worker-scoped variant: a `worker` reads tasks assigned to them or their team, and nothing else. A worker who can enumerate the farm's whole task list can enumerate the farm's whole operation.
+
+`vehicles` and `fuel_tanks` take the same tenant policy as `animals`. **`market_price_series` and `market_prices` are the one pair with no `farm_id` and therefore no tenant policy** — they are reference data like `regulatory_rates`, granted `SELECT` to the application role and written only by the server-side poller. That exemption is stated in §9 and repeated here so a reviewer applying "every domain table, no exceptions" does not go looking for a column that should not exist.
 
 **`FORCE ROW LEVEL SECURITY` matters.** Without it, the table owner bypasses RLS, and the application role is often the owner in a small deployment. That is a cross-tenant leak waiting for the first migration that runs as owner.
 
@@ -660,22 +1031,30 @@ CREATE POLICY injury_role ON injury_records
 
 ---
 
-## 10. Sync classification
+## 12. Sync classification
 
 Every table is one of these. This table is the input to both the sync rules and the tenancy test.
 
 | Class | Tables | Rule |
 |---|---|---|
-| **Full sync** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers` | Farm-scoped, bidirectional |
-| **Reference sync** | `chemical_products`, `veterinary_products`, `regulatory_rates`, `notifiable_diseases`, `public_holidays` | **Filtered by the farm's `jurisdiction`**, read-only. Required for offline PHI/withdrawal checks. A ZA device never downloads Namibian withdrawal periods. |
-| **Filtered sync** | `employees` (minus encrypted columns), `attendance` events | Role-gated |
-| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
+| **Full sync** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers`, `vehicles`, `fuel_tanks`, `fuel_transactions` | Farm-scoped, bidirectional |
+| **Reference sync** | `chemical_products`, `veterinary_products`, `regulatory_rates`, `notifiable_diseases`, `public_holidays`, `market_price_series`, `market_prices` | **Filtered by the farm's `jurisdiction`**, read-only. Required for offline PHI/withdrawal checks. A ZA device never downloads Namibian withdrawal periods. |
+| **Filtered sync** | `employees` (minus encrypted columns), `attendance` events, `tasks`, `documents` (metadata only, **excluding `is_health_data` rows**) | Role-gated |
+| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted`, `diesel_refund_returns`, `grievances` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
 
 The "server only" row is a security decision as much as an architectural one. A stolen phone should not contain 40 workers' payslips.
 
+**The fuel tables sit on both sides of that line deliberately.** `fuel_transactions` is full-sync because the nozzle is in a shed with no signal and a log that needs a network is not a log. `diesel_refund_returns` is server-only because it is a money artefact and a statutory submission, and it belongs with `payroll_runs` for the same reason. The device holds the evidence; the server holds the claim.
+
+**`tasks` sync, but only the assignee's own.** A worker's device holds the work assigned to them and their team, because a to-do list that needs a network is not a to-do list on a farm. It does not hold the farm's whole task board.
+
+**`grievances` never sync, and `documents` sync as metadata with health rows excluded.** A grievance on a device is a grievance on a phone that a manager can pick up, and the confidentiality guarantee (FR-332) cannot survive that. Medical certificates are POPIA s26 and sit with `injury_records`. The device may know that a leave request has a certificate on file; it may not hold the certificate. **This is the one place where the offline-first default is deliberately overridden, and the override is the feature** — an approver works from dates and a boolean, both of which sync fine.
+
+**`market_prices` is reference sync with one extra condition.** The sync rule must filter on `market_price_series.syncable`, because some series are licensed for display but not for redistribution ([ADR-0009](adr/ADR-0009-market-data-feeds.md)). A permissive rule here is not a tenancy leak — it is a **licence breach**, which is a different failure with the same root cause, and `packages/sync/test/tenancy.spec.ts` gains a case asserting a non-syncable series never reaches a device.
+
 ---
 
-## 11. Retention
+## 13. Retention
 
 Enforced by a nightly job, per [legal-compliance.md §1.6](../00-business/legal-compliance.md).
 
@@ -692,12 +1071,26 @@ UNION ALL
   SELECT 'events', id, deleted_at
   FROM events
   WHERE deleted_at < now() - interval '30 days'
-    AND type NOT IN ('treatment','spray','attendance');  -- these have statutory holds
+    AND type NOT IN ('treatment','spray','attendance')   -- these have statutory holds
+UNION ALL
+  -- ⚠️ FIVE years, and it is measured from the LATER of use and the refund return.
+  -- Customs & Excise Act Schedule 6 Part 3 Note 6. This is the LONGEST hold in
+  -- the system — longer than the BCEA's three — so it is the one that decides
+  -- how long a "delete my farm" request actually takes to complete.
+  SELECT 'fuel_transactions', x.id, x.deleted_at
+  FROM fuel_transactions x
+  WHERE x.deleted_at < now() - interval '5 years'
+    AND x.occurred_at  < now() - interval '5 years'
+    AND NOT EXISTS (
+      SELECT 1 FROM diesel_refund_returns r
+      WHERE r.farm_id = x.farm_id
+        AND x.occurred_at BETWEEN r.period_start AND r.period_end
+        AND r.generated_at > now() - interval '5 years');
 ```
 
 ---
 
-## 12. Migrations
+## 14. Migrations
 
 Drizzle Kit. `pnpm db:generate` diffs the schema and writes SQL; review it before committing — generated migrations are a draft, not an artifact.
 

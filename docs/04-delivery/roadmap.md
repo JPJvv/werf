@@ -131,7 +131,10 @@ This phase proves the two riskiest bets in the product. If offline-first does no
 | 3f | Payslips (s33), contracts (s29), **in the employee's language** | FR-302, 308; SRS-20 |
 | 3g | **BCEA s31 record — the inspector-at-the-gate report** | **US-023** |
 | 3h | Leave; UIF/SARS/EFT exports | FR-310, 312, 313, 316 |
-| 3i | **External labour-law review** | Sign-off, in writing |
+| 3i | **Delegation chain + tasks + to-do calendar**; role administration split from employee-record access | FR-321…327 |
+| 3j | 🇿🇦 **Worker self-service**: own hours/payslips/leave, leave requests, payslip queries | FR-328…330 |
+| 3k | 🇿🇦 **Grievances + restricted document store**: anonymity, the not-visible-to-the-subject rule, medical certificates as s26 health data | **FR-331…336**; the grievance-confidentiality test |
+| 3l | **External labour-law review** | Sign-off, in writing |
 
 **Gate:**
 ```
@@ -141,6 +144,10 @@ This phase proves the two riskiest bets in the product. If offline-first does no
 ✓ Period spanning 1 March uses BOTH rates      ← the every-year case
 ✓ Correction run for Feb uses Feb's rate
 ✓ NO regulated constant in code (lint rule)
+✓ A manager CANNOT read a grievance naming them — no row, no count, no notification
+✓ An anonymous grievance is not re-identifiable from audit or device metadata
+✓ A manager approving sick leave CANNOT retrieve the certificate     ← POPIA s26
+✓ A manager CANNOT read wage, ID number, or banking for a worker they administer
 ✓ External labour-law review signed off
 ```
 **Human check:** hand-calculate one payslip. On paper. Compare it. Then hand a real payslip to someone who has been a farm bookkeeper for twenty years and watch their face.
@@ -163,6 +170,8 @@ This phase proves the two riskiest bets in the product. If offline-first does no
 | 4f | **SIZA pack from labour records** | FR-320, 607 |
 | 4g | Obligations register | FR-609 |
 | 4h | Reports, dashboards, PDF/CSV | FR-701…710 |
+| 4i | **Fleet & fuel**: vehicle register, reserves, deliveries, dispensing, dip reconciliation | FR-509…518 |
+| 4j | 🇿🇦 **SARS diesel refund**: eligible/non-eligible split, refund return, 5-year hold | FR-616…619 |
 
 **Gate:**
 ```
@@ -171,10 +180,16 @@ This phase proves the two riskiest bets in the product. If offline-first does no
 ✓ Evidence pack has NO suspect field           ← asserted by test
 ✓ GlobalGAP checklist auto-maps evidence
 ✓ Pack generation <15s
+✓ Fuel delivery AND dispense captured with the network off   ← US-070
+✓ Refund return spanning 1 April 2026 applies BOTH percentages
+✓ NO diesel levy or percentage constant in code (lint rule)
+✓ Dip variance report names no employee                      ← asserted by test
 ```
-**Human check:** give the GlobalGAP pack to a real auditor and the theft pack to a real Stock Theft Unit officer. Ask what is missing. They will tell you, and they will be right.
+**Human check:** give the GlobalGAP pack to a real auditor and the theft pack to a real Stock Theft Unit officer. Ask what is missing. They will tell you, and they will be right. For 4j, give a refund return to the accountant who currently prepares one by hand — the question is not whether the arithmetic is right, it is whether SARS would accept the logbook behind it.
 
-**Autonomy: high** for 4a–4b, 4h. **Medium** for 4c–4g — the *content* is legal, the *engine* is code.
+**Autonomy: high** for 4a–4b, 4h. **Medium** for 4c–4g, 4i. **Low for 4j** — the diesel refund is a rates-and-dates problem wearing a fuel costume, and it fails the same way payroll does: confidently, in the farmer's favour, and discovered at audit. Read [legal-compliance.md §5.1](../00-business/legal-compliance.md) before writing any of it.
+
+> **Why fuel lands here and not in Phase 5's inventory work.** The capture screen is trivial; the refund is not. Fuel is only worth building once the `regulatory_rates` machinery from Phase 3 exists, because the levy rates and the 80/100% split have exactly the effective-date structure the minimum wage has. Building fuel capture before that machinery invites the constant.
 
 ---
 
@@ -188,8 +203,8 @@ This phase proves the two riskiest bets in the product. If offline-first does no
 | 5b | Performance against every NFR-0xx budget, on the reference device |
 | 5c | **External penetration test** (NFR-214) |
 | 5d | Monitoring, alerting, runbooks, on-call |
-| 5e | **Pilot: 3 farms — livestock, crop, mixed — one full month** |
-| 5f | Fix what the pilot found |
+| 5e | **Pilot: 3 farms — livestock, crop, mixed — one full month** · 🧪 photo reporting and completion photos ship **behind a flag** into the pilot only (FR-337…339), with EXIF location stripped unless the record already captures location knowingly |
+| 5f | Fix what the pilot found; **decide whether the photo features stay** — they earn their place on pilot evidence or they are removed |
 | 5g | Launch readiness review |
 
 **Gate — and this one does not bend:**
@@ -212,11 +227,19 @@ This phase proves the two riskiest bets in the product. If offline-first does no
 
 ## Phase 6 · Integrations (8 weeks, post-launch)
 
-SA Stud Book / BREEDPLAN import · SwiftVEE listings · PayFast billing · weather · accounting export · Web Bluetooth EID + scale (Android; manual always present) · web push.
+SA Stud Book / BREEDPLAN import · SwiftVEE listings · PayFast billing · weather · accounting export · Web Bluetooth EID + scale (Android; manual always present) · web push · **market price board (FR-901…908)**.
 
-**Gate:** each integration degrades gracefully to manual. **Kill any one and the product still works** — verified by test, not by assertion.
+**The price board is three feeds, not one, and they are sequenced by licence** ([ADR-0009](../03-architecture/adr/ADR-0009-market-data-feeds.md)):
 
-**Autonomy: high.** Well-specified, externally-bounded, low product judgement.
+| | Feed | Blocked on |
+|---|---|---|
+| 6-i | **Fuel prices** — DMRE/DMPR, monthly, public | Nothing. Ships first, alone if necessary. |
+| 6-ii | **SAFEX grain** — white/yellow maize, wheat, soya, sunflower | A JSE market data agreement. **Start this conversation in Phase 4**, not Phase 6 — it is someone else's calendar, exactly like the labour-law review. |
+| 6-iii | **Red meat** — carcass classes, weaners, weekly in arrears | An arrangement with RMAA/AMT. |
+
+**Gate:** each integration degrades gracefully to manual. **Kill any one and the product still works** — verified by test, not by assertion. For the price board specifically: **pull the network and the board shows cached values with their age, not an error**; and **no series marked non-syncable ever reaches a device** (asserted in `packages/sync/test/tenancy.spec.ts`).
+
+**Autonomy: high.** Well-specified, externally-bounded, low product judgement — with one exception: **the FAIS line in FR-905 is not a copy decision.** No recommendation, no signal, no "good time to sell". An autonomous run will write friendly helper copy that crosses it.
 
 ---
 
@@ -239,6 +262,9 @@ Named so nobody relitigates them in month six.
 | Not building | Why | Instead |
 |---|---|---|
 | Marketplace / auctions | SwiftVEE has a R173m Series A and the liquidity. We would lose. | Integrate (P6) |
+| Trading, hedging, or price advice | FAIS-licensed activity. We are not an FSP and will not become one. A price board shows numbers; it does not tell anyone what to do with them | Show the price, name the source, stop (FR-905) |
+| Filing with SARS on a farmer's behalf | Producing a return is bookkeeping. Submitting one is an act with the taxpayer's consequences | Generate it; they submit (FR-617) |
+| Fuel cards, telematics hardware, tank sensors | Same reasoning as IoT collars — hardware supply chain and support burden | Manual capture always; integrate a reader later if a pilot farm demands it |
 | Lending / fintech | Regulated. Different company. | Partner |
 | IoT collars | Hardware supply chain, support burden. Violates BC-5. | Integrate FarmRanger |
 | Drone / satellite imagery | Aerobotics has a decade of tree-crop models | Integrate (P7) |
@@ -248,6 +274,8 @@ Named so nobody relitigates them in month six.
 | Native apps | [ADR-0001](../03-architecture/adr/ADR-0001-pwa-over-native.md) | Capacitor if forced |
 | Biometric attendance | POPIA s26; consent from an employer to a farm worker is of questionable voluntariness | PIN + GPS |
 | Suspect fields on theft records | Defamation for our customer, POPIA s26 for us | Facts only |
+| **Continuous worker location tracking, live staff maps, geofence alerts on people** | Three independent reasons, each sufficient: a PWA cannot do reliable background geolocation ([ADR-0001](../03-architecture/adr/ADR-0001-pwa-over-native.md)); POPIA minimality is not satisfied when event-stamped location serves the same purpose, and consent from an employer to a farm worker is not freely given; and worker surveillance contradicts the SIZA compliance this product sells | Location stamped on work records (FR-303) + **worker-initiated panic alert** (FR-340). Geofences on animals and assets. [ADR-0010](../03-architecture/adr/ADR-0010-worker-monitoring.md) |
+| Individual productivity scoring / performance ranking | LRA procedural fairness — a dismissal cannot rest on a metric the worker never saw. A dashboard is not a performance-management process | Task status and completion, visible to the worker too (FR-326) |
 
 ---
 

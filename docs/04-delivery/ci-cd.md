@@ -226,7 +226,7 @@ jobs:
 ```
 
 **Rules:**
-- **Migrations run before the deploy, and they are additive-only.** The old code must run against the new schema for the duration of the rollout. ([database-schema.md §12](../03-architecture/database-schema.md))
+- **Migrations run before the deploy, and they are additive-only.** The old code must run against the new schema for the duration of the rollout. ([database-schema.md §14](../03-architecture/database-schema.md))
 - **Snapshot before every migration.** Non-negotiable. It costs 30 seconds.
 - **Blue/green.** Rollback is a traffic shift, ≤5 min (NFR-708).
 - **Never deploy on a Friday.** Never deploy in the week before 1 March. See §7.

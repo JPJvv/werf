@@ -201,11 +201,28 @@ POST /v1/farms/{farmId}/compliance/checklists/{id}/evidence-pack
 GET  /v1/farms/{farmId}/compliance/obligations
      → what this farm owes, when, and whether the evidence exists
 
+POST /v1/farms/{farmId}/grievances                # 🇿🇦 SIZA req 6. FR-331/332
+     { category, body, concernsUserId?, anonymous: bool }
+     → 201 { id }                                 # anonymous ⇒ NO created_by,
+                                                  #   NO audit actor, NO device id
+GET  /v1/farms/{farmId}/grievances                # excludes rows naming the caller
+GET  /v1/farms/{farmId}/documents/{id}/content    # 403 for is_health_data unless owner
+
 GET  /v1/farms/{farmId}/reports/bcea-employment-records?from=&to=
      → 202 { jobId }                      # 🇿🇦 the inspector-at-the-gate report (US-023)
+
+POST /v1/farms/{farmId}/compliance/diesel-refund-returns
+     { periodStart, periodEnd }
+     → 202 { jobId }                      # 🇿🇦 FR-617. Return + logbook annexure
+GET  /v1/farms/{farmId}/compliance/diesel-refund-returns
+     → returns generated, with the rate rows each one pinned
 ```
 
 Everything here is async because PDF generation over 23 employees × 3 years is not a request-response operation. `202 + jobId + poll` is the honest shape.
+
+**`GET /grievances` filters by exclusion in the policy, not in the handler.** A caller never sees a grievance naming them, and the endpoint returns no total, no count, and no "N hidden" — an inference channel defeats FR-332 as thoroughly as a read does. There is deliberately **no** `GET /grievances/{id}` that a subject could probe by id: a 403 and a 404 are distinguishable, and that difference is itself the leak.
+
+**The diesel refund return is server-side for the same reason payroll is** — it resolves regulated rates per litre by `occurred_at`, it produces a statutory document, and it is a money artefact that does not belong in OPFS on a phone that gets stolen. The *logbook* it draws on lives on the device and syncs up; the *claim* is computed here and stays here. There is no `POST .../submit` and there will not be one: we generate, the farmer files.
 
 ---
 
@@ -243,11 +260,16 @@ GET /v1/reference/veterinary-products?jurisdiction=ZA&since=<version>
 GET /v1/reference/regulatory-rates?jurisdiction=ZA&since=<version>
 GET /v1/reference/notifiable-diseases?jurisdiction=ZA&since=<version>
 GET /v1/reference/public-holidays?jurisdiction=ZA&year=2026
+GET /v1/reference/market-prices?jurisdiction=ZA&series=SAFEX_WMAZ,BEEF_A2&since=<version>
+    → [{ series, contractMonth?, valueMicros, unit, asAt, fetchedAt,
+          source, attribution, cadence, syncable }]
 ```
 
 **Jurisdiction is resolved from the farm, never from a query parameter the client chose.** The parameter above documents the shape; the server derives it from `farm.jurisdiction` and ignores a client that asks for someone else's law.
 
 Versioned and cacheable. These also sync to the device (read-only) because **the PHI and withdrawal checks must work in the crush with no signal** (US-032, UC-010). This is the API for bulk refresh; the sync path keeps it current.
+
+**Market prices are the one reference feed that is not uniformly syncable.** `asAt` and `fetchedAt` are both returned and both mean something: `asAt` is what the source says the price is as at, `fetchedAt` is when we pulled it. The client renders `asAt`. A series whose licence permits display but not redistribution is served only from this endpoint and is excluded from the sync rule by `market_price_series.syncable` — see [ADR-0009](adr/ADR-0009-market-data-feeds.md). Polling the upstream sources is server-side: credentials, rate limits, and contractual attribution all live here, and one poll serves every farm.
 
 ---
 

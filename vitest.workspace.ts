@@ -20,6 +20,17 @@ export default defineWorkspace([
        */
       testTimeout: 30_000,
       /**
+       * The same reasoning applied to HOOKS, which is where this actually bites. `testTimeout`
+       * only covers the test body; `beforeAll`/`afterEach`/`afterAll` fall back to Vitest's 10s
+       * `hookTimeout` unless it is raised — and the container-backed suites do their expensive
+       * work in hooks (boot a Postgres, TRUNCATE between tests, stop the container). The
+       * per-suite `beforeAll` already passes its own 180s timeout, so the failure lands on the
+       * ones that cannot: an `afterEach` reset queued behind three other containers booting
+       * takes longer than 10s and fails a suite that had nothing wrong with it. That is exactly
+       * how this was found — two unrelated suites red on a full run, both green alone.
+       */
+      hookTimeout: 60_000,
+      /**
        * Cap concurrent worker files. This project mixes fast pure-unit tests with ~10
        * suites that each start their OWN Postgres testcontainer (5 in apps/api, 5 in
        * packages/db). At Vitest's default (one worker per core = 12 here) they all try to

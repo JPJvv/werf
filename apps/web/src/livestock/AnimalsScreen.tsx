@@ -12,6 +12,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveAnimals, useHerdSummary } from './herd';
+import { useAnimalLabels } from './LocalIdentifiers';
 
 export function speciesLabel(t: (key: TranslationKey) => string, species: Species): string {
   return t(`species.${species}` as TranslationKey);
@@ -39,6 +40,7 @@ export function AnimalsScreen() {
   const filter = herdId === '' ? undefined : herdId;
 
   const animals = useEffectiveAnimals(filter);
+  const labels = useAnimalLabels();
   const summary = useHerdSummary(filter);
   const hasLive = summary.animalsLive > 0;
 
@@ -89,6 +91,12 @@ export function AnimalsScreen() {
             {t('animals.weigh')}
           </Link>
           <Link
+            to="/animals/tag"
+            className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+          >
+            {t('animals.tag')}
+          </Link>
+          <Link
             to="/animals/loss"
             className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
           >
@@ -106,7 +114,18 @@ export function AnimalsScreen() {
               key={animal.id}
               className="flex items-center justify-between rounded border border-soil-200 bg-sand-100 p-3"
             >
-              <span className="text-body text-soil-900">{speciesLabel(t, animal.species)}</span>
+              {/* An animal is called by its NUMBER, not its species — a farmer says "4021", not
+                  "that cow". An untagged animal says so rather than showing a blank where the
+                  number should be: "which ones still need tagging" is a real question. */}
+              <span className="text-body text-soil-900">
+                {labels.has(animal.id) ? (
+                  <span className="font-data tabular-nums">{labels.get(animal.id)}</span>
+                ) : (
+                  <span className="text-soil-700">{t('animals.untagged')}</span>
+                )}
+                {' · '}
+                <span>{speciesLabel(t, animal.species)}</span>
+              </span>
               <span className="text-body text-soil-700">
                 {sexLabel(t, animal.sex)}
                 {animal.breed ? ` · ${animal.breed}` : ''}

@@ -22,6 +22,10 @@ export const livestockApi = {
   createAnimal: (animal: schemas.NewAnimal, token: string): Promise<void> =>
     post('/livestock/animals', animal, token),
 
+  /** Sent after its animal: an identifier references `animals(id)` (FR-109). */
+  createIdentifier: (identifier: schemas.NewAnimalIdentifier, token: string): Promise<void> =>
+    post('/livestock/identifiers', identifier, token),
+
   recordWeight: (weight: StoredWeight, token: string): Promise<void> =>
     post(
       '/livestock/weights',

@@ -5,6 +5,7 @@ import { OutboxProvider } from '../sync/Outbox';
 import { InstallPrompt } from '../pwa/InstallPrompt';
 import { LocalLandProvider } from '../land/LocalLand';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
+import { LocalIdentifiersProvider } from '../livestock/LocalIdentifiers';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
 import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
 import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
@@ -40,18 +41,20 @@ export function AppShell() {
           an animal is put in a camp, and the outbox sends camps before animals for the same reason. */}
       <LocalLandProvider>
         <LocalHerdProvider>
-          <LocalWeightsProvider>
-            <LocalLifecycleProvider>
-              <LocalRainfallProvider>
-                <OutboxProvider>
-                  <SyncStatusStrip />
-                  <main>
-                    <Outlet />
-                  </main>
-                </OutboxProvider>
-              </LocalRainfallProvider>
-            </LocalLifecycleProvider>
-          </LocalWeightsProvider>
+          <LocalIdentifiersProvider>
+            <LocalWeightsProvider>
+              <LocalLifecycleProvider>
+                <LocalRainfallProvider>
+                  <OutboxProvider>
+                    <SyncStatusStrip />
+                    <main>
+                      <Outlet />
+                    </main>
+                  </OutboxProvider>
+                </LocalRainfallProvider>
+              </LocalLifecycleProvider>
+            </LocalWeightsProvider>
+          </LocalIdentifiersProvider>
         </LocalHerdProvider>
       </LocalLandProvider>
       <InstallPrompt />

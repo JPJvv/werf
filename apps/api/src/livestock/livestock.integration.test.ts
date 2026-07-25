@@ -30,7 +30,7 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { NotFoundError, TenancyError, ValidationError, schemas } from '@werf/core';
+import { ConflictError, NotFoundError, TenancyError, ValidationError, schemas } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { renderEvidencePackPdf } from './evidence-pack.pdf';
 import { AuthService } from '../auth/auth.service';
@@ -434,6 +434,147 @@ describe('weight capture (FR-140)', () => {
       await expect(
         service.recordAnimal(viewer!.id, animalBody({ farmId: a.farmId })),
       ).rejects.toThrow(TenancyError);
+    });
+  });
+
+  // ── Identifiers (FR-109) ────────────────────────────────────────────────────────────
+  describe('animal identifiers (FR-109)', () => {
+    const identifierBody = (
+      over: Partial<schemas.NewAnimalIdentifier> & { farmId: string; animalId: string },
+    ): schemas.NewAnimalIdentifier =>
+      schemas.newAnimalIdentifierSchema.parse({
+        id: randomUUID(),
+        type: 'visual_tag',
+        value: '4021',
+        ...over,
+      });
+
+    it('attaches a tag to an animal, authored by the caller', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const tag = await service.recordIdentifier(
+        a.userId,
+        identifierBody({ farmId: a.farmId, animalId, value: '4021', isPrimary: true }),
+      );
+
+      expect(tag.value).toBe('4021');
+      expect(tag.type).toBe('visual_tag');
+      expect(tag.isPrimary).toBe(true);
+      expect(tag.createdBy).toBe(a.userId);
+    });
+
+    it('carries several identifiers on one animal at once', async () => {
+      // An animal really does wear a visual tag AND an EID, and either may be the one read.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      await service.recordIdentifier(
+        a.userId,
+        identifierBody({ farmId: a.farmId, animalId, type: 'visual_tag', value: '4021' }),
+      );
+      await service.recordIdentifier(
+        a.userId,
+        identifierBody({ farmId: a.farmId, animalId, type: 'eid', value: '982 000123456789' }),
+      );
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(animalIdentifiers));
+      expect(rows).toHaveLength(2);
+    });
+
+    it('is idempotent on the client id, so a re-flush does not tag the animal twice', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const body = identifierBody({ farmId: a.farmId, animalId });
+
+      const first = await service.recordIdentifier(a.userId, body);
+      const again = await service.recordIdentifier(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(animalIdentifiers));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('refuses a number already live on a DIFFERENT animal, rather than moving it', async () => {
+      // In a crush this is almost always a misread digit. Silently moving the tag would corrupt the
+      // identity chain an evidence pack and an export audit both rest on.
+      const a = await tenant('Alpha');
+      const first = await anAnimal(a.farmId);
+      const second = await anAnimal(a.farmId);
+
+      await service.recordIdentifier(
+        a.userId,
+        identifierBody({ farmId: a.farmId, animalId: first, value: '4021' }),
+      );
+
+      await expect(
+        service.recordIdentifier(
+          a.userId,
+          identifierBody({ farmId: a.farmId, animalId: second, value: '4021' }),
+        ),
+      ).rejects.toThrow(ConflictError);
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(animalIdentifiers));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.animalId).toBe(first);
+    });
+
+    it('lets a retired tag be reissued once the old one is tombstoned', async () => {
+      // The uniqueness index is partial on deleted_at IS NULL for exactly this: a farmer reuses a
+      // tag number, and a rule that forbade it forever would be a rule about our schema, not theirs.
+      const a = await tenant('Alpha');
+      const first = await anAnimal(a.farmId);
+      const second = await anAnimal(a.farmId);
+
+      const old = await service.recordIdentifier(
+        a.userId,
+        identifierBody({ farmId: a.farmId, animalId: first, value: '4021' }),
+      );
+      await elevated.db
+        .update(animalIdentifiers)
+        .set({ deletedAt: new Date() })
+        .where(eq(animalIdentifiers.id, old.id));
+
+      const reissued = await service.recordIdentifier(
+        a.userId,
+        identifierBody({ farmId: a.farmId, animalId: second, value: '4021' }),
+      );
+
+      expect(reissued.animalId).toBe(second);
+    });
+
+    it('lets two farms each use tag 4021, and hides one from the other', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+
+      await service.recordIdentifier(
+        a.userId,
+        identifierBody({ farmId: a.farmId, animalId: await anAnimal(a.farmId), value: '4021' }),
+      );
+      await service.recordIdentifier(
+        b.userId,
+        identifierBody({ farmId: b.farmId, animalId: await anAnimal(b.farmId), value: '4021' }),
+      );
+
+      const seenByA = await app.asUser(a.userId, (tx) => tx.select().from(animalIdentifiers));
+      expect(seenByA).toHaveLength(1);
+      expect(seenByA[0]!.farmId).toBe(a.farmId);
+    });
+
+    it('refuses to tag an animal on another farm, as if it did not exist', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const alphasAnimal = await anAnimal(a.farmId);
+
+      await expect(
+        service.recordIdentifier(
+          b.userId,
+          identifierBody({ farmId: b.farmId, animalId: alphasAnimal }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await elevated.db.select().from(animalIdentifiers);
+      expect(rows).toHaveLength(0);
     });
   });
 

@@ -40,6 +40,7 @@ import { AuthApiError, NetworkUnavailableError } from '../auth/api';
 import { useLandUnits } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useAnimals } from '../livestock/LocalHerd';
+import { useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents } from '../livestock/LocalLifecycle';
 import { livestockApi } from '../livestock/livestockApi';
@@ -71,6 +72,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
   const animals = useAnimals();
+  const identifiers = useIdentifiers();
   const weights = useWeights();
   const events = useLifecycleEvents();
   const rainfall = useRainfall();
@@ -101,6 +103,15 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         items.push({ id: animal.id, send: (token) => livestockApi.createAnimal(animal, token) });
       }
     }
+    // Identifiers reference `animals(id)`, so they follow the animals and precede nothing.
+    for (const identifier of identifiers) {
+      if (!sent.has(identifier.id)) {
+        items.push({
+          id: identifier.id,
+          send: (token) => livestockApi.createIdentifier(identifier, token),
+        });
+      }
+    }
     for (const weight of weights) {
       if (!sent.has(weight.id)) {
         items.push({ id: weight.id, send: (token) => livestockApi.recordWeight(weight, token) });
@@ -124,7 +135,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     }
     return items;
-  }, [landUnits, animals, weights, events, rainfall, sent]);
+  }, [landUnits, animals, identifiers, weights, events, rainfall, sent]);
   const pendingCount = queue.length;
 
   const [flushing, setFlushing] = useState(false);

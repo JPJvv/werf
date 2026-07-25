@@ -18,6 +18,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveAnimals } from './herd';
 import { useAnimalWeights, useRecordWeight, type StoredWeight } from './LocalWeights';
+import { useAnimalLabels } from './LocalIdentifiers';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 /** The most recent reading by when it was taken. ISO strings sort chronologically at one offset. */
@@ -40,6 +41,7 @@ export function WeighSessionScreen() {
   // A weigh session is for animals still in the herd — a lost animal is not in the crush.
   const animals = useEffectiveAnimals().filter((a) => a.status === 'alive');
   const record = useRecordWeight();
+  const labels = useAnimalLabels();
 
   const [index, setIndex] = useState(0);
   const [kg, setKg] = useState('');
@@ -137,7 +139,15 @@ export function WeighSessionScreen() {
           <p className="mb-1 font-data text-data-lg tabular-nums text-soil-700">
             {`${index + 1} ${t('weigh.of')} ${animals.length}`}
           </p>
+          {/* The number first, and large: it is what the farmer reads off the ear to confirm the
+              right animal is in the crush. Species and sex are the confirmation, not the identity. */}
           <p className="mb-4 text-body text-soil-900">
+            {labels.has(animal.id) && (
+              <>
+                <span className="font-data text-data-lg tabular-nums">{labels.get(animal.id)}</span>
+                {' · '}
+              </>
+            )}
             {speciesLabel(t, animal.species)}
             {' · '}
             {sexLabel(t, animal.sex)}

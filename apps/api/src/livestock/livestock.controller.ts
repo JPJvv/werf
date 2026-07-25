@@ -17,6 +17,7 @@ import {
   LivestockService,
   type CapturedAnimal,
   type CapturedEvent,
+  type CapturedIdentifier,
   type CapturedTheftIncident,
 } from './livestock.service';
 import { renderEvidencePackPdf } from './evidence-pack.pdf';
@@ -40,6 +41,21 @@ export class LivestockController {
     body: schemas.RecordAnimalRequest,
   ): Promise<CapturedAnimal> {
     return this.livestock.recordAnimal(auth.userId, body);
+  }
+
+  /**
+   * Attach an identifier to an animal (FR-109) — the tag number a farmer actually calls it by.
+   * Sent after its animal by the flush (it references `animals(id)`). Idempotent on the id; a
+   * number currently live on a DIFFERENT animal is a refusal, not a silent move.
+   */
+  @Post('identifiers')
+  @HttpCode(HttpStatus.CREATED)
+  async recordIdentifier(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.newAnimalIdentifierSchema))
+    body: schemas.NewAnimalIdentifier,
+  ): Promise<CapturedIdentifier> {
+    return this.livestock.recordIdentifier(auth.userId, body);
   }
 
   /**

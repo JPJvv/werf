@@ -17,6 +17,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveAnimals } from './herd';
 import { useRecordDeath, useRecordSale } from './LocalLifecycle';
+import { useAnimalLabels } from './LocalIdentifiers';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 type Outcome = 'died' | 'sold';
@@ -42,6 +43,7 @@ export function RecordLossScreen() {
   const recordDeath = useRecordDeath();
   const recordSale = useRecordSale();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
+  const labels = useAnimalLabels();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -130,7 +132,14 @@ export function RecordLossScreen() {
                         : 'border-soil-200 bg-sand-50 text-soil-900'
                     }`}
                   >
-                    <span>{speciesLabel(t, animal.species)}</span>
+                    {/* The number is how a farmer picks the right animal out of a list. */}
+                    <span>
+                      {labels.has(animal.id) ? (
+                        <span className="font-data tabular-nums">{labels.get(animal.id)}</span>
+                      ) : (
+                        speciesLabel(t, animal.species)
+                      )}
+                    </span>
                     <span className="text-soil-700">
                       {sexLabel(t, animal.sex)}
                       {animal.breed ? ` · ${animal.breed}` : ''}

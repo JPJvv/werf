@@ -33,7 +33,7 @@ import {
   veterinaryProducts,
   type AppDb,
 } from '@werf/db';
-import { NotFoundError, ValidationError, type schemas } from '@werf/core';
+import { ConflictError, NotFoundError, ValidationError, type schemas } from '@werf/core';
 import {
   assembleEvidencePack,
   isWithinWithdrawal,
@@ -75,8 +75,35 @@ const theftIncidentProjection = {
   deletedAt: theftIncidents.deletedAt,
 } as const;
 
+/** Postgres' unique-violation SQLSTATE. */
+const UNIQUE_VIOLATION = '23505';
+
+/**
+ * Turns the live-rows-only unique violation on (farm_id, type, value) into a ConflictError a farmer
+ * can act on. Anything else is rethrown untouched: swallowing an unexpected database error here
+ * would turn a real failure into a silent success, and the flush would mark the capture sent when
+ * it was not.
+ */
+function rethrowDuplicateIdentifier(value: string) {
+  return (error: unknown): never => {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: unknown }).code === UNIQUE_VIOLATION &&
+      String((error as { constraint?: unknown }).constraint ?? '').includes('animal_identifiers')
+    ) {
+      throw new ConflictError(
+        `${value} is already on another animal on this farm. Check the number, or retire the old tag first.`,
+      );
+    }
+    throw error;
+  };
+}
+
 /** The persisted animal as returned to the caller. */
 export type CapturedAnimal = Awaited<ReturnType<LivestockService['recordAnimal']>>;
+/** The persisted identifier as returned to the caller. */
+export type CapturedIdentifier = Awaited<ReturnType<LivestockService['recordIdentifier']>>;
 export type { CapturedEvent };
 /** The persisted theft incident — the PostGIS `last_seen_location` column is never on the wire. */
 export type CapturedTheftIncident = Awaited<ReturnType<LivestockService['createTheftIncident']>>;
@@ -135,6 +162,53 @@ export class LivestockService {
         .select()
         .from(animals)
         .where(and(eq(animals.id, input.id), eq(animals.farmId, input.farmId)));
+      return existing!;
+    });
+  }
+
+  /**
+   * Attaches an identifier to an animal (FR-109) — the ear tag, EID, tattoo or national id a
+   * farmer actually calls the animal by. Many per animal, because an animal genuinely carries
+   * several at once and any of them may be the one read in a crush.
+   *
+   * The uniqueness rule is the sharp part, and it is a PARTIAL unique index: unique per farm per
+   * type among LIVE rows only, so a tag can be reissued once the animal carrying it is gone and its
+   * identifier tombstoned. A collision is therefore not a retry — it means this number is currently
+   * on a different animal — and it is refused with a message that says so, because in a crush the
+   * cause is almost always a misread digit, and silently moving a tag between animals would corrupt
+   * the identity chain an evidence pack and an export audit both rest on.
+   */
+  async recordIdentifier(userId: string, input: schemas.NewAnimalIdentifier) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      // The subject must be an animal this farm can see; another farm's animal is "not found",
+      // indistinguishable from one that does not exist.
+      await animalFacts(tx, input.farmId, input.animalId);
+
+      const [row] = await tx
+        .insert(animalIdentifiers)
+        .values({
+          id: input.id,
+          farmId: input.farmId,
+          animalId: input.animalId,
+          type: input.type,
+          value: input.value,
+          isPrimary: input.isPrimary,
+          appliedAt: input.appliedAt,
+          createdBy: userId,
+        })
+        // Idempotent on the id ONLY — a bare onConflictDoNothing() would also swallow a genuine
+        // duplicate VALUE, and the read-back would then return nothing for this id.
+        .onConflictDoNothing({ target: animalIdentifiers.id })
+        .returning()
+        .catch(rethrowDuplicateIdentifier(input.value));
+
+      if (row) return row;
+
+      const [existing] = await tx
+        .select()
+        .from(animalIdentifiers)
+        .where(and(eq(animalIdentifiers.id, input.id), eq(animalIdentifiers.farmId, input.farmId)));
       return existing!;
     });
   }

@@ -34,9 +34,21 @@ import {
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useRecordAnimal } from './LocalHerd';
+import { useRecordPurchase } from './LocalLifecycle';
+import { farmDay } from '../farmTime';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 type Herd = schemas.SessionEnterprise;
+
+/** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
+function toCents(rands: string): number {
+  return Math.round(Number(rands) * 100);
+}
+
+function priceIsValid(rands: string): boolean {
+  const n = Number(rands);
+  return rands.trim() !== '' && Number.isFinite(n) && n >= 0;
+}
 
 /** The farm's herds that keep animals — a crop enterprise is not somewhere to file an animal. */
 function livestockHerds(enterprises: readonly Herd[]): Herd[] {
@@ -61,6 +73,7 @@ export function AddAnimalScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
   const recordAnimal = useRecordAnimal();
+  const recordPurchase = useRecordPurchase();
 
   const herds = useMemo(() => livestockHerds(activeFarm?.enterprises ?? []), [activeFarm]);
   const speciesOptions = useMemo(
@@ -72,6 +85,11 @@ export function AddAnimalScreen() {
   const [species, setSpecies] = useState<Species | ''>('');
   const [sex, setSex] = useState<AnimalSex>('female');
   const [breed, setBreed] = useState('');
+  // Where it came from (FR-106). "Bought" is not a different KIND of animal — it is the same herd
+  // row plus a purchase event, which is why this lives here rather than on a screen of its own.
+  const [bought, setBought] = useState(false);
+  const [seller, setSeller] = useState('');
+  const [priceRands, setPriceRands] = useState('');
   const [justSaved, setJustSaved] = useState(false);
 
   if (!activeFarm) return null;
@@ -84,10 +102,13 @@ export function AddAnimalScreen() {
     ? (enterpriseSpecies(selectedHerd.type) ?? '')
     : species || speciesOptions[0] || '';
 
+  const purchaseIsValid = !bought || (seller.trim() !== '' && priceIsValid(priceRands));
+
   const save = (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedSpecies) return;
+    if (!selectedSpecies || !purchaseIsValid) return;
 
+    const occurredAt = new Date();
     const animal = schemas.newAnimalSchema.parse({
       id: uuidv7(),
       farmId: activeFarm.id,
@@ -96,11 +117,31 @@ export function AddAnimalScreen() {
       species: selectedSpecies,
       sex,
       breed: breed.trim() || null,
+      // A bought animal carries where it came from on the herd row too, because "who did I buy
+      // this from" is asked of the ANIMAL, and an evidence pack reads `source`/`acquired_at`
+      // rather than trawling the event log (FR-603).
+      ...(bought ? { source: seller.trim(), acquiredAt: farmDay(occurredAt) } : {}),
     });
     recordAnimal(animal);
 
-    // Kept: herd/species and sex. Cleared: the per-animal breed. Ready for the next in the race.
+    // The money side (FR-106). A purchase changes no status — the animal arrived alive — so it is
+    // an event about the animal, not a state it is in.
+    if (bought) {
+      recordPurchase({
+        id: uuidv7(),
+        farmId: activeFarm.id,
+        animalId: animal.id,
+        occurredAt,
+        currentStatus: 'alive',
+        counterparty: seller.trim(),
+        priceCents: toCents(priceRands),
+      });
+    }
+
+    // Kept: herd/species, sex, and the seller — a farmer buying a truckload buys them from one
+    // person. Cleared: the per-animal breed and price.
     setBreed('');
+    setPriceRands('');
     setJustSaved(true);
   };
 
@@ -222,9 +263,69 @@ export function AddAnimalScreen() {
           />
         </div>
 
+        {/* FR-106. Off by default: most animals on a farm were born there, and asking every
+            capture where it came from would tax the common case to serve the rarer one. */}
+        <div className="mb-4">
+          <button
+            type="button"
+            aria-pressed={bought}
+            onClick={() => {
+              setJustSaved(false);
+              setBought(!bought);
+            }}
+            className={`min-h-touch-min w-full rounded border px-4 font-ui text-body ${
+              bought
+                ? 'border-soil-900 bg-sand-100 text-soil-900'
+                : 'border-soil-200 bg-sand-50 text-soil-900'
+            }`}
+          >
+            {t('animals.new.bought')}
+          </button>
+        </div>
+
+        {bought && (
+          <>
+            <div className="mb-4 flex flex-col">
+              <label htmlFor="seller" className="mb-1 text-label uppercase text-soil-700">
+                {t('animals.new.seller')}
+              </label>
+              <input
+                id="seller"
+                name="seller"
+                type="text"
+                autoComplete="off"
+                value={seller}
+                onChange={(e) => {
+                  setJustSaved(false);
+                  setSeller(e.target.value);
+                }}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              />
+            </div>
+            <div className="mb-6 flex flex-col">
+              <label htmlFor="paid" className="mb-1 text-label uppercase text-soil-700">
+                {t('animals.new.paid')}
+              </label>
+              <input
+                id="paid"
+                name="paid"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={priceRands}
+                onChange={(e) => {
+                  setJustSaved(false);
+                  setPriceRands(e.target.value);
+                }}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+              />
+            </div>
+          </>
+        )}
+
         <button
           type="submit"
-          disabled={!selectedSpecies}
+          disabled={!selectedSpecies || !purchaseIsValid}
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
           {justSaved ? t('animals.new.another') : t('animals.new.save')}

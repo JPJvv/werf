@@ -1,10 +1,18 @@
 /**
- * The local lifecycle log — the client's own copy of the status-changing events on the farm's
- * animals (a death, and later a sale, a cull, a missing report), read and written through the
- * `@werf/sync` capture-store adapter, never a storage API directly (ADR-0003). It is the third
- * store in the same family as `LocalHerd` and `LocalWeights`: append-only captured facts, reactive,
- * farm-scoped by key, and JSON-safe (`occurredAt` is an ISO string, since the event envelope's Date
- * does not round-trip localStorage across a cold start — that conversion lives at this boundary).
+ * The local lifecycle log — the client's own copy of everything that happens to the farm's animals:
+ * a birth, a weaning, a purchase, a death, a sale, a missing report. Read and written through the
+ * `@werf/sync` capture-store adapter, never a storage API directly (ADR-0003). It is one family
+ * with `LocalHerd` and `LocalMoves`: append-only captured facts, reactive, farm-scoped by key, and
+ * JSON-safe (`occurredAt` is an ISO string, since the event envelope's Date does not round-trip
+ * localStorage across a cold start — that conversion lives at this boundary).
+ *
+ * ⭐ `status` is nullable, and that is the distinction the log is built around. A death, a sale and
+ * a missing report MOVE the animal through the status state machine; a birth, a weaning and a
+ * purchase are things that happened to an animal that stays exactly as alive as it was. Both are
+ * lifecycle facts and both belong in this log — but only the first kind is folded onto the herd by
+ * the projection. Modelling the second kind as "status: alive" would work by accident today and
+ * break the moment a weaning is recorded on an animal that was already sold: the state machine
+ * would refuse a transition nobody asked for.
  *
  * These are the events the herd projection folds onto the animals to derive each one's CURRENT
  * status (see `herd.ts`): the herd store is append-only and never mutated, so an animal that dies
@@ -21,18 +29,25 @@ import {
   type ReactNode,
 } from 'react';
 import { createCaptureStore, type CaptureStore } from '@werf/sync';
-import { recordDeath, recordSale } from '@werf/domain';
+import {
+  recordBirth,
+  recordDeath,
+  recordMissing,
+  recordPurchase,
+  recordSale,
+  recordWeaning,
+} from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 
-/** Fields every stored lifecycle event carries. `status` is the status it moves the animal TO;
- *  `occurredAt` is an ISO string (JSON-safe across a cold start). */
+/** Fields every stored lifecycle event carries. `occurredAt` is an ISO string (JSON-safe). */
 interface StoredEventBase {
   readonly id: string;
   readonly farmId: string;
+  /** The SUBJECT. For a birth this is the dam — the calving belongs on her timeline. */
   readonly animalId: string;
-  /** The status this event moves the animal to. */
-  readonly status: AnimalStatus;
+  /** The status this event moves the animal to, or null when it moves nothing. */
+  readonly status: AnimalStatus | null;
   /** ISO 8601. When it happened on the farm — read, not synced (CLAUDE.md, § 5). */
   readonly occurredAt: string;
 }
@@ -40,41 +55,99 @@ interface StoredEventBase {
 /** A death (FR-105) → 'dead'. */
 export interface StoredDeath extends StoredEventBase {
   readonly type: 'death';
+  readonly status: 'dead';
   readonly cause: string;
 }
 
 /** A sale (FR-106) → 'sold'. `priceCents` is Money — integer cents, never a float (CLAUDE.md). */
 export interface StoredSale extends StoredEventBase {
   readonly type: 'sale';
+  readonly status: 'sold';
   readonly counterparty: string;
   readonly priceCents: number;
   readonly weightKg?: number;
 }
 
-/** A status-changing lifecycle event as held locally. 'cull' / 'missing' extend the union next. */
-export type StoredLifecycleEvent = StoredDeath | StoredSale;
+/** A missing report (FR-605) → 'missing'. GPS-anchored: the point is required, not optional. */
+export interface StoredMissing extends StoredEventBase {
+  readonly type: 'missing';
+  readonly status: 'missing';
+  readonly lastSeenGeojson: string;
+  readonly cause?: string;
+}
 
-/** What a screen hands the recorder for a death (FR-105). The capture instant is a real Date. */
-export interface DeathCapture {
+/** A purchase (FR-106) — money in, no status change: the animal arrived alive and stays alive. */
+export interface StoredPurchase extends StoredEventBase {
+  readonly type: 'purchase';
+  readonly status: null;
+  readonly counterparty: string;
+  readonly priceCents: number;
+  readonly weightKg?: number;
+}
+
+/** A birth (FR-104), against the DAM. The calf is a separate herd row, named here by id. */
+export interface StoredBirth extends StoredEventBase {
+  readonly type: 'birth';
+  readonly status: null;
+  readonly calfId: string;
+  readonly easeScore: 1 | 2 | 3 | 4 | 5;
+  readonly multiples: number;
+  readonly birthWeightKg?: number;
+}
+
+/** A weaning (FR-111) — a weight and, if known, an age. No status change. */
+export interface StoredWeaning extends StoredEventBase {
+  readonly type: 'weaning';
+  readonly status: null;
+  readonly weightKg: number;
+  readonly ageDays?: number;
+}
+
+/** A lifecycle event as held locally. */
+export type StoredLifecycleEvent =
+  StoredDeath | StoredSale | StoredMissing | StoredPurchase | StoredBirth | StoredWeaning;
+
+/** Fields every capture hands the recorder. The capture instant is a real Date at this boundary. */
+interface CaptureBase {
   readonly id: string;
   readonly farmId: string;
   readonly animalId: string;
   readonly occurredAt: Date;
   /** The animal's status right now — the FROM side of the transition guard. */
   readonly currentStatus: AnimalStatus;
+}
+
+export interface DeathCapture extends CaptureBase {
   readonly cause: string;
 }
 
-/** What a screen hands the recorder for a sale (FR-106). `priceCents` is Money — integer cents. */
-export interface SaleCapture {
-  readonly id: string;
-  readonly farmId: string;
-  readonly animalId: string;
-  readonly occurredAt: Date;
-  readonly currentStatus: AnimalStatus;
+export interface SaleCapture extends CaptureBase {
   readonly counterparty: string;
   readonly priceCents: number;
   readonly weightKg?: number;
+}
+
+export interface MissingCapture extends CaptureBase {
+  readonly lastSeenGeojson: string;
+  readonly cause?: string;
+}
+
+export interface PurchaseCapture extends CaptureBase {
+  readonly counterparty: string;
+  readonly priceCents: number;
+  readonly weightKg?: number;
+}
+
+export interface BirthCapture extends CaptureBase {
+  readonly calfId: string;
+  readonly easeScore: 1 | 2 | 3 | 4 | 5;
+  readonly multiples: number;
+  readonly birthWeightKg?: number;
+}
+
+export interface WeaningCapture extends CaptureBase {
+  readonly weightKg: number;
+  readonly ageDays?: number;
 }
 
 export type LifecycleStore = CaptureStore<StoredLifecycleEvent>;
@@ -115,68 +188,159 @@ export function useLifecycleEvents(): readonly StoredLifecycleEvent[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
-/**
- * Record a death (FR-105). Synchronous; never awaits the network (NFR-007). The capture is
- * validated through the domain `recordDeath` first — a non-empty cause, and the state-machine
- * guard that an animal cannot be stepped backwards — so a bad capture throws here rather than
- * entering the append-only log; only then is the JSON-safe projection persisted.
+/** The shared shape every recorder below hands the domain. */
+function domainBase(capture: CaptureBase) {
+  return {
+    id: capture.id,
+    farmId: capture.farmId,
+    animalId: capture.animalId,
+    occurredAt: capture.occurredAt,
+    currentStatus: capture.currentStatus,
+  };
+}
+
+/** The JSON-safe fields every stored event shares. `occurredAt` becomes a string here. */
+function storedBase(capture: CaptureBase) {
+  return {
+    id: capture.id,
+    farmId: capture.farmId,
+    animalId: capture.animalId,
+    occurredAt: capture.occurredAt.toISOString(),
+  };
+}
+
+/*
+ * Each recorder below is written out rather than generated from a shared helper. A generic
+ * "validate then project" wrapper was tried and needed a cast to `StoredLifecycleEvent` to compile —
+ * which is the cast that would let a projection omit a required field (a weaning with no weight)
+ * and have the compiler agree. Six explicit functions are longer and cannot do that.
+ *
+ * Every one is synchronous and never awaits the network (NFR-007), and every one validates through
+ * its pure domain function FIRST — the payload rules and the state-machine guard that an animal
+ * cannot be stepped backwards — so a bad capture throws before it can enter the append-only log.
  */
+
+/** Record a death (FR-105) → 'dead', out of the live herd. */
 export function useRecordDeath(): (capture: DeathCapture) => void {
   const store = useLifecycleStore();
   return useCallback(
-    (capture) => {
-      recordDeath({
-        id: capture.id,
-        farmId: capture.farmId,
-        animalId: capture.animalId,
-        occurredAt: capture.occurredAt,
-        currentStatus: capture.currentStatus,
-        cause: capture.cause,
+    (c) => {
+      recordDeath({ ...domainBase(c), cause: c.cause });
+      store.append({ ...storedBase(c), type: 'death', status: 'dead', cause: c.cause });
+    },
+    [store],
+  );
+}
+
+/** Record a sale (FR-106) → 'sold', out of the live herd. `priceCents` is Money — integer cents. */
+export function useRecordSale(): (capture: SaleCapture) => void {
+  const store = useLifecycleStore();
+  return useCallback(
+    (c) => {
+      const weight = c.weightKg === undefined ? {} : { weightKg: c.weightKg };
+      recordSale({
+        ...domainBase(c),
+        counterparty: c.counterparty,
+        priceCents: c.priceCents,
+        ...weight,
       });
       store.append({
-        id: capture.id,
-        farmId: capture.farmId,
-        animalId: capture.animalId,
-        type: 'death',
-        status: 'dead',
-        occurredAt: capture.occurredAt.toISOString(),
-        cause: capture.cause,
+        ...storedBase(c),
+        type: 'sale',
+        status: 'sold',
+        counterparty: c.counterparty,
+        priceCents: c.priceCents,
+        ...weight,
       });
     },
     [store],
   );
 }
 
-/**
- * Record a sale (FR-106) → status 'sold', out of the live herd. Validated through the domain
- * `recordSale` (a buyer, non-negative integer-cents price, the state-machine transition guard)
- * before the JSON-safe projection is persisted. Synchronous; never awaits the network (NFR-007).
- */
-export function useRecordSale(): (capture: SaleCapture) => void {
+/** Mark an animal missing (FR-605) → 'missing'. The last-seen point is required, not optional. */
+export function useRecordMissing(): (capture: MissingCapture) => void {
   const store = useLifecycleStore();
   return useCallback(
-    (capture) => {
-      const weight = capture.weightKg === undefined ? {} : { weightKg: capture.weightKg };
-      recordSale({
-        id: capture.id,
-        farmId: capture.farmId,
-        animalId: capture.animalId,
-        occurredAt: capture.occurredAt,
-        currentStatus: capture.currentStatus,
-        counterparty: capture.counterparty,
-        priceCents: capture.priceCents,
+    (c) => {
+      const cause = c.cause === undefined ? {} : { cause: c.cause };
+      recordMissing({ ...domainBase(c), lastSeenGeojson: c.lastSeenGeojson, ...cause });
+      store.append({
+        ...storedBase(c),
+        type: 'missing',
+        status: 'missing',
+        lastSeenGeojson: c.lastSeenGeojson,
+        ...cause,
+      });
+    },
+    [store],
+  );
+}
+
+/** Record a purchase (FR-106) — money in, no status change. */
+export function useRecordPurchase(): (capture: PurchaseCapture) => void {
+  const store = useLifecycleStore();
+  return useCallback(
+    (c) => {
+      const weight = c.weightKg === undefined ? {} : { weightKg: c.weightKg };
+      recordPurchase({
+        ...domainBase(c),
+        counterparty: c.counterparty,
+        priceCents: c.priceCents,
         ...weight,
       });
       store.append({
-        id: capture.id,
-        farmId: capture.farmId,
-        animalId: capture.animalId,
-        type: 'sale',
-        status: 'sold',
-        occurredAt: capture.occurredAt.toISOString(),
-        counterparty: capture.counterparty,
-        priceCents: capture.priceCents,
+        ...storedBase(c),
+        type: 'purchase',
+        status: null,
+        counterparty: c.counterparty,
+        priceCents: c.priceCents,
         ...weight,
+      });
+    },
+    [store],
+  );
+}
+
+/** Record a birth (FR-104) against the dam. The calf's herd row is written separately. */
+export function useRecordBirth(): (capture: BirthCapture) => void {
+  const store = useLifecycleStore();
+  return useCallback(
+    (c) => {
+      const weight = c.birthWeightKg === undefined ? {} : { birthWeightKg: c.birthWeightKg };
+      recordBirth({
+        ...domainBase(c),
+        calfId: c.calfId,
+        easeScore: c.easeScore,
+        multiples: c.multiples,
+        ...weight,
+      });
+      store.append({
+        ...storedBase(c),
+        type: 'birth',
+        status: null,
+        calfId: c.calfId,
+        easeScore: c.easeScore,
+        multiples: c.multiples,
+        ...weight,
+      });
+    },
+    [store],
+  );
+}
+
+/** Record a weaning (FR-111) — a weight and, if known, an age. No status change. */
+export function useRecordWeaning(): (capture: WeaningCapture) => void {
+  const store = useLifecycleStore();
+  return useCallback(
+    (c) => {
+      const age = c.ageDays === undefined ? {} : { ageDays: c.ageDays };
+      recordWeaning({ ...domainBase(c), weightKg: c.weightKg, ...age });
+      store.append({
+        ...storedBase(c),
+        type: 'weaning',
+        status: null,
+        weightKg: c.weightKg,
+        ...age,
       });
     },
     [store],

@@ -1,29 +1,40 @@
 /**
- * Record a loss (FR-105/106) — a death or a sale. Either way the animal leaves the live herd: a
- * lifecycle event is captured here and folded onto the herd by the projection, which moves the
- * animal through the domain state machine (→ 'dead' or 'sold') and drops it from live head. The
- * animal is RETAINED forever — it still shows in the list, marked — because a farmer's records and
- * the audit/financial trail keep the tombstone; it is only excluded from "how many do I have".
+ * Record a loss (FR-105/106/605) — a death, a sale, or a missing report. Either way the animal
+ * leaves the live herd: a lifecycle event is captured here and folded onto the herd by the
+ * projection, which moves the animal through the domain state machine (→ 'dead', 'sold' or
+ * 'missing') and drops it from live head. The animal is RETAINED forever — it still shows in the
+ * list, marked — because a farmer's records and the audit/financial trail keep the tombstone; it is
+ * only excluded from "how many do I have".
+ *
+ * ⭐ MISSING is not just a third radio button. It is the stock-theft path (legal-compliance.md
+ * § 3.2), and the thing that makes the record worth anything to the SAPS Stock Theft Unit is the
+ * GPS point and the day it was LAST SEEN — which is days before the farmer is standing here. So this
+ * screen asks for the day rather than assuming today, and it takes a real fix rather than saving
+ * without one. Geolocation works with no signal (GPS is a receiver, not a connection), so requiring
+ * it costs an offline farmer nothing; when it genuinely fails, the reason is named, because
+ * "permission denied" and "no signal" need different actions from the person holding the phone.
  *
  * Offline-first like every capture: `save` commits locally and instantly with no network in the
- * path (NFR-007). Pick the animal, say what happened, record it. A cull and a missing report follow
- * the same shape and land as later slices.
+ * path (NFR-007).
  */
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
+import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
+import { farmToday } from '../farmTime';
 import { useEffectiveAnimals } from './herd';
-import { useRecordDeath, useRecordSale } from './LocalLifecycle';
+import { useRecordDeath, useRecordMissing, useRecordSale } from './LocalLifecycle';
 import { useAnimalLabels } from './LocalIdentifiers';
+import { currentPoint, type FixFailure } from './geolocation';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
-type Outcome = 'died' | 'sold';
+type Outcome = 'died' | 'sold' | 'missing';
 
 interface SavedSummary {
-  readonly species: string;
+  readonly what: string;
   readonly outcome: Outcome;
 }
 
@@ -37,19 +48,28 @@ function priceIsValid(rands: string): boolean {
   return rands.trim() !== '' && Number.isFinite(n) && n >= 0;
 }
 
+/** Today ON THE FARM, for the last-seen day field's default and maximum. */
+function today(): string {
+  return farmToday();
+}
+
 export function RecordLossScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
   const recordDeath = useRecordDeath();
   const recordSale = useRecordSale();
-  const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
+  const recordMissing = useRecordMissing();
   const labels = useAnimalLabels();
+  const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [cause, setCause] = useState('');
   const [counterparty, setCounterparty] = useState('');
   const [priceRands, setPriceRands] = useState('');
+  const [lastSeenDay, setLastSeenDay] = useState(today);
+  const [locating, setLocating] = useState(false);
+  const [fixFailed, setFixFailed] = useState<FixFailure | null>(null);
   const [lastSaved, setLastSaved] = useState<SavedSummary | null>(null);
 
   if (!activeFarm) return null;
@@ -62,15 +82,22 @@ export function RecordLossScreen() {
     setCause('');
     setCounterparty('');
     setPriceRands('');
+    setLastSeenDay(today());
+    setFixFailed(null);
   };
 
   const pick = (id: string) => {
     setLastSaved(null);
     setSelectedId(id);
     setOutcome(null);
+    setFixFailed(null);
   };
 
-  const save = () => {
+  /** What the animal is called, for the confirmation line: its number if it has one. */
+  const nameOf = (animal: NonNullable<typeof selected>): string =>
+    labels.get(animal.id) ?? speciesLabel(t, animal.species);
+
+  const save = async () => {
     if (!selected) return;
     const base = {
       id: uuidv7(),
@@ -79,6 +106,7 @@ export function RecordLossScreen() {
       occurredAt: new Date(),
       currentStatus: 'alive' as const,
     };
+
     if (outcome === 'died') {
       if (cause.trim().length === 0) return;
       recordDeath({ ...base, cause: cause.trim() });
@@ -89,15 +117,47 @@ export function RecordLossScreen() {
         counterparty: counterparty.trim(),
         priceCents: toCents(priceRands),
       });
+    } else if (outcome === 'missing') {
+      // The fix is taken HERE, not on selection: a farmer who picks an animal and then walks to
+      // where they last saw it should get the point from where they are standing when they record.
+      setLocating(true);
+      const fix = await currentPoint();
+      setLocating(false);
+      if (!fix.ok) {
+        setFixFailed(fix.reason);
+        return;
+      }
+      recordMissing({
+        ...base,
+        // The day the farmer gave, not today: a missing report is filed after the fact, and a
+        // theft dated to the day it was noticed is a theft dated wrong.
+        occurredAt: new Date(`${lastSeenDay}T12:00:00.000Z`),
+        lastSeenGeojson: fix.geojson,
+        ...(cause.trim().length === 0 ? {} : { cause: cause.trim() }),
+      });
     } else {
       return;
     }
-    setLastSaved({ species: speciesLabel(t, selected.species), outcome });
+
+    setLastSaved({ what: nameOf(selected), outcome });
     reset();
   };
 
-  const savedSuffix = (o: Outcome): string =>
-    t(o === 'died' ? 'loss.savedSuffix' : 'loss.savedSuffixSold');
+  const savedSuffix = (o: Outcome): TranslationKey =>
+    o === 'died'
+      ? 'loss.savedSuffix'
+      : o === 'sold'
+        ? 'loss.savedSuffixSold'
+        : 'loss.savedSuffixMissing';
+
+  const canSave =
+    outcome === 'died'
+      ? cause.trim().length > 0
+      : outcome === 'sold'
+        ? counterparty.trim().length > 0 && priceIsValid(priceRands)
+        : outcome === 'missing'
+          ? lastSeenDay !== '' && !locating
+          : false;
 
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
@@ -108,7 +168,7 @@ export function RecordLossScreen() {
           role="status"
           className="mb-4 border-l-4 border-aloe-700 bg-sand-100 p-3 text-body text-soil-900"
         >
-          {lastSaved.species} {savedSuffix(lastSaved.outcome)}
+          {lastSaved.what} {t(savedSuffix(lastSaved.outcome))}
         </p>
       )}
 
@@ -154,7 +214,7 @@ export function RecordLossScreen() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                save();
+                void save();
               }}
             >
               <fieldset className="mb-4 border-0 p-0">
@@ -162,28 +222,31 @@ export function RecordLossScreen() {
                   {t('loss.outcome')}
                 </legend>
                 <div className="flex gap-2">
-                  {(['died', 'sold'] as const).map((o) => (
+                  {(['died', 'sold', 'missing'] as const).map((o) => (
                     <button
                       key={o}
                       type="button"
                       aria-pressed={outcome === o}
-                      onClick={() => setOutcome(o)}
+                      onClick={() => {
+                        setOutcome(o);
+                        setFixFailed(null);
+                      }}
                       className={`min-h-touch-min flex-1 rounded border px-4 font-ui text-body ${
                         outcome === o
                           ? 'border-soil-900 bg-sand-100 text-soil-900'
                           : 'border-soil-200 bg-sand-50 text-soil-900'
                       }`}
                     >
-                      {t(o === 'died' ? 'loss.died' : 'loss.sold')}
+                      {t(`loss.${o}` as TranslationKey)}
                     </button>
                   ))}
                 </div>
               </fieldset>
 
-              {outcome === 'died' && (
+              {(outcome === 'died' || outcome === 'missing') && (
                 <div className="mb-6 flex flex-col">
                   <label htmlFor="cause" className="mb-1 text-label uppercase text-soil-700">
-                    {t('loss.cause')}
+                    {t(outcome === 'died' ? 'loss.cause' : 'loss.causeMissing')}
                   </label>
                   <input
                     id="cause"
@@ -195,6 +258,33 @@ export function RecordLossScreen() {
                     className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
                   />
                 </div>
+              )}
+
+              {outcome === 'missing' && (
+                <>
+                  {/* Asked, never assumed: a missing report is filed after the fact, and stock
+                      theft dated to the day it was noticed is dated wrong. */}
+                  <div className="mb-4 flex flex-col">
+                    <label htmlFor="lastSeen" className="mb-1 text-label uppercase text-soil-700">
+                      {t('loss.lastSeenDay')}
+                    </label>
+                    <input
+                      id="lastSeen"
+                      name="lastSeen"
+                      type="date"
+                      max={today()}
+                      value={lastSeenDay}
+                      onChange={(e) => setLastSeenDay(e.target.value)}
+                      className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+                    />
+                  </div>
+                  <p className="mb-4 text-body text-soil-700">{t('loss.gpsExplain')}</p>
+                  {fixFailed !== null && (
+                    <p className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                      {t(`loss.gps.${fixFailed}` as TranslationKey)}
+                    </p>
+                  )}
+                </>
               )}
 
               {outcome === 'sold' && (
@@ -238,13 +328,17 @@ export function RecordLossScreen() {
                 <button
                   type="submit"
                   className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
-                  disabled={
-                    outcome === 'died'
-                      ? cause.trim().length === 0
-                      : counterparty.trim().length === 0 || !priceIsValid(priceRands)
-                  }
+                  disabled={!canSave}
                 >
-                  {t(outcome === 'died' ? 'loss.save' : 'loss.saveSale')}
+                  {locating
+                    ? t('loss.locating')
+                    : t(
+                        outcome === 'died'
+                          ? 'loss.save'
+                          : outcome === 'sold'
+                            ? 'loss.saveSale'
+                            : 'loss.saveMissing',
+                      )}
                 </button>
               )}
             </form>

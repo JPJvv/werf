@@ -15,6 +15,27 @@ const MS_PER_DAY = 86_400_000;
  * UTC purely as arithmetic (both ends are the same fictional zone, so it cancels) — leap years and
  * month lengths are honoured. `days` may be zero or negative.
  */
+/**
+ * Whole days from one `YYYY-MM-DD` date to another; negative when `to` is earlier.
+ *
+ * Calendar dates, not instants, for the reason this whole module exists: an age at weaning is "205
+ * days old", a fact about two days on a farm. Subtracting two `Date` objects instead would make the
+ * answer depend on the hour each happened to be captured, so a calf weighed at 06:00 and one weighed
+ * at 18:00 on the same day would come out a day apart.
+ */
+export function calendarDaysBetween(from: string, to: string): number {
+  return (utcMidnight(to) - utcMidnight(from)) / MS_PER_DAY;
+}
+
+function utcMidnight(date: string): number {
+  const match = DATE_RE.exec(date);
+  if (!match) {
+    throw new ValidationError('Expected a YYYY-MM-DD calendar date');
+  }
+  const [, y, m, d] = match;
+  return Date.UTC(Number(y), Number(m) - 1, Number(d));
+}
+
 export function addCalendarDays(date: string, days: number): string {
   const match = DATE_RE.exec(date);
   if (!match) {

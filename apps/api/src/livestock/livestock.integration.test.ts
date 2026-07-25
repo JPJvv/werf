@@ -543,6 +543,130 @@ describe('weight capture (FR-140)', () => {
     });
   });
 
+  // ── The rest of the lifecycle (FR-104, FR-111, FR-106 purchase, FR-605 missing) ─────
+  describe('birth, weaning, purchase and missing', () => {
+    it('files a birth against the DAM, naming the calf', async () => {
+      // The calving belongs on the cow's timeline, not the calf's — the calf has no history yet,
+      // and "which cows calved this season" is the question a farmer actually asks.
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+      const calf = await anAnimal(a.farmId);
+
+      const birth = await service.recordBirth(a.userId, {
+        id: randomUUID(),
+        farmId: a.farmId,
+        animalId: dam,
+        occurredAt: new Date('2026-08-14T05:30:00.000Z'),
+        calfId: calf,
+        easeScore: 2,
+        multiples: 1,
+        birthWeightKg: 34,
+      } as schemas.RecordBirthRequest);
+
+      expect(birth.type).toBe('birth');
+      expect(birth.animalId).toBe(dam);
+      expect(birth.payload).toMatchObject({ calfId: calf, damId: dam, easeScore: 2, multiples: 1 });
+    });
+
+    it('refuses a birth naming a calf on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const dam = await anAnimal(a.farmId);
+      const theirCalf = await anAnimal(b.farmId);
+
+      await expect(
+        service.recordBirth(a.userId, {
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: dam,
+          occurredAt: new Date(),
+          calfId: theirCalf,
+          easeScore: 1,
+          multiples: 1,
+        } as schemas.RecordBirthRequest),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('records a weaning without changing the animal’s status', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const weaning = await service.recordWeaning(a.userId, {
+        id: randomUUID(),
+        farmId: a.farmId,
+        animalId,
+        occurredAt: new Date('2026-09-01T08:00:00.000Z'),
+        weightKg: 210,
+        ageDays: 205,
+      } as schemas.RecordWeaningRequest);
+
+      expect(weaning.type).toBe('weaning');
+      expect(weaning.payload).toMatchObject({ weightKg: 210, ageDays: 205 });
+      const [row] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      expect(row!.status).toBe('alive');
+    });
+
+    it('records a purchase as money in, with no status change', async () => {
+      // A purchase is the mirror of a sale for the books, but the animal arrived alive and stays
+      // alive — it is not a status event at all. Money is integer cents, never a float.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const purchase = await service.recordPurchase(a.userId, {
+        id: randomUUID(),
+        farmId: a.farmId,
+        animalId,
+        occurredAt: new Date('2026-05-04T09:00:00.000Z'),
+        counterparty: 'Bloem Vleismark',
+        priceCents: 1_845_000,
+      } as schemas.RecordPurchaseRequest);
+
+      expect(purchase.type).toBe('purchase');
+      expect(purchase.payload).toMatchObject({ priceCents: 1_845_000 });
+    });
+
+    it('marks an animal missing, anchored to where it was last seen', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const lastSeen = JSON.stringify({ type: 'Point', coordinates: [26.21, -29.12] });
+
+      const missing = await service.recordMissing(a.userId, {
+        id: randomUUID(),
+        farmId: a.farmId,
+        animalId,
+        occurredAt: new Date('2026-06-18T16:00:00.000Z'),
+        lastSeenGeojson: lastSeen,
+        cause: 'Fence cut on the eastern boundary',
+      } as schemas.RecordMissingRequest);
+
+      expect(missing.type).toBe('missing');
+      // The point is the whole value of the record to the Stock Theft Unit, so it must survive to
+      // the row — via the events geojson trigger, exactly as a camp boundary does.
+      expect(missing.locationGeojson).not.toBeNull();
+      expect(JSON.parse(missing.locationGeojson!)).toMatchObject({ type: 'Point' });
+    });
+
+    it('refuses to report a SOLD animal missing', async () => {
+      // 'missing' is less final than 'sold'. An animal that left in a truck is not missing, and the
+      // state machine — not this endpoint — is what says so.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      await elevated.db.update(animals).set({ status: 'sold' }).where(eq(animals.id, animalId));
+
+      await expect(
+        service.recordMissing(a.userId, {
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId,
+          occurredAt: new Date(),
+          lastSeenGeojson: JSON.stringify({ type: 'Point', coordinates: [26.2, -29.1] }),
+        } as schemas.RecordMissingRequest),
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
   // ── Movement (FR-103) ───────────────────────────────────────────────────────────────
   describe('movement (FR-103)', () => {
     const moveBody = (

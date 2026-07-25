@@ -14,10 +14,12 @@
 import { z } from 'zod';
 import { uuidSchema, geoJsonStringSchema, dateSchema, timestampSchema } from './primitives';
 import {
+  birthPayloadSchema,
   deathPayloadSchema,
   dipPayloadSchema,
   tradePayloadSchema,
   treatmentRouteSchema,
+  weaningPayloadSchema,
   weightPayloadSchema,
 } from './events';
 
@@ -87,6 +89,66 @@ export const recordSaleRequestSchema = z.object({
   ...tradePayloadSchema.shape,
 });
 export type RecordSaleRequest = z.infer<typeof recordSaleRequestSchema>;
+
+/**
+ * Record a birth (FR-104). The event is filed against the DAM — her timeline is where a calving
+ * belongs — and the calf is referenced by the id the client already minted for its `animals` row.
+ * The flush sends animals before events, so the calf exists by the time this arrives.
+ */
+export const recordBirthRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  /** The DAM. The event is hers; the calf is in the payload. */
+  animalId: uuidSchema,
+  /** When she calved, on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  ...birthPayloadSchema.omit({ damId: true }).shape,
+});
+export type RecordBirthRequest = z.infer<typeof recordBirthRequestSchema>;
+
+/** Record a weaning (FR-111) — weight and, if known, age. No status change; the animal stays alive. */
+export const recordWeaningRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  animalId: uuidSchema,
+  occurredAt: timestampSchema,
+  ...weaningPayloadSchema.shape,
+});
+export type RecordWeaningRequest = z.infer<typeof recordWeaningRequestSchema>;
+
+/**
+ * Record a purchase (FR-106) — an acquisition against an animal already in the herd. Unlike a sale
+ * it does NOT change status: the animal arrives alive and stays alive. Same `trade` payload, so the
+ * money side of buying and selling cannot drift apart.
+ */
+export const recordPurchaseRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  animalId: uuidSchema,
+  occurredAt: timestampSchema,
+  ...tradePayloadSchema.shape,
+});
+export type RecordPurchaseRequest = z.infer<typeof recordPurchaseRequestSchema>;
+
+/**
+ * Mark an animal missing (FR-605) — COMPLIANCE-GATED (legal-compliance.md § 3.2, stock theft).
+ *
+ * `lastSeenGeojson` is REQUIRED and not nullable, which is the whole point of "GPS-anchored": a
+ * missing report with no point is of little use to the SAPS Stock Theft Unit, and it is the field
+ * an evidence pack is built around. Making it optional "for convenience" would quietly hollow out
+ * the one record this exists to produce.
+ */
+export const recordMissingRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  animalId: uuidSchema,
+  /** When it was last seen, on the farm — days before this is captured, typically. */
+  occurredAt: timestampSchema,
+  /** Where it was last seen, as GeoJSON. Required. */
+  lastSeenGeojson: geoJsonStringSchema,
+  cause: z.string().min(1).optional(),
+});
+export type RecordMissingRequest = z.infer<typeof recordMissingRequestSchema>;
 
 /**
  * Record a move (FR-103) — an animal walked to another camp and/or another mob.

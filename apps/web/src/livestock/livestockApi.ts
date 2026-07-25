@@ -9,7 +9,14 @@
 import type { schemas } from '@werf/core';
 import { postCapture as post } from '../sync/captureApi';
 import type { StoredWeight } from './LocalWeights';
-import type { StoredDeath, StoredSale } from './LocalLifecycle';
+import type {
+  StoredBirth,
+  StoredDeath,
+  StoredMissing,
+  StoredPurchase,
+  StoredSale,
+  StoredWeaning,
+} from './LocalLifecycle';
 import type { StoredMove } from './LocalMoves';
 
 /**
@@ -88,6 +95,69 @@ export const livestockApi = {
         counterparty: sale.counterparty,
         priceCents: sale.priceCents,
         ...(sale.weightKg === undefined ? {} : { weightKg: sale.weightKg }),
+      },
+      token,
+    ),
+
+  /** A birth (FR-104), filed against the DAM. The calf's herd row is sent ahead of it. */
+  recordBirth: (birth: StoredBirth, token: string): Promise<void> =>
+    post(
+      '/livestock/births',
+      {
+        id: birth.id,
+        farmId: birth.farmId,
+        animalId: birth.animalId,
+        occurredAt: birth.occurredAt,
+        calfId: birth.calfId,
+        easeScore: birth.easeScore,
+        multiples: birth.multiples,
+        ...(birth.birthWeightKg === undefined ? {} : { birthWeightKg: birth.birthWeightKg }),
+      },
+      token,
+    ),
+
+  /** A weaning (FR-111). */
+  recordWeaning: (weaning: StoredWeaning, token: string): Promise<void> =>
+    post(
+      '/livestock/weanings',
+      {
+        id: weaning.id,
+        farmId: weaning.farmId,
+        animalId: weaning.animalId,
+        occurredAt: weaning.occurredAt,
+        weightKg: weaning.weightKg,
+        ...(weaning.ageDays === undefined ? {} : { ageDays: weaning.ageDays }),
+      },
+      token,
+    ),
+
+  /** A purchase (FR-106) — money in, no status change. Money crosses as integer cents. */
+  recordPurchase: (purchase: StoredPurchase, token: string): Promise<void> =>
+    post(
+      '/livestock/purchases',
+      {
+        id: purchase.id,
+        farmId: purchase.farmId,
+        animalId: purchase.animalId,
+        occurredAt: purchase.occurredAt,
+        counterparty: purchase.counterparty,
+        priceCents: purchase.priceCents,
+        ...(purchase.weightKg === undefined ? {} : { weightKg: purchase.weightKg }),
+      },
+      token,
+    ),
+
+  /** A missing report (FR-605). The last-seen point is required all the way to the wire. */
+  recordMissing: (missing: StoredMissing, token: string): Promise<void> =>
+    post(
+      '/livestock/missing',
+      {
+        id: missing.id,
+        farmId: missing.farmId,
+        animalId: missing.animalId,
+        occurredAt: missing.occurredAt,
+        lastSeenGeojson: missing.lastSeenGeojson,
+        ...(missing.cause === undefined ? {} : { cause: missing.cause }),
       },
       token,
     ),

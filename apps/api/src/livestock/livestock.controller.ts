@@ -104,6 +104,60 @@ export class LivestockController {
   }
 
   /**
+   * Record a birth (FR-104) against the DAM. The calf's `animals` row is created through the
+   * ordinary create-animal path and sent first; this event carries the calving facts.
+   */
+  @Post('births')
+  @HttpCode(HttpStatus.CREATED)
+  async recordBirth(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordBirthRequestSchema))
+    body: schemas.RecordBirthRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordBirth(auth.userId, body);
+  }
+
+  /** Record a weaning (FR-111): the weight at weaning and, if known, the age. No status change. */
+  @Post('weanings')
+  @HttpCode(HttpStatus.CREATED)
+  async recordWeaning(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordWeaningRequestSchema))
+    body: schemas.RecordWeaningRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordWeaning(auth.userId, body);
+  }
+
+  /**
+   * Record a purchase (FR-106) — an acquisition against an animal already in the herd. Unlike a
+   * sale it changes no status: the animal arrived alive and stays alive.
+   */
+  @Post('purchases')
+  @HttpCode(HttpStatus.CREATED)
+  async recordPurchase(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordPurchaseRequestSchema))
+    body: schemas.RecordPurchaseRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordPurchase(auth.userId, body);
+  }
+
+  /**
+   * Mark an animal missing (FR-605) — COMPLIANCE-GATED. Status → 'missing', timestamped by when it
+   * was LAST SEEN and anchored to where. The location is required by the contract: it is the field
+   * the stock-theft evidence pack is built around.
+   */
+  @Post('missing')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMissing(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMissingRequestSchema))
+    body: schemas.RecordMissingRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMissing(auth.userId, body);
+  }
+
+  /**
    * Record a death (FR-105) → the animal's status becomes 'dead'. An append-only event; the
    * animal it references must already exist (the flush sends animals first). Idempotent on the id.
    */

@@ -188,6 +188,8 @@ export async function assertOwnedReferences(
     mobId?: string | null | undefined;
     damId?: string | null | undefined;
     sireId?: string | null | undefined;
+    /** The calf a birth event names — its `animals` row is created before the event is sent. */
+    calfId?: string | null | undefined;
   },
 ): Promise<void> {
   const checks: Array<[string | null | undefined, () => Promise<unknown[]>, string]> = [
@@ -217,6 +219,7 @@ export async function assertOwnedReferences(
     ],
     [refs.damId, () => animalOnFarm(tx, farmId, refs.damId!), 'Dam not found'],
     [refs.sireId, () => animalOnFarm(tx, farmId, refs.sireId!), 'Sire not found'],
+    [refs.calfId, () => animalOnFarm(tx, farmId, refs.calfId!), 'Calf not found'],
   ];
 
   for (const [id, query, message] of checks) {

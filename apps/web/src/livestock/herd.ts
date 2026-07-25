@@ -24,6 +24,9 @@ function mostFinalByAnimal(
 ): ReadonlyMap<string, AnimalStatus> {
   const map = new Map<string, AnimalStatus>();
   for (const e of events) {
+    // A birth, weaning or purchase moves no status — it is a fact about an animal that stays
+    // exactly as alive as it was. Only the events that carry one take part in the fold.
+    if (e.status === null) continue;
     const current = map.get(e.animalId);
     if (current === undefined || isMoreFinal(e.status, current)) map.set(e.animalId, e.status);
   }

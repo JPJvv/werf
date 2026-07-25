@@ -43,12 +43,34 @@ import { useAnimals } from '../livestock/LocalHerd';
 import { useMobs } from '../livestock/LocalMobs';
 import { useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
-import { useLifecycleEvents } from '../livestock/LocalLifecycle';
+import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
 import { useMoves } from '../livestock/LocalMoves';
 import { livestockApi } from '../livestock/livestockApi';
 import { useRainfall } from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
+
+/**
+ * Send one lifecycle event to its own endpoint. The switch is exhaustive on the union, so adding a
+ * new event type to the local log without an endpoint here is a compile error — the alternative, an
+ * if/else with a default arm, would quietly post a weaning to /deaths.
+ */
+function sendLifecycleEvent(event: StoredLifecycleEvent, token: string): Promise<void> {
+  switch (event.type) {
+    case 'death':
+      return livestockApi.recordDeath(event, token);
+    case 'sale':
+      return livestockApi.recordSale(event, token);
+    case 'missing':
+      return livestockApi.recordMissing(event, token);
+    case 'purchase':
+      return livestockApi.recordPurchase(event, token);
+    case 'birth':
+      return livestockApi.recordBirth(event, token);
+    case 'weaning':
+      return livestockApi.recordWeaning(event, token);
+  }
+}
 
 /** One queued capture: its id (for the sent-log) and how to send it with a given access token. */
 interface FlushItem {
@@ -127,13 +149,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         items.push({ id: weight.id, send: (token) => livestockApi.recordWeight(weight, token) });
       }
     }
+    // One entry per lifecycle event TYPE. Exhaustive by construction rather than by an
+    // if/else with a default arm: a new event type added to the store without an endpoint here
+    // fails the typecheck instead of being silently posted to /deaths.
     for (const event of events) {
       if (sent.has(event.id)) continue;
-      items.push(
-        event.type === 'sale'
-          ? { id: event.id, send: (token) => livestockApi.recordSale(event, token) }
-          : { id: event.id, send: (token) => livestockApi.recordDeath(event, token) },
-      );
+      items.push({ id: event.id, send: (token) => sendLifecycleEvent(event, token) });
     }
     // Moves reference an animal AND its destination camp/mob, so they come after all three.
     for (const move of moves) {

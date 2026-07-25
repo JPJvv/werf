@@ -38,12 +38,16 @@ import { ConflictError, NotFoundError, ValidationError, type schemas } from '@we
 import {
   assembleEvidencePack,
   isWithinWithdrawal,
+  recordBirth,
   recordDeath,
   recordDip,
+  recordMissing,
   recordMove,
+  recordPurchase,
   recordSale,
   recordTreatment,
   recordVaccination,
+  recordWeaning,
   recordWeight,
 } from '@werf/domain';
 import { APP_DB } from '../db/db.module';
@@ -408,6 +412,145 @@ export class LivestockService {
       };
       const { event } = recordDeath(
         input.disposal === undefined ? base : { ...base, disposal: input.disposal },
+      );
+
+      return insertEvent(tx, event);
+    });
+  }
+
+  /**
+   * Records a birth (FR-104) against the DAM — her timeline is where a calving belongs. The calf's
+   * `animals` row is created through the ordinary create-animal path (the flush sends animals before
+   * events, so it is already here); this event ties the two together and carries the calving facts.
+   * The calf is checked to be on this farm for the same reason every reference is.
+   */
+  async recordBirth(userId: string, input: schemas.RecordBirthRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      await assertOwnedReferences(tx, input.farmId, {
+        calfId: input.calfId,
+        ...(input.sireId === undefined ? {} : { sireId: input.sireId }),
+      });
+      const { status: currentStatus, enterpriseId } = await animalFacts(
+        tx,
+        input.farmId,
+        input.animalId,
+      );
+
+      const base = {
+        id: input.id,
+        farmId: input.farmId,
+        animalId: input.animalId,
+        occurredAt: input.occurredAt,
+        currentStatus,
+        enterpriseId,
+        calfId: input.calfId,
+        easeScore: input.easeScore,
+        multiples: input.multiples,
+        createdBy: userId,
+      };
+      const { event } = recordBirth({
+        ...base,
+        ...(input.sireId === undefined ? {} : { sireId: input.sireId }),
+        ...(input.birthWeightKg === undefined ? {} : { birthWeightKg: input.birthWeightKg }),
+      });
+
+      return insertEvent(tx, event);
+    });
+  }
+
+  /** Records a weaning (FR-111): the weight at weaning and, if known, the age. No status change. */
+  async recordWeaning(userId: string, input: schemas.RecordWeaningRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      const { status: currentStatus, enterpriseId } = await animalFacts(
+        tx,
+        input.farmId,
+        input.animalId,
+      );
+
+      const base = {
+        id: input.id,
+        farmId: input.farmId,
+        animalId: input.animalId,
+        occurredAt: input.occurredAt,
+        currentStatus,
+        enterpriseId,
+        weightKg: input.weightKg,
+        createdBy: userId,
+      };
+      const { event } = recordWeaning(
+        input.ageDays === undefined ? base : { ...base, ageDays: input.ageDays },
+      );
+
+      return insertEvent(tx, event);
+    });
+  }
+
+  /**
+   * Records a purchase (FR-106) — an acquisition against an animal already in the herd. Unlike a
+   * sale it changes nothing about the animal's status: it arrived alive and stays alive. The money
+   * uses the same `trade` payload as a sale, so buying and selling cannot drift apart.
+   */
+  async recordPurchase(userId: string, input: schemas.RecordPurchaseRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      const { status: currentStatus, enterpriseId } = await animalFacts(
+        tx,
+        input.farmId,
+        input.animalId,
+      );
+
+      const base = {
+        id: input.id,
+        farmId: input.farmId,
+        animalId: input.animalId,
+        occurredAt: input.occurredAt,
+        currentStatus,
+        enterpriseId,
+        counterparty: input.counterparty,
+        priceCents: input.priceCents,
+        createdBy: userId,
+      };
+      const { event } = recordPurchase(
+        input.weightKg === undefined ? base : { ...base, weightKg: input.weightKg },
+      );
+
+      return insertEvent(tx, event);
+    });
+  }
+
+  /**
+   * Marks an animal missing (FR-605) — COMPLIANCE-GATED. Status → 'missing', timestamped by
+   * `occurredAt` (when it was LAST SEEN, which is days before this is captured) and anchored to the
+   * point it was last seen. The location is required by the contract, not merely encouraged: it is
+   * the field the stock-theft evidence pack is built around, and a missing report without it is of
+   * little use to the SAPS Stock Theft Unit.
+   *
+   * 'missing' is more final than 'alive' but less than sold or dead, so a sold animal cannot be
+   * reported missing — the state machine says so, and that refusal is the point.
+   */
+  async recordMissing(userId: string, input: schemas.RecordMissingRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      const { status: currentStatus, enterpriseId } = await animalFacts(
+        tx,
+        input.farmId,
+        input.animalId,
+      );
+
+      const base = {
+        id: input.id,
+        farmId: input.farmId,
+        animalId: input.animalId,
+        occurredAt: input.occurredAt,
+        currentStatus,
+        enterpriseId,
+        lastSeenGeojson: input.lastSeenGeojson,
+        createdBy: userId,
+      };
+      const { event } = recordMissing(
+        input.cause === undefined ? base : { ...base, cause: input.cause },
       );
 
       return insertEvent(tx, event);

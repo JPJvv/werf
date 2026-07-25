@@ -19,6 +19,19 @@ export default defineWorkspace([
        * a flaky gate is one people learn to re-run rather than read.
        */
       testTimeout: 30_000,
+      /**
+       * Cap concurrent worker files. This project mixes fast pure-unit tests with ~10
+       * suites that each start their OWN Postgres testcontainer (5 in apps/api, 5 in
+       * packages/db). At Vitest's default (one worker per core = 12 here) they all try to
+       * boot a container at once, and the spike — container start + argon2id memory —
+       * intermittently drops a connection mid-query or times a container boot out, failing
+       * unrelated suites. Four-wide bounds the peak to four containers so the gate is
+       * reproducible, not lucky. It costs the fast tests a little parallelism; a gate that
+       * flakes costs far more (a green run before this: 494/494; a red one: 3 suites down,
+       * none for a real reason).
+       */
+      maxWorkers: 4,
+      minWorkers: 1,
     },
   },
   {

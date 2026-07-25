@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useTranslation } from '../i18n/LocaleProvider';
 import type { HomeTile } from './tiles';
 
 /**
@@ -19,6 +20,7 @@ export interface TileProps {
 }
 
 export function Tile({ tile, metric, badge }: TileProps) {
+  const { t } = useTranslation();
   return (
     <Link
       to={tile.to}
@@ -27,7 +29,7 @@ export function Tile({ tile, metric, badge }: TileProps) {
       <span aria-hidden="true" className="text-h1 leading-none">
         {tile.icon}
       </span>
-      <span className="text-tile uppercase">{tile.label}</span>
+      <span className="text-tile uppercase">{t(tile.labelKey)}</span>
       {metric !== undefined && (
         <span className="font-data text-data-lg tabular-nums text-soil-900">{metric}</span>
       )}

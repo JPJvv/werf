@@ -255,7 +255,7 @@ Tiles are **generated from `farm.enterprise_types`** ([FR-002](../01-requirement
 | Beef + Maize | Herd · Blocks · Health · Sprays · Labour · Money · Compliance |
 | Sheep + Goats | Flock · Camps · Health · Labour · Money · Compliance |
 
-**A cattle farmer never sees a Sprays tile. Ever.** A vineyard owner never sees Herd. The word is "camp" for cattle and "block" for vines, from the terminology table — never hardcoded.
+**A cattle farmer never sees a Sprays tile. Ever.** A vineyard owner never sees Herd. The word is "camp" for cattle and "block" for vines, from the terminology layer — never hardcoded, and never decided twice. That layer is `apps/web/src/i18n/terminology.ts`: it answers which TERM a farm uses (`camp` / `block`, `herd` / `flock` / `livestock`) and the dictionaries hold the word for that term in each language, so a tile label is translatable and the grid and the first-run guide cannot disagree. It becomes a lookup against a terminology TABLE, read through the sync adapter, when the vocabulary outgrows a closed set of tokens — a farm that says "paddock", or a second jurisdiction with its own words. Callers do not change when it does: they already ask the layer instead of deciding for themselves.
 
 If you find yourself writing a static array of tiles, stop. That array is the bug.
 

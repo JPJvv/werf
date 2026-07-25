@@ -124,7 +124,7 @@ describe('arriving signed in, with no signal', () => {
 
     // The regression this pins: the guide used to re-derive the land word and told a
     // mixed farm to "add your first camp" directly beneath a tile labelled "Blocks".
-    // Both now come from `landTerm`, so a mixed farm says "block" in both places.
+    // Both now come from the terminology layer, so a mixed farm says "block" in both places.
     expect(screen.getByRole('link', { name: /blocks/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /add your first block/i })).toBeTruthy();
     expect(screen.queryByRole('link', { name: /add your first camp/i })).toBeNull();

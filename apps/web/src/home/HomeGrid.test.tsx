@@ -2,10 +2,19 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { ReactElement } from 'react';
+import { LocaleProvider } from '../i18n/LocaleProvider';
 import { HomeGrid } from './HomeGrid';
 
-/** Tiles are router links, so a Router context is required to render the grid. */
-const renderInRouter = (ui: ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
+/**
+ * Tiles are router links, and their labels come from the dictionary (the terminology layer decides
+ * the TERM, the dictionary holds the word), so the grid needs both contexts to render.
+ */
+const renderInRouter = (ui: ReactElement) =>
+  render(
+    <LocaleProvider>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </LocaleProvider>,
+  );
 
 describe('HomeGrid', () => {
   it('renders each tile as a labelled door (link), not a static list', () => {

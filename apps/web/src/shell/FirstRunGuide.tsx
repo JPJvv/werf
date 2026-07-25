@@ -13,7 +13,7 @@
 
 import { Link } from 'react-router-dom';
 import { isCropEnterprise, isLivestockEnterprise, type EnterpriseType } from '@werf/core';
-import { landTerm } from '../home/tiles';
+import { landTerm } from '../i18n/terminology';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 
@@ -64,10 +64,13 @@ export function firstRunSteps(enterpriseTypes: EnterpriseType[]): FirstRunStep[]
 
   const steps: FirstRunStep[] = [];
 
-  // The land step takes its word from `landTerm`, the same function the grid's land tile
-  // uses. Re-deriving it here is what produced a mixed farm being shown a "Blocks" tile
-  // and "add your first camp" immediately below it — the vocabulary fork this module is
-  // supposed to prevent, in the two components most likely to be read together.
+  // The land step takes its term from the terminology layer, the same lookup the grid's land
+  // tile uses. Re-deriving it here is what produced a mixed farm being shown a "Blocks" tile
+  // and "add your first camp" immediately below it — the vocabulary fork the terminology
+  // module exists to prevent, in the two components most likely to be read together. The
+  // sentence forms are their own keys rather than a noun dropped into a template: "Add your
+  // first camp" is a sentence in Afrikaans too, and assembling one from parts produces the
+  // kind of translation only a programmer thinks is fine.
   if (hasAnimals || hasCrops) {
     steps.push({
       labelKey:

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { homeTiles } from './tiles';
+import { dictionaries, type Locale } from '../i18n/dictionaries';
 
-/** Read the ordered, user-facing labels the grid would render. */
-const labels = (types: Parameters<typeof homeTiles>[0]) => homeTiles(types).map((t) => t.label);
+/**
+ * Read the ordered, user-facing labels the grid would render, IN A LANGUAGE. The tiles carry
+ * translation keys now, so the assertion goes through the dictionary — which means these tests
+ * prove the words a farmer actually sees rather than the keys we happened to pick, and a term with
+ * no Afrikaans word would fail here as well as at the type level.
+ */
+const labels = (types: Parameters<typeof homeTiles>[0], locale: Locale = 'en-ZA') =>
+  homeTiles(types).map((tile) => dictionaries[locale][tile.labelKey]);
 
 describe('home grid adaptation (FR-017)', () => {
   it('a beef cattle farm sees Herd and Camps — and never Sprays', () => {
@@ -44,6 +51,26 @@ describe('home grid adaptation (FR-017)', () => {
     expect(mixed).toContain('Blocks');
     expect(mixed).toContain('Sprays');
     expect(mixed).not.toContain('Camps');
+  });
+
+  it('a farm running both herd and flock species uses the neutral word', () => {
+    // "Herd" would be wrong for the sheep and "Flock" wrong for the cattle. Picking either
+    // means being wrong half the time on a farm that runs both.
+    expect(labels(['beef_cattle', 'sheep'])).toContain('Livestock');
+  });
+
+  it('speaks Afrikaans when the farmer does — the whole grid, not half of it', () => {
+    // The Phase 1 fork: terminology labels were English strings decided in tiles.ts, so a tile
+    // could not be translated without deciding the word in a second place. Both halves now come
+    // from the dictionary — the terminology-driven words AND the fixed ones.
+    expect(labels(['sheep'], 'af-ZA')).toEqual([
+      'Trop',
+      'Kampe',
+      'Gesondheid',
+      'Arbeid',
+      'Geld',
+      'Nakoming',
+    ]);
   });
 
   it('never renders a Sprays tile without a crop enterprise', () => {

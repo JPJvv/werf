@@ -126,6 +126,24 @@ const en = {
   'firstRun.stock.animals': 'Record your first animal',
   'firstRun.stock.crops': 'Record your first planting',
   'firstRun.people': 'Add your first employee',
+  // ── Terminology (i18n/terminology.ts) ────────────────────────────────────────────────
+  // The word this farm uses for a concept. The TERM is chosen by what the farm farms; the WORD
+  // for it lives here, once, so a tile and the first-run guide can never disagree — and so the
+  // labels are translatable at all, which they were not while tiles.ts held English strings.
+  // Collective/label form: this is what a tile carries.
+  'term.camp': 'Camps',
+  'term.block': 'Blocks',
+  'term.herd': 'Herd',
+  'term.flock': 'Flock',
+  'term.livestock': 'Livestock',
+  // Home-grid tiles that carry no terminology decision — the same word on every farm, but a
+  // word in the farmer's LANGUAGE, which is the other half of the Phase 1 vocabulary fork.
+  'tile.health': 'Health',
+  'tile.sprays': 'Sprays',
+  'tile.harvest': 'Harvest',
+  'tile.labour': 'Labour',
+  'tile.money': 'Money',
+  'tile.compliance': 'Compliance',
   'module.comingSoon': 'This part of the farm arrives in a later phase.',
   'module.notFound.title': 'Not found',
   'module.notFound.body': 'There is nothing here.',
@@ -307,6 +325,19 @@ const af: Record<TranslationKey, string> = {
   'firstRun.stock.animals': 'Teken jou eerste dier aan',
   'firstRun.stock.crops': 'Teken jou eerste aanplanting aan',
   'firstRun.people': 'Voeg jou eerste werknemer by',
+  'term.camp': 'Kampe',
+  'term.block': 'Blokke',
+  // Afrikaans uses one word for both a herd and a flock — which is exactly why the token, not
+  // the English word, is what the lookup returns.
+  'term.herd': 'Trop',
+  'term.flock': 'Trop',
+  'term.livestock': 'Vee',
+  'tile.health': 'Gesondheid',
+  'tile.sprays': 'Bespuiting',
+  'tile.harvest': 'Oes',
+  'tile.labour': 'Arbeid',
+  'tile.money': 'Geld',
+  'tile.compliance': 'Nakoming',
   'module.comingSoon': 'Hierdie deel van die plaas kom in ’n latere fase.',
   'module.notFound.title': 'Nie gevind nie',
   'module.notFound.body': 'Daar is niks hier nie.',

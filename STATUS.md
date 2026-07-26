@@ -17,7 +17,7 @@
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **Code complete, NOT merged, and the exit gate does NOT read true.** `pnpm verify` green: 77 files / 750 tests, bundle 133.72 KB gz. `pnpm test:e2e` last green at 25 tests / 0 axe violations, **not re-run since `cc1b149`**. ⛔ The three review agents ran this session and `compliance-checker` returned **NOT APPROVABLE** — two SEV-1 food-safety findings, §3b. Draft PR open for CI signal; **do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **Code complete, NOT merged, and the exit gate does NOT read true.** `pnpm verify` green: 77 files / 750 tests, bundle 133.72 KB gz. **CI green on draft PR #3, both lanes, at `664dc23`** — including e2e/axe, so that is verified at HEAD rather than inferred. ⛔ The three review agents ran this session and `compliance-checker` returned **NOT APPROVABLE** — two SEV-1 food-safety findings, §3b. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
@@ -60,6 +60,25 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
        comparable to the FR-102 tally;
    (c) accept and merge with the hole documented, which for a food-safety guard I would argue
        against in writing.
+   → _Answer:_
+
+1c. **NEW — install the defect-class hook?** Proposed at the end of the fifth session, **not
+   installed**, awaiting your call. A `PostToolUse` hook on `Edit|Write` that greps the changed
+   file for the most-repeated defect classes and warns without blocking:
+
+   ```bash
+   # .claude/hooks/defect-classes.sh
+   case "$FILE" in *.test.ts|*.test.tsx|*.spec.ts) exit 0 ;; esac
+   grep -nE 'navigator\.onLine' "$FILE" | grep -vE 'useSyncStatus|// *display'
+   grep -nE 'toISOString\(\)\.slice\(0, *10\)' "$FILE"
+   ```
+
+   **Recommendation: install these two patterns only.** A third pattern for hardcoded wage-shaped
+   numbers was proposed and I argued against it — a wage-shaped number is hard to tell from a test
+   fixture, and a hook that cries wolf gets ignored, which is worse than no hook. Leave regulated
+   numbers to the NFR-507 lint rule, which can see types. Note the awkwardness that argues for the
+   exemption on line 2: `toISOString().slice(0,10)` most recently reappeared **in test assertions**
+   (§3b finding 11), which is exactly what the first line skips.
    → _Answer:_
 
 2. **`docs/phase-3-6-scope` — cherry-pick after the merge.** ✅ **ANSWERED 2026-07-26:** cherry-pick.
@@ -274,7 +293,7 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | # | Gap |
 |---|---|
 | A1–A3 | ✅ All three agents run 2026-07-26 over the branch at `a6c8eff`. Findings fixed, not filed — §3 |
-| A4 | **CI green on `main`** — the draft PR now exists, so CI can finally run. This clause of the exit gate can only ever go true AT MERGE; read it that way rather than as a pre-PR blocker |
+| A4 | ◐ **CI HAS NOW RUN, AND BOTH LANES PASS.** Draft PR #3, run `30211760029`, 2026-07-26: `Lint · Typecheck · Test · Build` green in 3m00s, `E2E · axe (both themes)` green in 1m31s. **This is the first time CI has ever executed against this code.** It also settles two things that were open: the e2e lane ran at HEAD (`664dc23`), so the "not re-run since `cc1b149`" worry is closed and it did NOT need a separate local run; and the shared-testcontainer change (A5) survived a real CI machine under real contention. The remaining half of this clause is CI green **on `main`**, which can only go true at merge |
 | A6 | ✅ **DONE 2026-07-26 (fifth session).** All three agents run once over `a6c8eff..HEAD` (ten commits, not nine — `cc1b149` landed after the old count was written). ⛔ **The findings are OPEN, and `compliance-checker` said NOT APPROVABLE — §3b.** The pass is done; the work it produced is not |
 | A7 | ✅ **FIXED 2026-07-26 — the e2e lane could report green against code that no longer existed.** `vite preview` serves `dist`, and `turbo.json`'s `build` task declared no `outputs`, so turbo cached only LOGS: a cache hit printed "FULL TURBO" and wrote no files, leaving whatever bundle was already on disk. Proven rather than theorised — a screen's heading was replaced with a literal and the suite stayed 25-green, then kept FAILING for five consecutive runs after the source was restored, because the broken bundle was never replaced either way. Two changes: `outputs: ["dist/**"]` in `turbo.json`, and `pnpm test:e2e` now builds first (turbo-cached, so free when nothing changed). Verified in both directions — breaking a heading now fails 2 tests, restoring it returns 25 green. **This is why the earlier "2 failed then clean on a re-run" was never a flake; do not re-diagnose it as one.** |
 | A8 | ⚠️ **ONE unexplained unit-suite failure, cause unknown — do not dismiss it.** A single `pnpm verify` run reported `1 failed | 76 passed` and the next EIGHT runs were clean (4 full-suite, 4 targeted). Which test it was is unknown, because the log was discarded before the failure detail was read. **What HAS been ruled out:** the flake recorded in memory as "`confirmTotpEnrolment` reds when a code straddles a 30s boundary" cannot be it — `TOTP_DRIFT_STEPS = 1`, so `verifyTotp` accepts ±1 step and a boundary crossing is tolerated by design. That recorded explanation is simply wrong and has been corrected. If this recurs, capture the failing test name FIRST; a one-in-nine failure in a suite the PR gate depends on is worth a real diagnosis, not a re-run. |
@@ -302,7 +321,7 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | G2 | ✅ **CLOSED 2026-07-26 (fifth session).** Phase 3's checklist is written: 3a–3i mapped 1:1 from the roadmap, with the two external blockers (§2.4 legal review, §2.5 Gazette) raised to explicit ⛔ lines at the top instead of being implied, 3a flagged as a standalone session and review unit, and 3d–3e flagged as many small sessions with mandatory human review of every diff and **never batched**. Phases 4–7 remain deliberately unwritten |
 | G3 | **Equipment register (FR-504) has no table.** `vehicles` carries a comment to add `equipment_id` additively. Phase 4i |
 | G4 | **`user-guide.md` and `ux-design-system.md` not updated** for the 2026-07-25 scope, nor for the fourteen screens added since. Now also missing `/animals/groups/count` and Settings → Security. The **grievance flow needs real UX care** when it lands |
-| G5 | **CI never runs on feature branches.** Green locally ≠ green in CI until the PR opens |
+| G5 | ✅ **CLOSED 2026-07-26 (fifth session).** The draft PR opened and CI ran — both lanes green on the first ever run (§4 A4). The underlying fact still holds and is worth remembering: CI does not run on a feature branch with no PR, so "green locally" stays unproven until one exists. Open the PR as a draft EARLY next phase rather than at the end; it costs nothing and it is the only way to find out |
 
 ---
 
@@ -323,18 +342,32 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 ⛔ PHASE 2'S EXIT GATE DOES NOT READ TRUE, whatever §1 used to say. The three
 review agents ran (§3b) and compliance-checker returned NOT APPROVABLE: two
 SEV-1 findings put meat inside an active withdrawal into the food chain, and
-two of the three agents found the first one independently. The draft PR is
-open for CI signal only — DO NOT MARK IT READY, and do not merge it.
+two of the three agents found the first one independently. Draft PR #3 is open
+and CI is GREEN on both lanes — green CI is not the gate here, the SEV-1s are.
+DO NOT MARK IT READY, and do not merge it.
 
-The first work of the next session is §3b, not a feature. Finding 1 is
-contained (compare farm-local DAYS inclusively, not instants). Finding 2 needs
-mob-subject health events synced to the device before the screen can guard
-anything, so it is a real slice. Findings 6–8 are cheap and one of them (7)
-detonates when PowerSync hydrates `mobs` in Phase 3 — fix it while it is one
-field rather than a migration under load.
+THE FIRST WORK OF THE NEXT SESSION IS §3b, NOT A FEATURE. In order:
+
+  1. §3b finding 1 — CONTAINED, do this first. Compare farm-local DAYS,
+     inclusive at BOTH ends, from the dose's `administeredOn`, instead of
+     comparing a real move instant against a fabricated dose instant. Add the
+     SAME-DAY test the suite has never had: the existing withdrawal tests dip
+     and move on different days, which is why this survived.
+  2. §3b finding 7 — CHEAP NOW, EXPENSIVE LATER. The client folds over
+     `mob.headCount` where the server folds over `mobs.initialHeadCount`.
+     Harmless only because nothing writes back into the local store; it
+     detonates when PowerSync hydrates `mobs` in Phase 3. One field today,
+     a migration under load later.
+  3. §3b findings 3, 4, 5, 6, 8 — SEV-2 and below, all contained.
+  4. §3b finding 2 — a REAL SLICE, not an edit. Mob-subject health events must
+     reach the device before AdjustMobScreen can guard anything.
 
 Phase 1 has NO open gaps. Phase 3's checklist now EXISTS, so /loop has
 something to consume — but §2.4 (labour-law review booked) and §2.5 (Gazette
-figures re-verified) gate its first line, and they have been open for three
-sessions. Do not seed regulatory_rates from the July 2026 table.
+figures re-verified) gate its very first line, and both have been open for
+three sessions. DO NOT seed regulatory_rates from the July 2026 table.
+
+Also open and cheap to answer: §2.1b (how to handle the SEV-1s) and §2.1c
+(install the defect-class hook — recommendation and its caveats are written up
+there, it just needs a yes or no).
 ```

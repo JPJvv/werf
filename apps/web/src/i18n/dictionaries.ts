@@ -229,6 +229,9 @@ const en = {
   'land.name': 'Description (optional)',
   'land.hectares': 'Hectares (optional)',
   'land.hectaresUnit': 'ha',
+  // Live head standing in a camp (FR-705). The word a farmer uses for both a cow and a
+  // sheep — this counts groups as well as individual animals.
+  'land.headUnit': 'head',
   'land.capacity': 'Grazing capacity (LSU, optional)',
   'land.done': 'Done',
   // Animals module (FR-101, FR-705). Captured offline; "head" is the count word a farmer uses.
@@ -692,6 +695,7 @@ const af: Record<TranslationKey, string> = {
   'land.name': 'Beskrywing (opsioneel)',
   'land.hectares': 'Hektaar (opsioneel)',
   'land.hectaresUnit': 'ha',
+  'land.headUnit': 'stuks',
   'land.capacity': 'Weidingskapasiteit (GVE, opsioneel)',
   'land.done': 'Klaar',
   'animals.title': 'Diere',

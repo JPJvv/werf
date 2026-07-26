@@ -21,6 +21,8 @@ const HERD_KEY = `werf-herd:${FARM_ID}`;
 const HEALTH_KEY = `werf-health:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
 const RAINFALL_KEY = `werf-rainfall:${FARM_ID}`;
+const LAND_KEY = `werf-land:${FARM_ID}`;
+const MOBS_KEY = `werf-mobs:${FARM_ID}`;
 const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
@@ -224,5 +226,74 @@ describe('the home grid as an instrument (FR-017)', () => {
 
     expect(screen.getByText('42')).toBeTruthy();
     expect(screen.getByText(/this season/i)).toBeTruthy();
+  });
+});
+
+describe('head per camp (FR-705)', () => {
+  it('shows what is standing in each camp, counting groups as well as animals', () => {
+    // `summariseHerd` has computed `byLandUnit` and been unit-tested since the read-model slice,
+    // and nothing rendered it. A number the app knows and does not show is the same as a number it
+    // does not have — and "how many are in that camp" is the question asked standing at a gate.
+    cachedSession();
+    const noord = uuidv7();
+    const suid = uuidv7();
+    window.localStorage.setItem(
+      LAND_KEY,
+      JSON.stringify([
+        { id: noord, farmId: FARM_ID, code: 'NOORD', name: null, hectares: null, kind: 'camp' },
+        { id: suid, farmId: FARM_ID, code: 'SUID', name: null, hectares: null, kind: 'camp' },
+      ]),
+    );
+    window.localStorage.setItem(
+      HERD_KEY,
+      JSON.stringify([
+        { ...animal(uuidv7(), 'female', 900), landUnitId: noord },
+        { ...animal(uuidv7(), 'female', 900), landUnitId: noord },
+      ]),
+    );
+    // A flock recorded as a GROUP, with no animal rows at all (FR-102). Counting only individual
+    // animals would show an empty camp with 300 sheep standing in it.
+    window.localStorage.setItem(
+      MOBS_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          enterpriseId: null,
+          species: 'sheep',
+          name: 'Ooie',
+          headCount: 300,
+          landUnitId: suid,
+        },
+      ]),
+    );
+    window.history.pushState({}, '', '/land');
+    render(<App />);
+
+    const camps = screen.getAllByRole('listitem');
+    expect(within(camps[0]!).getByText('2')).toBeTruthy();
+    expect(within(camps[1]!).getByText('300')).toBeTruthy();
+  });
+
+  it('says zero for empty ground rather than leaving it blank', () => {
+    // A blank would read as "not known" on the one screen where empty ground is the whole point.
+    cachedSession();
+    window.localStorage.setItem(
+      LAND_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          code: 'RUS',
+          name: null,
+          hectares: null,
+          kind: 'camp',
+        },
+      ]),
+    );
+    window.history.pushState({}, '', '/land');
+    render(<App />);
+
+    expect(within(screen.getAllByRole('listitem')[0]!).getByText('0')).toBeTruthy();
   });
 });

@@ -218,6 +218,7 @@ const en = {
   'animals.new.done': 'Done',
   'animals.weigh': 'Weigh session',
   'animals.loss': 'Record a loss',
+  'animals.theft': 'Stock theft',
   'animals.tag': 'Tag animals',
   'animals.untagged': 'without a number',
   'animals.health': 'Treat or vaccinate',
@@ -367,6 +368,65 @@ const en = {
   'loss.savedSuffixSold': 'recorded — marked sold',
   'loss.empty': 'No live animals to record a loss against.',
   'loss.back': 'Back to animals',
+  // Stock theft (FR-603, Stock Theft Act 57 of 1959). ZA copy names the SAPS Stock Theft Unit
+  // explicitly — the neutral column names in the schema (ADR-0006) exist so the DATA travels to
+  // another jurisdiction, not so a South African farmer reads "the police service" in their own app.
+  'theft.title': 'Stock theft',
+  'theft.intro':
+    'The incidents you have filed. Each one can produce a pack of the facts — identification, ownership, where and when — for the Stock Theft Unit.',
+  'theft.report': 'Report stock theft',
+  'theft.empty': 'No incidents filed.',
+  'theft.back': 'Back to animals',
+  'theft.headTaken': 'head taken',
+  'theft.discovered': 'Found',
+  'theft.lastSeen': 'last seen',
+  'theft.noPoint': 'No GPS point on this one.',
+  'theft.pack': 'Get the evidence pack',
+  'theft.packWorking': 'Putting the pack together…',
+  // Not an error and not worded as one: the incident IS saved. What has not happened is the part
+  // that genuinely needs a signal, and this says which part and what will fix it.
+  'theft.packNotYetSent':
+    'Saved on this phone. The pack is put together on the server, so this incident has to be sent first — that happens on its own next time you have signal.',
+  'theft.packOffline':
+    'The pack could not be fetched — there is no connection right now. The incident is safe. Try again where you have signal.',
+  'theft.packRefused':
+    'The pack could not be put together for this incident. Check that it has been sent, then try again.',
+  // The capture screen.
+  'theft.report.title': 'Report stock theft',
+  'theft.report.intro':
+    'Record what you found, where, and when. It saves on this phone straight away, with or without signal.',
+  'theft.discoveredDay': 'When did you find it?',
+  'theft.lastSeenDay': 'When were they last seen?',
+  'theft.headCount': 'How many are gone?',
+  'theft.headCountHint': 'The number, whether or not they carry tags.',
+  'theft.camp': 'Which camp?',
+  'theft.campNone': 'Not sure',
+  'theft.whichAnimals': 'Which animals? (optional)',
+  'theft.whichAnimalsHint': 'Tick any you can identify. Their tags and brand go into the pack.',
+  'theft.taken': 'Taken',
+  'theft.observations': 'What did you find?',
+  // ⛔ The line that keeps a name out of the record, in the farmer's interest and not only ours.
+  // legal-compliance.md § 3.2: naming a neighbour is a defamation exposure for THEM and a POPIA
+  // s26 problem for us. Said as advice, because that is what it is.
+  'theft.noSuspects':
+    'Facts only — cut fence, tracks, a gate left open. Do not name anyone you suspect: that is for the police to establish, and putting a name in this record can be used against you.',
+  'theft.caseNumber': 'SAPS case number (if you have one)',
+  'theft.station': 'SAPS station (if you have reported it)',
+  'theft.gpsExplain':
+    'Saving takes a GPS point of where you are standing. It works with no signal, and it is what makes this record useful to the Stock Theft Unit.',
+  'theft.locating': 'Getting the GPS point…',
+  'theft.save': 'File this incident',
+  'theft.saveWithoutPoint': 'File it without a GPS point',
+  'theft.gpsRetryHint':
+    'The point is most of what makes this record evidence. Step into the open and try again, or file it without one — the incident is worth more filed than not.',
+  'theft.gpsTryAgain': 'Try the GPS again',
+  'theft.gps.denied':
+    'This phone is not allowing the app to use its location. Turn location on for this app, then try again.',
+  'theft.gps.unavailable':
+    'The phone could not get a GPS point. Step into the open, away from a shed or trees, and try again.',
+  'theft.gps.timeout': 'The GPS is still searching. Wait a few seconds in the open and try again.',
+  'theft.gps.unsupported': 'This phone cannot give a GPS point.',
+  'theft.backToIncidents': 'Back to incidents',
   // Animal status, in the farmer's words. Shown as a marker on a retained (non-live) animal.
   'status.alive': 'Alive',
   'status.missing': 'Missing',
@@ -590,6 +650,7 @@ const af: Record<TranslationKey, string> = {
   'animals.new.done': 'Klaar',
   'animals.weigh': 'Weegsessie',
   'animals.loss': 'Teken ’n verlies aan',
+  'animals.theft': 'Veediefstal',
   'animals.tag': 'Merk diere',
   'animals.untagged': 'sonder ’n nommer',
   'animals.health': 'Behandel of ent',
@@ -720,6 +781,57 @@ const af: Record<TranslationKey, string> = {
   'loss.savedSuffixSold': 'aangeteken — as verkoop gemerk',
   'loss.empty': 'Geen lewende diere om ’n verlies teen aan te teken nie.',
   'loss.back': 'Terug na diere',
+  'theft.title': 'Veediefstal',
+  'theft.intro':
+    'Die voorvalle wat jy aangemeld het. Elkeen kan ’n pak feite lewer — identifikasie, eienaarskap, waar en wanneer — vir die Veediefstal-eenheid.',
+  'theft.report': 'Meld veediefstal aan',
+  'theft.empty': 'Geen voorvalle aangemeld nie.',
+  'theft.back': 'Terug na diere',
+  'theft.headTaken': 'gevat',
+  'theft.discovered': 'Gekry',
+  'theft.lastSeen': 'laas gesien',
+  'theft.noPoint': 'Geen GPS-punt by hierdie een nie.',
+  'theft.pack': 'Kry die bewysstukpak',
+  'theft.packWorking': 'Stel die pak saam…',
+  'theft.packNotYetSent':
+    'Op hierdie foon gestoor. Die pak word op die bediener saamgestel, so hierdie voorval moet eers gestuur word — dit gebeur vanself sodra jy weer sein het.',
+  'theft.packOffline':
+    'Die pak kon nie gehaal word nie — daar is nou geen verbinding nie. Die voorval is veilig. Probeer weer waar jy sein het.',
+  'theft.packRefused':
+    'Die pak kon nie vir hierdie voorval saamgestel word nie. Kyk of dit gestuur is en probeer weer.',
+  'theft.report.title': 'Meld veediefstal aan',
+  'theft.report.intro':
+    'Teken aan wat jy gekry het, waar en wanneer. Dit stoor dadelik op hierdie foon, met of sonder sein.',
+  'theft.discoveredDay': 'Wanneer het jy dit gekry?',
+  'theft.lastSeenDay': 'Wanneer laas gesien?',
+  'theft.headCount': 'Hoeveel is weg?',
+  'theft.headCountHint': 'Die getal, of hulle nou merke dra of nie.',
+  'theft.camp': 'Watter kamp?',
+  'theft.campNone': 'Nie seker nie',
+  'theft.whichAnimals': 'Watter diere? (opsioneel)',
+  'theft.whichAnimalsHint':
+    'Merk enige wat jy kan uitken. Hul nommers en brandmerk gaan in die pak in.',
+  'theft.taken': 'Gevat',
+  'theft.observations': 'Wat het jy gekry?',
+  'theft.noSuspects':
+    'Net feite — ’n geknipte draad, spore, ’n hek wat oopgelaat is. Moenie iemand se naam neerskryf wat jy verdink nie: dit is vir die polisie om vas te stel, en ’n naam in hierdie rekord kan teen jou gebruik word.',
+  'theft.caseNumber': 'SAPD-saaknommer (as jy een het)',
+  'theft.station': 'SAPD-kantoor (as jy dit aangemeld het)',
+  'theft.gpsExplain':
+    'Stoor neem ’n GPS-punt van waar jy staan. Dit werk sonder sein, en dit is wat hierdie rekord bruikbaar maak vir die Veediefstal-eenheid.',
+  'theft.locating': 'Kry tans die GPS-punt…',
+  'theft.save': 'Meld hierdie voorval aan',
+  'theft.saveWithoutPoint': 'Meld dit aan sonder ’n GPS-punt',
+  'theft.gpsRetryHint':
+    'Die punt is die grootste deel van wat hierdie rekord bewys maak. Staan in die oopte en probeer weer, of meld dit aan sonder een — die voorval is meer werd aangemeld as nie.',
+  'theft.gpsTryAgain': 'Probeer die GPS weer',
+  'theft.gps.denied':
+    'Hierdie foon laat nie die app toe om sy ligging te gebruik nie. Skakel ligging vir hierdie app aan en probeer weer.',
+  'theft.gps.unavailable':
+    'Die foon kon nie ’n GPS-punt kry nie. Staan in die oopte, weg van ’n skuur of bome, en probeer weer.',
+  'theft.gps.timeout': 'Die GPS soek nog. Wag ’n paar sekondes in die oopte en probeer weer.',
+  'theft.gps.unsupported': 'Hierdie foon kan nie ’n GPS-punt gee nie.',
+  'theft.backToIncidents': 'Terug na voorvalle',
   'status.alive': 'Lewend',
   'status.missing': 'Vermis',
   'status.culled': 'Uitgeskot',

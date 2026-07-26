@@ -17,6 +17,8 @@ import { RecordBirthScreen } from './livestock/RecordBirthScreen';
 import { WeaningSessionScreen } from './livestock/WeaningSessionScreen';
 import { RecordHealthScreen } from './livestock/RecordHealthScreen';
 import { RecordLossScreen } from './livestock/RecordLossScreen';
+import { TheftIncidentsScreen } from './livestock/TheftIncidentsScreen';
+import { ReportTheftScreen } from './livestock/ReportTheftScreen';
 import { LandScreen } from './land/LandScreen';
 import { AddLandUnitScreen } from './land/AddLandUnitScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
@@ -63,6 +65,11 @@ export function App() {
                 <Route path="animals/birth" element={<RecordBirthScreen />} />
                 <Route path="animals/wean" element={<WeaningSessionScreen />} />
                 <Route path="animals/health" element={<RecordHealthScreen />} />
+                {/* The list sits at the parent path and the capture below it, because a farmer
+                    coming back a week later wants the incident they filed and its pack, not the
+                    form again (FR-603). */}
+                <Route path="animals/theft" element={<TheftIncidentsScreen />} />
+                <Route path="animals/theft/new" element={<ReportTheftScreen />} />
                 <Route path="weigh" element={<WeighSessionScreen />} />
                 {/* Land is farm-level, not livestock: a camp and a block are one table (FR-150). */}
                 <Route path="land" element={<LandScreen />} />

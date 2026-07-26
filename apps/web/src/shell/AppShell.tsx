@@ -14,6 +14,7 @@ import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
 import { LocalMovesProvider } from '../livestock/LocalMoves';
 import { LocalHealthProvider } from '../livestock/LocalHealth';
 import { LocalVetProductsProvider } from '../livestock/LocalVetProducts';
+import { LocalTheftProvider } from '../livestock/LocalTheft';
 import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
 
 /**
@@ -45,6 +46,7 @@ const CAPTURE_STORES = [
   LocalMovesProvider,
   LocalHealthProvider,
   LocalVetProductsProvider,
+  LocalTheftProvider,
   LocalRainfallProvider,
 ] as const;
 

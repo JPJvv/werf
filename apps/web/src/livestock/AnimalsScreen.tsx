@@ -189,6 +189,20 @@ export function AnimalsScreen() {
         </div>
       )}
 
+      {/* ⭐ OUTSIDE the `hasLive` block, unlike every action above it. Stock theft has to be
+          reachable on a farm running its stock as groups with no individual animal rows at all —
+          which is a great many of the farms most exposed to it. Gating this on having tagged
+          animals would put the one screen that produces a police document behind a data-entry
+          exercise nobody has done at the moment they need it (FR-603). */}
+      <div className="mb-6 flex flex-col gap-2">
+        <Link
+          to="/animals/theft"
+          className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+        >
+          {t('animals.theft')}
+        </Link>
+      </div>
+
       {/* "Nothing recorded yet" has to mean nothing AT ALL — a farm running one flock as a group
           has 300 head and no individual rows, and telling them they have recorded nothing is the
           exact insult FR-102 exists to avoid. */}

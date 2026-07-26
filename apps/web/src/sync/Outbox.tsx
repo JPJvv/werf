@@ -46,6 +46,7 @@ import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
 import { useMoves } from '../livestock/LocalMoves';
 import { useHealthEvents } from '../livestock/LocalHealth';
+import { useTheftIncidents } from '../livestock/LocalTheft';
 import { livestockApi } from '../livestock/livestockApi';
 import { useRainfall } from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
@@ -116,6 +117,24 @@ const defaultSentLogFactory: SentLogFactory = (key) =>
 /** The published save/send state. Null outside a provider, so consumers fall back to connectivity. */
 const OutboxContext = createContext<SyncState | null>(null);
 
+/**
+ * The ids the server has CONFIRMED it stored.
+ *
+ * Published because a handful of actions are only meaningful once the server has the record — the
+ * stock-theft evidence pack most of all, since the PDF is rendered from the rows the server holds
+ * and there is nothing to render before then. A screen that reads this can say "this incident has
+ * not reached us yet" instead of offering a button that 404s and reads as the app being broken.
+ *
+ * Deliberately NOT a general "is this saved?" signal. A capture is SAVED the moment it is in its
+ * local store — that is the whole promise (FR-009) — and nothing in the product should gate a
+ * farmer's own view of their own work on this set. It gates one thing: asking the server to
+ * produce a document.
+ *
+ * An empty set outside a provider is the safe default: it withholds the action, never invents it.
+ */
+const EMPTY_SENT: ReadonlySet<string> = new Set();
+const SentCapturesContext = createContext<ReadonlySet<string>>(EMPTY_SENT);
+
 export interface OutboxProviderProps {
   children: ReactNode;
   factory?: SentLogFactory;
@@ -131,6 +150,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const events = useLifecycleEvents();
   const moves = useMoves();
   const health = useHealthEvents();
+  const theftIncidents = useTheftIncidents();
   const rainfall = useRainfall();
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
@@ -198,6 +218,17 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         items.push({ id: event.id, send: (token) => livestockApi.recordHealth(event, token) });
       }
     }
+    // A theft incident points at a camp AND at the animals it concerns, so it comes after both.
+    // Its evidence pack cannot be generated until it has been through here, which is why the
+    // incidents screen reads the sent-set below rather than offering a button that would 404.
+    for (const incident of theftIncidents) {
+      if (!sent.has(incident.id)) {
+        items.push({
+          id: incident.id,
+          send: (token) => livestockApi.createTheftIncident(incident, token),
+        });
+      }
+    }
     // Rainfall references no animal, so it has no place in the FK ordering above — it can go last.
     for (const reading of rainfall) {
       if (!sent.has(reading.id)) {
@@ -208,7 +239,19 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     }
     return items;
-  }, [landUnits, mobs, animals, identifiers, weights, events, moves, health, rainfall, sent]);
+  }, [
+    landUnits,
+    mobs,
+    animals,
+    identifiers,
+    weights,
+    events,
+    moves,
+    health,
+    theftIncidents,
+    rainfall,
+    sent,
+  ]);
   const pendingCount = queue.length;
 
   const [flushing, setFlushing] = useState(false);
@@ -338,7 +381,20 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     return { status, pendingCount, blockedCount };
   }, [online, flushing, errored, pendingCount, blockedCount]);
 
-  return <OutboxContext.Provider value={state}>{children}</OutboxContext.Provider>;
+  return (
+    <OutboxContext.Provider value={state}>
+      <SentCapturesContext.Provider value={sent}>{children}</SentCapturesContext.Provider>
+    </OutboxContext.Provider>
+  );
+}
+
+/**
+ * The ids the server has confirmed. See `SentCapturesContext` for what this may and may not gate.
+ * Outside an `OutboxProvider` this is empty, which withholds the server-dependent action rather
+ * than offering one that cannot work.
+ */
+export function useSentCaptures(): ReadonlySet<string> {
+  return useContext(SentCapturesContext);
 }
 
 /**

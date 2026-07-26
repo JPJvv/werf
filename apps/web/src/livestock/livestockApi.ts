@@ -19,6 +19,7 @@ import type {
 } from './LocalLifecycle';
 import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMove } from './LocalMoves';
+import type { StoredTheftIncident } from './LocalTheft';
 
 /**
  * The capture endpoints, one per thing the client can compose offline. Each takes the stored
@@ -177,6 +178,33 @@ export const livestockApi = {
         ...(event.reason === undefined ? {} : { reason: event.reason }),
         ...(event.programme === undefined ? {} : { programme: event.programme }),
         ...(event.method === undefined ? {} : { method: event.method }),
+      },
+      token,
+    ),
+
+  /**
+   * A stock-theft incident (FR-603/605). Sent AFTER animals and land units — it points at both —
+   * and it is a capture like any other: filed at the fence with no signal, sent later. The one
+   * action that is NOT here is generating the evidence pack, which is online-only and lives in
+   * `theftApi.ts` for exactly that reason.
+   */
+  createTheftIncident: (incident: StoredTheftIncident, token: string): Promise<void> =>
+    post(
+      '/livestock/theft-incidents',
+      {
+        id: incident.id,
+        farmId: incident.farmId,
+        discoveredAt: incident.discoveredAt,
+        lastSeenAt: incident.lastSeenAt,
+        lastSeenLocationGeojson: incident.lastSeenLocationGeojson,
+        landUnitId: incident.landUnitId,
+        headCount: incident.headCount,
+        caseNumber: incident.caseNumber,
+        reportingStation: incident.reportingStation,
+        observations: incident.observations,
+        animalIds: incident.animalIds,
+        // ⛔ Note what is absent and must stay absent: there is no suspect field anywhere in this
+        // chain — not in the store, not on the wire, not in the pack. See LocalTheft.tsx.
       },
       token,
     ),

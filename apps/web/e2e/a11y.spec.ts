@@ -143,6 +143,11 @@ const CAPTURE_SCREENS = [
   { path: '/animals/birth', heading: /record a birth/i },
   { path: '/animals/wean', heading: /weaning session/i },
   { path: '/animals/health', heading: /treat or vaccinate/i },
+  // Stock theft (FR-603). The list and the capture are separate screens and both are audited: the
+  // list is where the one online-only action in livestock lives, and a farmer reads it under the
+  // worst conditions this product has — the morning after.
+  { path: '/animals/theft', heading: /stock theft/i },
+  { path: '/animals/theft/new', heading: /report stock theft/i },
   { path: '/weigh', heading: /weigh session/i },
   { path: '/rainfall', heading: /rainfall/i },
 ] as const;

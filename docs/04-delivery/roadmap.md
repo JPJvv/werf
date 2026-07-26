@@ -1,5 +1,13 @@
 # Roadmap
 
+> **⚠️ Authority: this document is authoritative for SHAPE only — the phases, their sub-phases,
+> their content, their gates and their autonomy levels. [`STATUS.md`](../../STATUS.md) is
+> authoritative for SEQUENCING AND TIMING: where the build actually is, what is merged, and what
+> comes next.** The Gantt chart below is a plan drawn before the work started and its dates are
+> already wrong; do not plan a session off it. If the two disagree about *when*, STATUS.md wins
+> without argument. If they disagree about *what a phase contains*, this file wins — and
+> [claude-code-playbook.md](claude-code-playbook.md)'s autonomy table is generated from this one.
+
 Eight phases. Each ends at a **gate** — a command that exits 0, plus a human judgement that cannot be automated. Phases are sized so a Claude Code session can carry one sub-phase without the context window degrading.
 
 **The gate is the whole design.** It is what makes a phase safe to run unattended: Claude works until the gate passes, and the gate is a fact rather than an opinion. See [claude-code-playbook.md](claude-code-playbook.md).

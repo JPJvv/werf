@@ -428,11 +428,19 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
   reads as "the app does not know". What is STORED is a productId and never a withdrawal period —
   the number is regulated, the server resolves it from the registration in force on the treatment
   day, and the test asserts the ABSENCE of the withdrawal fields.
-  ⭐ The SALE GUARD now runs at capture as well as on the server. Without it an offline sale of a
-  treated animal commits locally, is refused forever on flush, and jams the queue with nothing on
-  the phone explaining why — days after the truck has gone. It says NO and says WHEN in one panel;
-  the LATEST clear date across all treatments wins; and a DEATH is never withheld, because the rule
-  is about meat entering the food chain, not about recording what happened
+  ⭐ The SALE GUARD runs at capture as well as on the server, FOR AN INDIVIDUAL ANIMAL. Without it
+  an offline sale of a treated animal commits locally, is refused forever on flush, and jams the
+  queue with nothing on the phone explaining why — days after the truck has gone. It says NO and
+  says WHEN in one panel; the LATEST clear date across all treatments wins; and a DEATH is never
+  withheld, because the rule is about meat entering the food chain, not about recording what happened.
+  ⛔ **REMAINDER, named 2026-07-26 after the review pass — the GROUP path is guarded SERVER-SIDE
+  ONLY.** `cc1b149` added the missing mob-level guard on the server (a plunge-dipped flock could be
+  tallied to the abattoir the next day with nothing refusing it), but added no device half. So an
+  offline group sale inside a withholding is refused ON FLUSH, not at capture — which is precisely
+  the failure this line declares unacceptable two paragraphs above, and it lands on the smallholder
+  path where the exposure is worst. It is not fixable by a screen change alone: `withdrawal.ts` is
+  keyed on `animalId` and mob-subject health events do not reach the device at all, so they must be
+  synced first. All three review agents raised this independently. See STATUS.md §3b.
 ◐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132) — the
   CAPTURE is done (the health screen records a vaccination against a programme, commit d32451a). The
   DUE/OVERDUE read model is still ◐ and is named honestly: it needs a vaccination PROGRAMME SCHEDULE
@@ -621,7 +629,10 @@ Quality gates
   `branding_registers` (migration 0015), because on a document handed to the SAPS Stock Theft Unit
   the reporter is part of the evidence, not metadata
 ☑ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e
-  green — 21 e2e tests, 0 violations; verify green at 73 files / 668 tests, bundle 124.82 KB gz.
+  green — 0 violations. (Counts as at the commit that wrote this line: 21 e2e tests, 73 files /
+  668 tests, 124.82 KB gz. **The live figures are in the "Where the gate stands" paragraph below
+  and nowhere else** — this line kept a stale second copy that disagreed with it by 26 lines'
+  distance, which is why it now says where to look instead of restating a number.)
   The stock-theft list and capture, and the "what needs your attention" screen, are in the
   both-theme axe sweep alongside the thirteen capture screens
 ```
@@ -646,32 +657,35 @@ home tile, entirely offline for the capture paths.
 > word that hid the difference. Everything before the pack in this sentence is still an offline
 > path end to end.
 
-**Where the gate stands (2026-07-26, branch `phase-2/livestock`).** `pnpm verify` exits 0 (77 files
-/ 741 tests, bundle 133.59 KB gz); `pnpm test:e2e` is green (25 tests, 0 axe violations in both
-themes on every screen, including the offline cold-start capture on the built PWA); no ☐ remains —
-every line is ☑ or ◐ with its remainder named. All three review agents were run over the branch as
-it stood at `a6c8eff`, and what they found is fixed rather than recorded: the outbox head-of-line
-block, seven unchecked cross-farm foreign keys, the mob-level withdrawal hole, and the health screen
-dating a treatment with the capture date. See STATUS.md §3.
+**Where the gate stands (2026-07-26, fifth session, branch `phase-2/livestock`).** `pnpm verify`
+exits 0 (**77 files / 750 tests**, bundle 133.72 KB gz); `pnpm test:e2e` was last green at 25 tests,
+0 axe violations in both themes on every screen, including the offline cold-start capture on the
+built PWA — **but not re-run since `cc1b149`**, which touched `AdjustMobScreen.tsx` and the
+dictionaries, and given A7 that is worth one real run rather than an inference.
 
-⚠️ **Nine feature commits have landed SINCE that agent pass and none of them has been reviewed.**
-Four on 2026-07-26 (FR-603 client path, FR-104 twin births, FR-009 refusal detail, FR-705 head per
-camp) and five more since (FR-102 tally, FR-106/130/133 capture fields, FR-014/014c passkeys,
-FR-107 attributes). Several touch the write path and two are compliance-gated. Run `reviewer`,
-`sync-auditor` and `compliance-checker` ONCE over the lot before the PR — see STATUS.md §4 A6.
+⛔ **THE EXIT GATE DOES NOT READ TRUE, and the previous version of this paragraph said it did.**
+The gate has five clauses and two are unmet:
 
-**The end-to-end sentence in the gate above is now TRUE**, as amended. The two clauses that were
-false when this paragraph was first written — creating a camp, and tagging an animal — were the
-first two slices of this stretch of work.
+- **"the `reviewer`, `sync-auditor` and `compliance-checker` agents pass" — THEY DO NOT.** All
+  three were run over `a6c8eff..HEAD` on 2026-07-26 (fifth session) and `compliance-checker`
+  returned **NOT APPROVABLE**, with two SEV-1 findings that put meat inside an active withdrawal
+  into the food chain. `sync-auditor` independently found the same boundary defect. The findings
+  are recorded in STATUS.md §3b and are **open**, not fixed — unlike the previous pass, this one
+  is being carried rather than closed, because the fixes are slices rather than edits.
+- **"CI green on `main`" — structurally unmeetable before the PR exists**, because CI does not run
+  on feature branches (STATUS.md §4 G5). This clause can only ever go true AT MERGE. Read it that
+  way rather than treating it as a pre-PR blocker; it is the one clause the phase cannot satisfy
+  by working harder.
 
-**Still owed before the phase PR, and deliberately not claimed:**
-- a `reviewer` pass over this checklist, and a `sync-auditor` pass over migrations 0015–0016, the
-  new `assertOwnedReferences` guard and the derived tenancy table list. **Neither has been run** —
-  they are the first action of the next session;
-- a `compliance-checker` pass over the NEW compliance-gated work (the client withdrawal guard, the
-  reference-data endpoint, the missing-report GPS requirement);
-- CI green on `main`, which cannot happen until the PR exists, because CI does not run on feature
-  branches (env-gotchas).
+The other three clauses hold: `pnpm verify` exits 0, every checklist line is ☑ or ◐ with its
+remainder named (the FR-131 group-path remainder was added above after the review pass — it had
+been reading as ☑-shaped prose over a real gap), and the end-to-end sentence is TRUE. The two
+clauses of that sentence which were false when it was first written — creating a camp, and tagging
+an animal — were the first two slices of this stretch of work.
+
+> **The lesson, since it has now happened twice.** STATUS.md §1 concluded "every checklist line is
+> ☑ or ◐, **so** the exit gate reads true as written". That "so" is a non-sequitur: the checklist
+> is one clause of five. A gate is not read by checking the clause that is easiest to check.
 
 **What Phase 2 still leaves for its successor, named rather than implied:**
 - **FR-120/121 mating and pregnancy diagnosis** — domain logic done, API and screens not started.
@@ -708,10 +722,226 @@ livestock is offline-first through the ADR-0003 seam, not through live sync.
 
 ---
 
-## Phases 3–7 — to be written
+## Phase 3 — Labour & Wages 🇿🇦 — CRITICAL PATH
 
-Detailed checklists for Phase 3 (offline sync — the hard one), Phase 4 (crops/fields), Phase 5
-(labour, wages, finance), Phase 6 (compliance packs), and Phase 7 (polish, i18n, PWA hardening)
-are authored at the start of each phase from the SRS and functional-requirements backlog, so they
-reference real FR/story IDs. Do not pre-write them speculatively — write each phase's checklist when
-you reach it, against the requirements as they stand.
+Goal: **the wedge.** A farm can pay people correctly and prove it. This is the phase someone pays
+for, and it is the phase that gets a farmer sued if it is wrong.
+
+Sub-phases map 1:1 onto [roadmap.md](roadmap.md) Phase 3 (3a–3i). Autonomy for the whole phase is
+**LOW** — see [claude-code-playbook.md](claude-code-playbook.md), which is generated from the
+roadmap and now says so correctly.
+
+### ⛔ Two external blockers. Neither is a formality, and both have been open since the second session.
+
+**Do not start 3a until both are answered** — they are STATUS.md §2 items 4 and 5, restated here so
+a session reading only this file cannot miss them.
+
+```
+⛔ B-1 🇿🇦 THE LABOUR-LAW REVIEW IS BOOKED, with a date
+   Gates sub-phase 3i, which is an exit-gate line — the phase cannot close without a signed
+   written sign-off. It is on someone else's calendar, so the lead time IS the risk: booking it
+   in week seven of an eight-week phase means the phase does not close in Phase 3.
+   Book it before 3a, not before 3i. → STATUS.md §2.4
+
+⛔ B-2 🇿🇦 EVERY FIGURE IN legal-compliance.md §2.2 RE-VERIFIED AGAINST THE CURRENT GAZETTE
+   That table is dated July 2026 and self-describes as decaying. The minimum wage changes every
+   March and the BCEA earnings threshold every April, and BOTH have already changed once inside
+   the window this pack documents. Seeding `regulatory_rates` from a stale figure produces a
+   payroll run that is confidently, checkably wrong — and every payslip generated from it is a
+   BCEA s33 document with a wrong number on it, handed to a real person.
+   Re-verify FIRST, then seed. Record the Gazette number and date on every row you seed.
+   → STATUS.md §2.5
+```
+
+> **Neither blocker is satisfied by reading this repo.** They are answered by a human with a
+> calendar and a human with the current Gazette. If a session reaches this checklist and they are
+> still open, the correct action is to say so and stop, not to seed plausible numbers and carry on.
+
+### Session and review discipline — this phase only
+
+```
+□ 3a is a SESSION OF ITS OWN, and a review unit of its own. It is the foundation every other
+  sub-phase reads from: get the rate lookup wrong and every number downstream is wrong in a way
+  the tests will cheerfully confirm. Do not bundle it with 3b.
+□ 3d–3e (the payroll engine and the blocking logic) are MULTIPLE SMALL SESSIONS, never one.
+  ⛔ NEVER BATCH PAYROLL SLICES. One rule, one diff, one review, one commit.
+□ MANDATORY HUMAN REVIEW OF EVERY DIFF in 3d–3e. Not "the gate is green" — read the diff.
+  The gate cannot tell you that overtime was classified against the wrong day's rate.
+□ `compliance-checker` runs PER SLICE in this phase, before each commit, not batched at the end
+  (CLAUDE.md). Read its output yourself; do not accept a summary of it.
+□ Hand-calculate at least one payslip on paper per payroll slice, and compare. Every slice.
+```
+
+### 3a · Rates, the lookup, and the jurisdiction seam ⭐ standalone session + standalone review
+
+```
+□ ⛔ B-1 and B-2 above are both answered before this sub-phase begins
+□ regulatory_rates carries jurisdiction char(2) (ADR-0006); 'ZA' in v1
+□ rates.lookup(jurisdiction, code, occurredAt) — resolves BY THE DATE THE WORK WAS DONE,
+  never now(). A recalculated February payslip must resolve February's rate
+□ A MISSING RATE THROWS. It does not default, fall back, or return the nearest row. A loud
+  failure is a five-minute fix; a silent one is a season of wrong payslips nobody distrusts
+□ Seed from the Gazette, with gazetteReference + effective_from/effective_to on EVERY row
+□ A period spanning 1 March resolves BOTH rates — the every-year case, tested explicitly
+□ FR-615: admin UI to update a rate without a deploy (a rate change must not need an engineer)
+□ PayrollRules interface with exactly ONE implementation (ZA) — ADR-0006 says why this is the
+  narrow case where the seam is justified, and CLAUDE.md says it is not over-engineering
+□ NO SA statute name outside jurisdictions/za/ — checked, not assumed
+□ The NFR-507 regulated-constants lint rule actually fires on this phase's code
+□ compliance-checker over the seeded rates and the lookup, before commit
+```
+
+### 3b · Employees
+
+```
+□ Employee record (FR-301): name, ID number, job title, start date, contract type, wage rate,
+  banking details
+□ ID number and banking encrypted with the PII KEY, not the DB key, and NEVER synced to a
+  device (.claude/rules/db.md). A stolen phone must not carry 40 workers' ID numbers
+□ ID number masked in every read model and every log
+□ Age verification at hire (FR-318): block under-15 outright; flag 15–17 for restricted-work
+  rules. This is a criminal-liability line, not a validation nicety
+□ NFR-203 (PII handling) satisfied and demonstrated by a test, not asserted in a comment
+□ Seasonal bulk add + short-form contract + end date (FR-311)
+□ compliance-checker (POPIA + child-labour rules), before commit
+```
+
+### 3c · Attendance and piece work 📶 offline
+
+```
+□ Attendance capture (FR-303): start/end, worker PIN, optional GPS
+□ ⛔ NO BIOMETRICS. POPIA s26 and legal-compliance §1.3 — consent from an employer to a farm
+  worker is of questionable voluntariness, and this is settled (CLAUDE.md). Do not reopen it
+□ Piece work (FR-304): units, rate, worker, block/camp
+□ Both capture paths work with the network OFF, and survive a reboot
+□ occurred_at is the day worked, captured separately from created_at — a week of attendance
+  synced on Friday must not land in Friday's payroll
+□ GPS is OPTIONAL and is attendance evidence, not worker tracking (ADR-0010 refused tracking)
+```
+
+### 3d · The payroll engine ⭐ MULTIPLE SMALL SESSIONS — never batched, every diff reviewed
+
+```
+□ Pure functions in packages/domain. NO I/O, no database, no clock — the engine is testable
+  on paper because it will be checked on paper
+□ Table-driven tests, because the BCEA rules are table-driven (CLAUDE.md)
+□ Ordinary hours (BCEA s9): 45/week; 9/day on a 5-day week, 8/day on a 6-day week
+□ Overtime (s10): max 10h/week, paid 1.5×
+□ Sunday work (s16): 2×, or 1.5× if the worker ordinarily works Sundays
+□ Public holiday (s18): 2× if not ordinarily worked
+□ Night work (s17): allowance + transport, 18:00–06:00
+□ Piece-rate top-up to the minimum floor — a piece worker below the NMW is topped up, always
+□ Deduction caps: accommodation 10%, food 10% (Sectoral Determination 13), from the rates
+  table and never from a literal
+□ UIF: 1% employee + 1% employer, subject to the monthly CEILING (the ceiling is a rate row)
+□ ⭐ The BCEA earnings threshold gates entitlements, and it is resolved BY DATE. A manager on
+  R25,000/month is above it as of May 2026 and was below it in April — same person, different
+  entitlement to overtime and Sunday pay. This is the single most misunderstood rule in the pack
+□ Money is integer cents throughout. No float touches a wage, ever (CLAUDE.md)
+□ US-020, US-021, US-022 — ALL scenarios
+□ Payroll domain coverage ≥95%, higher than anywhere else in the repo, on purpose
+□ Per slice: hand-calculate a payslip on paper; compliance-checker; human reads the diff
+```
+
+### 3e · Compliance warnings and blocking ⭐ MULTIPLE SMALL SESSIONS — never batched
+
+```
+□ Warnings surfaced BEFORE approval, never after (FR-307) — a warning after approval is a
+  record of a decision already made
+□ Overtime over the 10h weekly cap
+□ Deduction capped (show what it was reduced FROM, and under which rule)
+□ Piece rate topped up to the floor (show the shortfall)
+□ Net below the floor — this one BLOCKS rather than warns
+□ US-021 rejection scenario passes
+□ Every warning names the statute and the date-resolved rate it was measured against, so an
+  owner can check it rather than trust it
+□ Per slice: compliance-checker; human reads the diff
+```
+
+### 3f · Payslips and contracts 🇿🇦
+
+```
+□ BCEA s33-compliant payslip (FR-308) — every element s33 requires, none missing
+□ BCEA s29 written particulars of employment (FR-302)
+□ ⭐ BOTH IN THE EMPLOYEE'S LANGUAGE, not the owner's and not the browser's (SRS-20).
+  A payslip a worker cannot read does not discharge the obligation it exists to discharge
+□ Generated server-side (payslips are server-only and never sync to a device — db.md)
+□ Regenerating an old payslip uses THAT PERIOD's rates, not today's
+□ compliance-checker over the s33 and s29 output, before commit
+```
+
+### 3g · The BCEA s31 record — the inspector at the gate 🇿🇦
+
+```
+□ One button (FR-309): name, occupation, time worked, remuneration
+□ 3-year retention, and the soft-delete tombstones actually support it
+□ Inspector-ready as printed — this is the artifact a Department of Employment and Labour
+  inspector is handed at the farm gate, so "export to CSV and open it in something" is a fail
+□ US-023 passes
+```
+
+### 3h · Leave and the statutory exports
+
+```
+□ Annual leave (FR-310): 21 consecutive days, or 1 day per 17 worked; accrual, balance,
+  application, approval
+□ Sick leave: 30 days per 36-month cycle (6-day week) — the CYCLE is the hard part
+□ Family responsibility: 3 days/year
+□ Maternity: 4 consecutive months
+□ UIF declaration export (FR-312)
+□ SARS-compatible payroll export (FR-313)
+□ Bank EFT batch file (FR-316)
+□ Every export is server-side and audit-logged — financial is server-authoritative (db.md)
+```
+
+### 3i · External labour-law review 🇿🇦 ⛔ EXIT-GATE LINE
+
+```
+□ The review actually happened (booked at B-1, before 3a)
+□ Sign-off IN WRITING, filed in the repo or referenced by document ID from it
+□ Every finding either fixed, or recorded in STATUS.md with a named owner and a reason
+□ ⛔ The phase does not close without this. It is not a warning; it is the gate
+```
+
+**Exit gate:**
+```
+✓ pnpm verify exits 0
+✓ pnpm test:e2e green (both-theme axe on every new screen)
+✓ CI green on main
+✓ Payroll domain coverage ≥95%
+✓ Every US-02x scenario passes
+✓ A period spanning 1 March uses BOTH rates          ← the every-year case
+✓ A correction run for February uses FEBRUARY's rate
+✓ NO regulated constant in code (the NFR-507 lint rule)
+✓ NO SA statute name outside jurisdictions/za/
+✓ reviewer + sync-auditor + compliance-checker all pass
+✓ 🇿🇦 External labour-law review SIGNED OFF, in writing
+✓ Every checklist line is ☑ or ◐ with its remainder NAMED
+```
+
+**Human check:** hand-calculate one payslip. On paper. Compare it. Then hand a real payslip to
+someone who has been a farm bookkeeper for twenty years and watch their face.
+
+**Deliberately NOT in Phase 3, so it is named rather than implied:** FR-305 (task assignment),
+FR-314 (labour cost allocated to enterprise/camp/block), FR-315 (teams) and FR-317 (injury-on-duty
+register, health data restricted to owner + H&S role) are not in the roadmap's 3a–3i and are not
+smuggled in here. FR-317 in particular needs its own access-control design and should not ride
+along on a payroll slice.
+
+---
+
+## Phases 4–7 — to be written
+
+Detailed checklists for Phase 4 (finance & compliance 🇿🇦), Phase 5 (hardening & pilot), Phase 6
+(integrations) and Phase 7 (intelligence) are authored at the start of each phase from the SRS and
+functional-requirements backlog, so they reference real FR/story IDs. Do not pre-write them
+speculatively — write each phase's checklist when you reach it, against the requirements as they
+stand.
+
+> The previous version of this paragraph described Phase 3 as "offline sync", Phase 4 as
+> "crops/fields" and Phase 5 as "labour, wages, finance". All three were wrong against
+> [roadmap.md](roadmap.md) — offline sync is **1c**, crops are part of **Phase 2**, and payroll is
+> **Phase 3**. The same error had propagated into the playbook's autonomy table, which is the
+> document that decides whether a phase may run unattended; it meant the payroll phase was not
+> flagged as one to stay at the keyboard for. Both are corrected. If you find a third copy of that
+> mapping anywhere, it is wrong too.

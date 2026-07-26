@@ -2,6 +2,13 @@
 
 **CI is where `pnpm verify` becomes non-negotiable.** Everything in the [Claude Code playbook](claude-code-playbook.md) depends on the gate being real — a check that can be skipped is not a gate, it is a suggestion, and Claude Code will eventually find the skip.
 
+> **⚠️ The workflows below are the TARGET design, not what `.github/workflows/ci.yml` contains today.**
+> As at the end of Phase 2 CI has **two** lanes — `pnpm verify` and `pnpm test:e2e` — and neither has
+> ever run, because CI does not run on feature branches and no PR has been opened yet (STATUS.md §4 G5).
+> In particular the `trace` job below does not exist, and `pnpm test:trace` is **report-only** and
+> exits 0 regardless; see [testing-strategy.md](testing-strategy.md). Treat every job here as a plan
+> until it is in the YAML, and when you add one, delete the corresponding part of this warning.
+
 ---
 
 ## 1. Environments

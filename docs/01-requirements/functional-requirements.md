@@ -243,7 +243,9 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 
 ## Traceability
 
-Every FR maps to ≥1 user story and ≥1 automated test. The matrix is **generated** — `pnpm test:trace` fails CI if a P1 or P2 FR has no covering test. See [testing-strategy.md](../04-delivery/testing-strategy.md).
+Every FR maps to ≥1 user story and ≥1 automated test. `pnpm test:trace` (`scripts/test-trace.mjs`) reports which FRs are named by a test title.
+
+> **⚠️ It does NOT fail CI, and this line used to claim it did.** It is report-only and exits 0; `--strict` makes it exit 1, and nothing in CI passes `--strict`. It also measures only whether a test *names* an FR, not whether it exercises one. Baseline at the end of Phase 2 is 40 of 146 — mostly phases 3–7, which are unbuilt. See [testing-strategy.md](../04-delivery/testing-strategy.md).
 
 **Count:** 125 FRs. P1: 66 · P2: 43 · P3: 16.
 

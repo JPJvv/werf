@@ -79,6 +79,28 @@ React PWA → local SQLite (via PowerSync web SDK, OPFS) → PowerSync service �
 - Jurisdiction comes from **the farm**, never the user, the browser locale, or a default. A Free State farm is governed by South African law regardless of where its owner is logged in from.
 - Commits must be authored by the repo owner's GitHub email or the contribution graph stays empty. Check `git log --format='%an <%ae>'` after the first session. See `docs/04-delivery/github-strategy.md`.
 
+### Promoted from STATUS.md §2b — these survived two sessions unchanged, so stop re-deriving them
+
+- **Deltas compose; an edited field does not.** Two people each record three deaths on their own phone in a dead zone. Deltas land on 294, which is the truth; an edited head count is last-write-wins, lands on 297, and silently keeps three dead sheep in the count. **Ask this of any number the product lets a farmer change** — two offline devices is the normal case here, not the edge case.
+- **A recount is absolute, and it RESETS rather than adds.** "I walked the camp and counted 297" is a stronger fact than arithmetic on a number just shown to be wrong. It cannot be modelled as a delta: that would need the device to know the true previous count, which is exactly what the farmer just discovered it did not.
+- **Arrival order is not `occurred_at` order.** A server that steps a stored value by each incoming delta will be wrong. Re-derive a denormalised aggregate from the whole log over an immutable baseline, so the server and the offline client run the identical projection and cannot drift. This is the general shape for every aggregate this product adds.
+- **Order a projection by a TOTAL order, never by `occurred_at` alone.** Day-grained captures stamp every event on a day with the same instant, so ties are ordinary. Sort by `(occurred_at, id)` on both sides — the id is a client UUIDv7, identical on both sides and time-ordered. `occurred_at` alone leaves the result to the query plan on one side and the capture-store append order on the other.
+- **A field that exists everywhere except on a screen is null in every record you have.** Schema, wire contract and server write path all carrying a field proves nothing. Four fields were null in every row the product had ever produced because nothing ever asked for them.
+- **A hand-written duplicate of a schema drifts silently, and in one direction.** Derive from the Zod schema with `z.infer`. A client type offering a value the server refuses queues a capture that can never be sent, and it reads as a sync bug rather than as the typo it is.
+- **Any capture that CHANGES THE STATE ITS OWN VALIDATION READS must check idempotency BEFORE validating.** Otherwise a re-flush validates against the state the first flush already wrote, refuses itself, and jams the queue.
+- **A 4xx and a 5xx are different animals in a flush.** A 4xx is the server refusing this record on its merits — it will refuse it again tomorrow, so set the item ASIDE (kept, never dropped) and continue the round. A 5xx or an unrecognised error is transient and aborts the round. A `return` on refusal strands every capture behind it, permanently.
+- **`toISOString().slice(0,10)` is wrong for two hours a day in South Africa.** Use the farm's zone via `farmLocalDay`. This one keeps coming back — it has now been found in production code twice and in test assertions once.
+- **A guard that only the server can run arrives after the truck has left.** Offline is the default state: if a rule decides whether something may happen, the device must be able to check it at capture. A server-only rule surfaces as a refusal days later, when the sale has already happened. Server-side enforcement is still required — it is the boundary — but it is not sufficient.
+- **Refusing to half-build is a decision, not a delay.** A complete server capability with no client route reads to a farmer as missing functionality, and worse, a half-built path can make the product claim something it cannot show.
+
+## Compliance gate on regulated code
+
+**Any commit touching `jurisdictions/` or payroll domain code MUST run the `compliance-checker` agent before the commit. No exceptions.**
+
+- **Phase 3: per slice, never batched.** One rule, one diff, one review. Read the agent's output yourself — do not accept a summary of it, and do not let the green gate stand in for it. `pnpm verify` cannot tell you that overtime was classified against the wrong day's rate.
+- **Elsewhere: batched is acceptable** — once over the branch before the PR, not once per commit.
+- Also read `docs/00-business/legal-compliance.md` BEFORE writing the code, not after. It is a decaying document: re-verify every figure against the current Government Gazette rather than trusting the table.
+
 ## Where to look
 
 - **Where are we? What is next? → `STATUS.md`** (read before planning; answer its open decisions with the owner)

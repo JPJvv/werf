@@ -258,6 +258,8 @@ const en = {
   'birth.ease': 'How hard was it?',
   'birth.easeHint': '1 is unassisted. 5 is a caesarean.',
   'birth.calfSex': 'The calf is',
+  // Shown only for a multiple birth, numbering each calf's block. Numbering one of one is noise.
+  'birth.calf': 'Calf',
   'birth.multiples': 'How many born',
   'birth.weight': 'Birth weight (kg, optional)',
   'birth.save': 'Record the birth',
@@ -685,6 +687,7 @@ const af: Record<TranslationKey, string> = {
   'birth.ease': 'Hoe swaar was dit?',
   'birth.easeHint': '1 is sonder hulp. 5 is ’n keisersnee.',
   'birth.calfSex': 'Die kalf is',
+  'birth.calf': 'Kalf',
   'birth.multiples': 'Hoeveel gebore',
   'birth.weight': 'Geboortegewig (kg, opsioneel)',
   'birth.save': 'Teken die geboorte aan',

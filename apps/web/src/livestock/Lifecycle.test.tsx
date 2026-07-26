@@ -183,6 +183,63 @@ describe('recording a birth (FR-104)', () => {
     });
   });
 
+  it('records TWO lambs for a twin birth, each with its own sex and weight', async () => {
+    // Sheep twin routinely. This screen once minted exactly one calf however many were born while
+    // storing `multiples: 2` on the event — so a lambing season left the flock short by one per
+    // twin birth, and the two facts contradicted each other inside the same action.
+    cachedSession();
+    const ewe = uuidv7();
+    seedHerd(animal(ewe));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/birth');
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText(/which cow calved/i), ewe);
+    await user.selectOptions(screen.getByLabelText(/how many born/i), '2');
+    await user.click(screen.getByRole('button', { name: /how hard was it\? 2/i }));
+
+    // Twins differ in both, and a screen that asked once and applied the answer twice would be
+    // inventing data rather than capturing it.
+    const sexes = screen.getAllByLabelText(/the calf is/i);
+    const weights = screen.getAllByLabelText(/birth weight/i);
+    expect(sexes).toHaveLength(2);
+    await user.selectOptions(sexes[0]!, 'female');
+    await user.type(weights[0]!, '4.1');
+    await user.selectOptions(sexes[1]!, 'male');
+    await user.type(weights[1]!, '3.8');
+    await user.click(screen.getByRole('button', { name: /record the birth/i }));
+
+    // The ewe plus two lambs — the head count a farmer would get walking the camp.
+    const lambs = storedAnimals().filter((a) => a['damId'] === ewe);
+    expect(lambs).toHaveLength(2);
+    expect(lambs.map((l) => l['sex']).sort()).toEqual(['female', 'male']);
+
+    // One event per lamb, each naming its own lamb and each recording that it was one of two —
+    // so the herd rows and the events agree about how many were born.
+    const births = storedEvents().filter((e) => e['type'] === 'birth');
+    expect(births).toHaveLength(2);
+    expect(births.every((b) => b['animalId'] === ewe && b['multiples'] === 2)).toBe(true);
+    expect(births.map((b) => b['calfId']).sort()).toEqual(lambs.map((l) => l['id']).sort());
+    expect(births.map((b) => b['birthWeightKg']).sort()).toEqual([3.8, 4.1]);
+  });
+
+  it('keeps what was already typed when the count changes', async () => {
+    // A farmer fills in the first lamb and then realises there were two. Losing the first one's
+    // details at that moment is how a capture screen teaches someone to distrust it.
+    cachedSession();
+    const ewe = uuidv7();
+    seedHerd(animal(ewe));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/birth');
+    render(<App />);
+
+    await user.selectOptions(screen.getByLabelText(/which cow calved/i), ewe);
+    await user.type(screen.getByLabelText(/birth weight/i), '4.1');
+    await user.selectOptions(screen.getByLabelText(/how many born/i), '2');
+
+    expect(screen.getAllByLabelText(/birth weight/i)[0]!).toHaveProperty('value', '4.1');
+  });
+
   it('says so plainly when there is nothing that could have calved', () => {
     cachedSession();
     seedHerd(animal(uuidv7(), { sex: 'male' }));

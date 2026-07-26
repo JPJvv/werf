@@ -227,13 +227,17 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   one, nothing is asked and the herd is stated. Still ◐: only herd/species/sex/breed are captured on
   the screen (DOB, source, acquired_at, identifiers are later). DOB stays a YYYY-MM-DD string, never
   a coerced Date (off-by-one guard)
-☑ Create a mob/flock and manage it by head_count without individual rows (FR-102) — create ACTION
+◐ Create a mob/flock and manage it by head_count without individual rows (FR-102) — create ACTION
   DONE (commit fb74d6e): `POST /livestock/mobs` and a capture screen at `/animals/groups/new`,
   offered beside "record an animal" rather than buried, because for a smallholder running 300 sheep
   as a flock it is the only capture they will ever need. The head count feeds the live total, so the
   home tile shows 300 on a farm with ZERO animal rows — asserted directly, because a tile showing 0
   there is the whole failure FR-102 exists to prevent. The Animals screen also stops telling such a
-  farm it has "recorded nothing yet"
+  farm it has "recorded nothing yet".
+  ⚠️ **Remainder (found by the exit-gate review): "manage" is only CREATE.** There is no PATCH route
+  for a mob, and `recordDeathRequestSchema` / `recordSaleRequestSchema` both require an `animalId`,
+  so a 300-head flock can never become 297 by any path in the product. That is the half of FR-102 a
+  smallholder actually lives in. Named as gap B9 in STATUS.md
 ◐ Species-specific attributes via Zod-validated JSONB (FR-107, ADR-0006 AnimalIdentityRules seam) —
   the `attributes` jsonb column + GIN index exist and the schema leaves it an open record; the
   PER-SPECIES validator (horn_status for cattle, wool_class for sheep) is its own later slice
@@ -451,11 +455,17 @@ SA identity & stock theft 🇿🇦 (compliance-gated)
   brand certificate, last-seen GPS+timestamp, movement history, treatment history, SAPS case
   number field. FACTS ONLY — no "suspect" field (defamation + POPIA s26) (FR-603) — the @werf/core
   evidencePackSchema CONTRACT is defined, facts-only with NO suspect field (enforced by omission +
-  a guard comment). The server PDF generation, the theft_incidents table, and the one-action endpoint
-  are a substantial later server slice
+  a guard comment). **The whole SERVER side is now done** — `theft_incidents`, the PDF renderer
+  (`evidence-pack.pdf.ts`), and both endpoints, with five passing integration tests.
+  ⚠️ **Remainder: there is no CLIENT path to any of it.** No route, no screen, no client API
+  function — a farmer cannot file an incident or generate a pack at all, online or off. Named as
+  gap B8 in STATUS.md, and struck from the exit-gate sentence below rather than quietly reworded
 
 Reporting & the grid's live numbers
-☑ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
+◐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
+  — ⚠️ **Remainder: the CAMP breakdown is computed and never shown.** `summariseHerd` produces
+  `byLandUnit` and it is unit-tested, but nothing in `apps/web/src` reads it, so the "camp" third of
+  the requirement is domain-only. Class and age are genuinely done. Gap B10 in STATUS.md.
   — the CLASS breakdown is DONE (commit 4a492b9): cows, weaners, steers and "no age recorded", per
   species, on the Animals screen. ⭐ The rules are PER SPECIES in a table (ADR-0006) — a weaner
   becomes a heifer at a different age in cattle than a lamb becomes a hogget in sheep, and
@@ -514,7 +524,10 @@ Phase 1 carry-forward (closing the Phase 1 ◐/deferred items the gate named as 
   farmer in a dead zone must still read the app in their language, and when the write-back cannot
   happen the screen says what is true rather than raising an error
 ☑ axe widened to the enrolment / recovery-codes / Settings screens (unaudited in Phase 1) — plus
-  the five Phase 2 capture screens, in BOTH themes, zero violations (`apps/web/e2e/a11y.spec.ts`).
+  all THIRTEEN Phase 2 capture screens, in BOTH themes, zero violations (`apps/web/e2e/a11y.spec.ts`).
+  The capture screens ran in ONE theme until the exit-gate review caught it: `WCAG_TAGS` includes
+  `wcag2aa`, so axe runs `color-contrast`, which is the one rule whose result depends on the theme.
+  Now looped over `THEMES` like the rest of the file
   Each screen is asserted to have RENDERED before it is audited: axe reports zero violations on a
   blank page, so an audit without that assertion passes hardest when the screen is broken
 ☑ Re-pointed the stale packages/db/seed allowlist path in .gitleaks.toml to the real
@@ -555,25 +568,31 @@ Quality gates
   `branding_registers` (migration 0015), because on a document handed to the SAPS Stock Theft Unit
   the reporter is part of the evidence, not metadata
 ☑ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e
-  green — 18 e2e tests, 0 violations; verify green at 61 files / 548 tests, bundle ~106 KB gz
+  green — 21 e2e tests, 0 violations; verify green at 72 files / 652 tests, bundle 119.43 KB gz
 ```
 
 **Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe, including the new
 offline cold-start capture path); CI green on `main`; every checklist line is ☑ **or ◐ with its
-remainder named**; the `reviewer` **and** `compliance-checker` agents pass; a farmer can create a
-camp → create an animal → give it a tag → record a weight and a treatment → wean it → mark another
-missing → generate a stock-theft pack → see the herd count on the home tile, entirely offline for
-the capture paths.
+remainder named**; the `reviewer`, `sync-auditor` **and** `compliance-checker` agents pass; a farmer
+can create a camp → create an animal → give it a tag → record a weight and a treatment → wean it →
+mark another missing → see the herd count on the home tile, entirely offline for the capture paths.
+
+> **Amended 2026-07-26.** "→ generate a stock-theft pack →" was struck from that sentence. It had
+> been in the gate since the phase was written and was never buildable by a farmer: the server side
+> is complete but there is no client route to it. An earlier paragraph here paraphrased the clause
+> away as "server-side and needs a connection" — which is true and beside the point, since needing a
+> connection is not the same as having no UI. Removing it from the gate and naming it as gap B8 is
+> the honest version; the alternative is to build the screen, which is a slice, not a fix.
 
 **Where the gate stands (2026-07-26, branch `phase-2/livestock`).** `pnpm verify` exits 0 (72 files
-/ 645 tests, bundle 119.19 KB gz); `pnpm test:e2e` is green (20 tests, 0 axe violations in both
-themes, including the offline cold-start capture on the built PWA); no ☐ remains — every line is ☑
-or ◐ with its remainder named; `compliance-checker` passed on the gated slices as they were built.
+/ 652 tests, bundle 119.43 KB gz); `pnpm test:e2e` is green (21 tests, 0 axe violations in both
+themes on every screen, including the offline cold-start capture on the built PWA); no ☐ remains —
+every line is ☑ or ◐ with its remainder named. All three review agents have now been run over the
+branch, and what they found is fixed rather than recorded: the outbox head-of-line block, seven
+unchecked cross-farm foreign keys, the mob-level withdrawal hole, and the health screen dating a
+treatment with the capture date. See STATUS.md §3.
 
-**The end-to-end sentence in the gate above is now TRUE.** A farmer can create a camp → create an
-animal → give it a tag → record a weight and a treatment → wean it → mark another missing → see the
-herd count on the home tile, entirely offline for the capture paths. Generating the stock-theft pack
-is server-side and needs a connection, which the sentence already implied. The two clauses that were
+**The end-to-end sentence in the gate above is now TRUE**, as amended. The two clauses that were
 false when this paragraph was first written — creating a camp, and tagging an animal — were the
 first two slices of this stretch of work.
 

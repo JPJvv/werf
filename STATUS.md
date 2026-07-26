@@ -5,6 +5,10 @@
 
 **Last updated:** 2026-07-26 (fourth session) · **Branch:** `phase-2/livestock` (tip = this commit; `5e279b1` is the last feature commit below it)
 
+> **Gate note, and it matters more than it looks:** the e2e lane was reporting green against a stale
+> bundle until this session. Fixed — see §4 A7. If you see e2e fail and then pass on a re-run, that
+> is not a flake and it is not this bug either; read A7 before assuming.
+
 ---
 
 ## 1. Position
@@ -193,6 +197,7 @@ the branch; capture authorship is audit logging, not the worker tracking ADR-001
 | A1–A3 | ✅ All three agents run 2026-07-26 over the branch at `a6c8eff`. Findings fixed, not filed — §3 |
 | A4 | **CI green on `main`** — still impossible until the PR exists (CI does not run on feature branches) |
 | A6 | ⚠️ **NINE feature commits are UNREVIEWED.** `91d1103`, `754c53f`, `b50ac9e`, `30ac2b6` (third session) and `06884c7`, `00f1016`, `bb17b24`, `5e279b1` (fourth). Several touch the write path — the FR-102 tally adds a new queue entry, a new event type, two migrations and a denormalised aggregate; the passkey work touches auth. Two are compliance-gated (FR-603, FR-014c/POPIA). **Deferred on JP's instruction (token cost), not because it is done.** Run all three ONCE over the lot before the PR, not per slice |
+| A7 | ✅ **FIXED 2026-07-26 — the e2e lane could report green against code that no longer existed.** `vite preview` serves `dist`, and `turbo.json`'s `build` task declared no `outputs`, so turbo cached only LOGS: a cache hit printed "FULL TURBO" and wrote no files, leaving whatever bundle was already on disk. Proven rather than theorised — a screen's heading was replaced with a literal and the suite stayed 25-green, then kept FAILING for five consecutive runs after the source was restored, because the broken bundle was never replaced either way. Two changes: `outputs: ["dist/**"]` in `turbo.json`, and `pnpm test:e2e` now builds first (turbo-cached, so free when nothing changed). Verified in both directions — breaking a heading now fails 2 tests, restoring it returns 25 green. **This is why the earlier "2 failed then clean on a re-run" was never a flake; do not re-diagnose it as one.** |
 | A5 | **The verify gate is fragile under container contention.** `reviewer`'s run once failed on a testcontainers `HealthCheckWaitStrategy` timeout (120 s, hardcoded in the library) because it ran `pnpm verify` at the same time as the main session. Isolated runs are green. `vitest.workspace.ts`'s `maxWorkers: 4` / `hookTimeout: 60_000` do NOT bound that particular timeout. Worth raising the health-check timeout or sharing one container across `packages/db` suites before it costs a CI run |
 
 **Named Phase 2 remainders (the phase can close without them; they are not silent):**

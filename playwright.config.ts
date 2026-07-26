@@ -1,6 +1,20 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// E2E is intentionally NOT part of `pnpm verify`; it runs in its own CI lane.
+/**
+ * E2E is intentionally NOT part of `pnpm verify`; it runs in its own CI lane.
+ *
+ * ⭐ The suite runs against the BUILT PWA (`vite preview` serves `dist`), which is the right call —
+ * the service worker, the precache manifest and the offline cold-start path only exist in a build.
+ * But `vite preview` does not build, so for a while this lane could report 25 green against a `dist`
+ * from a previous edit: a screen could be deleted in source and the axe audit for it would still
+ * pass. Proven, not theorised — replacing the Security heading with a literal left the suite fully
+ * green. `pnpm test:e2e` therefore builds first (turbo-cached, so it costs nothing when nothing
+ * changed). Do not "simplify" it back to a bare `playwright test`.
+ *
+ * The build cannot live in `webServer.command`, because `reuseExistingServer` skips that command
+ * entirely when a preview server is already up — which is exactly the case where the stale bundle
+ * bites.
+ */
 export default defineConfig({
   testDir: './apps/web/e2e',
   fullyParallel: true,

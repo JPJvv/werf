@@ -144,8 +144,21 @@ export function recordMobTally(input: MobTallyInput): MobTallyCapture {
   };
 }
 
-/** One captured tally, as the projection reads it. The envelope's `mobId` and `occurredAt`. */
+/** One captured tally, as the projection reads it. The envelope's `id`, `mobId` and `occurredAt`. */
 export interface TallyRecord {
+  /**
+   * The event's client-generated UUIDv7. Present for ORDERING, not for identity.
+   *
+   * ⭐ `occurredAt` alone is not a total order and cannot be. The capture screen asks for the DAY
+   * something happened and stamps every tally on that day with the same instant, so two tallies
+   * sharing an `occurredAt` is the normal case here rather than an edge one. Sorting by a key with
+   * ties leaves the result dependent on the order the rows arrived in — which on the device is the
+   * capture-store append order and on the server is whatever the query plan returned. Deltas
+   * commute so pure deltas survive that; a recount does not, because it RESETS rather than adds.
+   * The id breaks the tie identically on both sides, which is what makes the two projections the
+   * same function. A v7 is time-ordered, so it also breaks it in capture order.
+   */
+  readonly id: string;
   readonly mobId: string;
   /** ISO instant. Sorted as a string, which is correct for ISO-8601 in a fixed zone. */
   readonly occurredAt: string;
@@ -166,13 +179,23 @@ export interface TallyRecord {
  * go negative. But this reads rows the DEVICE persisted, possibly written by an older client or
  * arriving out of order from two phones, and an offline-first read model that produced "-2 sheep"
  * would put a nonsense number on the home tile with no way for the farmer to clear it.
+ *
+ * ⭐ The order is TOTAL — `(occurredAt, id)`, never `occurredAt` alone. See `TallyRecord.id`: the
+ * capture screen gives every tally on a day the same instant, so ties are ordinary, and a fold
+ * containing a recount is not commutative. With only `occurredAt` the server and the device
+ * genuinely could derive different counts for the same flock from the same log, because a stable
+ * sort resolves ties to input order and the two sides receive the rows in different orders. The
+ * caller must supply the same total order — the server's query orders by `(occurred_at, id)` for
+ * exactly this reason.
  */
 export function projectHeadCount(
   createdWith: number | null,
   tallies: readonly TallyRecord[],
 ): number | null {
   if (createdWith === null) return null;
-  const ordered = [...tallies].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const ordered = [...tallies].sort(
+    (a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id),
+  );
   let head = createdWith;
   for (const tally of ordered) {
     if (tally.reason === 'recount') {

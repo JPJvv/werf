@@ -31,7 +31,14 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { ConflictError, NotFoundError, TenancyError, ValidationError, schemas } from '@werf/core';
+import {
+  ConflictError,
+  NotFoundError,
+  TenancyError,
+  ValidationError,
+  schemas,
+  uuidv7,
+} from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { renderEvidencePackPdf } from './evidence-pack.pdf';
 import { AuthService } from '../auth/auth.service';
@@ -750,6 +757,84 @@ describe('weight capture (FR-140)', () => {
       );
 
       expect(await headOf(a.userId, mobId)).toBe(291);
+    });
+
+    it('⭐ lands on the same number as the phone when a recount and a delta share a day', async () => {
+      // The capture screen stamps every tally on a day with ONE instant, so ties are ordinary. The
+      // fold is not commutative once a recount is in it, and the server read the log with no
+      // ORDER BY — so the stored count depended on the query plan while the phone's depended on
+      // its append order. Both sides now order by (occurred_at, id).
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId); // 300 head
+
+      // Both on 14 July, both at midday, exactly as the screen writes them. The deaths were
+      // captured first, then the farmer walked the camp and counted.
+      //
+      // ⭐ The ids are UUIDv7, as the client mints them, and that is load-bearing rather than
+      // incidental. Any total order makes the two sides AGREE — which is the correctness property —
+      // but only a time-ordered id makes them agree on the RIGHT answer, because a v7 sorts in
+      // capture order and so resolves the tie to "the recount was recorded second, therefore it is
+      // the later fact". With random v4 ids both sides still match each other and land on whichever
+      // of 294 / 297 the ids happen to give.
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          id: uuidv7(),
+          farmId: a.farmId,
+          mobId,
+          reason: 'death',
+          count: 3,
+          occurredAt: '2026-07-14T12:00:00.000Z',
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          id: uuidv7(),
+          farmId: a.farmId,
+          mobId,
+          reason: 'recount',
+          count: 297,
+          occurredAt: '2026-07-14T12:00:00.000Z',
+        }),
+      );
+
+      // The recount is the later capture and supersedes: 297, not 294.
+      expect(await headOf(a.userId, mobId)).toBe(297);
+    });
+
+    it('⭐ accepts a BACK-DATED decrease that today’s count could not absorb', async () => {
+      // Two phones. One sells the whole flock on the 20th and syncs. The other has been in a dead
+      // zone since the 18th holding "five died". Validating against the CURRENT count refuses the
+      // late capture with a 400 — which the outbox sets aside permanently — so an honest record of
+      // five dead sheep would be lost to an accident of sync order. It is judged against the flock
+      // as it stood on the day it describes.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId); // 300 head
+
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          farmId: a.farmId,
+          mobId,
+          reason: 'sale',
+          count: 300,
+          occurredAt: '2026-07-20T12:00:00.000Z',
+        }),
+      );
+      expect(await headOf(a.userId, mobId)).toBe(0);
+
+      const late = await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          farmId: a.farmId,
+          mobId,
+          reason: 'death',
+          count: 5,
+          occurredAt: '2026-07-18T12:00:00.000Z',
+        }),
+      );
+      expect(late.type).toBe('tally');
     });
 
     it('applies what happened after a recount, on top of it', async () => {
@@ -1717,6 +1802,114 @@ describe('weight capture (FR-140)', () => {
       expect(sold.type).toBe('sale');
     });
 
+    it('⭐ still withholds an animal MOVED OUT of the mob that was dipped', async () => {
+      // The canonical workflow, and the one that defeated the guard: you dip the flock and then
+      // walk the stock out of the dip camp. The guard read `animals.mob_id` — the denormalised
+      // "where is it now" — so the move silently cleared a withdrawal the animal was still inside.
+      // Membership now comes from the append-only move log, which holds the before AND after.
+      const a = await tenant('Alpha');
+      const [dipped] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dip camp flock', species: 'sheep', headCount: 300 })
+        .returning();
+      const [elsewhere] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Far camp flock', species: 'sheep', headCount: 40 })
+        .returning();
+      const [member] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: dipped!.id, species: 'sheep', sex: 'female' })
+        .returning();
+      const productId = await aVetProduct(); // meat 28d → clears 2026-08-17
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipped!.id,
+          productId,
+          method: 'plunge',
+        }),
+      );
+
+      // Out of the dip camp the next day, exactly as it happens on a farm.
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: member!.id,
+          occurredAt: '2026-07-21T06:00:00.000Z',
+          toMobId: elsewhere!.id,
+        }),
+      );
+
+      await expect(
+        service.recordSale(
+          a.userId,
+          saleBody({
+            farmId: a.farmId,
+            animalId: member!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('does NOT withhold an animal moved INTO a mob that was dipped before it arrived', async () => {
+      // The other direction of the same defect, and it matters as much: an animal that was never
+      // dosed must not be refused. A guard that over-blocks costs a farmer a sale for no reason and
+      // teaches them to work around it, which is how a safety gate stops being one.
+      const a = await tenant('Alpha');
+      const [dipped] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dipped flock', species: 'sheep', headCount: 300 })
+        .returning();
+      const [origin] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Clean flock', species: 'sheep', headCount: 50 })
+        .returning();
+      const [newcomer] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: origin!.id, species: 'sheep', sex: 'female' })
+        .returning();
+      const productId = await aVetProduct();
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipped!.id,
+          productId,
+          method: 'plunge',
+        }),
+      );
+
+      // It joins the dipped flock the day AFTER the dip — it was never in the race.
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: newcomer!.id,
+          occurredAt: '2026-07-21T06:00:00.000Z',
+          toMobId: dipped!.id,
+        }),
+      );
+
+      const sold = await service.recordSale(
+        a.userId,
+        saleBody({
+          farmId: a.farmId,
+          animalId: newcomer!.id,
+          occurredAt: '2026-08-16T06:00:00.000Z',
+        }),
+      );
+      expect(sold.type).toBe('sale');
+    });
+
     it('does not withhold an animal in a DIFFERENT mob from the one dipped', async () => {
       // The other side of the same join: widening the guard must not start refusing sales the
       // farmer is entitled to make. An over-broad guard trains people to work around it.
@@ -1755,6 +1948,127 @@ describe('weight capture (FR-140)', () => {
         }),
       );
       expect(sold.type).toBe('sale');
+    });
+
+    it('⭐ blocks tallying a dipped FLOCK to slaughter — the group-only path was unguarded', async () => {
+      // The smallholder case, and the one the guard could not previously reach at all. A mob run
+      // by head count has no `animals` rows, so every individual check in this service was
+      // structurally incapable of firing for it: dip the flock, tally forty to the abattoir the
+      // next day, and nothing anywhere said no. This is the farm least likely to have a second
+      // system catching it.
+      const a = await tenant('Alpha');
+      const [flock] = await elevated.db
+        .insert(mobs)
+        .values({
+          farmId: a.farmId,
+          name: 'Flock A',
+          species: 'sheep',
+          headCount: 300,
+          initialHeadCount: 300,
+        })
+        .returning();
+      const productId = await aVetProduct(); // meat 28d → clears 2026-08-17
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: flock!.id,
+          productId,
+          method: 'plunge',
+        }),
+      );
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: flock!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+            reason: 'slaughter',
+            count: 40,
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      // A sale is the same rule — it is meat leaving the farm either way.
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: flock!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+            reason: 'sale',
+            count: 40,
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      // And the head count is untouched: a refused capture must not half-apply.
+      const [row] = await app.asUser(a.userId, (tx) =>
+        tx.select({ headCount: mobs.headCount }).from(mobs).where(eq(mobs.id, flock!.id)),
+      );
+      expect(row!.headCount).toBe(300);
+    });
+
+    it('never withholds a DEATH or a recount from a withheld flock', async () => {
+      // The rule is about meat entering the food chain, not about recording what happened. Sheep
+      // that died in a withdrawal still died, and refusing to record it would push the farmer to
+      // record something false — or nothing, which is worse.
+      const a = await tenant('Alpha');
+      const [flock] = await elevated.db
+        .insert(mobs)
+        .values({
+          farmId: a.farmId,
+          name: 'Flock A',
+          species: 'sheep',
+          headCount: 300,
+          initialHeadCount: 300,
+        })
+        .returning();
+      const productId = await aVetProduct();
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: flock!.id,
+          productId,
+          method: 'plunge',
+        }),
+      );
+
+      const died = await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId: flock!.id,
+          occurredAt: '2026-08-16T06:00:00.000Z',
+          reason: 'death',
+          count: 5,
+        }),
+      );
+      expect(died.type).toBe('tally');
+
+      const counted = await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId: flock!.id,
+          occurredAt: '2026-08-16T07:00:00.000Z',
+          reason: 'recount',
+          count: 293,
+        }),
+      );
+      expect(counted.type).toBe('tally');
     });
 
     it('allows the sale on the clear date itself', async () => {

@@ -128,7 +128,10 @@ export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
  *
  * The mob store itself is never mutated; it holds each mob's count as first recorded, which is the
  * baseline this folds over. The server derives the same number from the same events with the same
- * function, so the two cannot drift.
+ * function AND the same total order — `(occurredAt, id)`, never `occurredAt` alone, because the
+ * capture screen gives every tally on a day the same instant and a fold containing a recount does
+ * not commute. Ordering on the instant alone left this at the mercy of the capture-store append
+ * order here and the query plan there, which is how the same log could produce two different counts.
  */
 export function projectMobs(
   mobs: readonly StoredMob[],

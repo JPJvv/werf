@@ -21,7 +21,7 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { uuidv7, type schemas } from '@werf/core';
+import { schemas, uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
@@ -43,7 +43,25 @@ const REASONS = [
   'recount',
 ] as const satisfies readonly schemas.TallyReason[];
 
-const INCREASES: readonly schemas.TallyReason[] = ['birth', 'purchase'];
+/**
+ * Every reason must appear on the screen. `satisfies` above proves each entry IS a reason; it does
+ * not prove the list is complete, so a reason added to the schema could silently never be offered —
+ * a capture the product accepts and gives the farmer no way to make. This makes that a type error.
+ */
+type UnofferedReason = Exclude<schemas.TallyReason, (typeof REASONS)[number]>;
+const _everyReasonIsOffered: UnofferedReason extends never ? true : never = true;
+void _everyReasonIsOffered;
+
+/**
+ * Which reasons ADD head, taken from the schema rather than restated here.
+ *
+ * ⭐ This was a hand-written copy, and that is the defect this phase has already been bitten by
+ * once: the dip `method` union offered a value the server refuses, and it never fired only because
+ * no screen showed the field. A local copy of the sign rule is worse, because it disagrees SILENTLY
+ * — the preview below would show one number while the domain computed another, and the save handler
+ * would throw out of a submit with nothing catching it.
+ */
+const INCREASES: readonly schemas.TallyReason[] = schemas.TALLY_INCREASES;
 
 /** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
 function toCents(rands: string): number {
@@ -78,6 +96,7 @@ export function AdjustMobScreen() {
   const [counterparty, setCounterparty] = useState('');
   const [priceRands, setPriceRands] = useState('');
   const [lastSaved, setLastSaved] = useState<{ name: string; head: number } | null>(null);
+  const [refused, setRefused] = useState<string | null>(null);
 
   if (!activeFarm) return null;
 
@@ -127,20 +146,33 @@ export function AdjustMobScreen() {
     const price = priceRands.trim() === '' ? undefined : toCents(priceRands);
     const buyer = counterparty.trim() === '' ? undefined : counterparty.trim();
 
-    recordTally({
-      id: uuidv7(),
-      farmId: activeFarm.id,
-      mobId: selected.id,
-      // Midday on the farm's day, exactly as the missing report does it: the farmer gave a DAY, and
-      // midday cannot slide either side of it when the instant is read back in any zone.
-      occurredAt: new Date(`${day}T12:00:00.000Z`),
-      reason,
-      count: typed,
-      currentHead,
-      ...(buyer === undefined ? {} : { counterparty: buyer }),
-      ...(price === undefined ? {} : { priceCents: price }),
-    });
+    // The domain is the authority on whether this capture is legal, and `canSave` above is a
+    // preview of its answer rather than a second implementation of it. If the two ever disagree,
+    // the farmer must see the domain's own message — not a blank screen from an exception thrown
+    // out of a click handler with their capture lost.
+    try {
+      recordTally({
+        id: uuidv7(),
+        farmId: activeFarm.id,
+        mobId: selected.id,
+        // Midday on the farm's day, exactly as the missing report does it: the farmer gave a DAY,
+        // and midday cannot slide either side of it when the instant is read back in any zone.
+        //
+        // ⭐ Every tally on a day therefore shares one instant, which is why the projection orders
+        // by `(occurredAt, id)` and not by the instant alone — see `projectHeadCount`.
+        occurredAt: new Date(`${day}T12:00:00.000Z`),
+        reason,
+        count: typed,
+        currentHead,
+        ...(buyer === undefined ? {} : { counterparty: buyer }),
+        ...(price === undefined ? {} : { priceCents: price }),
+      });
+    } catch (error) {
+      setRefused(error instanceof Error ? error.message : t('tally.refused'));
+      return;
+    }
 
+    setRefused(null);
     setLastSaved({ name: selected.name, head: projected ?? 0 });
     reset();
   };
@@ -156,6 +188,15 @@ export function AdjustMobScreen() {
         >
           {lastSaved.name} {t('tally.saved')}{' '}
           <span className="font-data tabular-nums">{lastSaved.head}</span> {t('tally.headUnit')}
+        </p>
+      )}
+
+      {refused && (
+        <p
+          role="alert"
+          className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
+        >
+          {refused}
         </p>
       )}
 

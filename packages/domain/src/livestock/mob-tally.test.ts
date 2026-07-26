@@ -157,6 +157,7 @@ describe('recordMobTally — what it refuses, and what it tells the farmer to do
 
 describe('projectHeadCount (FR-102) — the fold two offline phones depend on', () => {
   const tally = (overrides: Partial<TallyRecord>): TallyRecord => ({
+    id: EVENT_ID,
     mobId: MOB_ID,
     occurredAt: '2026-07-14T05:30:00.000Z',
     reason: 'death',
@@ -221,6 +222,79 @@ describe('projectHeadCount (FR-102) — the fold two offline phones depend on', 
     // Arriving in either order, the recount is still the later fact and still wins.
     expect(projectHeadCount(300, [recount, late])).toBe(280);
     expect(projectHeadCount(300, [late, recount])).toBe(280);
+  });
+
+  /**
+   * ⭐ The regression the reviewer and the sync-auditor both found, independently.
+   *
+   * The capture screen asks for the DAY something happened and stamps every tally on that day with
+   * one instant, so two tallies sharing an `occurredAt` is the ORDINARY case, not an edge one.
+   * Ordering on the instant alone therefore left the fold at the mercy of input order — which is
+   * the capture-store append order on the phone and whatever the query plan returned on the server.
+   * Deltas commute, so pure deltas survived it; a recount RESETS rather than adds, so it did not.
+   *
+   * The result was that the same log could produce 294 on the server and 297 on the phone, forever,
+   * with the docstrings on both sides claiming the two could not disagree.
+   */
+  describe('a total order, so the server and the phone cannot fold the same log differently', () => {
+    const SAME_DAY = '2026-07-14T12:00:00.000Z';
+    // Client UUIDv7s, so the ids sort in the order the captures were made.
+    const FIRST = '01900000-0000-7000-8000-00000000aa01';
+    const SECOND = '01900000-0000-7000-8000-00000000aa02';
+
+    it('folds a recount and a delta captured on the same day identically in either input order', () => {
+      // The natural workflow: notice the number is wrong, record the three that died, then walk the
+      // camp and count what is actually there. Both are dated to the same day.
+      const died = tally({ id: FIRST, occurredAt: SAME_DAY, reason: 'death', delta: -3 });
+      const recount = tally({
+        id: SECOND,
+        occurredAt: SAME_DAY,
+        reason: 'recount',
+        countedHead: 297,
+        delta: undefined,
+      });
+
+      // The recount was captured second, so it is the later fact and it wins — whichever order the
+      // rows are handed to the projection.
+      expect(projectHeadCount(300, [died, recount])).toBe(297);
+      expect(projectHeadCount(300, [recount, died])).toBe(297);
+    });
+
+    it('applies a delta captured after a same-day recount, in either input order', () => {
+      const recount = tally({
+        id: FIRST,
+        occurredAt: SAME_DAY,
+        reason: 'recount',
+        countedHead: 297,
+        delta: undefined,
+      });
+      const born = tally({ id: SECOND, occurredAt: SAME_DAY, reason: 'birth', delta: 5 });
+
+      expect(projectHeadCount(300, [recount, born])).toBe(302);
+      expect(projectHeadCount(300, [born, recount])).toBe(302);
+    });
+
+    it('orders by occurredAt FIRST, so a later day still beats a smaller id', () => {
+      // The id is the tiebreak, never the primary key of the order. A capture made on an older
+      // phone can carry a smaller id and a later occurredAt, and the day is what decides.
+      const olderDayBiggerId = tally({
+        id: SECOND,
+        occurredAt: '2026-07-01T12:00:00.000Z',
+        reason: 'recount',
+        countedHead: 100,
+        delta: undefined,
+      });
+      const laterDaySmallerId = tally({
+        id: FIRST,
+        occurredAt: '2026-07-20T12:00:00.000Z',
+        reason: 'recount',
+        countedHead: 250,
+        delta: undefined,
+      });
+
+      expect(projectHeadCount(300, [olderDayBiggerId, laterDaySmallerId])).toBe(250);
+      expect(projectHeadCount(300, [laterDaySmallerId, olderDayBiggerId])).toBe(250);
+    });
   });
 
   it('never reports a negative flock, whatever the device happens to hold', () => {

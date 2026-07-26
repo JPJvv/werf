@@ -435,6 +435,10 @@ const en = {
   'tally.price': 'Price for the lot (optional)',
   'tally.tooMany': 'This group has',
   'tally.tooManyFix': 'Count the group and record what you find.',
+  // The fallback when a capture is refused by something the screen did not predict. The domain's
+  // own message is shown when there is one; this covers a throw that carries none.
+  'tally.refused':
+    'That change could not be recorded. Check the group and the number, and try again.',
   'tally.theftNote': 'This changes the count. It does not file a stock-theft report.',
   'tally.theftLink': 'File a stock-theft report',
   'tally.save': 'Save',
@@ -977,6 +981,8 @@ const af: Record<TranslationKey, string> = {
   'tally.price': 'Prys vir die klomp (opsioneel)',
   'tally.tooMany': 'Hierdie groep het',
   'tally.tooManyFix': 'Tel die groep en teken aan wat jy kry.',
+  'tally.refused':
+    'Daardie verandering kon nie aangeteken word nie. Kyk na die groep en die getal, en probeer weer.',
   'tally.theftNote': 'Dit verander die getal. Dit dien nie ’n veediefstalverslag in nie.',
   'tally.theftLink': 'Dien ’n veediefstalverslag in',
   'tally.save': 'Stoor',

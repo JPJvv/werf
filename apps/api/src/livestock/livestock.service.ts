@@ -21,7 +21,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lte, or, type SQL } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
@@ -254,7 +254,12 @@ export class LivestockService {
    * Incremental application is order-dependent and this product syncs out of order by design: a
    * recount that arrives before an older lambing from a second phone would otherwise be overwritten
    * by arithmetic it was meant to correct. The fold is the same `projectHeadCount` the client runs,
-   * over the same baseline, so the two cannot disagree.
+   * over the same baseline and — this is the part that actually makes it true — over the same TOTAL
+   * ORDER. `occurred_at` alone is not one: the capture screen stamps every tally on a day with the
+   * same instant, so ties are ordinary, and a fold containing a recount does not commute. The query
+   * below orders by `(occurred_at, id)` and `projectHeadCount` sorts by the same pair, so the two
+   * sides cannot disagree. Ordering by `occurred_at` alone left the result at the mercy of the query
+   * plan on one side and the capture-store append order on the other.
    */
   async recordMobTally(userId: string, input: schemas.RecordMobTallyRequest) {
     return this.app.asUser(userId, async (tx) => {
@@ -277,9 +282,35 @@ export class LivestockService {
       // the same answer as one that does not exist.
       if (!mob) throw new NotFoundError('Mob not found');
 
-      // The domain validates against the count as it stands — "four cannot leave a flock of three"
-      // is a question about the CURRENT number, which is the one the farmer is looking at. Its
-      // projected `headCount` is deliberately not used to write the row; the re-derivation below is.
+      // ⭐ The domain validates against the count AS AT `occurredAt`, not against the mob's current
+      // row, and the difference is the whole offline case. Arrival order is not `occurred_at` order
+      // here: a phone out of signal for a week syncs captures older than ones already stored. A
+      // farmer who recorded "five died on the 18th" while the flock still stood at 300 must not
+      // have that refused because another device has since sold all 300 — the capture is true, it
+      // is simply late. Validating against the CURRENT count refuses it with a 400, which the
+      // outbox sets aside permanently (FR-009), so an honest record of five dead sheep would be
+      // lost to an accident of sync order.
+      //
+      // Folding to the instant answers the question the farmer was actually asked — "could five
+      // leave the flock as it stood that day?" — and it is the same fold the row is written from,
+      // so validation and projection cannot disagree about what the log says.
+      // ⭐ FR-131 on the group path. A tally of `sale` or `slaughter` puts head into the food chain
+      // exactly as an individual sale does, and until this line nothing checked the withdrawal for
+      // it — so a plunge-dipped flock could be tallied to the abattoir the next day with no refusal
+      // anywhere. The individual path has been guarded since the health slice; the group-only path,
+      // which is how most South African smallholders run stock, was not.
+      if (input.reason === 'sale' || input.reason === 'slaughter') {
+        await assertMobClearOfMeatWithdrawal(tx, input.farmId, input.mobId, input.occurredAt);
+      }
+
+      const headAsAt = await deriveHeadCount(
+        tx,
+        input.farmId,
+        input.mobId,
+        mob.initialHeadCount,
+        input.occurredAt,
+      );
+
       const { event } = recordMobTally({
         id: input.id,
         farmId: input.farmId,
@@ -287,7 +318,7 @@ export class LivestockService {
         occurredAt: input.occurredAt,
         reason: input.reason,
         count: input.count,
-        currentHead: mob.headCount,
+        currentHead: headAsAt,
         counterparty: input.counterparty,
         priceCents: input.priceCents,
         // FR-113: filed under the mob's own herd, derived here rather than trusted from the body.
@@ -1021,9 +1052,16 @@ async function deriveHeadCount(
   farmId: string,
   mobId: string,
   initialHead: number | null,
+  /**
+   * Fold only what happened up to and including this instant. Used to validate a capture against
+   * the count AS AT the day it describes rather than against today's, so a back-dated tally
+   * arriving from a phone that was out of signal is judged on the flock it was actually describing.
+   * Omitted for the authoritative write, which folds the entire log.
+   */
+  asAt?: Date,
 ): Promise<number | null> {
   const rows = await tx
-    .select({ occurredAt: events.occurredAt, payload: events.payload })
+    .select({ id: events.id, occurredAt: events.occurredAt, payload: events.payload })
     .from(events)
     .where(
       and(
@@ -1031,14 +1069,22 @@ async function deriveHeadCount(
         eq(events.mobId, mobId),
         eq(events.type, 'tally'),
         isNull(events.deletedAt),
+        ...(asAt === undefined ? [] : [lte(events.occurredAt, asAt)]),
       ),
-    );
+    )
+    // ⭐ A TOTAL order, and it is load-bearing rather than tidiness. `occurred_at` alone has ties —
+    // the capture screen gives every tally on a day the same instant — and a fold containing a
+    // recount does not commute, so an unordered scan could store a different count from the one the
+    // farmer's phone shows. The id is a client UUIDv7: identical on both sides, and time-ordered,
+    // so it breaks the tie in capture order. `projectHeadCount` sorts by the same pair.
+    .orderBy(events.occurredAt, events.id);
 
   return projectHeadCount(
     initialHead,
-    rows.map(({ occurredAt, payload }) => {
+    rows.map(({ id, occurredAt, payload }) => {
       const p = payload as { reason: schemas.TallyReason; delta?: number; countedHead?: number };
       return {
+        id,
         mobId,
         occurredAt: occurredAt.toISOString(),
         reason: p.reason,
@@ -1073,23 +1119,174 @@ async function assertClearOfMeatWithdrawal(
   animalId: string,
   occurredAt: Date,
 ): Promise<void> {
-  // ⭐ A dose reaches an animal by TWO routes, and the guard has to read both. A plunge dip or a
-  // mob vaccination is captured against the MOB — the API accepts animal-xor-mob on every health
-  // capture precisely because that is how dosing actually happens — and writes its
-  // `meatWithholdUntil` onto an event with `animal_id = NULL`. Reading only animal-subject events
-  // meant selling any individual out of a dipped mob passed the guard silently the next day, which
-  // is the residue reaching the abattoir that this whole gate exists to stop.
-  const [subject] = await tx
-    .select({ mobId: animals.mobId })
-    .from(animals)
-    .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId)));
+  const latestClear = await latestMeatClearForAnimal(tx, farmId, animalId);
+  const saleDay = farmLocalDay(occurredAt, await farmJurisdiction(tx, farmId));
+  if (isWithinWithdrawal(latestClear, saleDay)) {
+    throw new ValidationError(
+      `This animal is within its meat withdrawal period until ${latestClear}; it cannot be sold for slaughter before then`,
+    );
+  }
+}
 
-  const subjectFilter = subject?.mobId
-    ? or(eq(events.animalId, animalId), eq(events.mobId, subject.mobId))
-    : eq(events.animalId, animalId);
+/**
+ * FR-131 group guard: the same rule for a whole-mob disposal (FR-102). A tally of `sale` or
+ * `slaughter` takes head OUT of a flock and into the food chain exactly as an individual sale does,
+ * and it was doing so with nothing checking the withdrawal at all.
+ *
+ * ⭐ This is the SMALLHOLDER path, and it was the unguarded one. A group-only flock has no
+ * `animals` rows, so every individual guard in this file was structurally incapable of firing for
+ * it — dip the flock on Monday, tally forty to the abattoir on Tuesday, and nothing anywhere said
+ * no. The farm most likely to run stock as an uncounted mob is also the one least likely to have a
+ * second system catching it, so the absence landed hardest where it mattered most.
+ */
+async function assertMobClearOfMeatWithdrawal(
+  tx: CaptureTx,
+  farmId: string,
+  mobId: string,
+  occurredAt: Date,
+): Promise<void> {
+  const latestClear = await latestMeatClear(tx, farmId, eq(events.mobId, mobId));
+  const day = farmLocalDay(occurredAt, await farmJurisdiction(tx, farmId));
+  if (isWithinWithdrawal(latestClear, day)) {
+    throw new ValidationError(
+      `This group is within its meat withdrawal period until ${latestClear}; none of it can go for slaughter or sale before then`,
+    );
+  }
+}
 
+/**
+ * The latest meat clear date that applies to ONE animal — from doses given to it directly, and from
+ * doses given to a mob WHILE THAT ANIMAL WAS IN IT.
+ *
+ * ⭐ A dose reaches an animal by two routes and the guard has to read both. A plunge dip or a mob
+ * vaccination is captured against the MOB — the API accepts animal-xor-mob on every health capture
+ * precisely because that is how dosing actually happens — and writes its `meatWithholdUntil` onto
+ * an event with `animal_id = NULL`.
+ *
+ * ⭐ And membership is read from the append-only MOVE LOG, never from `animals.mob_id`. That column
+ * is the denormalised "where is it now", overwritten by every move, so asking it produces the wrong
+ * answer in both directions on the most ordinary workflow there is — you dip a mob and then walk
+ * the stock out of the dip camp:
+ *
+ *   • An animal dipped in mob A and since moved to mob B was CLEARED by the old check, because the
+ *     dip event names mob A and the animal now names mob B. That is residue reaching the abattoir,
+ *     which is the entire thing this gate exists to prevent.
+ *   • An animal moved INTO a recently-dipped mob was BLOCKED by it, though it was never dosed —
+ *     costing a farmer a sale for no reason, which is how a guard teaches people to distrust it.
+ *
+ * Reconstructing the intervals fixes both, and it is possible only because `recordMove` stores the
+ * before AND after of both dimensions rather than just the destination.
+ */
+async function latestMeatClearForAnimal(
+  tx: CaptureTx,
+  farmId: string,
+  animalId: string,
+): Promise<string | undefined> {
+  const wasIn = await mobMembership(tx, farmId, animalId);
+
+  // Every mob the animal has ever been in, so one query fetches the candidates; the interval check
+  // below decides which of them were actually its mob on the day of the dose.
+  const mobIds = [...new Set(wasIn.map((m) => m.mobId))];
+  const subjectFilter =
+    mobIds.length === 0
+      ? eq(events.animalId, animalId)
+      : or(eq(events.animalId, animalId), inArray(events.mobId, mobIds));
+
+  return latestMeatClear(tx, farmId, subjectFilter, (row) => {
+    // An animal-subject event is the animal's own dose and always counts. A mob-subject event
+    // counts only if the animal was in that mob when it was given.
+    if (row.mobId === null) return true;
+    return wasIn.some(
+      (m) =>
+        m.mobId === row.mobId &&
+        row.occurredAt >= m.from &&
+        (m.to === null || row.occurredAt < m.to),
+    );
+  });
+}
+
+/** One stretch of time during which an animal belonged to a particular mob. `to === null` = still. */
+interface MobInterval {
+  readonly mobId: string;
+  readonly from: Date;
+  readonly to: Date | null;
+}
+
+/**
+ * When an animal was in which mob, reconstructed from its `move` events (FR-103).
+ *
+ * The move log holds `fromMobId` and `toMobId` on every move, so the whole history is derivable:
+ * the mob it was in before the FIRST move is that move's `fromMobId`, and each move closes one
+ * interval and opens the next. With no moves at all the animal has been in its current mob for its
+ * whole life, which is the common case and costs one extra query rather than a join.
+ *
+ * The opening interval starts at the epoch rather than at the animal's creation: a dose recorded
+ * against a mob before the animal's row was written is still a dose that animal received, and
+ * dating the interval from a row's `created_at` would be dating it from when someone got to a
+ * phone.
+ */
+async function mobMembership(
+  tx: CaptureTx,
+  farmId: string,
+  animalId: string,
+): Promise<readonly MobInterval[]> {
+  const moves = await tx
+    .select({ occurredAt: events.occurredAt, payload: events.payload })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        eq(events.animalId, animalId),
+        eq(events.type, 'move'),
+        isNull(events.deletedAt),
+      ),
+    )
+    .orderBy(events.occurredAt, events.id);
+
+  if (moves.length === 0) {
+    const [row] = await tx
+      .select({ mobId: animals.mobId })
+      .from(animals)
+      .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId)));
+    return row?.mobId ? [{ mobId: row.mobId, from: new Date(0), to: null }] : [];
+  }
+
+  const intervals: MobInterval[] = [];
+  let openMob = (moves[0]!.payload as { fromMobId?: string | null }).fromMobId ?? null;
+  let openedAt = new Date(0);
+
+  for (const move of moves) {
+    const { fromMobId, toMobId } = move.payload as {
+      fromMobId?: string | null;
+      toMobId?: string | null;
+    };
+    // A move that names no mob change leaves the animal where it is — `recordMove` sends only the
+    // dimensions that changed, so an absent `toMobId` means "same mob, different camp".
+    if (toMobId === undefined) continue;
+    if (openMob !== null) {
+      intervals.push({ mobId: openMob, from: openedAt, to: move.occurredAt });
+    }
+    openMob = toMobId ?? (fromMobId === undefined ? openMob : null);
+    openedAt = move.occurredAt;
+  }
+  if (openMob !== null) intervals.push({ mobId: openMob, from: openedAt, to: null });
+
+  return intervals;
+}
+
+/**
+ * The latest `meatWithholdUntil` across the health events matching `subjectFilter`, optionally
+ * narrowed by a predicate the SQL cannot express. Health events with no meat withdrawal contribute
+ * nothing, so an untreated or long-cleared subject sells freely.
+ */
+async function latestMeatClear(
+  tx: CaptureTx,
+  farmId: string,
+  subjectFilter: SQL | undefined,
+  applies: (row: { mobId: string | null; occurredAt: Date }) => boolean = () => true,
+): Promise<string | undefined> {
   const rows = await tx
-    .select({ payload: events.payload })
+    .select({ payload: events.payload, mobId: events.mobId, occurredAt: events.occurredAt })
     .from(events)
     .where(
       and(
@@ -1101,19 +1298,14 @@ async function assertClearOfMeatWithdrawal(
     );
 
   let latestClear: string | undefined;
-  for (const { payload } of rows) {
-    const clear = (payload as { meatWithholdUntil?: unknown }).meatWithholdUntil;
+  for (const row of rows) {
+    if (!applies(row)) continue;
+    const clear = (row.payload as { meatWithholdUntil?: unknown }).meatWithholdUntil;
     if (typeof clear === 'string' && (latestClear === undefined || clear > latestClear)) {
       latestClear = clear;
     }
   }
-
-  const saleDay = farmLocalDay(occurredAt, await farmJurisdiction(tx, farmId));
-  if (isWithinWithdrawal(latestClear, saleDay)) {
-    throw new ValidationError(
-      `This animal is within its meat withdrawal period until ${latestClear}; it cannot be sold for slaughter before then`,
-    );
-  }
+  return latestClear;
 }
 
 /**

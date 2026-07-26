@@ -289,7 +289,14 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   September. The calf inherits its mother's species, herd and position (FR-113 satisfied without
   asking), and is the one animal whose date of birth is known exactly rather than estimated. Ease
   score is five large buttons, not a number field: it is a judgement with five answers, and a 4 or a
-  5 twice on the same cow is a culling decision nobody reconstructs from memory
+  5 twice on the same cow is a culling decision nobody reconstructs from memory. ⭐ A TWIN BIRTH
+  records TWO of everything (commit 754c53f, gap B11 closed): the screen used to mint exactly one
+  calf however many were born while storing `multiples: 2` on the event, so the two facts
+  contradicted each other in the same action and a lambing season left the flock short by one per
+  twin birth. `birthPayload` names ONE calfId and carries the count, so the shape that fits is one
+  event per calf, each recording it was one of N — and each calf gets its own sex and weight,
+  because twins differ in both. A single birth looks exactly as it did. Ease score stays asked once:
+  it is the DAM's calving
 ◐ 📶 Record a death with cause → status='dead', retained forever, excluded from live counts (FR-105)
   — recordDeath done (→ dead via the state machine). OFFLINE CAPTURE SCREEN done (`/animals/loss`,
   commit a6c4928): pick a live animal, give a cause, record — validated through recordDeath, written
@@ -451,21 +458,34 @@ SA identity & stock theft 🇿🇦 (compliance-gated)
   costs an offline farmer nothing, and it is what makes "GPS-anchored" a promise rather than a hope.
   When a fix fails the REASON is named, because "permission denied" and "no signal" need different
   actions from the person holding the phone
-◐ 🇿🇦 Stock-theft evidence pack (server-side PDF, one action): identification, ownership chain,
+☑ 🇿🇦 Stock-theft evidence pack (server-side PDF, one action): identification, ownership chain,
   brand certificate, last-seen GPS+timestamp, movement history, treatment history, SAPS case
   number field. FACTS ONLY — no "suspect" field (defamation + POPIA s26) (FR-603) — the @werf/core
   evidencePackSchema CONTRACT is defined, facts-only with NO suspect field (enforced by omission +
-  a guard comment). **The whole SERVER side is now done** — `theft_incidents`, the PDF renderer
+  a guard comment). The whole SERVER side is done — `theft_incidents`, the PDF renderer
   (`evidence-pack.pdf.ts`), and both endpoints, with five passing integration tests.
-  ⚠️ **Remainder: there is no CLIENT path to any of it.** No route, no screen, no client API
-  function — a farmer cannot file an incident or generate a pack at all, online or off. Named as
-  gap B8 in STATUS.md, and struck from the exit-gate sentence below rather than quietly reworded
+  **The CLIENT path is now done too** (commit 91d1103), which is what closes gap B8 and restores
+  this clause to the exit-gate sentence: `/animals/theft` lists the farm's incidents and
+  `/animals/theft/new` files one — a CAPTURE, local and instant, because an incident is composed
+  at a cut fence hours from town. Generating the pack is the ONE online-only action in livestock
+  and the list says so per incident rather than offering a button that would 404, because the PDF
+  is rendered from the rows the SERVER holds. ⛔ No suspect field anywhere in the chain — not on
+  the screen, not in the store, not on the wire — and the screen says why in the farmer's own
+  interest, immediately above the only free-text box a name could get into. A test asserts the
+  absence. A failed GPS fix names the reason and stops; a second deliberate tap files without a
+  point, because refusing outright loses the report and filing silently hands over a weaker
+  document with no sign anything was lost. The entry point sits OUTSIDE the has-live-animals
+  block: farms running stock as groups have no individual rows and are many of the farms most
+  exposed to theft
 
 Reporting & the grid's live numbers
-◐ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
-  — ⚠️ **Remainder: the CAMP breakdown is computed and never shown.** `summariseHerd` produces
-  `byLandUnit` and it is unit-tested, but nothing in `apps/web/src` reads it, so the "camp" third of
-  the requirement is domain-only. Class and age are genuinely done. Gap B10 in STATUS.md.
+☑ 📶 Herd/flock summary: counts by class, age, camp; excludes dead/sold from live counts (FR-705)
+  — the CAMP breakdown is now SHOWN (commit 30ac2b6), which closes gap B10: each camp on `/land`
+  carries the live head standing in it, counting GROUPS as well as individual animals so a flock of
+  300 with no animal rows shows as 300 rather than as empty ground. `summariseHerd`'s `byLandUnit`
+  had been computed and unit-tested since the read-model slice and nothing read it — a number the
+  app knows and does not show is the same as a number it does not have. Empty ground says 0, never
+  blank.
   — the CLASS breakdown is DONE (commit 4a492b9): cows, weaners, steers and "no age recorded", per
   species, on the Animals screen. ⭐ The rules are PER SPECIES in a table (ADR-0006) — a weaner
   becomes a heifer at a different age in cattle than a lamb becomes a hogget in sheep, and
@@ -568,24 +588,33 @@ Quality gates
   `branding_registers` (migration 0015), because on a document handed to the SAPS Stock Theft Unit
   the reporter is part of the evidence, not metadata
 ☑ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e
-  green — 21 e2e tests, 0 violations; verify green at 72 files / 652 tests, bundle 119.43 KB gz
+  green — 21 e2e tests, 0 violations; verify green at 73 files / 668 tests, bundle 124.82 KB gz.
+  The stock-theft list and capture, and the "what needs your attention" screen, are in the
+  both-theme axe sweep alongside the thirteen capture screens
 ```
 
 **Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe, including the new
 offline cold-start capture path); CI green on `main`; every checklist line is ☑ **or ◐ with its
 remainder named**; the `reviewer`, `sync-auditor` **and** `compliance-checker` agents pass; a farmer
 can create a camp → create an animal → give it a tag → record a weight and a treatment → wean it →
-mark another missing → see the herd count on the home tile, entirely offline for the capture paths.
+mark another missing → file a stock-theft incident and generate its pack → see the herd count on the
+home tile, entirely offline for the capture paths.
 
-> **Amended 2026-07-26.** "→ generate a stock-theft pack →" was struck from that sentence. It had
-> been in the gate since the phase was written and was never buildable by a farmer: the server side
-> is complete but there is no client route to it. An earlier paragraph here paraphrased the clause
-> away as "server-side and needs a connection" — which is true and beside the point, since needing a
-> connection is not the same as having no UI. Removing it from the gate and naming it as gap B8 is
-> the honest version; the alternative is to build the screen, which is a slice, not a fix.
+> **Amended 2026-07-26 (first amendment).** "→ generate a stock-theft pack →" was struck from that
+> sentence. It had been in the gate since the phase was written and was never buildable by a farmer:
+> the server side was complete but there was no client route to it. An earlier paragraph here
+> paraphrased the clause away as "server-side and needs a connection" — true and beside the point,
+> since needing a connection is not the same as having no UI.
+>
+> **Amended again 2026-07-26 (second amendment) — the clause is RESTORED**, because the slice was
+> built (commit 91d1103). It reads "file a stock-theft incident and generate its pack", which is
+> deliberately more than the original: FILING is offline like every other capture in that sentence,
+> and generating the pack is not and cannot be, so the gate now names both halves instead of one
+> word that hid the difference. Everything before the pack in this sentence is still an offline
+> path end to end.
 
-**Where the gate stands (2026-07-26, branch `phase-2/livestock`).** `pnpm verify` exits 0 (72 files
-/ 652 tests, bundle 119.43 KB gz); `pnpm test:e2e` is green (21 tests, 0 axe violations in both
+**Where the gate stands (2026-07-26, branch `phase-2/livestock`).** `pnpm verify` exits 0 (73 files
+/ 668 tests, bundle 124.82 KB gz); `pnpm test:e2e` is green (21 tests, 0 axe violations in both
 themes on every screen, including the offline cold-start capture on the built PWA); no ☐ remains —
 every line is ☑ or ◐ with its remainder named. All three review agents have now been run over the
 branch, and what they found is fixed rather than recorded: the outbox head-of-line block, seven

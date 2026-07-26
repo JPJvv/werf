@@ -3,7 +3,7 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-07-26 · **Branch:** `phase-2/livestock` (tip = this commit; `0e75265` is the fix commit below it)
+**Last updated:** 2026-07-26 (third session) · **Branch:** `phase-2/livestock` (tip = this commit; `30ac2b6` is the last feature commit below it)
 
 ---
 
@@ -13,7 +13,7 @@
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **Three of its four named gaps are now closed** on `phase-2/livestock` — see §3 |
-| **Phase 2** — livestock & crops | 🟡 **Code complete, all three review agents run and their findings FIXED, NOT merged.** `pnpm verify` green: 72 files / 652 tests, bundle 119.43 KB gz. `pnpm test:e2e` green: 21 tests, 0 axe violations in both themes. Ready for the PR — see §2.1 |
+| **Phase 2** — livestock & crops | 🟡 **Code complete, all three review agents run and their findings FIXED, four more slices built since, NOT merged.** `pnpm verify` green: 73 files / 668 tests, bundle 124.82 KB gz. `pnpm test:e2e` green: 21 tests, 0 axe violations in both themes. **B8 is closed, so the exit-gate sentence is whole again** — see §2.1 |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
@@ -21,9 +21,10 @@
 
 ```
 main                   9452ebc   (Phase 0 + 1)
-phase-2/livestock      86c3e87   ← HEAD, no PR yet
+phase-2/livestock      THIS      ← HEAD is this docs commit; `30ac2b6` is the last
+                                 feature commit below it. Pushed, no PR yet
 docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330,
-                                 so it is now BEHIND this branch by 10 commits
+                                 so it is now BEHIND this branch by 14 commits
 ```
 
 ---
@@ -32,13 +33,11 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
 
 **These block the next session. Nothing below should be guessed.**
 
-1. **Phase 2 PR — open it now?** ⭐ **This is the live one.**
-   All three agents have now been run and everything they found is fixed (§3). The gate is green.
-   The blocker is gone, so this is now purely your call — with one thing to decide first:
-   **B8, the stock-theft pack.** It was in the exit-gate sentence and a farmer cannot reach it at
-   all; I struck it from the sentence and named it as a gap rather than build a screen you had not
-   asked for. Either is defensible. Open the PR as it stands, or build the incident + pack screen
-   as one more slice first?
+1. **Phase 2 PR — open it now?** ⭐ **Still the live one, and now with nothing outstanding.**
+   All three agents ran and everything they found is fixed (§3). **B8 was built this session**, so
+   the stock-theft clause is back in the exit-gate sentence and the gate reads true as written.
+   Four more slices went in on top (§2b) and the gate is green after every one. Nothing is blocking
+   the PR — it is your call on timing alone.
    → _Answer:_
 
 2. **`docs/phase-3-6-scope` — rebase, or cherry-pick after the merge?**
@@ -48,9 +47,11 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    → _Answer:_
 
 3. **What is the next slice — the Phase 2 remainders, or the Phase 3 checklist?**
-   `phase-checklists.md` still stops at Phase 2. The Phase 2 remainders are named in §4 and are all
-   genuinely optional for the phase to close; Phase 3 needs its checklist written before `/loop`
-   has anything to consume.
+   `phase-checklists.md` still stops at Phase 2. Four of the named remainders are now closed
+   (B8, B10, B11, B12); the rest are in §4 and are all genuinely optional for the phase to close.
+   The sharpest one left is **B9 — a mob's head count can never change**, which is a hole a farmer
+   walks into rather than a nicety, and it needs a server PATCH route, so it is a real slice.
+   Phase 3 needs its checklist written before `/loop` has anything to consume.
    → _Answer:_
 
 4. **🇿🇦 Has the labour-law review been booked?** It gates Phase 3 (sub-phase 3l) and is on someone
@@ -71,6 +72,41 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    SIM-swap reason it is ruled out as a second factor, and an invitation link is credential-shaped.
    Is "handed over in person" the answer, or does this need a channel we do not operate yet?
    → _Answer:_
+
+---
+
+## 2b. Four slices built (2026-07-26, third session)
+
+The gate ran green after every one. All four came off the named-remainder list in §4 rather than
+from anywhere new; none of them widened the phase.
+
+| Commit | What |
+|---|---|
+| `91d1103` | **Stock-theft client path (FR-603) — closes B8.** The whole server side had been done and tested since the first session and a farmer could not reach any of it: no route, no screen, no client API function. Two screens, because the two halves genuinely differ — FILING is a capture (local, instant, at a cut fence with no signal), and the PACK is not and cannot be (the PDF is rendered from the rows the SERVER holds, so before the incident is sent there is nothing to render). Rather than a button that 404s, the list says per incident which state it is in |
+| `754c53f` | **A twin birth records two lambs (FR-104) — closes B11.** One calf was minted however many were born, while `multiples: 2` went on the event; the two facts contradicted each other in the same action |
+| `b50ac9e` | **"Which capture, and why" (FR-009) — closes B12.** The strip could say "3 need your attention" and there was nowhere to look. Now there is, and each one is named by the number on the animal's ear |
+| `30ac2b6` | **Head per camp (FR-705) — closes B10.** `summariseHerd`'s `byLandUnit` was computed, unit-tested, and read by nothing |
+
+**Rules that came out of this session, worth not relearning:**
+
+- **"Needs a connection" and "has no UI" are not the same sentence, and neither is "is refused" and
+  "is lost".** Three of these four slices are the same shape: the app already KNEW something and
+  had no way to say it. A computed number nothing renders, a refusal with no detail screen, a
+  server capability with no route. Each read as missing functionality from the outside and was
+  actually a missing sentence.
+- **The outbox now publishes two things beyond its status**: the confirmed-sent id set, and the
+  refused list with each item's kind, farmer-facing detail and the server's error code. The sent
+  set gates exactly ONE thing — asking the server to produce a document — and must never gate a
+  farmer's view of their own work, which is saved the moment it is in its local store.
+- **A refusal reason is translated from the error CODE, never from the server's message.** Server
+  messages are written in English; rendering one would hand an Afrikaans farmer a half-translated
+  screen at the exact moment they most need to understand it. An unrecognised code says it cannot
+  explain rather than guessing, because a wrong specific reason sends someone to fix what was
+  never wrong.
+- **A GPS fix that fails should stop once and then yield.** Refusing the record outright loses a
+  theft report on a phone that cannot see the sky; filing silently hands over a weaker document
+  with no sign anything was lost. Naming the reason, then filing on a second deliberate tap, is
+  the only version that loses neither.
 
 ---
 
@@ -160,7 +196,7 @@ Ten commits on `phase-2/livestock`. The gate ran green after every one.
 
 ## 4. Known gaps — carried forward, not forgotten
 
-**Owed before the Phase 2 PR:**
+**Owed before the Phase 2 PR:** (A1–A3 done; A4–A5 still open)
 
 | # | Gap |
 |---|---|
@@ -168,6 +204,7 @@ Ten commits on `phase-2/livestock`. The gate ran green after every one.
 | A2 | ✅ **`sync-auditor` run 2026-07-26.** Findings fixed — see §3 |
 | A3 | ✅ **`compliance-checker` run 2026-07-26** over the new gated work. Findings fixed — see §3 |
 | A4 | **CI green on `main`** — still impossible until the PR exists (CI does not run on feature branches) |
+| A6 | ⚠️ **The four slices in §2b have NOT been through the review agents.** A1–A3 were run over the branch as it stood at `a6c8eff`; everything after that is unreviewed. Two of the four touch the write path (`Outbox.tsx` gained per-item kind/detail; the theft capture is a new queue entry with cross-farm references the server checks) and one is compliance-gated (FR-603, POPIA s26). Run all three ONCE over the lot before the PR — not per slice |
 | A5 | **The verify gate is fragile under container contention.** `reviewer`'s run failed on a testcontainers `HealthCheckWaitStrategy` timeout (120 s, hardcoded in the library) because it ran `pnpm verify` at the same time as the main session. Isolated runs are green. But `vitest.workspace.ts`'s `maxWorkers: 4` / `hookTimeout: 60_000` do NOT bound that particular timeout, and the gate has now flaked three times (`20bc60a`, `31ce6b8`, this). Worth raising the health-check timeout or sharing one container across `packages/db` suites before it costs a CI run |
 
 **Named Phase 2 remainders (the phase can close without them; they are not silent):**
@@ -181,11 +218,11 @@ Ten commits on `phase-2/livestock`. The gate ran green after every one.
 | B5 | **FR-602 unmarked-past-window flag** — the domain function is done and tested, but the prescribed window is dated reference data `regulatory_rates` does not carry, and inventing it in code is exactly the defect the domain rules forbid |
 | B6 | **FR-014/014c passkey enrolment + management from the client** — the last open Phase 1 gap. API ceremonies complete and tested; the client enrols TOTP only |
 | B7 | Smaller: sale WEIGHT not on screen; dose value/unit/route not on the health screen; dip method not on screen; walking a camp boundary by GPS (the API accepts and converts one, nothing produces one) |
-| B8 | **FR-603 stock-theft pack has NO client path.** The whole server side is done and tested — `theft_incidents`, the PDF renderer, both endpoints — but there is no route, no screen and no client API function, so a farmer cannot file an incident or generate a pack at all. This clause was in the Phase 2 exit-gate sentence and has been struck from it (see `phase-checklists.md`); it was previously paraphrased away as "server-side and needs a connection", which was true and beside the point |
-| B9 | **FR-102 is CREATE-only — a mob's head count can never change.** No PATCH route for a mob, and `recordDeath`/`recordSale` both require an `animalId`. A 300-head flock cannot become 297 by any path in the product. Checklist line downgraded ☑→◐ |
-| B10 | **FR-705's camp breakdown is computed and never shown.** `summariseHerd` produces `byLandUnit`, unit-tested; nothing in `apps/web/src` reads it. Checklist line downgraded ☑→◐ |
-| B11 | **A birth of twins records one calf.** `RecordBirthScreen` mints exactly one `calfId` regardless of `multiples`, while `multiples: 2` is stored on the calving event — so the herd count is short by one per twin birth and the two facts disagree in the same transaction. Arguably inside FR-104 as written, which only asks that multiples be recorded |
-| B12 | **A refused capture has no detail screen.** The outbox no longer strands the queue behind one (fixed, §3), and the strip now says "N not sent — needs your attention" — but there is nowhere to see WHICH capture or WHY. The farmer is told honestly that something needs them and not yet told what |
+| B8 | ✅ **CLOSED 2026-07-26 (`91d1103`).** The client path exists: `/animals/theft` and `/animals/theft/new`. The exit-gate clause is restored to the sentence, worded to name both halves — filing is offline, the pack is not |
+| B9 | ⭐ **The sharpest one left.** FR-102 is CREATE-only — a mob's head count can never change. No PATCH route for a mob, and `recordDeath`/`recordSale` both require an `animalId`. A 300-head flock cannot become 297 by any path in the product. This is a hole a farmer walks into, not a nicety; it needs a server route, so it is a real slice. Checklist line downgraded ☑→◐ |
+| B10 | ✅ **CLOSED 2026-07-26 (`30ac2b6`).** Each camp on `/land` carries its live head, groups included. Checklist line restored ◐→☑ |
+| B11 | ✅ **CLOSED 2026-07-26 (`754c53f`).** One birth event per calf, each carrying the multiple count; per-calf sex and weight |
+| B12 | ✅ **CLOSED 2026-07-26 (`b50ac9e`).** `/not-sent`, reached from the strip only when there is something to see. No delete button, deliberately: a refusal clears when its CAUSE clears |
 
 **Older carry-forwards, still open:**
 
@@ -205,6 +242,12 @@ Ten commits on `phase-2/livestock`. The gate ran green after every one.
 Read STATUS.md, CLAUDE.md, and docs/04-delivery/phase-checklists.md.
 Answer the decisions in STATUS.md §2 with me before planning.
 A1-A3 are DONE — all three review agents ran and their findings are fixed (§3).
-The next action is decision §2.1: open the Phase 2 PR, or build the B8
-stock-theft screen as one more slice first.
+B8, B10, B11 and B12 are DONE — four slices, §2b. The exit-gate sentence is
+whole again and the gate reads true as written.
+
+Nothing blocks the Phase 2 PR. Either open it, or take B9 first — a mob's head
+count still cannot change, which is the one remaining gap a farmer walks INTO
+rather than merely misses. Note the four new slices have NOT been through the
+review agents; if B9 or anything else lands, run all three once over the lot
+rather than per slice.
 ```

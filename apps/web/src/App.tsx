@@ -22,6 +22,7 @@ import { ReportTheftScreen } from './livestock/ReportTheftScreen';
 import { LandScreen } from './land/LandScreen';
 import { AddLandUnitScreen } from './land/AddLandUnitScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
+import { NotSentScreen } from './sync/NotSentScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
 import { SettingsLayout } from './settings/SettingsLayout';
 import { AppearanceSettings } from './settings/AppearanceSettings';
@@ -76,6 +77,8 @@ export function App() {
                 <Route path="land/new" element={<AddLandUnitScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
+                {/* Reached from the sync strip when the server has refused something (FR-009). */}
+                <Route path="not-sent" element={<NotSentScreen />} />
                 <Route path="settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="appearance" replace />} />
                   <Route path="appearance" element={<AppearanceSettings />} />

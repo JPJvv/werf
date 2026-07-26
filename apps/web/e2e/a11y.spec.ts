@@ -150,6 +150,10 @@ const CAPTURE_SCREENS = [
   { path: '/animals/theft/new', heading: /report stock theft/i },
   { path: '/weigh', heading: /weigh session/i },
   { path: '/rainfall', heading: /rainfall/i },
+  // Not a capture, but it is reached FROM one going wrong, which is the worst moment to meet an
+  // accessibility failure. The seed has nothing refused, so this audits the empty state; the
+  // populated state's markup is the same list the other screens use.
+  { path: '/not-sent', heading: /what needs your attention/i },
 ] as const;
 
 for (const theme of THEMES) {

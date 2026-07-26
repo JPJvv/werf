@@ -13,6 +13,7 @@
  */
 
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
 import { App } from '../App';
@@ -235,6 +236,52 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).toContain(ANIMAL_ID);
     expect(sent).toContain(DEATH_ID);
     expect(sent).not.toContain(WEIGHT_ID);
+  });
+
+  it('says WHICH capture the server refused and WHY, and never offers to delete it', async () => {
+    // "1 not sent — needs your attention" with nowhere to look is a worry, not a task. The tag is
+    // the commonest refusal in the product, and it has an answer nothing generic can give.
+    cachedSession();
+    seedCaptures();
+    window.localStorage.setItem(
+      `werf-identifiers:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-0000000000c1',
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          type: 'visual_tag',
+          value: '0417',
+          isPrimary: true,
+          issuedAt: '2026-07-20T06:00:00.000Z',
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/identifiers') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('link', { name: /see what/i }));
+
+    // The number on the animal's ear, not a uuid the farmer has never seen anywhere.
+    expect(screen.getByText('0417')).toBeTruthy();
+    expect(screen.getByText(/already on another animal/i)).toBeTruthy();
+    // Nothing is lost, and the screen says so before it lists the problems.
+    expect(screen.getByText(/nothing here is lost/i)).toBeTruthy();
+    // ⛔ The queue is never discarded — not by the system, and not by a farmer on a bad afternoon.
+    expect(screen.queryByRole('button', { name: /delete|discard|remove/i })).toBeNull();
+    expect(window.localStorage.getItem(`werf-identifiers:${FARM_ID}`)).toContain('0417');
   });
 
   it('holds everything locally while offline and sends nothing', async () => {

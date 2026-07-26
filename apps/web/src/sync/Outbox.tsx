@@ -41,7 +41,7 @@ import { useLandUnits } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useAnimals } from '../livestock/LocalHerd';
 import { useMobs } from '../livestock/LocalMobs';
-import { useIdentifiers } from '../livestock/LocalIdentifiers';
+import { useAnimalLabels, useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
 import { useMoves } from '../livestock/LocalMoves';
@@ -93,19 +93,76 @@ function isRefusal(err: unknown): boolean {
   return err.status >= 400 && err.status < 500;
 }
 
-/** Keeps the previous set's identity when nothing changed, so subscribers do not re-render. */
+/** Why the server refused one capture: its stable code and the HTTP status it came back on. */
+interface RefusalReason {
+  readonly code: string;
+  readonly status: number;
+}
+
+/**
+ * The server's own account of a refusal. `isRefusal` has already established this is an
+ * `AuthApiError`; the fallback exists so a future caller cannot make this throw.
+ */
+function reasonOf(err: unknown): RefusalReason {
+  return err instanceof AuthApiError
+    ? { code: err.code, status: err.status }
+    : { code: 'UNKNOWN', status: 0 };
+}
+
+/** Keeps the previous map's identity when nothing changed, so subscribers do not re-render. */
 function replaceIfChanged(
-  previous: ReadonlySet<string>,
-  next: ReadonlySet<string>,
-): ReadonlySet<string> {
-  if (previous.size === next.size && [...next].every((id) => previous.has(id))) return previous;
+  previous: ReadonlyMap<string, RefusalReason>,
+  next: ReadonlyMap<string, RefusalReason>,
+): ReadonlyMap<string, RefusalReason> {
+  if (
+    previous.size === next.size &&
+    [...next].every(([id, reason]) => previous.get(id)?.code === reason.code)
+  ) {
+    return previous;
+  }
   return next;
 }
 
-/** One queued capture: its id (for the sent-log) and how to send it with a given access token. */
+/**
+ * What KIND of thing a queued capture is, in the farmer's terms rather than the table's.
+ *
+ * It exists so a refusal can be named. "One capture was not accepted" is a sentence that tells
+ * someone their work is stuck and gives them nothing to do about it; "Tag number 0417 — that
+ * number is already on another animal" is one they can act on in the crush.
+ */
+export type CaptureKind =
+  | 'landUnit'
+  | 'mob'
+  | 'animal'
+  | 'identifier'
+  | 'weight'
+  | 'lifecycle'
+  | 'move'
+  | 'health'
+  | 'theft'
+  | 'rainfall';
+
+/** One queued capture: its id (for the sent-log), what it is, and how to send it. */
 interface FlushItem {
   readonly id: string;
+  readonly kind: CaptureKind;
+  /**
+   * What this one is CALLED, if it has a name a farmer would recognise — a tag number, a camp
+   * name. Null when there is nothing to say beyond the kind, which is honest: inventing "Weight
+   * #3" would be a label the farmer has never seen anywhere else in the product.
+   */
+  readonly detail: string | null;
   readonly send: (token: string) => Promise<void>;
+}
+
+/** A capture the server refused on its merits, with enough to tell the farmer what and why. */
+export interface RefusedCapture {
+  readonly id: string;
+  readonly kind: CaptureKind;
+  readonly detail: string | null;
+  /** The server's stable error code — branched on, never string-matched against its message. */
+  readonly code: string;
+  readonly status: number;
 }
 
 /** Injectable so tests can back the sent-log with in-memory storage instead of localStorage. */
@@ -135,6 +192,10 @@ const OutboxContext = createContext<SyncState | null>(null);
 const EMPTY_SENT: ReadonlySet<string> = new Set();
 const SentCapturesContext = createContext<ReadonlySet<string>>(EMPTY_SENT);
 
+/** The captures the server refused, with enough for a screen to say what and why. */
+const EMPTY_REFUSED: readonly RefusedCapture[] = [];
+const RefusedCapturesContext = createContext<readonly RefusedCapture[]>(EMPTY_REFUSED);
+
 export interface OutboxProviderProps {
   children: ReactNode;
   factory?: SentLogFactory;
@@ -146,6 +207,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const mobs = useMobs();
   const animals = useAnimals();
   const identifiers = useIdentifiers();
+  // What each animal is CALLED. Read here purely so a refused capture can be named by the number
+  // on the animal's ear rather than by a uuid the farmer has never seen.
+  const labels = useAnimalLabels();
   const weights = useWeights();
   const events = useLifecycleEvents();
   const moves = useMoves();
@@ -171,18 +235,33 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // rule as animals-before-events, one level further up the graph.
     for (const unit of landUnits) {
       if (!sent.has(unit.id)) {
-        items.push({ id: unit.id, send: (token) => landApi.createLandUnit(unit, token) });
+        items.push({
+          id: unit.id,
+          kind: 'landUnit',
+          detail: unit.name,
+          send: (token) => landApi.createLandUnit(unit, token),
+        });
       }
     }
     // A mob sits between the two: it can carry `land_unit_id`, and an animal can carry `mob_id`.
     for (const mob of mobs) {
       if (!sent.has(mob.id)) {
-        items.push({ id: mob.id, send: (token) => livestockApi.createMob(mob, token) });
+        items.push({
+          id: mob.id,
+          kind: 'mob',
+          detail: mob.name,
+          send: (token) => livestockApi.createMob(mob, token),
+        });
       }
     }
     for (const animal of animals) {
       if (!sent.has(animal.id)) {
-        items.push({ id: animal.id, send: (token) => livestockApi.createAnimal(animal, token) });
+        items.push({
+          id: animal.id,
+          kind: 'animal',
+          detail: labels.get(animal.id) ?? null,
+          send: (token) => livestockApi.createAnimal(animal, token),
+        });
       }
     }
     // Identifiers reference `animals(id)`, so they follow the animals and precede nothing.
@@ -190,13 +269,22 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       if (!sent.has(identifier.id)) {
         items.push({
           id: identifier.id,
+          kind: 'identifier',
+          // The number itself, which is the whole point: a duplicate tag is the commonest refusal
+          // in the product, and the fix is to read the number off the animal again.
+          detail: identifier.value,
           send: (token) => livestockApi.createIdentifier(identifier, token),
         });
       }
     }
     for (const weight of weights) {
       if (!sent.has(weight.id)) {
-        items.push({ id: weight.id, send: (token) => livestockApi.recordWeight(weight, token) });
+        items.push({
+          id: weight.id,
+          kind: 'weight',
+          detail: labels.get(weight.animalId) ?? null,
+          send: (token) => livestockApi.recordWeight(weight, token),
+        });
       }
     }
     // One entry per lifecycle event TYPE. Exhaustive by construction rather than by an
@@ -204,18 +292,33 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // fails the typecheck instead of being silently posted to /deaths.
     for (const event of events) {
       if (sent.has(event.id)) continue;
-      items.push({ id: event.id, send: (token) => sendLifecycleEvent(event, token) });
+      items.push({
+        id: event.id,
+        kind: 'lifecycle',
+        detail: labels.get(event.animalId) ?? null,
+        send: (token) => sendLifecycleEvent(event, token),
+      });
     }
     // Moves reference an animal AND its destination camp/mob, so they come after all three.
     for (const move of moves) {
       if (!sent.has(move.id)) {
-        items.push({ id: move.id, send: (token) => livestockApi.recordMove(move, token) });
+        items.push({
+          id: move.id,
+          kind: 'move',
+          detail: labels.get(move.animalId) ?? null,
+          send: (token) => livestockApi.recordMove(move, token),
+        });
       }
     }
     // Health events reference an animal, so they follow the animals like every other event.
     for (const event of health) {
       if (!sent.has(event.id)) {
-        items.push({ id: event.id, send: (token) => livestockApi.recordHealth(event, token) });
+        items.push({
+          id: event.id,
+          kind: 'health',
+          detail: labels.get(event.animalId) ?? null,
+          send: (token) => livestockApi.recordHealth(event, token),
+        });
       }
     }
     // A theft incident points at a camp AND at the animals it concerns, so it comes after both.
@@ -225,6 +328,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       if (!sent.has(incident.id)) {
         items.push({
           id: incident.id,
+          kind: 'theft',
+          detail: null,
           send: (token) => livestockApi.createTheftIncident(incident, token),
         });
       }
@@ -234,6 +339,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       if (!sent.has(reading.id)) {
         items.push({
           id: reading.id,
+          kind: 'rainfall',
+          detail: null,
           send: (token) => rainfallApi.recordRainfall(reading, token),
         });
       }
@@ -256,11 +363,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
 
   const [flushing, setFlushing] = useState(false);
   const [errored, setErrored] = useState(false);
-  // Captures the server REFUSED on their merits, by id. Held in memory only, and deliberately:
-  // a refusal is a fact about one attempt, not about the record, so it is re-tested on every
-  // round and on every cold start. One that was only situationally invalid — a move whose
-  // destination camp had not been sent yet — heals itself the moment the cause clears.
-  const [refused, setRefused] = useState<ReadonlySet<string>>(() => new Set());
+  // Captures the server REFUSED on their merits, keyed by id and carrying the server's own error
+  // code so the farmer can be told WHY, not only that. Held in memory only, and deliberately: a
+  // refusal is a fact about one attempt, not about the record, so it is re-tested on every round
+  // and on every cold start. One that was only situationally invalid — a move whose destination
+  // camp had not been sent yet — heals itself the moment the cause clears.
+  const [refused, setRefused] = useState<ReadonlyMap<string, RefusalReason>>(() => new Map());
 
   // Refs the async flush reads for its latest view, without being re-created on every render.
   const tokenRef = useRef<string | undefined>(session?.accessToken);
@@ -288,7 +396,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     setErrored(false);
     // Rebuilt from scratch each round rather than added to: a capture refused last time gets a
     // genuine second hearing, so the set never accumulates a stale refusal.
-    const refusedThisRound = new Set<string>();
+    const refusedThisRound = new Map<string, RefusalReason>();
     try {
       for (const item of items) {
         if (!mountedRef.current) return;
@@ -312,7 +420,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
               sentLog.add(item.id);
             } catch (retryErr) {
               if (isRefusal(retryErr)) {
-                refusedThisRound.add(item.id);
+                refusedThisRound.set(item.id, reasonOf(retryErr));
                 continue;
               }
               if (mountedRef.current) setErrored(true);
@@ -334,7 +442,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             // stranded by one misread digit, which is exactly what returning here did: the queue
             // rebuilds in the same FK order every round, so the poison item was always first and
             // nothing behind it could ever be sent again.
-            refusedThisRound.add(item.id);
+            refusedThisRound.set(item.id, reasonOf(err));
             continue;
           } else {
             // A 5xx, or something we do not recognise. Transient by assumption — give up the
@@ -363,10 +471,20 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
 
   // Only refusals that are still queued count. One the farmer resolved another way — or that the
   // server accepted on a later round — leaves the queue and stops being reported.
-  const blockedCount = useMemo(
-    () => queue.reduce((total, item) => (refused.has(item.id) ? total + 1 : total), 0),
+  //
+  // Derived from the QUEUE rather than from the refusal map, so the order a farmer reads is the
+  // order the flush attempts, and a refusal whose record has left the queue simply disappears.
+  const blocked = useMemo<readonly RefusedCapture[]>(
+    () =>
+      queue.flatMap((item) => {
+        const reason = refused.get(item.id);
+        return reason === undefined
+          ? []
+          : [{ id: item.id, kind: item.kind, detail: item.detail, ...reason }];
+      }),
     [queue, refused],
   );
+  const blockedCount = blocked.length;
 
   const state = useMemo<SyncState>(() => {
     const status: SyncState['status'] = !online
@@ -383,7 +501,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
 
   return (
     <OutboxContext.Provider value={state}>
-      <SentCapturesContext.Provider value={sent}>{children}</SentCapturesContext.Provider>
+      <SentCapturesContext.Provider value={sent}>
+        <RefusedCapturesContext.Provider value={blocked}>
+          {children}
+        </RefusedCapturesContext.Provider>
+      </SentCapturesContext.Provider>
     </OutboxContext.Provider>
   );
 }
@@ -395,6 +517,17 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
  */
 export function useSentCaptures(): ReadonlySet<string> {
   return useContext(SentCapturesContext);
+}
+
+/**
+ * The captures the server refused, in queue order. Empty outside an `OutboxProvider`.
+ *
+ * The strip has been able to say "N need your attention" since the flush stopped stranding the
+ * queue behind a refusal — and until now there was nowhere to go and see WHICH capture or WHY,
+ * which is half an answer. This is the other half.
+ */
+export function useRefusedCaptures(): readonly RefusedCapture[] {
+  return useContext(RefusedCapturesContext);
 }
 
 /**

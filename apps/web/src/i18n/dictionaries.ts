@@ -61,6 +61,38 @@ const en = {
   // "will retry" would be a lie here: the server refused these and will refuse them again until
   // something about them changes. Everything else the farmer captured has already gone.
   'sync.blocked': 'not sent — needs your attention',
+  // The way OUT of that sentence. Saying something of a farmer's is stuck, with nowhere to look,
+  // hands them a worry instead of a task.
+  'sync.blocked.see': 'See what',
+  'notSent.title': 'What needs your attention',
+  'notSent.intro':
+    'Nothing here is lost — all of it is saved on this phone. The server would not take these as they stand. Fix what it names and they go up on their own; there is nothing to press.',
+  'notSent.empty': 'Everything has gone up. Nothing needs you.',
+  'notSent.back': 'Back to home',
+  'notSent.kind.landUnit': 'A camp or block',
+  'notSent.kind.mob': 'A group',
+  'notSent.kind.animal': 'An animal',
+  'notSent.kind.identifier': 'Tag number',
+  'notSent.kind.weight': 'A weight for',
+  'notSent.kind.lifecycle': 'A record for',
+  'notSent.kind.move': 'A move for',
+  'notSent.kind.health': 'A treatment for',
+  'notSent.kind.theft': 'A stock-theft report',
+  'notSent.kind.rainfall': 'A rainfall reading',
+  // Each answers the next question before it is asked. The tag case is separated out because it is
+  // far and away the commonest refusal and it has an answer the generic line cannot give.
+  'notSent.why.tagTaken':
+    'That number is already on another animal. Read it off the animal again, then record it with the right number — this one stays here until you do.',
+  'notSent.why.conflict':
+    'Something in this one is already recorded against something else. Record it again with the part that clashes changed.',
+  'notSent.why.validation':
+    'The server would not accept this one as it stands. Record it again, checking the numbers and dates.',
+  'notSent.why.notFound':
+    'This one points at something the farm does not have — a camp or an animal that was never recorded, or was recorded on another phone. Once that exists, this goes up on its own.',
+  'notSent.why.tenancy':
+    'This one points at something on a different farm. It cannot go up as it stands. Please tell us about it.',
+  'notSent.why.unknown':
+    'The server would not take this one and did not say why in a way we can explain. It is safe on this phone. Please tell us about it.',
   // PWA install. Offered after the browser signals the app is install-worthy (never on
   // first paint, FR-007) and dismissible — a farmer decides, we don't nag.
   'install.title': 'Install Werf on this phone',
@@ -517,6 +549,34 @@ const af: Record<TranslationKey, string> = {
   'sync.error': 'Nie gestuur nie — sal weer probeer',
   'sync.toSend': 'om te stuur',
   'sync.blocked': 'nie gestuur nie — benodig jou aandag',
+  'sync.blocked.see': 'Wys my',
+  'notSent.title': 'Wat jou aandag benodig',
+  'notSent.intro':
+    'Niks hier is verlore nie — dit is alles op hierdie foon gestoor. Die bediener wou dit nie so vat nie. Maak reg wat dit noem, dan gaan hulle vanself op; daar is niks om te druk nie.',
+  'notSent.empty': 'Alles is opgestuur. Niks benodig jou nie.',
+  'notSent.back': 'Terug na tuis',
+  'notSent.kind.landUnit': '’n Kamp of blok',
+  'notSent.kind.mob': '’n Groep',
+  'notSent.kind.animal': '’n Dier',
+  'notSent.kind.identifier': 'Nommer',
+  'notSent.kind.weight': '’n Gewig vir',
+  'notSent.kind.lifecycle': '’n Rekord vir',
+  'notSent.kind.move': '’n Skuif vir',
+  'notSent.kind.health': '’n Behandeling vir',
+  'notSent.kind.theft': '’n Veediefstalverslag',
+  'notSent.kind.rainfall': '’n Reënvallesing',
+  'notSent.why.tagTaken':
+    'Daardie nommer is reeds op ’n ander dier. Lees dit weer van die dier af en teken dit met die regte nommer aan — hierdie een bly hier tot jy dit doen.',
+  'notSent.why.conflict':
+    'Iets in hierdie een is reeds teen iets anders aangeteken. Teken dit weer aan met die deel wat bots verander.',
+  'notSent.why.validation':
+    'Die bediener wou hierdie een nie so vat nie. Teken dit weer aan en kyk na die getalle en datums.',
+  'notSent.why.notFound':
+    'Hierdie een wys na iets wat die plaas nie het nie — ’n kamp of ’n dier wat nooit aangeteken is nie, of op ’n ander foon aangeteken is. Sodra dit bestaan, gaan hierdie een vanself op.',
+  'notSent.why.tenancy':
+    'Hierdie een wys na iets op ’n ander plaas. Dit kan nie so opgaan nie. Laat weet ons asseblief daarvan.',
+  'notSent.why.unknown':
+    'Die bediener wou hierdie een nie vat nie en het nie op ’n manier gesê hoekom wat ons kan verduidelik nie. Dit is veilig op hierdie foon. Laat weet ons asseblief daarvan.',
   'install.title': 'Installeer Werf op hierdie foon',
   'install.body': 'Maak dit oop van jou tuisskerm af, en dit werk aflyn.',
   'install.action': 'Installeer',

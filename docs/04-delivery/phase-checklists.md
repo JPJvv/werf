@@ -141,13 +141,19 @@ replication of domain data (Phase 3).
 
 **Partially delivered — named so they are not mistaken for done.** Struck-through entries were
 CLOSED by the Phase 2 carry-forward work; the two that remain are the honest ones.
-- **FR-014c (manage passkeys):** the API enrols, lists and revokes; there is no management UI.
+- ~~FR-014c (manage passkeys)~~ — **CLOSED** in Phase 2 (commit bb17b24). Settings → Security lists
+  the enrolled devices by label and last use, adds another, and revokes one. Adding another is not a
+  power-user feature: an owner with one passkey on one phone has an account that dies with the
+  phone, which is what would make preferring this factor unsafe.
 - ~~FR-017 "one live number or one badge" per tile~~ — **CLOSED.** The animals tile carries live
   head, the land tile the camp count, and the health tile a "N withholding" attention badge. Tiles
   with no true number to carry still carry none, deliberately (see the Phase 2 line).
-- **Passkey enrolment from the client:** the API ceremonies are complete and tested; the client
-  enrols TOTP only. A farmer can satisfy FR-014 today, but not with the factor ADR-0007 prefers.
-  **This is the largest remaining Phase 1 gap.**
+- ~~Passkey enrolment from the client~~ — **CLOSED** in Phase 2 (commit bb17b24), and it was the
+  largest remaining Phase 1 gap. Enrolment now offers the PASSKEY first and the authenticator app
+  second, which is ADR-0007's ordering rather than fashion; sign-in satisfies the second factor with
+  it when the ACCOUNT has one and the DEVICE can use one. Availability is asked BEFORE the button is
+  rendered — a mandatory-2FA screen offering only a factor the browser cannot produce is a dead end
+  for someone with no other route into their own account. **Phase 1 now has no open gaps.**
 - ~~FR-008 write-back~~ — **CLOSED** in Phase 2 (`PATCH /auth/profile` + the pre-sign-in picker).
 - ~~FR-004 farm switching~~ — **CLOSED.** A switcher in the shell header on every screen (hidden on
   a single-farm account), switching the device FIRST and telling the server best-effort so it works
@@ -227,20 +233,37 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   one, nothing is asked and the herd is stated. Still ◐: only herd/species/sex/breed are captured on
   the screen (DOB, source, acquired_at, identifiers are later). DOB stays a YYYY-MM-DD string, never
   a coerced Date (off-by-one guard)
-◐ Create a mob/flock and manage it by head_count without individual rows (FR-102) — create ACTION
+☑ Create a mob/flock and manage it by head_count without individual rows (FR-102) — create ACTION
   DONE (commit fb74d6e): `POST /livestock/mobs` and a capture screen at `/animals/groups/new`,
   offered beside "record an animal" rather than buried, because for a smallholder running 300 sheep
   as a flock it is the only capture they will ever need. The head count feeds the live total, so the
   home tile shows 300 on a farm with ZERO animal rows — asserted directly, because a tile showing 0
   there is the whole failure FR-102 exists to prevent. The Animals screen also stops telling such a
   farm it has "recorded nothing yet".
-  ⚠️ **Remainder (found by the exit-gate review): "manage" is only CREATE.** There is no PATCH route
-  for a mob, and `recordDeathRequestSchema` / `recordSaleRequestSchema` both require an `animalId`,
-  so a 300-head flock can never become 297 by any path in the product. That is the half of FR-102 a
-  smallholder actually lives in. Named as gap B9 in STATUS.md
-◐ Species-specific attributes via Zod-validated JSONB (FR-107, ADR-0006 AnimalIdentityRules seam) —
-  the `attributes` jsonb column + GIN index exist and the schema leaves it an open record; the
-  PER-SPECIES validator (horn_status for cattle, wool_class for sheep) is its own later slice
+  ✅ **The "manage" half is now DONE too (commit 06884c7), which is what restores this line to ☑.**
+  The count moves by an append-only `tally` event carrying the reason — born, died, sold, bought,
+  stolen, slaughtered, or counted — at `/animals/groups/count`, and `mobs.head_count` becomes the
+  fold of that log over an immutable `initial_head_count` baseline (migrations 0017/0018).
+  ⭐ DELTAS, NOT AN EDITED FIELD, and the reason is the one this product exists for: two people each
+  record three deaths on their own phone in a dead zone, and deltas compose to 294, which is the
+  truth. An edited head count is last-write-wins, lands on 297, and silently keeps three dead sheep
+  in the count. A RECOUNT is the one absolute and RESETS the running total, because "I walked the
+  camp and counted 297" is a stronger fact than arithmetic on a number just shown to be wrong.
+  ⭐ The server RE-DERIVES the count from its whole log rather than stepping it by each delta:
+  arrival order is not `occurred_at` order here and never will be, so a recount landing before an
+  older lambing from a second phone would otherwise be overwritten by the arithmetic it corrects.
+  Both sides run the same `projectHeadCount` over the same baseline and cannot disagree.
+☑ Species-specific attributes via Zod-validated JSONB (FR-107) — DONE (commit 5e279b1). A strict
+  per-species schema in `@werf/core/schemas`, enforced on the device before the save AND on the
+  server write path from the same schema. Horn status on cattle, sheep, goats and game; wool class
+  on sheep. An attribute the species does not have is REFUSED, not stored; an EMPTY record is valid
+  on every species, because a farmer tagging fifty head is not stopping to record horn status on
+  each one. ⚠️ **This line previously said "ADR-0006 AnimalIdentityRules seam" and that was wrong.**
+  That seam is for what the LAW varies — the Animal Identification Act's mark rules. A horn is a
+  horn in Namibia; putting a husbandry vocabulary behind a jurisdiction interface would make every
+  future country restate that cattle can be polled. `woolClass` is a validated SHAPE and not an
+  enum, deliberately: the SA classing code list is Cape Wools' and is not in this repo, and a
+  fabricated picker would be wrong in a way a wool farmer spots immediately
 ☑ Multiple identifiers per animal; UNIQUE(farm_id, type, value) partial on deleted_at IS NULL
   (FR-109) — the add-identifier ACTION is DONE (commit 2b722e9): `POST /livestock/identifiers` and a
   crush-shaped tagging session at `/animals/tag`, one animal per screen, Save & next, queue fixed
@@ -311,8 +334,9 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   has a path too (commit 434db44), folded into recording an animal rather than given a screen of its
   own: a bought animal is not a different KIND of animal, it is the same herd row plus a money
   event, and `source`/`acquired_at` land on the animal because an evidence pack reads those rather
-  than trawling the event log. Still ◐: the optional sale WEIGHT is still not captured on-screen.
-  Original note follows — recordSale/
+  than trawling the event log. ✅ The optional sale WEIGHT is now on the screen too (commit 00f1016)
+  — unrecoverable after the truck leaves, and without it a price says nothing about what the animal
+  was worth. Original note follows — recordSale/
   recordPurchase done (sale → sold; Money is integer cents). SALE CAPTURE SCREEN done (commit c04bf36,
   in the `/animals/loss` RecordLossScreen — a loss is a death OR a sale): pick the animal, choose Died
   or Sold, give buyer + price; validated through recordSale, written as a lifecycle EVENT through the
@@ -385,8 +409,11 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
   (commit d32451a) on top of the server endpoints that already existed. A dosing run is a batch by
   nature, so selection is the primary interaction and one batch_id ties the run together; products
   are filtered to the species actually selected, so a wrong choice is off the screen rather than
-  something the farmer has to notice. Still ◐: dose value/unit and route are not on the screen yet
-  (the wire and the event carry them)
+  something the farmer has to notice. ✅ Dose value, unit and ROUTE are now on the screen (commit
+  00f1016): both are on the register a residue traceback reads, "20" is not a dose, and a dose
+  without a route does not say what happened to the animal. A dose that was TYPED but is not a
+  number blocks the save rather than being dropped — a register that silently lost the dose someone
+  stood there and entered is worse than one that never had it, because nobody knows to go back
 ◐ 📶 Automatic withdrawal period from product reference data: compute + store meat/milk withdrawal
   ON THE EVENT (not on read — the rule at time of treatment, ADR-0005); block or hard-warn on
   sale/slaughter within it. Withdrawal periods live in regulatory reference data, by date (FR-131, FR-614)
@@ -412,9 +439,15 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
   that has not been designed, and the Health tile deliberately carries "N withholding" — which is
   true and derivable today — rather than an "N due" the app cannot actually compute
 ◐ 📶 🇿🇦 Record a dip/tick treatment (required in controlled areas) (FR-133) — API + SCREEN DONE
-  (the health screen's third kind, commit d32451a). Still ◐: the dip METHOD is not on the screen
-  (the wire carries it), and the controlled-area prompt (§3.4) needs the controlled-area boundaries
-  as reference data, which do not exist yet
+  (the health screen's third kind, commit d32451a). ✅ The dip METHOD is now on the screen (commit
+  00f1016) — a plunge dip and a pour-on are different operations with different coverage, and the
+  dipping register in a controlled area has to say which. ⭐ Wiring it surfaced a latent defect: the
+  client's `method` type was a hand-written union offering `'injectable'`, which the dip payload
+  does not accept and the server would have refused on the wire. It had never fired only because
+  the field was on no screen; the moment it appeared, a plausible-looking choice would have queued a
+  capture that could never be sent, and it would have read as a sync bug rather than a typo in a
+  type. It is now derived from the payload schema. Still ◐: the controlled-area prompt (§3.4) needs
+  the controlled-area boundaries as reference data, which do not exist yet
 
 Weights & performance
 ◐ 📶 Record a weight against an animal or a mob (FR-140) — capture DOMAIN LOGIC done
@@ -613,13 +646,19 @@ home tile, entirely offline for the capture paths.
 > word that hid the difference. Everything before the pack in this sentence is still an offline
 > path end to end.
 
-**Where the gate stands (2026-07-26, branch `phase-2/livestock`).** `pnpm verify` exits 0 (73 files
-/ 668 tests, bundle 124.82 KB gz); `pnpm test:e2e` is green (21 tests, 0 axe violations in both
+**Where the gate stands (2026-07-26, branch `phase-2/livestock`).** `pnpm verify` exits 0 (77 files
+/ 741 tests, bundle 133.59 KB gz); `pnpm test:e2e` is green (25 tests, 0 axe violations in both
 themes on every screen, including the offline cold-start capture on the built PWA); no ☐ remains —
-every line is ☑ or ◐ with its remainder named. All three review agents have now been run over the
-branch, and what they found is fixed rather than recorded: the outbox head-of-line block, seven
-unchecked cross-farm foreign keys, the mob-level withdrawal hole, and the health screen dating a
-treatment with the capture date. See STATUS.md §3.
+every line is ☑ or ◐ with its remainder named. All three review agents were run over the branch as
+it stood at `a6c8eff`, and what they found is fixed rather than recorded: the outbox head-of-line
+block, seven unchecked cross-farm foreign keys, the mob-level withdrawal hole, and the health screen
+dating a treatment with the capture date. See STATUS.md §3.
+
+⚠️ **Nine feature commits have landed SINCE that agent pass and none of them has been reviewed.**
+Four on 2026-07-26 (FR-603 client path, FR-104 twin births, FR-009 refusal detail, FR-705 head per
+camp) and five more since (FR-102 tally, FR-106/130/133 capture fields, FR-014/014c passkeys,
+FR-107 attributes). Several touch the write path and two are compliance-gated. Run `reviewer`,
+`sync-auditor` and `compliance-checker` ONCE over the lot before the PR — see STATUS.md §4 A6.
 
 **The end-to-end sentence in the gate above is now TRUE**, as amended. The two clauses that were
 false when this paragraph was first written — creating a camp, and tagging an animal — were the
@@ -638,14 +677,26 @@ first two slices of this stretch of work.
 - **FR-120/121 mating and pregnancy diagnosis** — domain logic done, API and screens not started.
   The largest remaining capture, and the species-gestation reference data it needs does not exist.
 - **FR-108 photos** — `photo_key` exists; the local store and deferred upload do not.
-- **FR-107 species-specific attribute validation** — the `attributes` JSONB and its GIN index exist;
-  the per-species validator behind the ADR-0006 seam does not.
+- ~~**FR-107 species-specific attribute validation**~~ — **CLOSED** (commit 5e279b1).
+- ~~**FR-014/014c passkey enrolment and management from the client**~~ — **CLOSED** (commit
+  bb17b24). The last Phase 1 gap. Enrolment offers the passkey FIRST and TOTP as the fallback,
+  sign-in satisfies the second factor with it, and Settings → Security lists, adds and revokes.
+- **FR-120/121 mating and pregnancy diagnosis** — the domain is complete and tested and takes
+  `gestationDays` INJECTED, which is the point: it is reference data, not a magic number. What is
+  missing is a `species_gestation` reference table (biology, so NOT jurisdiction-scoped, unlike
+  `veterinary_products`), its sync classification and seed, a reference endpoint, a client cache and
+  two capture screens. Comparable in size to the FR-102 tally slice. **Deliberately not half-built:**
+  the server half alone would repeat the FR-603 mistake this phase already made once, where a
+  complete server capability with no client route read as missing functionality.
+- **FR-108 photos** — BLOCKED on infrastructure, not on design. `photo_key` exists and
+  `architecture.md` plans presigned direct-from-client upload to S3; there is no object storage
+  anywhere in this repo and no upload endpoint. Building only the local half would set `photo_key`
+  with no image behind it — and `evidence-pack.pdf.ts` prints "Photograph on file: Yes" off exactly
+  that field, so the pack would claim a photograph the Stock Theft Unit cannot be shown.
 - **FR-132 due/overdue** — needs a vaccination programme schedule that has not been designed.
 - **FR-602 unmarked-past-window flag** — `isUnmarkedPastWindow` is done and tested, but the
   prescribed window is dated reference data that `regulatory_rates` does not yet carry, and
   inventing it in code would be exactly the defect the domain rules forbid.
-- **FR-014/014c passkey enrolment and management from the client** — the Phase 1 gap that remains.
-  The API ceremonies are complete and tested; the client still enrols TOTP only.
 
 **Deferred to later phases (not a Phase 2 miss):** FR-110 pedigree/breed-% and FR-122/123 breeding
 analytics + reminders (P2); FR-134/135/136/137 injury, notifiable-disease flag, medicine inventory,

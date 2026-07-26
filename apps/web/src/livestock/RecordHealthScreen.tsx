@@ -21,7 +21,7 @@
 
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { uuidv7 } from '@werf/core';
+import { uuidv7, type schemas } from '@werf/core';
 import { withholdUntil } from '@werf/domain';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
@@ -30,10 +30,32 @@ import { farmToday } from '../farmTime';
 import { useEffectiveAnimals } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { useVetProducts, type StoredVetProduct } from './LocalVetProducts';
-import { useRecordHealth, type HealthKind, type StoredHealthEvent } from './LocalHealth';
+import {
+  useRecordHealth,
+  type DipMethod,
+  type HealthKind,
+  type StoredHealthEvent,
+} from './LocalHealth';
 import { speciesLabel } from './AnimalsScreen';
 
 const KINDS: readonly HealthKind[] = ['treatment', 'vaccination', 'dip'];
+
+/**
+ * How a dose went in (FR-130) and how a dip was applied (FR-133). Both are on the treatment
+ * register a residue traceback or an export audit reads: "20 ml" says nothing useful without
+ * "intramuscular", and a plunge dip and a pour-on leave different residues on different timelines.
+ */
+const ROUTES: readonly schemas.TreatmentRoute[] = [
+  'injection_sc',
+  'injection_im',
+  'injection_iv',
+  'oral',
+  'topical',
+  'intramammary',
+  'other',
+];
+
+const DIP_METHODS: readonly DipMethod[] = ['plunge', 'spray', 'pour_on', 'hand'];
 
 export function RecordHealthScreen() {
   const { t } = useTranslation();
@@ -48,6 +70,10 @@ export function RecordHealthScreen() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [administeredBy, setAdministeredBy] = useState('');
   const [reason, setReason] = useState('');
+  const [doseValue, setDoseValue] = useState('');
+  const [doseUnit, setDoseUnit] = useState('');
+  const [route, setRoute] = useState<schemas.TreatmentRoute | ''>('');
+  const [method, setMethod] = useState<DipMethod | ''>('');
   const [dosedCount, setDosedCount] = useState<number | null>(null);
   // ⭐ ASKED, never assumed. A dose given on Tuesday and captured on Friday — the normal case for a
   // farm in a dead zone — must be dated Tuesday: the server resolves the product REGISTRATION in
@@ -90,7 +116,14 @@ export function RecordHealthScreen() {
     setSelected(new Set(live.map((a) => a.id)));
   };
 
-  const blocked = product === undefined || chosen.length === 0 || administeredOn === '';
+  // A dose that was TYPED but is not a number blocks the save rather than being dropped: a
+  // treatment register that silently lost the dose someone stood there and entered is worse than
+  // one that never had it, because nobody knows to go back.
+  const blocked =
+    product === undefined ||
+    chosen.length === 0 ||
+    administeredOn === '' ||
+    (kind === 'treatment' && !doseIsValid(doseValue));
 
   const save = () => {
     if (blocked || !product) return;
@@ -117,12 +150,21 @@ export function RecordHealthScreen() {
       ...(administeredBy.trim() === '' ? {} : { administeredBy: administeredBy.trim() }),
       ...(reason.trim() === '' || kind === 'vaccination' ? {} : { reason: reason.trim() }),
       ...(kind === 'vaccination' && reason.trim() !== '' ? { programme: reason.trim() } : {}),
+      // The dose belongs to a TREATMENT only — the vaccination and dip payloads carry no dose, so
+      // sending one would be refused on the wire rather than quietly dropped.
+      ...(kind === 'treatment' && doseIsValid(doseValue) && doseValue.trim() !== ''
+        ? { doseValue: Number(doseValue) }
+        : {}),
+      ...(kind === 'treatment' && doseUnit.trim() !== '' ? { doseUnit: doseUnit.trim() } : {}),
+      ...(kind === 'treatment' && route !== '' ? { route } : {}),
+      ...(kind === 'dip' && method !== '' ? { method } : {}),
     }));
     recordHealth(events);
 
     setDosedCount(events.length);
     setSelected(new Set());
     setReason('');
+    setDoseValue('');
   };
 
   return (
@@ -268,6 +310,89 @@ export function RecordHealthScreen() {
               )}
             </div>
 
+            {/* ⭐ The dose and the route (FR-130). Both are on the treatment register a residue
+                traceback reads, and neither is inferable later: "20" without "ml" is not a dose,
+                and a dose without a route does not say what happened to the animal. Optional,
+                because a farmer in a crush should never be blocked from recording the treatment
+                itself — but asked, because nobody comes back to fill them in. */}
+            {kind === 'treatment' && (
+              <div className="mb-4 grid grid-cols-2 gap-2">
+                <div className="flex flex-col">
+                  <label htmlFor="doseValue" className="mb-1 text-label uppercase text-soil-700">
+                    {t('health.dose')}
+                  </label>
+                  <input
+                    id="doseValue"
+                    name="doseValue"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={doseValue}
+                    onChange={(e) => setDoseValue(e.target.value)}
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label htmlFor="doseUnit" className="mb-1 text-label uppercase text-soil-700">
+                    {t('health.doseUnit')}
+                  </label>
+                  <input
+                    id="doseUnit"
+                    name="doseUnit"
+                    type="text"
+                    autoComplete="off"
+                    value={doseUnit}
+                    onChange={(e) => setDoseUnit(e.target.value)}
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+                  />
+                </div>
+                <div className="col-span-2 flex flex-col">
+                  <label htmlFor="route" className="mb-1 text-label uppercase text-soil-700">
+                    {t('health.route')}
+                  </label>
+                  <select
+                    id="route"
+                    name="route"
+                    value={route}
+                    onChange={(e) => setRoute(e.target.value as schemas.TreatmentRoute | '')}
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+                  >
+                    <option value="">{t('health.notSaid')}</option>
+                    {ROUTES.map((r) => (
+                      <option key={r} value={r}>
+                        {t(`health.route.${r}` as TranslationKey)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* How the dip was applied (FR-133). A plunge dip and a pour-on are different
+                operations with different coverage, and the dipping register in a controlled area
+                is the document that has to say which (Animal Diseases Act 35 of 1984). */}
+            {kind === 'dip' && (
+              <div className="mb-4 flex flex-col">
+                <label htmlFor="method" className="mb-1 text-label uppercase text-soil-700">
+                  {t('health.method')}
+                </label>
+                <select
+                  id="method"
+                  name="method"
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value as DipMethod | '')}
+                  className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+                >
+                  <option value="">{t('health.notSaid')}</option>
+                  {DIP_METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {t(`health.method.${m}` as TranslationKey)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="mb-4 flex flex-col">
               <label htmlFor="reason" className="mb-1 text-label uppercase text-soil-700">
                 {t(kind === 'vaccination' ? 'health.programme' : 'health.reason')}
@@ -314,6 +439,13 @@ export function RecordHealthScreen() {
       </Link>
     </section>
   );
+}
+
+/** A typed dose is valid when it is blank (optional) or a positive number. */
+function doseIsValid(typed: string): boolean {
+  if (typed.trim() === '') return true;
+  const n = Number(typed);
+  return Number.isFinite(n) && n > 0;
 }
 
 /**

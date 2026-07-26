@@ -222,6 +222,91 @@ describe('recording a treatment (FR-130/131)', () => {
     }
   });
 
+  it('records the dose and the route a residue traceback needs (FR-130)', async () => {
+    // "20" is not a dose and a dose is not a treatment record without a route. Neither is
+    // inferable later, and nobody comes back to fill them in.
+    cachedSession();
+    seedProducts(28);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+    await user.type(screen.getByLabelText(/^dose/i), '20');
+    await user.type(screen.getByLabelText(/^unit/i), 'ml');
+    await user.selectOptions(screen.getByLabelText(/how it was given/i), 'injection_im');
+    await user.click(screen.getByRole('button', { name: /record it/i }));
+
+    expect(storedHealth()[0]).toMatchObject({
+      kind: 'treatment',
+      doseValue: 20,
+      doseUnit: 'ml',
+      route: 'injection_im',
+    });
+  });
+
+  it('will not silently drop a dose that was typed but is not a number', async () => {
+    cachedSession();
+    seedProducts(28);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+    await user.type(screen.getByLabelText(/^dose/i), 'two');
+
+    expect(screen.getByRole('button', { name: /record it/i }).hasAttribute('disabled')).toBe(true);
+    expect(storedHealth()).toHaveLength(0);
+  });
+
+  it('records how a dip was applied (FR-133), and offers only methods the register accepts', async () => {
+    // A plunge dip and a pour-on are different operations with different coverage, and the
+    // dipping register in a controlled area has to say which (Animal Diseases Act 35 of 1984).
+    cachedSession();
+    seedProducts(28);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /^dip$/i }));
+    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+
+    const methods = screen.getByLabelText(/how it was applied/i);
+    // The choices come FROM the dip payload schema. The hand-written union this replaced offered
+    // "injectable", which the server refuses — a capture that could never have been sent.
+    expect([...methods.querySelectorAll('option')].map((o) => o.getAttribute('value'))).toEqual([
+      '',
+      'plunge',
+      'spray',
+      'pour_on',
+      'hand',
+    ]);
+
+    await user.selectOptions(methods, 'plunge');
+    await user.click(screen.getByRole('button', { name: /record it/i }));
+
+    expect(storedHealth()[0]).toMatchObject({ kind: 'dip', method: 'plunge' });
+  });
+
+  it('does not ask for a dose on a vaccination or a dip, whose payloads carry none', async () => {
+    cachedSession();
+    seedProducts(28);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /^vaccination$/i }));
+    expect(screen.queryByLabelText(/^dose/i)).toBeNull();
+    expect(screen.queryByLabelText(/how it was given/i)).toBeNull();
+  });
+
   it('will not record without a product or without animals', async () => {
     cachedSession();
     seedProducts(28);

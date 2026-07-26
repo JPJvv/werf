@@ -58,6 +58,13 @@ function animal(id: string, extra: Record<string, unknown> = {}): Record<string,
   };
 }
 
+/** The lifecycle log as the device holds it, read back the way a cold start would. */
+function storedEvents(): Array<Record<string, unknown>> {
+  return JSON.parse(window.localStorage.getItem(EVENTS_KEY) ?? '[]') as Array<
+    Record<string, unknown>
+  >;
+}
+
 function seedHerd(...animals: Array<Record<string, unknown>>): void {
   window.localStorage.setItem(HERD_KEY, JSON.stringify(animals));
 }
@@ -129,6 +136,49 @@ describe('recording a loss', () => {
 
     expect(screen.getByText(/marked sold/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /female/i })).toBeNull();
+  });
+
+  it('records the liveweight the deal was struck on (FR-106)', async () => {
+    // Unrecoverable after the truck leaves, and without it a price says nothing about what the
+    // animal was worth. Optional on the screen, because plenty of sales happen with no scale.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Sold' }));
+    await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
+    await user.type(screen.getByLabelText(/^price/i), '8500');
+    await user.type(screen.getByLabelText(/weight sold on/i), '412.5');
+    await user.click(screen.getByRole('button', { name: /record sale/i }));
+
+    const sale = storedEvents().find((e) => e['type'] === 'sale');
+    // Money stays integer cents; the weight is kilograms as a number, never a string.
+    expect(sale).toMatchObject({
+      counterparty: 'Vleissentraal',
+      priceCents: 850_000,
+      weightKg: 412.5,
+    });
+  });
+
+  it('saves a sale with no weight rather than demanding one', async () => {
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Sold' }));
+    await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
+    await user.type(screen.getByLabelText(/^price/i), '8500');
+    await user.click(screen.getByRole('button', { name: /record sale/i }));
+
+    const sale = storedEvents().find((e) => e['type'] === 'sale');
+    expect(sale).toBeTruthy();
+    expect(sale).not.toHaveProperty('weightKg');
   });
 
   it('drops the home tile count when an animal is sold, and it survives a cold start', () => {

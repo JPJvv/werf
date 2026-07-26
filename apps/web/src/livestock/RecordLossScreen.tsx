@@ -51,6 +51,16 @@ function priceIsValid(rands: string): boolean {
   return rands.trim() !== '' && Number.isFinite(n) && n >= 0;
 }
 
+/** The sale weight is optional; blank is fine, but a typed weight must be a positive number. */
+function weightIsValid(kg: string): boolean {
+  return kg.trim() === '' || weightIsUsable(kg);
+}
+
+function weightIsUsable(kg: string): boolean {
+  const n = Number(kg);
+  return kg.trim() !== '' && Number.isFinite(n) && n > 0;
+}
+
 /** Today ON THE FARM, for the last-seen day field's default and maximum. */
 function today(): string {
   return farmToday();
@@ -72,6 +82,7 @@ export function RecordLossScreen() {
   const [cause, setCause] = useState('');
   const [counterparty, setCounterparty] = useState('');
   const [priceRands, setPriceRands] = useState('');
+  const [saleWeight, setSaleWeight] = useState('');
   const [lastSeenDay, setLastSeenDay] = useState(today);
   const [locating, setLocating] = useState(false);
   const [fixFailed, setFixFailed] = useState<FixFailure | null>(null);
@@ -95,6 +106,7 @@ export function RecordLossScreen() {
     setCause('');
     setCounterparty('');
     setPriceRands('');
+    setSaleWeight('');
     setLastSeenDay(today());
     setFixFailed(null);
   };
@@ -129,6 +141,10 @@ export function RecordLossScreen() {
         ...base,
         counterparty: counterparty.trim(),
         priceCents: toCents(priceRands),
+        // The liveweight the deal was struck on (FR-106). Optional, because plenty of sales are
+        // per head off the veld with no scale in sight — but when there IS a scale, this is the
+        // number the price per kilogram is argued over, and it is unrecoverable afterwards.
+        ...(weightIsUsable(saleWeight) ? { weightKg: Number(saleWeight) } : {}),
       });
     } else if (outcome === 'missing') {
       // The fix is taken HERE, not on selection: a farmer who picks an animal and then walks to
@@ -167,7 +183,10 @@ export function RecordLossScreen() {
     outcome === 'died'
       ? cause.trim().length > 0
       : outcome === 'sold'
-        ? counterparty.trim().length > 0 && priceIsValid(priceRands) && !withheld
+        ? counterparty.trim().length > 0 &&
+          priceIsValid(priceRands) &&
+          weightIsValid(saleWeight) &&
+          !withheld
         : outcome === 'missing'
           ? lastSeenDay !== '' && !locating
           : false;
@@ -331,7 +350,7 @@ export function RecordLossScreen() {
                       className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
                     />
                   </div>
-                  <div className="mb-6 flex flex-col">
+                  <div className="mb-4 flex flex-col">
                     <label htmlFor="price" className="mb-1 text-label uppercase text-soil-700">
                       {t('loss.price')}
                     </label>
@@ -343,6 +362,24 @@ export function RecordLossScreen() {
                       autoComplete="off"
                       value={priceRands}
                       onChange={(e) => setPriceRands(e.target.value)}
+                      className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+                    />
+                  </div>
+                  {/* The liveweight the deal was struck on (FR-106) — optional, and the only one
+                      of the three sale fields that is. It is unrecoverable after the truck leaves,
+                      and without it a price says nothing about what the animal was worth. */}
+                  <div className="mb-6 flex flex-col">
+                    <label htmlFor="saleWeight" className="mb-1 text-label uppercase text-soil-700">
+                      {t('loss.saleWeight')}
+                    </label>
+                    <input
+                      id="saleWeight"
+                      name="saleWeight"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      value={saleWeight}
+                      onChange={(e) => setSaleWeight(e.target.value)}
                       className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
                     />
                   </div>

@@ -26,10 +26,22 @@ import {
   type ReactNode,
 } from 'react';
 import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 
 /** Which of the three health captures this is. Each posts to its own endpoint. */
 export type HealthKind = 'treatment' | 'vaccination' | 'dip';
+
+/**
+ * How a dip was applied (FR-133), taken FROM the event payload schema rather than written out here.
+ *
+ * It used to be a hand-written union, and it had drifted: it offered `'injectable'`, which the dip
+ * payload does not accept and the server would have refused on the wire. Nothing ever hit it only
+ * because the field was not on any screen yet — the moment it appeared, a plausible-looking choice
+ * would have queued a capture that could never be sent. Deriving the type is the rule in CLAUDE.md
+ * for exactly this reason: a schema and a duplicate of it drift silently and in one direction.
+ */
+export type DipMethod = NonNullable<schemas.DipPayload['method']>;
 
 /** A health event as held locally. No withdrawal period — see the note above. */
 export interface StoredHealthEvent {
@@ -45,12 +57,16 @@ export interface StoredHealthEvent {
   readonly productId: string;
   /** Ties one dosing run across many animals together as the single action it was (FR-112). */
   readonly batchId: string | null;
+  /** How much was given, and in what — 20, "ml". A treatment only (FR-130). */
   readonly doseValue?: number;
   readonly doseUnit?: string;
+  /** How it went in (FR-130). Derived from the treatment payload so the vocabulary cannot drift. */
+  readonly route?: schemas.TreatmentRoute;
   readonly administeredBy?: string;
   readonly reason?: string;
   readonly programme?: string;
-  readonly method?: 'plunge' | 'spray' | 'pour_on' | 'injectable';
+  /** How the dip was applied (FR-133). A dip only. */
+  readonly method?: DipMethod;
 }
 
 export type HealthStore = CaptureStore<StoredHealthEvent>;

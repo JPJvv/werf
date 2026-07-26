@@ -199,6 +199,7 @@ export const livestockApi = {
         batchId: event.batchId,
         ...(event.doseValue === undefined ? {} : { doseValue: event.doseValue }),
         ...(event.doseUnit === undefined ? {} : { doseUnit: event.doseUnit }),
+        ...(event.route === undefined ? {} : { route: event.route }),
         ...(event.administeredBy === undefined ? {} : { administeredBy: event.administeredBy }),
         ...(event.reason === undefined ? {} : { reason: event.reason }),
         ...(event.programme === undefined ? {} : { programme: event.programme }),

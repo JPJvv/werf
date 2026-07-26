@@ -41,6 +41,7 @@ import { useLandUnits } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useAnimals } from '../livestock/LocalHerd';
 import { useMobs } from '../livestock/LocalMobs';
+import { useTallies } from '../livestock/LocalTallies';
 import { useAnimalLabels, useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
@@ -133,6 +134,7 @@ function replaceIfChanged(
 export type CaptureKind =
   | 'landUnit'
   | 'mob'
+  | 'tally'
   | 'animal'
   | 'identifier'
   | 'weight'
@@ -205,6 +207,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
   const mobs = useMobs();
+  const tallies = useTallies();
   const animals = useAnimals();
   const identifiers = useIdentifiers();
   // What each animal is CALLED. Read here purely so a refused capture can be named by the number
@@ -251,6 +254,18 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'mob',
           detail: mob.name,
           send: (token) => livestockApi.createMob(mob, token),
+        });
+      }
+    }
+    // A tally references its mob and nothing else, so it follows the mobs immediately. It is named
+    // by the mob it adjusts: "three off Flock A" is a sentence a farmer recognises; the uuid is not.
+    for (const tally of tallies) {
+      if (!sent.has(tally.id)) {
+        items.push({
+          id: tally.id,
+          kind: 'tally',
+          detail: mobs.find((m) => m.id === tally.mobId)?.name ?? null,
+          send: (token) => livestockApi.recordTally(tally, token),
         });
       }
     }
@@ -349,6 +364,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   }, [
     landUnits,
     mobs,
+    tallies,
     animals,
     identifiers,
     weights,

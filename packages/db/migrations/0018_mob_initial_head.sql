@@ -1,0 +1,26 @@
+-- Mob head-count baseline (FR-102): keep the number the mob was CREATED with, so the current
+-- number can be derived from the tally log instead of edited in place.
+--
+-- Why this column has to exist. `head_count` is the current value a farmer reads, and 0017 makes it
+-- move by an append-only `tally` event. Applying each tally incrementally (`head_count + delta`)
+-- gives the wrong answer the moment two devices sync out of order, which on this product is a
+-- Tuesday rather than an edge case:
+--
+--   • the farmer recounts the camp on the 3rd — 291 — and syncs; the server stores 291
+--   • a second phone that was in a dead zone syncs a lambing from the 2nd, +9
+--   • incrementally the server lands on 300; the truth is 291, because the recount came AFTER the
+--     lambing and counted those lambs
+--
+-- The client already gets this right: its capture store is append-only, so the mob it holds keeps
+-- the created count forever and the current number is a fold over the tallies in `occurred_at`
+-- order. This column gives the SERVER the same immutable baseline, so both sides run the identical
+-- fold from the identical starting point and cannot drift — which is the whole reason the client
+-- projection and the server projection are the same function in @werf/domain.
+--
+-- Additive and backfilled in one step, which is safe here precisely because it is not a tightening:
+-- the column is nullable, and for every mob that exists today the created count IS the current
+-- count — no tally can have happened yet, because until 0017 there was no such event. Null keeps
+-- its existing meaning throughout: a mob managed as individual animals rather than as a count.
+ALTER TABLE "mobs" ADD COLUMN "initial_head_count" integer;
+--> statement-breakpoint
+UPDATE "mobs" SET "initial_head_count" = "head_count" WHERE "head_count" IS NOT NULL;

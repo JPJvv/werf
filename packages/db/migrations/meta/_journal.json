@@ -120,6 +120,20 @@
       "when": 1785076771489,
       "tag": "0016_capture_authorship",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785163171489,
+      "tag": "0017_mob_tally_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785163271489,
+      "tag": "0018_mob_initial_head",
+      "breakpoints": true
     }
   ]
 }

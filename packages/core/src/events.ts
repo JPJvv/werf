@@ -49,6 +49,11 @@ export const EVENT_TYPES = [
   // exclusive lock. Appending here keeps this array in the same order as the Postgres enum, so a
   // future schema diff sees no change. Adding a value in the MIDDLE would not.
   'rainfall',
+  // A mob's head count changing, and WHY (FR-102). Appended after `rainfall` for the same reason
+  // `rainfall` was appended after the crop and labour types: `ALTER TYPE … ADD VALUE` can only
+  // append, so the array must stay in the Postgres enum's order or a later schema diff sees a
+  // change that is not one. Filing it beside `birth`/`death` would read better and be wrong.
+  'tally',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 

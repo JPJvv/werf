@@ -201,6 +201,97 @@ export const rainfallPayloadSchema = z.object({
 });
 export type RainfallPayload = z.infer<typeof rainfallPayloadSchema>;
 
+/**
+ * Why a mob's head count changed (FR-102). A group-only flock has no individual rows to record a
+ * death or a sale against, so the count moves by a `tally` event — and it moves for a REASON, which
+ * is the whole point: "297" with no history is a number a farmer cannot defend to an auditor, an
+ * insurer, or the Stock Theft Unit.
+ *
+ * `theft` and `slaughter` are here because they are ordinary on a South African smallholding, not
+ * because they are edge cases. A theft tally is a fact about the flock; it is NOT a theft REPORT
+ * (FR-603), which is its own record with its own evidence — recording one here does not file the
+ * other, and the screen says so.
+ */
+export const TALLY_INCREASES = ['birth', 'purchase'] as const;
+export const TALLY_DECREASES = ['death', 'sale', 'theft', 'slaughter'] as const;
+export const TALLY_REASONS = [...TALLY_INCREASES, ...TALLY_DECREASES, 'recount'] as const;
+export const tallyReasonSchema = z.enum(TALLY_REASONS);
+export type TallyReason = z.infer<typeof tallyReasonSchema>;
+
+/**
+ * A change to a mob's head count (FR-102).
+ *
+ * ⭐ The shape is split on purpose, and it is the sharp part of this event. A reason like `death` or
+ * `birth` carries a signed `delta`, because deltas COMPOSE: two people each record three deaths on
+ * their own phone in a dead zone, and 300 correctly becomes 294 when both land. An absolute count
+ * in the same situation is last-write-wins and silently loses one of the two records — three animals
+ * that died would still be in the count.
+ *
+ * A `recount` is the exception, and it is absolute for exactly the same reason it is trustworthy:
+ * "I walked the camp and counted 297" supersedes whatever the running total believed, including
+ * every adjustment before it. So it carries `countedHead` and no delta, and the projection RESETS
+ * to it rather than adding. Encoding a recount as a delta would require the device to know the true
+ * previous count, which is the thing the farmer has just discovered it did not know.
+ */
+export const tallyPayloadSchema = z
+  .object({
+    reason: tallyReasonSchema,
+    /** Signed change in head. Present for every reason EXCEPT `recount`; never zero. */
+    delta: z.number().int().optional(),
+    /** The head physically counted. Present ONLY for `recount`; the projection resets to it. */
+    countedHead: z.number().int().nonnegative().optional(),
+    /** Who the animals went to or came from — a sale or a purchase (FR-106). */
+    counterparty: z.string().min(1).optional(),
+    /** Money as integer cents, never a float (CLAUDE.md § Money). The whole lot, not per head. */
+    priceCents: moneySchema.nonnegative().optional(),
+  })
+  .superRefine((payload, ctx) => {
+    const isRecount = payload.reason === 'recount';
+    if (isRecount) {
+      if (payload.countedHead === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['countedHead'],
+          message: 'A recount must carry the head actually counted',
+        });
+      }
+      if (payload.delta !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['delta'],
+          message: 'A recount is absolute and carries no delta',
+        });
+      }
+      return;
+    }
+    if (payload.countedHead !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['countedHead'],
+        message: 'Only a recount carries a counted head',
+      });
+    }
+    if (payload.delta === undefined || payload.delta === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: 'A tally must change the head count',
+      });
+      return;
+    }
+    // The sign is not the farmer's to type — it follows from the reason, and a `death` that
+    // ADDED head would be a corruption no later read could detect.
+    const shouldIncrease = (TALLY_INCREASES as readonly string[]).includes(payload.reason);
+    if (shouldIncrease !== payload.delta > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: `A '${payload.reason}' tally must ${shouldIncrease ? 'increase' : 'decrease'} the head count`,
+      });
+    }
+  });
+export type TallyPayload = z.infer<typeof tallyPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -218,6 +309,7 @@ const CONCRETE_PAYLOADS = {
   vaccination: vaccinationPayloadSchema,
   dip: dipPayloadSchema,
   rainfall: rainfallPayloadSchema,
+  tally: tallyPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

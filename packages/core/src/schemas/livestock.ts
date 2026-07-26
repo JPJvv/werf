@@ -12,11 +12,18 @@
  */
 
 import { z } from 'zod';
-import { uuidSchema, geoJsonStringSchema, dateSchema, timestampSchema } from './primitives';
+import {
+  uuidSchema,
+  geoJsonStringSchema,
+  dateSchema,
+  moneySchema,
+  timestampSchema,
+} from './primitives';
 import {
   birthPayloadSchema,
   deathPayloadSchema,
   dipPayloadSchema,
+  tallyReasonSchema,
   tradePayloadSchema,
   treatmentRouteSchema,
   weaningPayloadSchema,
@@ -243,3 +250,42 @@ export const recordDipRequestSchema = z.object({
   reason: z.string().min(1).optional(),
 });
 export type RecordDipRequest = z.infer<typeof recordDipRequestSchema>;
+
+/**
+ * Change a mob's head count, and say why (FR-102).
+ *
+ * A group-only flock has no individual `animals` rows, so there is nothing to record a death or a
+ * sale against — which is why, before this capture existed, a 300-head flock could never become
+ * 297 by any path in the product. The count moves by an append-only `tally` event; the mob row's
+ * `head_count` is the denormalised current value, exactly as `animals.land_unit_id` is denormalised
+ * while the move log is the history.
+ *
+ * `count` is what the farmer types, and it is always POSITIVE: "how many died", "how many were
+ * born", and for a recount "how many there are". The SIGN is derived from the reason in the domain,
+ * never sent — a client that could send a negative birth could corrupt a count in a way no later
+ * read would catch.
+ */
+export const recordMobTallyRequestSchema = z.object({
+  /** Client-generated UUIDv7 for the event row. */
+  id: uuidSchema,
+  farmId: uuidSchema,
+  /** The mob whose head count is changing. Required — a tally with no mob has no subject. */
+  mobId: uuidSchema,
+  /** When it happened on the farm, not when it was captured. Reports read this. */
+  occurredAt: timestampSchema,
+  reason: tallyReasonSchema,
+  /**
+   * How many. Non-negative because a recount of an emptied camp is legitimately zero; a `death` of
+   * zero is not, and the `tally` payload's own rule refuses it once the sign has been applied.
+   */
+  count: z.number().int().nonnegative(),
+  /** Who the animals went to or came from. Meaningful on a sale or a purchase. */
+  counterparty: z.string().min(1).optional(),
+  /** Money as integer cents, never a float. The price of the whole lot, not per head. */
+  priceCents: moneySchema.nonnegative().optional(),
+  /** Herd attribution (FR-113). Derived from the mob server-side; this is the fallback. */
+  enterpriseId: uuidSchema.nullable().default(null),
+  locationGeojson: geoJsonStringSchema.nullable().default(null),
+  notes: z.string().min(1).nullable().default(null),
+});
+export type RecordMobTallyRequest = z.infer<typeof recordMobTallyRequestSchema>;

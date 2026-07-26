@@ -32,6 +32,14 @@ import { brandingRegisters } from './branding';
 /**
  * A group of animals managed without individual records (FR-102). `head_count` is the whole
  * point: "Flock A: 300 head" is a valid, complete record with no `animals` rows behind it.
+ *
+ * The count MOVES by an append-only `tally` event (FR-102, migration 0017), never by an edit:
+ * `initial_head_count` is the number the mob was created with and never changes, and `head_count`
+ * is the fold of every tally over it in `occurred_at` order. Keeping the baseline is what lets the
+ * server and the offline client run the identical projection (`projectHeadCount` in @werf/domain)
+ * and reach the same number when two phones sync a week apart and out of order. Null in both
+ * columns means the same thing it always did: this group is a bag of individually-recorded animals,
+ * so its number comes from counting those.
  */
 export const mobs = pgTable('mobs', {
   id: primaryId(),
@@ -42,7 +50,10 @@ export const mobs = pgTable('mobs', {
   name: text('name').notNull(),
   species: text('species').notNull(),
   landUnitId: uuid('land_unit_id').references(() => landUnits.id),
+  /** The current count — derived from `initial_head_count` and the tally log, never edited. */
   headCount: integer('head_count'),
+  /** The count at create. Immutable: it is the baseline the tally fold starts from. */
+  initialHeadCount: integer('initial_head_count'),
   ...auditColumns,
   createdBy: uuid('created_by').references(() => users.id),
   updatedBy: uuid('updated_by').references(() => users.id),

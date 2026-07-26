@@ -12,6 +12,7 @@ import { AddAnimalScreen } from './livestock/AddAnimalScreen';
 import { WeighSessionScreen } from './livestock/WeighSessionScreen';
 import { TagSessionScreen } from './livestock/TagSessionScreen';
 import { AddMobScreen } from './livestock/AddMobScreen';
+import { AdjustMobScreen } from './livestock/AdjustMobScreen';
 import { MoveAnimalsScreen } from './livestock/MoveAnimalsScreen';
 import { RecordBirthScreen } from './livestock/RecordBirthScreen';
 import { WeaningSessionScreen } from './livestock/WeaningSessionScreen';
@@ -62,6 +63,7 @@ export function App() {
                 <Route path="animals/loss" element={<RecordLossScreen />} />
                 <Route path="animals/tag" element={<TagSessionScreen />} />
                 <Route path="animals/groups/new" element={<AddMobScreen />} />
+                <Route path="animals/groups/count" element={<AdjustMobScreen />} />
                 <Route path="animals/move" element={<MoveAnimalsScreen />} />
                 <Route path="animals/birth" element={<RecordBirthScreen />} />
                 <Route path="animals/wean" element={<WeaningSessionScreen />} />

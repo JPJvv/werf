@@ -95,6 +95,19 @@ export function AnimalsScreen() {
         {t('animals.addGroup')}
       </Link>
 
+      {/* ⭐ Sits OUTSIDE the `hasLive` block below, like the stock-theft action and for the same
+          reason: a farm running everything as flocks has no individual animal rows at all, and it
+          is exactly that farm whose numbers can only move through here (FR-102). Offered only when
+          there is a counted group to change, so it is never a button that leads to an empty list. */}
+      {mobs.some((m) => m.headCount !== null) && (
+        <Link
+          to="/animals/groups/count"
+          className="mb-3 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+        >
+          {t('animals.countGroup')}
+        </Link>
+      )}
+
       {/* FR-705. The breakdown a farmer actually thinks in: nobody has "42 female cattle", they
           have 18 cows, 9 heifers and 15 weaners. Zero classes are not shown — an empty row is
           noise — but 'unknown' IS, because animals with no recorded birth date are a real group

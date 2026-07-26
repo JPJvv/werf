@@ -60,6 +60,24 @@ export class LivestockController {
   }
 
   /**
+   * Change a mob's head count and say why (FR-102) — births, deaths, sales, theft, home slaughter,
+   * or a recount. Sent after its mob by the flush. The body carries a POSITIVE `count`: the sign
+   * comes from the reason, server-side, so no client can post a birth that removes head.
+   *
+   * Idempotent on the id, and it has to be: this capture changes the count its own validation
+   * reads, so a re-flush that re-applied the delta would take the same animals off twice.
+   */
+  @Post('mob-tallies')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMobTally(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMobTallyRequestSchema))
+    body: schemas.RecordMobTallyRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMobTally(auth.userId, body);
+  }
+
+  /**
    * Attach an identifier to an animal (FR-109) — the tag number a farmer actually calls it by.
    * Sent after its animal by the flush (it references `animals(id)`). Idempotent on the id; a
    * number currently live on a DIFFERENT animal is a refusal, not a silent move.

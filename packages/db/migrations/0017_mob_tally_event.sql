@@ -1,0 +1,25 @@
+-- Mob head-count tally (FR-102): add 'tally' to the event_type enum.
+--
+-- The gap this closes: a mob is the group-only model — "Flock A: 300 head" with no individual
+-- `animals` rows behind it — and until now that count could only ever be SET, at create. A death
+-- and a sale are both recorded against an `animals.id`, which a mob by definition does not have,
+-- so a 300-head flock could not become 297 by any path in the product. The count now moves by an
+-- append-only event that says why, and `mobs.head_count` becomes the denormalised current value
+-- of that log — the same relationship `animals.land_unit_id` has to the move history.
+--
+-- Additive in the one way that is safe here, for the reasons 0014 sets out at length: `events` is
+-- PARTITIONED BY LIST(farm_id), so any DDL that rewrote the table would take an exclusive lock
+-- across every farm's partition. `ALTER TYPE … ADD VALUE` rewrites nothing. The value is appended
+-- at the END of EVENT_TYPES in @werf/core to match, so a later schema diff sees no change.
+--
+-- No new table: a tally is an `events` row and inherits the farm-scoped RLS policy and the TENANCY
+-- classification `events` already carries. It is herd-scoped through its `mob_id` (FR-113), so it
+-- needs no entry in FARM_SCOPED_EVENT_TYPES — and deliberately does not get one, because a tally is
+-- a fact about one flock, not about the farm.
+--
+-- No change to `mobs.head_count` either. It is already a nullable integer, and null keeps its
+-- existing meaning: this mob is a bag of individually-recorded animals rather than a counted group.
+-- A tally against such a mob is refused in the domain, not here — a NOT NULL added now would break
+-- every mob captured before this release, which is exactly the tightening .claude/rules/db.md
+-- forbids in the release that starts enforcing it.
+ALTER TYPE "public"."event_type" ADD VALUE 'tally';

@@ -29,6 +29,7 @@ import { useRefusedCaptures, type CaptureKind, type RefusedCapture } from './Out
 const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   landUnit: 'notSent.kind.landUnit',
   mob: 'notSent.kind.mob',
+  tally: 'notSent.kind.tally',
   animal: 'notSent.kind.animal',
   identifier: 'notSent.kind.identifier',
   weight: 'notSent.kind.weight',

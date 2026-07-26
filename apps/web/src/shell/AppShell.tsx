@@ -8,6 +8,7 @@ import { FarmSwitcher } from './FarmSwitcher';
 import { LocalLandProvider } from '../land/LocalLand';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
+import { LocalTalliesProvider } from '../livestock/LocalTallies';
 import { LocalIdentifiersProvider } from '../livestock/LocalIdentifiers';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
 import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
@@ -39,6 +40,7 @@ import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
 const CAPTURE_STORES = [
   LocalLandProvider,
   LocalMobsProvider,
+  LocalTalliesProvider,
   LocalHerdProvider,
   LocalIdentifiersProvider,
   LocalWeightsProvider,

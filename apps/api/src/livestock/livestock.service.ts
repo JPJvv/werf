@@ -38,10 +38,12 @@ import { ConflictError, NotFoundError, ValidationError, type schemas } from '@we
 import {
   assembleEvidencePack,
   isWithinWithdrawal,
+  projectHeadCount,
   recordBirth,
   recordDeath,
   recordDip,
   recordMissing,
+  recordMobTally,
   recordMove,
   recordPurchase,
   recordSale,
@@ -214,6 +216,10 @@ export class LivestockService {
           species: input.species,
           landUnitId: input.landUnitId,
           headCount: input.headCount,
+          // The baseline the tally fold starts from (FR-102). Written once, here, and never again:
+          // `head_count` moves with the log while this stays as first recorded, which is what lets
+          // the server and an offline client derive the same number from the same events.
+          initialHeadCount: input.headCount,
           createdBy: userId,
         })
         .onConflictDoNothing({ target: mobs.id })
@@ -226,6 +232,77 @@ export class LivestockService {
         .from(mobs)
         .where(and(eq(mobs.id, input.id), eq(mobs.farmId, input.farmId)));
       return existing!;
+    });
+  }
+
+  /**
+   * Changes a mob's head count, with a reason (FR-102) — the capture that was missing, and the
+   * reason a 300-head flock could never become 297 by any path in the product. A death and a sale
+   * are both recorded against an `animals.id`; a group-only mob has none.
+   *
+   * ⭐ Idempotency is checked BEFORE anything is validated or applied, for the reason `findEvent`
+   * exists: this capture CHANGES THE STATE ITS OWN VALIDATION READS. The flush is at-least-once, so
+   * a 201 lost on the way home is retried — and re-applying the delta would take the same three
+   * dead ewes off the flock twice, on a re-send of a write that already succeeded.
+   *
+   * ⭐ The stored count is RE-DERIVED from the whole tally log, not stepped by this event's delta.
+   * Incremental application is order-dependent and this product syncs out of order by design: a
+   * recount that arrives before an older lambing from a second phone would otherwise be overwritten
+   * by arithmetic it was meant to correct. The fold is the same `projectHeadCount` the client runs,
+   * over the same baseline, so the two cannot disagree.
+   */
+  async recordMobTally(userId: string, input: schemas.RecordMobTallyRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+
+      const already = await findEvent(tx, input.farmId, input.id);
+      if (already) return already;
+
+      const [mob] = await tx
+        .select({
+          headCount: mobs.headCount,
+          initialHeadCount: mobs.initialHeadCount,
+          enterpriseId: mobs.enterpriseId,
+        })
+        .from(mobs)
+        .where(
+          and(eq(mobs.id, input.mobId), eq(mobs.farmId, input.farmId), isNull(mobs.deletedAt)),
+        );
+      // Another farm's mob is invisible through the RLS-bound connection and reads as "not found",
+      // the same answer as one that does not exist.
+      if (!mob) throw new NotFoundError('Mob not found');
+
+      // The domain validates against the count as it stands — "four cannot leave a flock of three"
+      // is a question about the CURRENT number, which is the one the farmer is looking at. Its
+      // projected `headCount` is deliberately not used to write the row; the re-derivation below is.
+      const { event } = recordMobTally({
+        id: input.id,
+        farmId: input.farmId,
+        mobId: input.mobId,
+        occurredAt: input.occurredAt,
+        reason: input.reason,
+        count: input.count,
+        currentHead: mob.headCount,
+        counterparty: input.counterparty,
+        priceCents: input.priceCents,
+        // FR-113: filed under the mob's own herd, derived here rather than trusted from the body.
+        enterpriseId: mob.enterpriseId ?? input.enterpriseId,
+        locationGeojson: input.locationGeojson,
+        notes: input.notes,
+        createdBy: userId,
+      });
+
+      const stored = await insertEvent(tx, event);
+
+      await tx
+        .update(mobs)
+        .set({
+          headCount: await deriveHeadCount(tx, input.farmId, input.mobId, mob.initialHeadCount),
+          updatedBy: userId,
+        })
+        .where(and(eq(mobs.id, input.mobId), eq(mobs.farmId, input.farmId)));
+
+      return stored;
     });
   }
 
@@ -923,6 +1000,48 @@ async function resolveVetProduct(
     );
   if (!row) throw new NotFoundError('Veterinary product not found');
   return row;
+}
+
+/**
+ * A mob's current head count, folded from its whole tally log over the count it was created with
+ * (FR-102) — the server half of the projection the offline client runs on the same events.
+ *
+ * Re-derived rather than stepped, because arrival order is not `occurred_at` order on this product
+ * and never will be: a phone out of a signal for a week syncs captures that are older than ones
+ * already stored. Reading the log back costs one indexed query per tally and removes a whole class
+ * of "the number is wrong and nobody can say why" that an incremental update would create.
+ */
+async function deriveHeadCount(
+  tx: CaptureTx,
+  farmId: string,
+  mobId: string,
+  initialHead: number | null,
+): Promise<number | null> {
+  const rows = await tx
+    .select({ occurredAt: events.occurredAt, payload: events.payload })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        eq(events.mobId, mobId),
+        eq(events.type, 'tally'),
+        isNull(events.deletedAt),
+      ),
+    );
+
+  return projectHeadCount(
+    initialHead,
+    rows.map(({ occurredAt, payload }) => {
+      const p = payload as { reason: schemas.TallyReason; delta?: number; countedHead?: number };
+      return {
+        mobId,
+        occurredAt: occurredAt.toISOString(),
+        reason: p.reason,
+        delta: p.delta,
+        countedHead: p.countedHead,
+      };
+    }),
+  );
 }
 
 /** The law this farm operates under, through the RLS-bound connection. Jurisdiction is the FARM's,

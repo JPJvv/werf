@@ -14,6 +14,7 @@ import { useMemo } from 'react';
 import {
   calendarDaysBetween,
   isMoreFinal,
+  projectHeadCount,
   summariseByClass,
   summariseHerd,
   type AnimalClass,
@@ -23,6 +24,7 @@ import type { AnimalStatus } from '@werf/core';
 import { useAnimals, type StoredAnimal } from './LocalHerd';
 import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
 import { useMobs, type StoredMob } from './LocalMobs';
+import { useTallies, type StoredTally } from './LocalTallies';
 import { useMoves, type StoredMove } from './LocalMoves';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
@@ -115,17 +117,52 @@ export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
 }
 
 /**
- * The mobs counted in a summary (FR-102), narrowed to one herd the same way the animals are.
+ * Fold the tally log onto the mobs (FR-102), so each one carries the head standing in it today.
+ *
+ * The third fold in this file, and it needs its own rule for the same reason status and position
+ * needed theirs. A count is not a state machine and it is not last-write-wins: three ewes dying and
+ * forty lambs being born are both true and both apply, so the deltas ACCUMULATE — which is also
+ * what makes two phones capturing in a dead zone come out right instead of losing one another's
+ * work. A recount is the one absolute in the log and resets the running total, because "I walked
+ * the camp and counted 297" is a stronger fact than arithmetic on a number just shown to be wrong.
+ *
+ * The mob store itself is never mutated; it holds each mob's count as first recorded, which is the
+ * baseline this folds over. The server derives the same number from the same events with the same
+ * function, so the two cannot drift.
+ */
+export function projectMobs(
+  mobs: readonly StoredMob[],
+  tallies: readonly StoredTally[],
+): readonly StoredMob[] {
+  if (tallies.length === 0) return mobs;
+  const byMob = new Map<string, StoredTally[]>();
+  for (const tally of tallies) {
+    const held = byMob.get(tally.mobId);
+    if (held) held.push(tally);
+    else byMob.set(tally.mobId, [tally]);
+  }
+  return mobs.map((mob) => {
+    const applied = byMob.get(mob.id);
+    if (applied === undefined) return mob;
+    const headCount = projectHeadCount(mob.headCount, applied);
+    return headCount === mob.headCount ? mob : { ...mob, headCount };
+  });
+}
+
+/**
+ * The mobs counted in a summary (FR-102), narrowed to one herd the same way the animals are, and
+ * each carrying its CURRENT head after every adjustment the device holds.
  *
  * A mob is head a farmer has, so it belongs in the total: leaving it out would make the home tile
  * say 0 on a farm running 300 sheep as a flock, which is the exact farm FR-102 exists for.
  */
 export function useEffectiveMobs(herdId?: string): readonly StoredMob[] {
   const mobs = useMobs();
-  return useMemo(
-    () => (herdId === undefined ? mobs : mobs.filter((m) => m.enterpriseId === herdId)),
-    [mobs, herdId],
-  );
+  const tallies = useTallies();
+  return useMemo(() => {
+    const projected = projectMobs(mobs, tallies);
+    return herdId === undefined ? projected : projected.filter((m) => m.enterpriseId === herdId);
+  }, [mobs, tallies, herdId]);
 }
 
 /** The herd summary (FR-705/017), for one herd or (unfiltered) the whole farm. */

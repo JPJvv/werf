@@ -19,6 +19,7 @@ import type {
 } from './LocalLifecycle';
 import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMove } from './LocalMoves';
+import type { StoredTally } from './LocalTallies';
 import type { StoredTheftIncident } from './LocalTheft';
 
 /**
@@ -42,6 +43,30 @@ export const livestockApi = {
   /** Sent after land units (a mob can carry `land_unit_id`) and before animals (FR-102). */
   createMob: (mob: schemas.NewMob, token: string): Promise<void> =>
     post('/livestock/mobs', mob, token),
+
+  /**
+   * A head-count adjustment (FR-102). Sent after its mob, which it references.
+   *
+   * Only the positive `count` and the reason cross the wire — never the signed delta the store
+   * holds. The sign is the server's to apply, from the reason, so nothing a client sends can make
+   * a birth remove head; and the server re-derives the whole count from its own log rather than
+   * trusting an arithmetic result computed on a phone that may be a week behind.
+   */
+  recordTally: (tally: StoredTally, token: string): Promise<void> =>
+    post(
+      '/livestock/mob-tallies',
+      {
+        id: tally.id,
+        farmId: tally.farmId,
+        mobId: tally.mobId,
+        occurredAt: tally.occurredAt,
+        reason: tally.reason,
+        count: tally.count,
+        ...(tally.counterparty === undefined ? {} : { counterparty: tally.counterparty }),
+        ...(tally.priceCents === undefined ? {} : { priceCents: tally.priceCents }),
+      },
+      token,
+    ),
 
   /** Sent after its animal: an identifier references `animals(id)` (FR-109). */
   createIdentifier: (identifier: schemas.NewAnimalIdentifier, token: string): Promise<void> =>

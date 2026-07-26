@@ -238,11 +238,12 @@ describe('weight capture (FR-140)', () => {
     return row!.id;
   }
 
-  /** A mob on the farm, for the group-weight path. */
+  /** A mob on the farm, for the group-weight and tally paths. `initial_head_count` is set alongside
+   *  `head_count` exactly as `recordMob` does it — the baseline the tally fold starts from. */
   async function aMob(farmId: string): Promise<string> {
     const [row] = await elevated.db
       .insert(mobs)
-      .values({ farmId, name: 'Flock A', species: 'sheep', headCount: 300 })
+      .values({ farmId, name: 'Flock A', species: 'sheep', headCount: 300, initialHeadCount: 300 })
       .returning();
     return row!.id;
   }
@@ -593,6 +594,234 @@ describe('weight capture (FR-140)', () => {
 
       const rows = await elevated.db.select().from(mobs);
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  // ── A mob's head count can change, and says why (FR-102) ────────────────────────────
+  describe('mob tally (FR-102)', () => {
+    const tallyBody = (
+      over: Partial<ZodInput<typeof schemas.recordMobTallyRequestSchema>> & {
+        farmId: string;
+        mobId: string;
+      },
+    ): schemas.RecordMobTallyRequest =>
+      schemas.recordMobTallyRequestSchema.parse({
+        id: randomUUID(),
+        occurredAt: '2026-07-14T05:30:00.000Z',
+        reason: 'death',
+        count: 3,
+        ...over,
+      });
+
+    /** The mob's stored count, read back through the farm's own RLS scope. */
+    async function headOf(userId: string, mobId: string): Promise<number | null> {
+      const [row] = await app.asUser(userId, (tx) =>
+        tx.select({ headCount: mobs.headCount }).from(mobs).where(eq(mobs.id, mobId)),
+      );
+      return row!.headCount;
+    }
+
+    it('takes three dead ewes off a 300-head flock — the number a farmer could not change before', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      const event = await service.recordMobTally(a.userId, tallyBody({ farmId: a.farmId, mobId }));
+
+      expect(await headOf(a.userId, mobId)).toBe(297);
+      expect(event.type).toBe('tally');
+      expect(event.mobId).toBe(mobId);
+      expect(event.payload).toMatchObject({ reason: 'death', delta: -3 });
+    });
+
+    it('keeps the reason in the log, so 297 can be explained a year later', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({ farmId: a.farmId, mobId, reason: 'birth', count: 40 }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          farmId: a.farmId,
+          mobId,
+          reason: 'sale',
+          count: 20,
+          counterparty: 'Bethlehem abattoir',
+          priceCents: 8_640_000,
+          occurredAt: '2026-07-16T05:30:00.000Z',
+        }),
+      );
+
+      expect(await headOf(a.userId, mobId)).toBe(320);
+      const log = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.mobId, mobId)),
+      );
+      expect(log).toHaveLength(2);
+      expect(log.map((e) => (e.payload as { reason: string }).reason).sort()).toEqual([
+        'birth',
+        'sale',
+      ]);
+    });
+
+    it('⭐ does not take the same animals off twice when the flush retries', async () => {
+      // The flush is at-least-once: a 201 lost on the way home is re-sent on the next reconnect.
+      // This capture changes the count its own validation reads, so an idempotency check that
+      // relied on the insert absorbing the duplicate would apply the delta a second time.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const body = tallyBody({ farmId: a.farmId, mobId });
+
+      const first = await service.recordMobTally(a.userId, body);
+      const again = await service.recordMobTally(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      expect(await headOf(a.userId, mobId)).toBe(297);
+    });
+
+    it('⭐ lands on the same number whichever order two phones sync in', async () => {
+      // The recount happened on the 3rd and counted the lambs born on the 2nd. A second phone was
+      // in a dead zone and syncs the lambing LAST. Stepping the stored count by each delta as it
+      // arrives would let the older lambing overwrite the newer count; re-deriving the fold from
+      // the log cannot.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          farmId: a.farmId,
+          mobId,
+          reason: 'recount',
+          count: 291,
+          occurredAt: '2026-07-03T05:30:00.000Z',
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          farmId: a.farmId,
+          mobId,
+          reason: 'birth',
+          count: 9,
+          occurredAt: '2026-07-02T05:30:00.000Z',
+        }),
+      );
+
+      expect(await headOf(a.userId, mobId)).toBe(291);
+    });
+
+    it('applies what happened after a recount, on top of it', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          farmId: a.farmId,
+          mobId,
+          reason: 'recount',
+          count: 291,
+          occurredAt: '2026-07-03T05:30:00.000Z',
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          farmId: a.farmId,
+          mobId,
+          reason: 'birth',
+          count: 9,
+          occurredAt: '2026-07-05T05:30:00.000Z',
+        }),
+      );
+
+      expect(await headOf(a.userId, mobId)).toBe(300);
+    });
+
+    it('refuses to take more head out than the flock has, and leaves the count alone', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      await expect(
+        service.recordMobTally(a.userId, tallyBody({ farmId: a.farmId, mobId, count: 400 })),
+      ).rejects.toThrow(ValidationError);
+
+      expect(await headOf(a.userId, mobId)).toBe(300);
+    });
+
+    it('derives the sign from the reason — a client cannot post a birth that removes head', async () => {
+      // `count` is what the farmer typed and is always positive; the wire carries no sign at all.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      await expect(
+        schemas.recordMobTallyRequestSchema.parseAsync({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-07-14T05:30:00.000Z',
+          reason: 'birth',
+          count: -40,
+        }),
+      ).rejects.toThrow();
+
+      expect(await headOf(a.userId, mobId)).toBe(300);
+    });
+
+    it('files the tally under the mob’s OWN herd, never the one the body claims (FR-113)', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const [otherHerd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha cattle', type: 'beef_cattle' })
+        .returning();
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({
+          farmId: a.farmId,
+          name: 'Flock A',
+          species: 'sheep',
+          headCount: 300,
+          initialHeadCount: 300,
+          enterpriseId: herd!.id,
+        })
+        .returning();
+
+      const event = await service.recordMobTally(
+        a.userId,
+        tallyBody({ farmId: a.farmId, mobId: mob!.id, enterpriseId: otherHerd!.id }),
+      );
+
+      expect(event.enterpriseId).toBe(herd!.id);
+    });
+
+    it('refuses a tally on a group that is managed as individual animals', async () => {
+      const a = await tenant('Alpha');
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'The cows', species: 'cattle' })
+        .returning();
+
+      await expect(
+        service.recordMobTally(a.userId, tallyBody({ farmId: a.farmId, mobId: mob!.id })),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('cannot touch a neighbour’s flock — it reads as a mob that does not exist', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const bravosMob = await aMob(b.farmId);
+
+      await expect(
+        service.recordMobTally(a.userId, tallyBody({ farmId: a.farmId, mobId: bravosMob })),
+      ).rejects.toThrow(NotFoundError);
+
+      expect(await headOf(b.userId, bravosMob)).toBe(300);
     });
   });
 

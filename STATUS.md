@@ -3,7 +3,7 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-07-26 · **Branch:** `phase-2/livestock` @ `5825cfb`
+**Last updated:** 2026-07-26 · **Branch:** `phase-2/livestock` (tip = this commit; `0e75265` is the fix commit below it)
 
 ---
 
@@ -21,7 +21,7 @@
 
 ```
 main                   9452ebc   (Phase 0 + 1)
-phase-2/livestock      5825cfb   ← HEAD, no PR yet
+phase-2/livestock      86c3e87   ← HEAD, no PR yet
 docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330,
                                  so it is now BEHIND this branch by 10 commits
 ```

@@ -44,6 +44,25 @@ const en = {
   'settings.farms.failed': 'The farm could not be added just now. Try again.',
   'shell.farm': 'Farm',
   'settings.language.title': 'Language',
+  'settings.security.title': 'Security',
+  'settings.security.body':
+    'The phones and computers that can open this account. Lost one? Remove its key here.',
+  'settings.security.loading': 'Reading your keys…',
+  'settings.security.none': 'No phone is set up as a key yet.',
+  'settings.security.unnamed': 'A device',
+  'settings.security.lastUsed': 'Last used',
+  'settings.security.never': 'Not yet',
+  'settings.security.add': 'Add this phone as a key',
+  'settings.security.added': 'This phone can now open the account.',
+  'settings.security.revoke': 'Remove',
+  'settings.security.revoked': 'That key can no longer open the account.',
+  'settings.security.lastFactor':
+    'This is the only way you can sign in, so it cannot be removed. Add another key or an authenticator app first.',
+  'settings.security.offline':
+    'We could not reach the server. Removing a key changes the account, so it has to be done with a signal.',
+  'settings.security.loadFailed': 'We could not read your keys just now.',
+  'settings.security.addFailed': 'We could not add this phone as a key just now.',
+  'settings.security.revokeFailed': 'We could not remove that key just now.',
   'settings.language.legend': 'Language',
   // Shown only when the account could not be told (no signal). Not an error: the app IS in the
   // chosen language. It says what is true, and answers the next question before it is asked.
@@ -119,6 +138,8 @@ const en = {
   'auth.secondFactor.code': 'Code',
   'auth.secondFactor.submit': 'Continue',
   'auth.secondFactor.useRecovery': 'Use a recovery code instead',
+  'auth.secondFactor.usePasskey': 'Use this phone',
+  'auth.secondFactor.orCode': 'Or type a code from your authenticator app.',
   'auth.secondFactor.useCode': 'Use my authenticator app instead',
   'auth.secondFactor.recoveryBody':
     'Enter one of the recovery codes you printed and put in the safe.',
@@ -170,6 +191,21 @@ const en = {
     'If you cannot find them, sign in and set up a new sign-in method to get a fresh set.',
   'security.recovery.keptDone': 'Continue',
   'security.signOut': 'Sign out',
+
+  // Passkeys (FR-014/014c, ADR-0007). "Passkey" is our word, so the copy leads with what it DOES
+  // — this phone is the key — and the word itself follows. Every failure is named in terms of
+  // what to do next, because "the operation was not allowed" is what the browser would have said.
+  'security.passkey.use': 'Use this phone as the key',
+  'security.passkey.why':
+    'No code to type, and it works with no signal. The phone asks for your fingerprint, face or PIN.',
+  'security.passkey.useApp': 'Use an authenticator app instead',
+  'security.passkey.back': 'Use this phone as the key instead',
+  'security.passkey.waiting': 'Waiting for the phone…',
+  'security.passkey.unsupported':
+    'This phone or browser cannot be used as a key. Use an authenticator app instead.',
+  'security.passkey.alreadyEnrolled': 'This phone is already set up as a key for this account.',
+  'security.passkey.failed': 'The phone did not finish setting up the key. Try again.',
+  'security.passkey.cancelled': 'That was cancelled.',
   // Guided first run (FR-010).
   'firstRun.title': 'Get started',
   'firstRun.body': 'Three things worth doing first. Each takes a minute.',
@@ -591,6 +627,25 @@ const af: Record<TranslationKey, string> = {
   'settings.farms.failed': 'Die plaas kon nie nou bygevoeg word nie. Probeer weer.',
   'shell.farm': 'Plaas',
   'settings.language.title': 'Taal',
+  'settings.security.title': 'Sekuriteit',
+  'settings.security.body':
+    'Die fone en rekenaars wat hierdie rekening kan oopmaak. Een verloor? Verwyder sy sleutel hier.',
+  'settings.security.loading': 'Lees jou sleutels…',
+  'settings.security.none': 'Nog geen foon is as ’n sleutel opgestel nie.',
+  'settings.security.unnamed': '’n Toestel',
+  'settings.security.lastUsed': 'Laas gebruik',
+  'settings.security.never': 'Nog nie',
+  'settings.security.add': 'Voeg hierdie foon as ’n sleutel by',
+  'settings.security.added': 'Hierdie foon kan nou die rekening oopmaak.',
+  'settings.security.revoke': 'Verwyder',
+  'settings.security.revoked': 'Daardie sleutel kan nie meer die rekening oopmaak nie.',
+  'settings.security.lastFactor':
+    'Dit is die enigste manier waarop jy kan aanmeld, so dit kan nie verwyder word nie. Voeg eers nog ’n sleutel of ’n verifikasieprogram by.',
+  'settings.security.offline':
+    'Ons kon nie die bediener bereik nie. Om ’n sleutel te verwyder verander die rekening, so dit moet met sein gedoen word.',
+  'settings.security.loadFailed': 'Ons kon nie nou jou sleutels lees nie.',
+  'settings.security.addFailed': 'Ons kon nie hierdie foon nou as ’n sleutel byvoeg nie.',
+  'settings.security.revokeFailed': 'Ons kon nie daardie sleutel nou verwyder nie.',
   'settings.language.legend': 'Taal',
   'settings.language.deviceOnly':
     'Hierdie foon is in die taal wat jy gekies het. Jou rekening sal bykom sodra jy weer sein het.',
@@ -651,6 +706,8 @@ const af: Record<TranslationKey, string> = {
   'auth.secondFactor.code': 'Kode',
   'auth.secondFactor.submit': 'Gaan voort',
   'auth.secondFactor.useRecovery': 'Gebruik eerder ’n herstelkode',
+  'auth.secondFactor.usePasskey': 'Gebruik hierdie foon',
+  'auth.secondFactor.orCode': 'Of tik ’n kode uit jou verifikasieprogram.',
   'auth.secondFactor.useCode': 'Gebruik eerder my verifikasieprogram',
   'auth.secondFactor.recoveryBody':
     'Voer een van die herstelkodes in wat jy gedruk en in die kluis gesit het.',
@@ -699,6 +756,19 @@ const af: Record<TranslationKey, string> = {
     'As jy hulle nie kan kry nie, meld aan en stel ’n nuwe aanmeldmetode op vir ’n vars stel.',
   'security.recovery.keptDone': 'Gaan voort',
   'security.signOut': 'Meld af',
+
+  'security.passkey.use': 'Gebruik hierdie foon as die sleutel',
+  'security.passkey.why':
+    'Geen kode om te tik nie, en dit werk sonder sein. Die foon vra jou vingerafdruk, gesig of PIN.',
+  'security.passkey.useApp': 'Gebruik eerder ’n verifikasieprogram',
+  'security.passkey.back': 'Gebruik eerder hierdie foon as die sleutel',
+  'security.passkey.waiting': 'Wag vir die foon…',
+  'security.passkey.unsupported':
+    'Hierdie foon of blaaier kan nie as ’n sleutel gebruik word nie. Gebruik eerder ’n verifikasieprogram.',
+  'security.passkey.alreadyEnrolled':
+    'Hierdie foon is reeds as ’n sleutel vir hierdie rekening opgestel.',
+  'security.passkey.failed': 'Die foon het nie die sleutel klaar opgestel nie. Probeer weer.',
+  'security.passkey.cancelled': 'Dit is gekanselleer.',
   'firstRun.title': 'Kom ons begin',
   'firstRun.body': 'Drie dinge om eerste te doen. Elkeen vat ’n minuut.',
   'firstRun.land.animals': 'Voeg jou eerste kamp by',

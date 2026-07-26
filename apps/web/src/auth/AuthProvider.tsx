@@ -45,6 +45,14 @@ export interface AuthContextValue {
    */
   signIn(input: schemas.LoginRequest): Promise<schemas.LoginResponse>;
   completeSecondFactor(input: schemas.VerifySecondFactorRequest): Promise<void>;
+  /**
+   * Satisfies the second factor with a PASSKEY (FR-014, ADR-0007). Separate from
+   * `completeSecondFactor` because it is a different exchange, not a different code: the server
+   * issues a challenge, the device signs it, and the signature — never a secret the person typed —
+   * comes back. It adopts the session through the same path, so there is one place a session
+   * becomes the live one however it was earned.
+   */
+  completeSecondFactorWithPasskey(input: schemas.PasskeyAuthenticationRequest): Promise<void>;
   signOut(): Promise<void>;
   /** FR-004: switch the farm the shell is showing, without re-authenticating. */
   setActiveFarm(farmId: string): void;
@@ -132,6 +140,13 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
   const completeSecondFactor = useCallback(
     async (input: schemas.VerifySecondFactorRequest) => {
       adopt(await authApi.verifySecondFactor(input));
+    },
+    [adopt],
+  );
+
+  const completeSecondFactorWithPasskey = useCallback(
+    async (input: schemas.PasskeyAuthenticationRequest) => {
+      adopt(await authApi.passkeyVerify(input));
     },
     [adopt],
   );
@@ -263,6 +278,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
       register,
       signIn,
       completeSecondFactor,
+      completeSecondFactorWithPasskey,
       signOut,
       setActiveFarm,
       addFarm,
@@ -274,6 +290,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     register,
     signIn,
     completeSecondFactor,
+    completeSecondFactorWithPasskey,
     signOut,
     setActiveFarm,
     addFarm,

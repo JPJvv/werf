@@ -37,13 +37,37 @@ async function stubEnrolment(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Chromium has WebAuthn, so the enrolment screen offers the CHOICE — passkey or authenticator app
+ * — before the TOTP seed exists. Taking the app route is what the two TOTP audits below need; the
+ * choice itself is audited on its own, because it is now the first thing anyone sees here.
+ */
+async function chooseAuthenticatorApp(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /use an authenticator app instead/i }).click();
+}
+
 for (const theme of THEMES) {
+  test(`the second-factor choice has no accessibility violations in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme, secondFactor: 'required' });
+    await stubEnrolment(page);
+    await page.goto('/security/second-factor');
+
+    await expect(page.getByRole('button', { name: /use this phone as the key/i })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
   test(`second-factor enrolment has no accessibility violations in the ${theme} theme`, async ({
     page,
   }) => {
     await seed(page, { theme, secondFactor: 'required' });
     await stubEnrolment(page);
     await page.goto('/security/second-factor');
+    await chooseAuthenticatorApp(page);
 
     await expect(page.getByRole('heading', { name: /protect this account/i })).toBeVisible();
     // `expect` first: the seed arrives asynchronously, and auditing before it renders would skip
@@ -61,6 +85,7 @@ for (const theme of THEMES) {
     await seed(page, { theme, secondFactor: 'required' });
     await stubEnrolment(page);
     await page.goto('/security/second-factor');
+    await chooseAuthenticatorApp(page);
 
     await page.getByLabel(/^code$/i).fill('123456');
     await page.getByRole('button', { name: /confirm/i }).click();
@@ -107,6 +132,22 @@ for (const theme of THEMES) {
     await page.goto('/settings/language');
 
     await expect(page.getByRole('heading', { name: /language/i })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  // Which devices can open the account (FR-014c). There is no API behind the e2e seed, so what is
+  // audited here is the screen's ERROR state — which is the right one to audit anyway: it is a
+  // panel a farmer only ever meets when something has already gone wrong.
+  test(`settings → security has no accessibility violations in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme });
+    await page.goto('/settings/security');
+
+    await expect(page.getByRole('heading', { name: /security/i })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
     const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();

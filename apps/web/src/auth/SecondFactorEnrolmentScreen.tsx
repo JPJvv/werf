@@ -2,30 +2,38 @@
  * Enrolling the second factor (FR-014, FR-014a) — where an owner or bookkeeper lands
  * because the server refuses every other route until they have one.
  *
- * Three steps in one screen, because it is one errand: get the seed into an authenticator
- * app, prove it arrived, write the recovery codes down. Splitting it across routes would
- * let a farmer navigate away between generating recovery codes and reading them, and those
- * codes are shown exactly once — we store argon2id hashes and genuinely cannot show them
- * again.
+ * ⭐ The PASSKEY is offered first, and that ordering is ADR-0007 rather than fashion. A passkey is
+ * held by this device, so it works with no signal — which on this product is the ordinary state,
+ * not the failure state. It cannot be SIM-swapped, and SIM swap is industrialised in South Africa.
+ * And there is nothing to type: a farmer in a crush, in gloves, is not reading a six-digit code off
+ * a second phone. TOTP remains the universal fallback and is one tap away, because a great many
+ * devices in this market still cannot do WebAuthn — but it is the fallback, not the default.
  *
- * No QR code yet. Rendering one needs either a library (bundle) or a hand-rolled encoder,
- * and the `otpauth://` link below does the same job on the device that actually matters:
- * tapping it on the phone opens the authenticator app directly, no camera involved. The
- * secret is also shown in groups for anyone typing it into a desktop app. A scannable QR
- * is a genuine improvement for the office-desktop case and is noted as follow-up.
+ * The choice is offered only when the device can actually honour it. Putting a passkey button in
+ * front of someone whose browser has no authenticator, and only saying so after they commit, turns
+ * a mandatory 2FA screen into a dead end for a user with no other way into their own account.
+ *
+ * Whichever factor is chosen, the errand ends the same way: the recovery codes, shown exactly once,
+ * in the same screen. Splitting that across routes would let someone navigate away between minting
+ * the codes and reading them, and we store argon2id hashes and genuinely cannot show them again.
+ * A passkey-only owner whose phone drowns has NO other way back in, which is precisely why the
+ * codes are minted on this path too and not only alongside TOTP (FR-014a).
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { schemas } from '@werf/core';
 import { useAuth } from './AuthProvider';
 import { authApi, AuthApiError, NetworkUnavailableError } from './api';
+import { createPasskey, deviceLabel, passkeysAvailable } from './passkeys';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { Field, FormError, PrimaryButton } from './form';
 import { Screen } from './SignInScreen';
 
 type Stage =
+  /** Passkey or authenticator app. Skipped entirely when the device cannot do a passkey. */
+  | { name: 'choose' }
   | { name: 'loading' }
   | { name: 'confirm'; enrolment: schemas.TotpEnrolmentStartResponse }
   // `codes: null` is the account that already had recovery codes from an earlier factor.
@@ -38,15 +46,25 @@ export function SecondFactorEnrolmentScreen() {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const [stage, setStage] = useState<Stage>({ name: 'loading' });
+  // Asked once, before anything is rendered: the answer decides whether there is a choice at all.
+  const [canPasskey] = useState(passkeysAvailable);
+  const [stage, setStage] = useState<Stage>(() =>
+    passkeysAvailable() ? { name: 'choose' } : { name: 'loading' },
+  );
   const [code, setCode] = useState('');
   const [error, setError] = useState<TranslationKey | null>(null);
   const [busy, setBusy] = useState(false);
 
   const accessToken = session?.accessToken;
 
+  /** A stale cached session that already has a factor: send them on rather than stranding them. */
+  const alreadyEnrolled = useCallback(async (): Promise<void> => {
+    await refreshSession().catch(() => undefined);
+    navigate('/', { replace: true });
+  }, [navigate, refreshSession]);
+
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || stage.name !== 'loading') return;
     let cancelled = false;
 
     void (async () => {
@@ -55,11 +73,8 @@ export function SecondFactorEnrolmentScreen() {
         if (!cancelled) setStage({ name: 'confirm', enrolment });
       } catch (caught) {
         if (cancelled) return;
-        // A CONFLICT means a factor is already enrolled — the cached session was simply
-        // stale. Re-reading it sends them on rather than stranding them here.
         if (caught instanceof AuthApiError && caught.code === 'CONFLICT') {
-          await refreshSession().catch(() => undefined);
-          navigate('/', { replace: true });
+          await alreadyEnrolled();
           return;
         }
         setError(
@@ -73,7 +88,47 @@ export function SecondFactorEnrolmentScreen() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, navigate, refreshSession]);
+    // Keyed on `stage.name`, not on `stage`: the effect SETS the stage when it resolves, so
+    // depending on the object would restart the fetch it just finished, forever.
+  }, [accessToken, stage.name, alreadyEnrolled]);
+
+  /**
+   * The passkey path, end to end: the server's creation options, the device's ceremony, the
+   * attestation back for verification. Three failures and only one of them is an error — a
+   * cancelled prompt leaves the choice exactly as it was, because someone who tapped the wrong
+   * thing has not done anything wrong.
+   */
+  const enrolPasskey = async () => {
+    if (!accessToken) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const options = await authApi.beginPasskeyEnrolment(accessToken);
+      const result = await createPasskey(options);
+
+      if (!result.ok) {
+        if (result.reason === 'cancelled') return; // not an error; the button is still there
+        setError(`security.passkey.${result.reason}` as TranslationKey);
+        return;
+      }
+
+      const { recoveryCodes } = await authApi.confirmPasskeyEnrolment(accessToken, {
+        credential: result.credential,
+        deviceLabel: deviceLabel(),
+      });
+      setStage({ name: 'recovery', codes: recoveryCodes });
+    } catch (caught) {
+      if (caught instanceof AuthApiError && caught.code === 'CONFLICT') {
+        await alreadyEnrolled();
+        return;
+      }
+      setError(
+        caught instanceof NetworkUnavailableError ? 'auth.signIn.offline' : 'security.enrol.failed',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const confirm = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -147,6 +202,30 @@ export function SecondFactorEnrolmentScreen() {
       <p className="mb-4 text-body text-soil-900">{t('security.enrol.body')}</p>
       <FormError messageKey={error} />
 
+      {stage.name === 'choose' && (
+        <>
+          {/* The one ochre action on the screen. A passkey is the preferred factor, so it is the
+              one that looks like the answer; the app route below it is a border, not a colour. */}
+          <button
+            type="button"
+            onClick={() => void enrolPasskey()}
+            disabled={busy}
+            className="mb-2 min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
+          >
+            {busy ? t('security.passkey.waiting') : t('security.passkey.use')}
+          </button>
+          <p className="mb-6 text-body text-soil-700">{t('security.passkey.why')}</p>
+
+          <button
+            type="button"
+            onClick={() => setStage({ name: 'loading' })}
+            className="flex min-h-touch-min w-full items-center justify-center rounded border border-soil-200 bg-sand-100 px-4 text-body text-soil-900"
+          >
+            {t('security.passkey.useApp')}
+          </button>
+        </>
+      )}
+
       {stage.name === 'confirm' && (
         <>
           <ol className="mb-4 flex list-decimal flex-col gap-2 pl-5 text-body text-soil-900">
@@ -178,6 +257,21 @@ export function SecondFactorEnrolmentScreen() {
             />
             <PrimaryButton busy={busy} label={t('security.enrol.confirm')} />
           </form>
+
+          {/* Back to the choice, but only when there WAS one. A device that cannot do a passkey
+              must not be offered a route to a screen with nothing on it. */}
+          {canPasskey && (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setStage({ name: 'choose' });
+              }}
+              className="mt-4 flex min-h-touch-min w-full items-center justify-center rounded border border-soil-200 bg-sand-100 px-4 text-body text-soil-900"
+            >
+              {t('security.passkey.back')}
+            </button>
+          )}
         </>
       )}
 

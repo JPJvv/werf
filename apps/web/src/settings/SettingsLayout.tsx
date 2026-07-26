@@ -3,7 +3,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 
 /**
  * The Settings area frame: a sub-nav between the settings screens, with the chosen one shown
- * in the outlet. Appearance and Language today; more settings hang here as they arrive.
+ * in the outlet. Appearance, Farms, Language and Security today; more settings hang here as they arrive.
  */
 export function SettingsLayout() {
   const { t } = useTranslation();
@@ -23,6 +23,9 @@ export function SettingsLayout() {
         </NavLink>
         <NavLink to="language" className={linkClass}>
           {t('settings.language.title')}
+        </NavLink>
+        <NavLink to="security" className={linkClass}>
+          {t('settings.security.title')}
         </NavLink>
       </nav>
       <Outlet />

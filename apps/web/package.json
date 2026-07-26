@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
     "@werf/core": "workspace:*",
     "@werf/domain": "workspace:*",
     "@werf/sync": "workspace:*",

@@ -35,3 +35,32 @@ export function farmDay(instant: Date, jurisdiction: string = DEFAULT_JURISDICTI
 export function farmToday(jurisdiction: string = DEFAULT_JURISDICTION): string {
   return farmDay(new Date(), jurisdiction);
 }
+
+/**
+ * A stored instant as a farm-local day and time, for the handful of places that show WHEN something
+ * happened rather than on which day — "this passkey was last used at". Same zone rule as everything
+ * else here, and it takes the ISO string the wire actually delivers as readily as a Date, because a
+ * JSON response has no Dates in it however the schema types the field.
+ *
+ * An unparseable value returns null rather than "Invalid Date": a row written by an older client is
+ * a thing this product has to expect, and a read model that renders garbage into a security screen
+ * is worse than one that renders nothing.
+ */
+export function farmDateTime(
+  instant: Date | string,
+  jurisdiction: string = DEFAULT_JURISDICTION,
+): string | null {
+  const timeZone = JURISDICTION_TIMEZONE[jurisdiction];
+  if (!timeZone) throw new Error(`No timezone configured for jurisdiction ${jurisdiction}`);
+  const at = instant instanceof Date ? instant : new Date(instant);
+  if (Number.isNaN(at.getTime())) return null;
+  return new Intl.DateTimeFormat('en-ZA', {
+    timeZone,
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(at);
+}

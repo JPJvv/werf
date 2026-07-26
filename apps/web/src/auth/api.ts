@@ -45,20 +45,23 @@ async function post<T>(path: string, body: unknown, accessToken?: string): Promi
 }
 
 async function send<T>(
-  method: 'POST' | 'PATCH',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   body: unknown,
   accessToken?: string,
 ): Promise<T> {
+  // A GET carries no body — `fetch` throws outright if given one — and a DELETE that names its
+  // subject in the path has nothing to put in one either.
+  const hasBody = method !== 'GET' && method !== 'DELETE';
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       method,
       headers: {
-        'Content-Type': 'application/json',
+        ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: JSON.stringify(body),
+      ...(hasBody ? { body: JSON.stringify(body) } : {}),
     });
   } catch {
     // `fetch` rejects only on a transport failure. Signing in genuinely requires a
@@ -106,6 +109,42 @@ export const authApi = {
     code: string,
   ): Promise<schemas.TotpEnrolmentConfirmResponse> =>
     post('/auth/2fa/totp/confirm', { code }, accessToken),
+
+  /**
+   * Passkey enrolment (FR-014/014c) — ADR-0007's PREFERRED factor, and the reason it is preferred
+   * is worth restating here: a passkey works with no signal, cannot be SIM-swapped, and there is
+   * nothing to type in a crush. The server generates the creation options; the browser does the
+   * ceremony; the attestation comes back to be verified against OUR challenge, never the client's.
+   */
+  beginPasskeyEnrolment: (accessToken: string): Promise<schemas.PasskeyCeremonyOptions> =>
+    post('/auth/2fa/passkey', {}, accessToken),
+
+  /** Completes enrolment. Returns the recovery codes ONCE, and only for a FIRST factor. */
+  confirmPasskeyEnrolment: (
+    accessToken: string,
+    input: schemas.PasskeyRegistrationRequest,
+  ): Promise<schemas.TotpEnrolmentConfirmResponse> =>
+    post('/auth/2fa/passkey/confirm', input, accessToken),
+
+  /** The keys that can open this account, so a lost phone can be revoked (FR-014c). */
+  listPasskeys: (accessToken: string): Promise<schemas.PasskeySummary[]> =>
+    send('GET', '/auth/2fa/passkey', undefined, accessToken),
+
+  /** Revoke one key. The server refuses to remove the LAST factor — that is its rule, not ours. */
+  revokePasskey: (accessToken: string, passkeyId: string): Promise<void> =>
+    send('DELETE', `/auth/2fa/passkey/${passkeyId}`, undefined, accessToken),
+
+  /**
+   * Begins a passkey login for a half-authenticated session. The challenge token is what the
+   * password step returned; nothing here takes an email, deliberately — a request keyed on an
+   * address would answer "which passkeys does this address have?", which is an enumeration oracle.
+   */
+  passkeyChallenge: (challengeToken: string): Promise<schemas.PasskeyCeremonyOptions> =>
+    post('/auth/2fa/passkey/challenge', { challengeToken }),
+
+  /** Completes a passkey login, returning the real session. */
+  passkeyVerify: (input: schemas.PasskeyAuthenticationRequest): Promise<schemas.AuthSession> =>
+    post('/auth/2fa/passkey/verify', input),
 
   /**
    * Writes a preference back to the ACCOUNT (FR-008), returning the account as it now stands.

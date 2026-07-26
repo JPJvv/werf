@@ -53,6 +53,16 @@ export class LoggingMailer implements Mailer {
   private readonly logger = new Logger('Mailer');
 
   send(message: OutboundMessage): Promise<void> {
+    // ⚠️ The BODY carries the invitation link, which is credential-shaped — `SmtpMailer` logs the
+    // recipient and never the body for exactly that reason. Writing it out is a development
+    // affordance (you need the link to click) and it is only acceptable because `MailModule`
+    // refuses to wire this adapter in production at all. Belt and braces: even if that guard is
+    // ever removed, the link does not reach a production log, where POPIA s19 safeguards apply and
+    // the sink is frequently offshore.
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.warn(`No mail relay configured. Did NOT send to ${message.to}.`);
+      return Promise.resolve();
+    }
     this.logger.log(`No mail relay configured. Would have sent to ${message.to}: ${message.body}`);
     return Promise.resolve();
   }

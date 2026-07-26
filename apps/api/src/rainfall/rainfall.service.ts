@@ -34,6 +34,8 @@ export class RainfallService {
   ): Promise<CapturedEvent> {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
+      // The camp a reading is pinned to is checked by `insertEvent`, which every capture funnels
+      // through — see `assertOwnedReferences`.
 
       const event = recordRainfall({
         id: input.id,

@@ -25,6 +25,9 @@ const STATUS_COLOR: Record<SyncStatus, string> = {
 };
 
 function statusText(state: SyncState, t: (key: TranslationKey) => string): string {
+  // A refusal outranks the generic error: "will retry" is true of a dropped signal and false of a
+  // record the server has rejected on its merits, and the farmer needs to know which one they have.
+  if (state.blockedCount > 0) return `${state.blockedCount} ${t('sync.blocked')}`;
   if (state.status === 'pending') return `${state.pendingCount} ${t('sync.toSend')}`;
   return t(STATUS_TEXT_KEY[state.status]);
 }

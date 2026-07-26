@@ -13,6 +13,12 @@ import { SmtpMailer } from './smtp-mailer';
  * nothing would make a missing invitation impossible to diagnose. The logging adapter says what it
  * would have sent.
  *
+ * ⚠️ That default is for development ONLY. In production an unset relay is a misconfiguration, and
+ * the failure mode is silent: every invitation would be written to the application log — an email
+ * address, a full name, a farm name and a credential-shaped link, in a sink that is frequently
+ * offshore (POPIA s19). Nobody would notice until someone asked why no invitation ever arrived. So
+ * production refuses to boot instead, which surfaces the missing variable at deploy.
+ *
  * Global, because mail is a cross-cutting capability the farms module needs today and payroll and
  * compliance packs will need in their phases.
  */
@@ -22,8 +28,17 @@ import { SmtpMailer } from './smtp-mailer';
     {
       provide: MAILER,
       inject: [APP_CONFIG],
-      useFactory: (config: AppConfig): Mailer =>
-        config.smtp === null ? new LoggingMailer() : new SmtpMailer(config.smtp),
+      useFactory: (config: AppConfig): Mailer => {
+        if (config.smtp !== null) return new SmtpMailer(config.smtp);
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error(
+            'No mail relay is configured (SMTP_HOST is unset) and this is a production build. ' +
+              'Invitations would be written to the application log instead of being sent. ' +
+              'Configure SMTP_HOST, or run with NODE_ENV unset for local development.',
+          );
+        }
+        return new LoggingMailer();
+      },
     },
   ],
   exports: [MAILER],

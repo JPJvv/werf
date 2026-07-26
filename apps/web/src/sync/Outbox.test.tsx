@@ -200,6 +200,43 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`)).toBeNull();
   });
 
+  it('sets a refused capture aside and sends the rest — one bad record cannot strand a day of work', async () => {
+    cachedSession();
+    seedCaptures();
+    // The weight is refused on its merits (409) and always will be. It sits between the animal
+    // and the death in the send order, so before this was fixed the death — and every capture
+    // made after it, for the rest of the phone's life — could never be sent.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/weights') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    // The farmer is told the truth: one record needs them, and it does NOT claim a retry will fix
+    // it, because it will not.
+    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+
+    // The death went up even though it queued BEHIND the refused weight.
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/livestock/deaths'))).toBe(true);
+
+    // Nothing was discarded to achieve that: the refused weight is still on the device and still
+    // absent from the sent-log, so it is re-tested on every future round.
+    expect(window.localStorage.getItem(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).toContain(ANIMAL_ID);
+    expect(sent).toContain(DEATH_ID);
+    expect(sent).not.toContain(WEIGHT_ID);
+  });
+
   it('holds everything locally while offline and sends nothing', async () => {
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
     cachedSession();

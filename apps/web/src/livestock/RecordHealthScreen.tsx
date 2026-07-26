@@ -26,7 +26,7 @@ import { withholdUntil } from '@werf/domain';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
-import { farmDay } from '../farmTime';
+import { farmToday } from '../farmTime';
 import { useEffectiveAnimals } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { useVetProducts, type StoredVetProduct } from './LocalVetProducts';
@@ -49,6 +49,12 @@ export function RecordHealthScreen() {
   const [administeredBy, setAdministeredBy] = useState('');
   const [reason, setReason] = useState('');
   const [dosedCount, setDosedCount] = useState<number | null>(null);
+  // ⭐ ASKED, never assumed. A dose given on Tuesday and captured on Friday — the normal case for a
+  // farm in a dead zone — must be dated Tuesday: the server resolves the product REGISTRATION in
+  // force on this day (ADR-0005) and computes the withdrawal clock from it. Stamping it with the
+  // capture date silently turns the dated lookup back into a `now()` lookup, and dates the
+  // treatment register wrong for the residue traceback or export audit that later reads it.
+  const [administeredOn, setAdministeredOn] = useState(() => farmToday());
 
   const chosen = live.filter((a) => selected.has(a.id));
   // A product registered for cattle is not a product for sheep. Filtering by what is actually
@@ -67,7 +73,6 @@ export function RecordHealthScreen() {
 
   if (!activeFarm) return null;
 
-  const administeredOn = farmDay(new Date());
   const clearDate = meatClearDate(product, administeredOn);
 
   const toggle = (id: string) => {
@@ -85,13 +90,20 @@ export function RecordHealthScreen() {
     setSelected(new Set(live.map((a) => a.id)));
   };
 
-  const blocked = product === undefined || chosen.length === 0;
+  const blocked = product === undefined || chosen.length === 0 || administeredOn === '';
 
   const save = () => {
     if (blocked || !product) return;
     // ONE batch id across the run: it was one action with one syringe and one product.
     const batchId = uuidv7();
-    const occurredAt = new Date().toISOString();
+    // The two clocks the schema keeps apart. `occurredAt` is when the dose was GIVEN: precise when
+    // it is being recorded the same day, and midday on the chosen day when it is back-dated, since
+    // the day is genuinely all the farmer knows by then. `createdAt` — when the row was written —
+    // is the server's to stamp, and the two differ by days after a week in a dead zone.
+    const occurredAt =
+      administeredOn === farmToday()
+        ? new Date().toISOString()
+        : new Date(`${administeredOn}T12:00:00.000Z`).toISOString();
 
     const events: StoredHealthEvent[] = chosen.map((animal) => ({
       id: uuidv7(),
@@ -203,6 +215,23 @@ export function RecordHealthScreen() {
               save();
             }}
           >
+            {/* Before the product, because the clear date below depends on it: a farmer changing
+                the day must see the withholding answer move with it. */}
+            <div className="mb-4 flex flex-col">
+              <label htmlFor="administeredOn" className="mb-1 text-label uppercase text-soil-700">
+                {t('health.administeredOn')}
+              </label>
+              <input
+                id="administeredOn"
+                name="administeredOn"
+                type="date"
+                max={farmToday()}
+                value={administeredOn}
+                onChange={(e) => setAdministeredOn(e.target.value)}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+              />
+            </div>
+
             <div className="mb-4 flex flex-col">
               <label htmlFor="product" className="mb-1 text-label uppercase text-soil-700">
                 {t('health.product')}

@@ -60,6 +60,7 @@ import {
   type CaptureTx,
   type CapturedEvent,
 } from '../common/event-capture';
+import { farmLocalDay } from '../common/farm-time';
 
 /** The `theft_incidents` columns returned to the caller — every column EXCEPT the PostGIS
  *  `last_seen_location`, which is geometry (neverSyncColumns) and never goes on the wire. */
@@ -142,6 +143,8 @@ export class LivestockService {
         mobId: input.mobId,
         damId: input.damId,
         sireId: input.sireId,
+        enterpriseId: input.enterpriseId,
+        brandId: input.brandId,
       });
 
       const [row] = await tx
@@ -196,7 +199,10 @@ export class LivestockService {
   async recordMob(userId: string, input: schemas.NewMob) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
-      await assertOwnedReferences(tx, input.farmId, { landUnitId: input.landUnitId });
+      await assertOwnedReferences(tx, input.farmId, {
+        landUnitId: input.landUnitId,
+        enterpriseId: input.enterpriseId,
+      });
 
       const [row] = await tx
         .insert(mobs)
@@ -685,6 +691,10 @@ export class LivestockService {
   async createTheftIncident(userId: string, input: schemas.NewTheftIncident) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
+      // The camp the loss is pinned to must be this farm's. The animal links below are already
+      // checked; this reference was not, and an evidence pack that names a neighbour's camp as the
+      // scene is worse than one that names none.
+      await assertOwnedReferences(tx, input.farmId, { landUnitId: input.landUnitId });
 
       if (input.animalIds.length > 0) {
         const found = await tx
@@ -784,7 +794,16 @@ export class LivestockService {
             eq(animals.farmId, theftIncidentAnimals.farmId),
           ),
         )
-        .leftJoin(brandingRegisters, eq(brandingRegisters.id, animals.brandId))
+        // The brand join carries the same farm predicate as the animals join above it. Without it
+        // a mark registered to another farm would print on this farm's evidence pack as its own
+        // ownership claim — the one fact in the pack a Stock Theft Unit relies on most.
+        .leftJoin(
+          brandingRegisters,
+          and(
+            eq(brandingRegisters.id, animals.brandId),
+            eq(brandingRegisters.farmId, animals.farmId),
+          ),
+        )
         .where(
           and(
             eq(theftIncidentAnimals.incidentId, incidentId),
@@ -917,26 +936,6 @@ async function farmJurisdiction(tx: CaptureTx, farmId: string): Promise<string> 
   return row.jurisdiction;
 }
 
-/** The IANA timezone a jurisdiction keeps farm time in — needed to turn a sale INSTANT into the
- *  farm-local DAY a withdrawal clear date is expressed in. A jurisdiction fact, not a regulated
- *  number; unknown jurisdictions THROW rather than defaulting (a silent default is a compliance
- *  hole). v1 is ZA-only, so this is the one entry. */
-const JURISDICTION_TIMEZONE: Readonly<Record<string, string>> = { ZA: 'Africa/Johannesburg' };
-
-/** The farm-local calendar day (YYYY-MM-DD) an instant falls on. `en-CA` renders ISO order. */
-function farmLocalDay(instant: Date, jurisdiction: string): string {
-  const timeZone = JURISDICTION_TIMEZONE[jurisdiction];
-  if (!timeZone) {
-    throw new ValidationError(`No timezone configured for jurisdiction ${jurisdiction}`);
-  }
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(instant);
-}
-
 /**
  * FR-131 sale guard: refuses a sale whose farm-local day falls inside an active MEAT withdrawal.
  * It reads the `meatWithholdUntil` dates already stored on the animal's health events (computed at
@@ -950,13 +949,28 @@ async function assertClearOfMeatWithdrawal(
   animalId: string,
   occurredAt: Date,
 ): Promise<void> {
+  // ⭐ A dose reaches an animal by TWO routes, and the guard has to read both. A plunge dip or a
+  // mob vaccination is captured against the MOB — the API accepts animal-xor-mob on every health
+  // capture precisely because that is how dosing actually happens — and writes its
+  // `meatWithholdUntil` onto an event with `animal_id = NULL`. Reading only animal-subject events
+  // meant selling any individual out of a dipped mob passed the guard silently the next day, which
+  // is the residue reaching the abattoir that this whole gate exists to stop.
+  const [subject] = await tx
+    .select({ mobId: animals.mobId })
+    .from(animals)
+    .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId)));
+
+  const subjectFilter = subject?.mobId
+    ? or(eq(events.animalId, animalId), eq(events.mobId, subject.mobId))
+    : eq(events.animalId, animalId);
+
   const rows = await tx
     .select({ payload: events.payload })
     .from(events)
     .where(
       and(
         eq(events.farmId, farmId),
-        eq(events.animalId, animalId),
+        subjectFilter,
         inArray(events.type, ['treatment', 'vaccination', 'dip']),
         isNull(events.deletedAt),
       ),

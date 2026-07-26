@@ -25,6 +25,7 @@ import { farms, veterinaryProducts, type AppDb } from '@werf/db';
 import { NotFoundError } from '@werf/core';
 import { APP_DB } from '../db/db.module';
 import { assertCanCapture, type CaptureTx } from '../common/event-capture';
+import { farmToday } from '../common/farm-time';
 
 /** What the client is given: everything it needs to select a product and show a clear date. */
 const productProjection = {
@@ -55,12 +56,14 @@ export class ReferenceService {
    * `onDay` is a parameter rather than `now()` for the same reason every regulated lookup is: a
    * client catching up after a fortnight offline is selecting for the day the treatment HAPPENED,
    * not for today. It defaults to today only because the common case is a device refreshing its
-   * cache before it is used.
+   * cache before it is used — and that default is resolved HERE, after the jurisdiction is known,
+   * so it is today ON THE FARM. Defaulting it in the controller meant `toISOString().slice(0, 10)`,
+   * which between 00:00 and 02:00 SAST names yesterday and resolves the register a day early.
    */
   async listVeterinaryProducts(
     userId: string,
     farmId: string,
-    onDay: string,
+    onDay?: string,
   ): Promise<ReferenceVetProduct[]> {
     return this.app.asUser(userId, async (tx) => {
       // Reference data is world-readable to any app connection, so the membership check here is
@@ -68,6 +71,7 @@ export class ReferenceService {
       // jurisdiction comes from a farm the caller must actually be on.
       await assertCanCapture(tx, userId, farmId);
       const jurisdiction = await farmJurisdiction(tx, farmId);
+      const day = onDay ?? farmToday(jurisdiction);
 
       return tx
         .select(productProjection)
@@ -75,8 +79,8 @@ export class ReferenceService {
         .where(
           and(
             eq(veterinaryProducts.jurisdiction, jurisdiction),
-            lte(veterinaryProducts.effectiveFrom, onDay),
-            or(isNull(veterinaryProducts.effectiveTo), gt(veterinaryProducts.effectiveTo, onDay)),
+            lte(veterinaryProducts.effectiveFrom, day),
+            or(isNull(veterinaryProducts.effectiveTo), gt(veterinaryProducts.effectiveTo, day)),
           ),
         )
         .orderBy(veterinaryProducts.name);

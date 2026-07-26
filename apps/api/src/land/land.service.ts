@@ -20,7 +20,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { landUnits, type AppDb } from '@werf/db';
 import { ConflictError, ValidationError, type schemas } from '@werf/core';
 import { APP_DB } from '../db/db.module';
-import { assertCanCapture, type CaptureTx } from '../common/event-capture';
+import { assertCanCapture, assertOwnedReferences, type CaptureTx } from '../common/event-capture';
 
 /** The `land_units` columns returned to a caller — every column EXCEPT the PostGIS `boundary`,
  *  which is geometry (neverSyncColumns), has no meaning to the client, and never goes on the wire.
@@ -70,6 +70,12 @@ export class LandService {
   async createLandUnit(userId: string, input: schemas.NewLandUnit) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
+      // A camp's enterprise and its parent camp are both FKs to farm-scoped tables, and neither
+      // the foreign key nor RLS checks that they belong to THIS farm — see `assertOwnedReferences`.
+      await assertOwnedReferences(tx, input.farmId, {
+        enterpriseId: input.enterpriseId,
+        parentLandUnitId: input.parentId,
+      });
 
       const [row] = await tx
         .insert(landUnits)

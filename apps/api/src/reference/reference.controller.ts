@@ -27,10 +27,8 @@ export class ReferenceController {
     @CurrentUser() auth: AuthContext,
     @Query(new ZodValidationPipe(productQuerySchema)) query: z.infer<typeof productQuerySchema>,
   ): Promise<ReferenceVetProduct[]> {
-    return this.reference.listVeterinaryProducts(
-      auth.userId,
-      query.farmId,
-      query.onDay ?? new Date().toISOString().slice(0, 10),
-    );
+    // No default here: "today" is a question only the service can answer, because it needs the
+    // FARM's jurisdiction to know which day it is on the farm.
+    return this.reference.listVeterinaryProducts(auth.userId, query.farmId, query.onDay);
   }
 }

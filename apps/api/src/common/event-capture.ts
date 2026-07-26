@@ -12,7 +12,17 @@
  */
 
 import { and, eq, isNull } from 'drizzle-orm';
-import { animals, events, farmUsers, landUnits, mobs, type AppDb } from '@werf/db';
+import {
+  animals,
+  brandingRegisters,
+  enterprises,
+  events,
+  farmUsers,
+  landUnits,
+  mobs,
+  theftIncidents,
+  type AppDb,
+} from '@werf/db';
 import { NotFoundError, TenancyError, type UserRole, type schemas } from '@werf/core';
 import { assertHerdScoped } from '@werf/domain';
 
@@ -62,6 +72,18 @@ export async function insertEvent(tx: CaptureTx, event: schemas.NewEvent) {
   // FR-113: nothing enters the log unfiled. Checked HERE rather than in each capture so a capture
   // added in a later phase cannot skip it — the only way into `events` is through this function.
   assertHerdScoped(event);
+
+  // And nothing enters the log pointing off this farm. Same reasoning, same chokepoint: an event's
+  // herd and camp are both FKs to farm-scoped tables, so neither the foreign key nor RLS checks
+  // that they belong to the farm the event is filed under. Several capture paths derive the herd
+  // from the SUBJECT's own row (`herdOfSubject`) and are already safe, but each falls back to a
+  // client-supplied `enterpriseId` when the subject has none, and that fallback was unchecked.
+  // Doing it here means a capture written in a later phase inherits the check instead of having to
+  // remember it. The helper skips nulls, so an event with neither costs nothing.
+  await assertOwnedReferences(tx, event.farmId, {
+    enterpriseId: event.enterpriseId,
+    landUnitId: event.landUnitId,
+  });
 
   const [row] = await tx
     .insert(events)
@@ -190,41 +212,91 @@ export async function assertOwnedReferences(
     sireId?: string | null | undefined;
     /** The calf a birth event names — its `animals` row is created before the event is sent. */
     calfId?: string | null | undefined;
+    /** The financial attribution unit (ADR-0004). Client-settable on animals, mobs and events. */
+    enterpriseId?: string | null | undefined;
+    /**
+     * The registered mark. This is the sharpest of them: a brand register IS the ownership claim
+     * an evidence pack rests on, so an animal carrying a neighbour's mark corrupts the one
+     * document the Stock Theft Unit is handed.
+     */
+    brandId?: string | null | undefined;
+    /** A camp's parent camp — self-referential, so it needs the same farm match as `landUnitId`. */
+    parentLandUnitId?: string | null | undefined;
+    /** The theft incident an animal link belongs to. */
+    incidentId?: string | null | undefined;
   },
 ): Promise<void> {
-  const checks: Array<[string | null | undefined, () => Promise<unknown[]>, string]> = [
-    [
-      refs.landUnitId,
-      () =>
-        tx
-          .select({ id: landUnits.id })
-          .from(landUnits)
-          .where(
-            and(
-              eq(landUnits.id, refs.landUnitId!),
-              eq(landUnits.farmId, farmId),
-              isNull(landUnits.deletedAt),
-            ),
-          ),
-      'Camp not found',
-    ],
+  const landUnitOnFarm = (id: string) =>
+    tx
+      .select({ id: landUnits.id })
+      .from(landUnits)
+      .where(and(eq(landUnits.id, id), eq(landUnits.farmId, farmId), isNull(landUnits.deletedAt)));
+
+  const checks: Array<[string | null | undefined, (id: string) => Promise<unknown[]>, string]> = [
+    [refs.landUnitId, landUnitOnFarm, 'Camp not found'],
+    [refs.parentLandUnitId, landUnitOnFarm, 'Parent camp not found'],
     [
       refs.mobId,
-      () =>
+      (id) =>
         tx
           .select({ id: mobs.id })
           .from(mobs)
-          .where(and(eq(mobs.id, refs.mobId!), eq(mobs.farmId, farmId), isNull(mobs.deletedAt))),
+          .where(and(eq(mobs.id, id), eq(mobs.farmId, farmId), isNull(mobs.deletedAt))),
       'Mob not found',
     ],
-    [refs.damId, () => animalOnFarm(tx, farmId, refs.damId!), 'Dam not found'],
-    [refs.sireId, () => animalOnFarm(tx, farmId, refs.sireId!), 'Sire not found'],
-    [refs.calfId, () => animalOnFarm(tx, farmId, refs.calfId!), 'Calf not found'],
+    [refs.damId, (id) => animalOnFarm(tx, farmId, id), 'Dam not found'],
+    [refs.sireId, (id) => animalOnFarm(tx, farmId, id), 'Sire not found'],
+    [refs.calfId, (id) => animalOnFarm(tx, farmId, id), 'Calf not found'],
+    [
+      refs.enterpriseId,
+      (id) =>
+        tx
+          .select({ id: enterprises.id })
+          .from(enterprises)
+          .where(
+            and(
+              eq(enterprises.id, id),
+              eq(enterprises.farmId, farmId),
+              isNull(enterprises.deletedAt),
+            ),
+          ),
+      'Enterprise not found',
+    ],
+    [
+      refs.brandId,
+      (id) =>
+        tx
+          .select({ id: brandingRegisters.id })
+          .from(brandingRegisters)
+          .where(
+            and(
+              eq(brandingRegisters.id, id),
+              eq(brandingRegisters.farmId, farmId),
+              isNull(brandingRegisters.deletedAt),
+            ),
+          ),
+      'Brand not found',
+    ],
+    [
+      refs.incidentId,
+      (id) =>
+        tx
+          .select({ id: theftIncidents.id })
+          .from(theftIncidents)
+          .where(
+            and(
+              eq(theftIncidents.id, id),
+              eq(theftIncidents.farmId, farmId),
+              isNull(theftIncidents.deletedAt),
+            ),
+          ),
+      'Incident not found',
+    ],
   ];
 
   for (const [id, query, message] of checks) {
     if (id === null || id === undefined) continue;
-    const rows = await query();
+    const rows = await query(id);
     if (rows.length === 0) throw new NotFoundError(message);
   }
 }

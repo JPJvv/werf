@@ -17,23 +17,25 @@ import { Link } from 'react-router-dom';
 import { uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
+import { farmToday } from '../farmTime';
 import { useRecordRainfall } from './LocalRainfall';
 
-/** Today in the DEVICE's timezone, as YYYY-MM-DD for the date input. The device is on the farm. */
+/** Today ON THE FARM, as YYYY-MM-DD for the date input. Not the device's zone: a tablet left on
+ *  UTC would file a first-light reading into the previous rainfall day, and at the July season
+ *  boundary into the previous SEASON. Every other capture screen already goes through `farmTime`. */
 function today(): string {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${now.getFullYear()}-${month}-${day}`;
+  return farmToday();
 }
 
 /**
  * The instant a day's reading happened. For today, that is now — the farmer is standing at the
- * gauge. For an earlier day it is that morning, local time: `YYYY-MM-DDT06:00` with no offset is
- * parsed in the device's zone, which is the farm's zone. Gauges are read at first light.
+ * gauge. For an earlier day it is midday UTC, which falls unambiguously inside that same day in the
+ * farm's zone, so the instant round-trips back through `farmDay` to the day the farmer chose. The
+ * clock time carries no meaning for a gauge reading; the DAY is the datum, and it is the one thing
+ * a season total must not get wrong.
  */
 function readingInstant(day: string): Date {
-  return day === today() ? new Date() : new Date(`${day}T06:00`);
+  return day === today() ? new Date() : new Date(`${day}T12:00:00.000Z`);
 }
 
 export function RecordRainfallScreen() {

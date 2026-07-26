@@ -115,8 +115,15 @@ for (const theme of THEMES) {
 }
 
 /**
- * The capture screens Phase 2 added. One theme each rather than both: the themed audits above are
- * what actually test the token system, and a form's markup does not change with the theme.
+ * The capture screens Phase 2 added, in BOTH themes.
+ *
+ * These ran unthemed until an exit-gate review caught the reasoning behind it: "a form's markup
+ * does not change with the theme" is true of markup and false of the audit. `WCAG_TAGS` includes
+ * `wcag2aa`, so axe runs `color-contrast` — the one rule whose result depends entirely on the
+ * theme, and the exact failure the themed audits above exist to catch. Auditing thirteen capture
+ * screens in light only left dark-theme contrast on all of them unchecked, while three separate
+ * places in the checklist claimed both. `.claude/rules/frontend.md` is not optional about this:
+ * light AND dark, both audited by axe-core.
  *
  * Each screen is asserted to have RENDERED before it is audited. axe reports zero violations on a
  * blank page, so an audit without that assertion passes hardest when the screen is broken.
@@ -140,14 +147,19 @@ const CAPTURE_SCREENS = [
   { path: '/rainfall', heading: /rainfall/i },
 ] as const;
 
-test('the Phase 2 capture screens have no accessibility violations', async ({ page }) => {
-  await seed(page);
+for (const theme of THEMES) {
+  test(`the Phase 2 capture screens have no accessibility violations in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme });
 
-  for (const { path, heading } of CAPTURE_SCREENS) {
-    await page.goto(path);
-    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+    for (const { path, heading } of CAPTURE_SCREENS) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
-    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations, `violations on ${path}`).toEqual([]);
-  }
-});
+      const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+      expect(results.violations, `violations on ${path} in the ${theme} theme`).toEqual([]);
+    }
+  });
+}

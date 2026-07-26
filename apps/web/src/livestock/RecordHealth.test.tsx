@@ -144,6 +144,39 @@ describe('recording a treatment (FR-130/131)', () => {
     expect(screen.getByText(clear)).toBeTruthy();
   });
 
+  it('records the day the dose was GIVEN, not the day it was captured', async () => {
+    // The normal case for a farm in a dead zone: dosed on Tuesday, back in signal on Friday. The
+    // withdrawal clock and the treatment register both have to run from Tuesday. Stamping the
+    // capture date instead turns the server's dated registration lookup (ADR-0005) back into a
+    // `now()` lookup, and the register a residue traceback reads is dated wrong.
+    cachedSession();
+    seedProducts(28);
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    const threeDaysBack = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+    const dayField = screen.getByLabelText(/when was it given/i);
+    await user.clear(dayField);
+    await user.type(dayField, threeDaysBack);
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+
+    // The clear date moves with it — 28 days from the TREATMENT day, not from today.
+    const clear = new Date(Date.parse(`${threeDaysBack}T12:00:00.000Z`) + 28 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    expect(screen.getByText(clear)).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.click(screen.getByRole('button', { name: /record it/i }));
+
+    const [saved] = storedHealth();
+    expect(saved!.administeredOn).toBe(threeDaysBack);
+    // And the two clocks stay distinct: `occurredAt` is the treatment, not the capture.
+    expect(String(saved!.occurredAt).slice(0, 10)).toBe(threeDaysBack);
+  });
+
   it('says so when a product carries no meat withholding, rather than staying silent', async () => {
     // "No withholding" is an answer a farmer needs just as much as a date — silence reads as
     // "the app does not know", which is what sends someone back to a paper book.

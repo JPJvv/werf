@@ -530,6 +530,59 @@ describe('weight capture (FR-140)', () => {
       expect(rows).toHaveLength(0);
     });
 
+    it('refuses an animal that points at a neighbour’s HERD or BRAND', async () => {
+      // The same hole as the camp and the mob, on the two references that were left out of the
+      // original fix. The brand is the sharper of the two: a branding register IS the ownership
+      // claim an evidence pack rests on, so an animal wearing a neighbour's registered mark
+      // corrupts the one document a Stock Theft Unit is handed.
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+
+      const [bravosHerd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: b.farmId, name: 'Bravo Bonsmaras', type: 'beef_cattle' })
+        .returning();
+      const [bravosBrand] = await elevated.db
+        .insert(brandingRegisters)
+        .values({
+          farmId: b.farmId,
+          mark: 'BRV',
+          markType: 'hot_brand',
+          species: ['cattle'],
+        })
+        .returning();
+
+      await expect(
+        service.recordAnimal(
+          a.userId,
+          animalBody({ farmId: a.farmId, enterpriseId: bravosHerd!.id }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      await expect(
+        service.recordAnimal(a.userId, animalBody({ farmId: a.farmId, brandId: bravosBrand!.id })),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(animals));
+      expect(rows).toHaveLength(0);
+    });
+
+    it('refuses a MOB filed under a neighbour’s herd', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const [bravosHerd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: b.farmId, name: 'Bravo sheep', type: 'sheep' })
+        .returning();
+
+      await expect(
+        service.recordMob(a.userId, mobBody({ farmId: a.farmId, enterpriseId: bravosHerd!.id })),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(mobs));
+      expect(rows).toHaveLength(0);
+    });
+
     it('refuses a stranger, exactly as if the farm did not exist', async () => {
       const a = await tenant('Alpha');
       const b = await tenant('Bravo');
@@ -1046,6 +1099,32 @@ describe('weight capture (FR-140)', () => {
       expect(captured.enterpriseId).toBe(herdId);
     });
 
+    it('refuses an event filed under a NEIGHBOUR’S herd', async () => {
+      // When the subject has no herd of its own, the server falls back to the enterprise the
+      // client sent — and that fallback was taken on trust. `insertEvent` now checks it, which
+      // covers every capture path at once rather than one remembered call site at a time.
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const [herdless] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, species: 'cattle', sex: 'female' })
+        .returning();
+      const [bravosHerd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: b.farmId, name: 'Bravo Bonsmaras', type: 'beef_cattle' })
+        .returning();
+
+      await expect(
+        service.recordWeight(
+          a.userId,
+          weightBody({ farmId: a.farmId, animalId: herdless!.id, enterpriseId: bravosHerd!.id }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(rows).toHaveLength(0);
+    });
+
     it('files a mob dip under the mob’s herd', async () => {
       const a = await tenant('Alpha');
       const [herd] = await elevated.db
@@ -1317,6 +1396,96 @@ describe('weight capture (FR-140)', () => {
       const written = await app.asUser(a.userId, (tx) => tx.select().from(events));
       expect(written).toHaveLength(1);
       expect(written[0]!.type).toBe('treatment');
+    });
+
+    it('blocks selling an animal out of a MOB that was dipped — the whole-flock dose counts', async () => {
+      // ⭐ A plunge dip is the canonical whole-mob operation: it is captured against the mob, so
+      // its withdrawal lands on an event with `animal_id = NULL`. A guard that reads only
+      // animal-subject events cleared every individual in a dipped flock the next day — residues
+      // in the chain, from an animal the app had affirmatively told the farmer was clear.
+      const a = await tenant('Alpha');
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Flock A', species: 'sheep', headCount: 300 })
+        .returning();
+      const [member] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: mob!.id, species: 'sheep', sex: 'female' })
+        .returning();
+      const productId = await aVetProduct(); // meat 28d → clears 2026-08-17
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: mob!.id,
+          productId,
+          method: 'plunge',
+        }),
+      );
+
+      await expect(
+        service.recordSale(
+          a.userId,
+          saleBody({
+            farmId: a.farmId,
+            animalId: member!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      // And it clears on the same date the individual-dose path would.
+      const sold = await service.recordSale(
+        a.userId,
+        saleBody({
+          farmId: a.farmId,
+          animalId: member!.id,
+          occurredAt: '2026-08-17T06:00:00.000Z',
+        }),
+      );
+      expect(sold.type).toBe('sale');
+    });
+
+    it('does not withhold an animal in a DIFFERENT mob from the one dipped', async () => {
+      // The other side of the same join: widening the guard must not start refusing sales the
+      // farmer is entitled to make. An over-broad guard trains people to work around it.
+      const a = await tenant('Alpha');
+      const [dipped] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Flock A', species: 'sheep', headCount: 300 })
+        .returning();
+      const [untouched] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Flock B', species: 'sheep', headCount: 120 })
+        .returning();
+      const [bystander] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: untouched!.id, species: 'sheep', sex: 'female' })
+        .returning();
+      const productId = await aVetProduct();
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipped!.id,
+          productId,
+          method: 'plunge',
+        }),
+      );
+
+      const sold = await service.recordSale(
+        a.userId,
+        saleBody({
+          farmId: a.farmId,
+          animalId: bystander!.id,
+          occurredAt: '2026-08-16T06:00:00.000Z',
+        }),
+      );
+      expect(sold.type).toBe('sale');
     });
 
     it('allows the sale on the clear date itself', async () => {

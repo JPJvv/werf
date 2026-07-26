@@ -45,6 +45,12 @@ export function meatWithdrawalFor(
 
   let latest: string | undefined;
   for (const event of events) {
+    // ⚠️ Animal-subject events only. That is correct TODAY solely because `StoredHealthEvent`
+    // requires an `animalId` and the health screen fans a mob dose out per animal — the local log
+    // never holds a mob-subject event. The server's guard reads both routes (it has to: a plunge
+    // dip is captured against the mob). If this store is ever widened to hold a mob-subject event,
+    // widen this filter in the same commit, or the client will preview "clear" for an animal the
+    // server will correctly refuse to sell.
     if (event.animalId !== animalId) continue;
     const days = withdrawalDays.get(event.productId);
     // A product the device does not know about contributes nothing. That is the honest answer —

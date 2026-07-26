@@ -58,6 +58,9 @@ const en = {
   'sync.syncing': 'Sending…',
   'sync.error': 'Not sent — will retry',
   'sync.toSend': 'to send',
+  // "will retry" would be a lie here: the server refused these and will refuse them again until
+  // something about them changes. Everything else the farmer captured has already gone.
+  'sync.blocked': 'not sent — needs your attention',
   // PWA install. Offered after the browser signals the app is install-worthy (never on
   // first paint, FR-007) and dismissible — a farmer decides, we don't nag.
   'install.title': 'Install Werf on this phone',
@@ -226,6 +229,7 @@ const en = {
   'health.kind.vaccination': 'Vaccination',
   'health.kind.dip': 'Dip',
   'health.which': 'Which animals?',
+  'health.administeredOn': 'When was it given?',
   'health.product': 'Which product',
   'health.chooseProduct': 'Choose one',
   'health.programme': 'Which programme (optional)',
@@ -450,6 +454,7 @@ const af: Record<TranslationKey, string> = {
   'sync.syncing': 'Stuur tans…',
   'sync.error': 'Nie gestuur nie — sal weer probeer',
   'sync.toSend': 'om te stuur',
+  'sync.blocked': 'nie gestuur nie — benodig jou aandag',
   'install.title': 'Installeer Werf op hierdie foon',
   'install.body': 'Maak dit oop van jou tuisskerm af, en dit werk aflyn.',
   'install.action': 'Installeer',
@@ -594,6 +599,7 @@ const af: Record<TranslationKey, string> = {
   'health.kind.vaccination': 'Inenting',
   'health.kind.dip': 'Dip',
   'health.which': 'Watter diere?',
+  'health.administeredOn': 'Wanneer is dit gegee?',
   'health.product': 'Watter produk',
   'health.chooseProduct': 'Kies een',
   'health.programme': 'Watter program (opsioneel)',

@@ -73,6 +73,34 @@ function sendLifecycleEvent(event: StoredLifecycleEvent, token: string): Promise
   }
 }
 
+/**
+ * Did the server refuse this capture on its MERITS, or did it merely fail to handle it?
+ *
+ * A 4xx is the server saying "this record is not acceptable" — the identical request gets the
+ * identical answer tomorrow, so the item is set aside rather than allowed to hold the queue. The
+ * three exceptions are the 4xx codes that mean "ask again later": 401 is handled by the refresh
+ * path above this, and 408/429 are transient by definition.
+ *
+ * Anything that is not an `AuthApiError` at all — a parse failure, a bug in a `send` — is treated
+ * as transient. The asymmetry is deliberate: calling a transient failure permanent sets a record
+ * aside that the server never refused, while calling a permanent failure transient costs one
+ * wasted request per round. Only one of those loses a farmer's work.
+ */
+function isRefusal(err: unknown): boolean {
+  if (!(err instanceof AuthApiError)) return false;
+  if (err.status === 401 || err.status === 408 || err.status === 429) return false;
+  return err.status >= 400 && err.status < 500;
+}
+
+/** Keeps the previous set's identity when nothing changed, so subscribers do not re-render. */
+function replaceIfChanged(
+  previous: ReadonlySet<string>,
+  next: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (previous.size === next.size && [...next].every((id) => previous.has(id))) return previous;
+  return next;
+}
+
 /** One queued capture: its id (for the sent-log) and how to send it with a given access token. */
 interface FlushItem {
   readonly id: string;
@@ -185,6 +213,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
 
   const [flushing, setFlushing] = useState(false);
   const [errored, setErrored] = useState(false);
+  // Captures the server REFUSED on their merits, by id. Held in memory only, and deliberately:
+  // a refusal is a fact about one attempt, not about the record, so it is re-tested on every
+  // round and on every cold start. One that was only situationally invalid — a move whose
+  // destination camp had not been sent yet — heals itself the moment the cause clears.
+  const [refused, setRefused] = useState<ReadonlySet<string>>(() => new Set());
 
   // Refs the async flush reads for its latest view, without being re-created on every render.
   const tokenRef = useRef<string | undefined>(session?.accessToken);
@@ -210,6 +243,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     flushingRef.current = true;
     setFlushing(true);
     setErrored(false);
+    // Rebuilt from scratch each round rather than added to: a capture refused last time gets a
+    // genuine second hearing, so the set never accumulates a stale refusal.
+    const refusedThisRound = new Set<string>();
     try {
       for (const item of items) {
         if (!mountedRef.current) return;
@@ -231,7 +267,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             try {
               await item.send(fresh);
               sentLog.add(item.id);
-            } catch {
+            } catch (retryErr) {
+              if (isRefusal(retryErr)) {
+                refusedThisRound.add(item.id);
+                continue;
+              }
               if (mountedRef.current) setErrored(true);
               return;
             }
@@ -239,9 +279,23 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             // The signal dropped mid-flush. Not an error to show — everything unsent stays
             // pending and the next reconnect picks up where we left off.
             return;
+          } else if (isRefusal(err)) {
+            // The server refused THIS capture on its merits — a tag number already live on
+            // another animal, a camp code a second device used the same week, a sale inside a
+            // withdrawal period. Retrying it unchanged refuses it again, forever.
+            //
+            // So it is set aside, NOT dropped: `continue`, not `return`. The record stays in its
+            // append-only store and stays out of the sent-log, because the queue is never
+            // discarded by the system (.claude/rules/db.md) — but it no longer holds the rest of
+            // the farmer's work hostage behind it. Sixty tags captured in a crush must not be
+            // stranded by one misread digit, which is exactly what returning here did: the queue
+            // rebuilds in the same FK order every round, so the poison item was always first and
+            // nothing behind it could ever be sent again.
+            refusedThisRound.add(item.id);
+            continue;
           } else {
-            // The server refused the capture (validation, tenancy, a 500). Surface it; the
-            // record is NOT marked sent, so it will be retried.
+            // A 5xx, or something we do not recognise. Transient by assumption — give up the
+            // round and leave everything pending, exactly as a dropped signal does.
             if (mountedRef.current) setErrored(true);
             return;
           }
@@ -249,7 +303,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     } finally {
       flushingRef.current = false;
-      if (mountedRef.current) setFlushing(false);
+      if (mountedRef.current) {
+        setFlushing(false);
+        // Committed in `finally` so an aborted round still reports what it managed to learn.
+        setRefused((previous) => replaceIfChanged(previous, refusedThisRound));
+      }
     }
   }, [online, sentLog, refreshSession]);
 
@@ -260,18 +318,25 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     if (online && pendingCount > 0) void flush();
   }, [online, pendingCount, flush]);
 
+  // Only refusals that are still queued count. One the farmer resolved another way — or that the
+  // server accepted on a later round — leaves the queue and stops being reported.
+  const blockedCount = useMemo(
+    () => queue.reduce((total, item) => (refused.has(item.id) ? total + 1 : total), 0),
+    [queue, refused],
+  );
+
   const state = useMemo<SyncState>(() => {
     const status: SyncState['status'] = !online
       ? 'offline'
       : flushing
         ? 'syncing'
-        : errored && pendingCount > 0
+        : (errored || blockedCount > 0) && pendingCount > 0
           ? 'error'
           : pendingCount > 0
             ? 'pending'
             : 'synced';
-    return { status, pendingCount };
-  }, [online, flushing, errored, pendingCount]);
+    return { status, pendingCount, blockedCount };
+  }, [online, flushing, errored, pendingCount, blockedCount]);
 
   return <OutboxContext.Provider value={state}>{children}</OutboxContext.Provider>;
 }

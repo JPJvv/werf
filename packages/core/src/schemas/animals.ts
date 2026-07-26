@@ -12,6 +12,7 @@
  */
 
 import { z } from 'zod';
+import type { Species } from '../animals';
 import {
   animalSexSchema,
   animalStatusSchema,
@@ -100,6 +101,93 @@ export const newMobSchema = mobSchema
     headCount: mobSchema.shape.headCount.default(null),
   });
 export type NewMob = z.infer<typeof newMobSchema>;
+
+// ── Species-specific attributes (FR-107) ────────────────────────────────────
+/**
+ * What each species may carry in the `attributes` JSONB, and nothing else.
+ *
+ * ADR-0004 keeps ONE `animals` table for every species, which is right: a mixed farm's cattle and
+ * sheep share a herd count, a movement history, a treatment register and a theft trail, and six
+ * tables would mean six of everything. What one table cannot do is say that a cow has a horn status
+ * and a sheep has a wool class. That is what the JSONB column is for — and an unvalidated JSONB
+ * column is where typos accumulate quietly for a year, which is what these schemas exist to stop.
+ *
+ * ⭐ Every one is `.strict()`, so an attribute this species does not have is REFUSED rather than
+ * stored. A `woolClass` on a cow is not a harmless extra key; it is a capture screen or an importer
+ * that has gone wrong, and finding it in the data six months later is finding it too late to know
+ * what was meant.
+ *
+ * ⭐ These are NOT behind the ADR-0006 `AnimalIdentityRules` seam, though the Phase 2 checklist line
+ * assumed they would be. That seam is for what the LAW varies — the Animal Identification Act's mark
+ * rules, which genuinely differ across the border. A horn is a horn in Namibia. Putting a husbandry
+ * vocabulary behind a jurisdiction interface would make every future country restate that cattle can
+ * be polled: the mirror image of the mistake ADR-0006 warns about. Species vary by species.
+ *
+ * Keys are camelCase like every other JSONB payload here (`events.payload` names a calf `calfId`);
+ * FR-107's `horn_status` names the concept, not the key.
+ */
+
+/**
+ * Whether an animal carries horns, and how it came not to.
+ *
+ * `polled` and `dehorned` are separate values and the difference is the point: polled is genetic
+ * and heritable, dehorned is something that was done to the animal. A breeder selecting for polled
+ * stock needs to tell them apart, and a buyer looking at a hornless animal cannot.
+ */
+export const HORN_STATUSES = ['horned', 'polled', 'dehorned', 'scurred'] as const;
+export const hornStatusSchema = z.enum(HORN_STATUSES);
+export type HornStatus = z.infer<typeof hornStatusSchema>;
+
+/**
+ * The classer's wool code — a SHORT uppercase code, and deliberately NOT an enum.
+ *
+ * South African wool is classed to an industry standard administered by Cape Wools, and that code
+ * list is not in this repository. Writing out a plausible-looking enum from memory would put a
+ * picker of wrong codes in front of a wool farmer, who would spot it immediately and stop trusting
+ * the screen — and every animal captured against a fabricated code would need re-classing. That is
+ * the same defect as inventing a regulated number, so the SHAPE is validated and the vocabulary is
+ * left to the classer until the real list is reference data this app can look up.
+ */
+export const woolClassSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(8)
+  .regex(/^[A-Z0-9]+$/, 'A wool class is the classer’s code — letters and digits, in capitals');
+
+/** No species-specific attributes defined yet. Strict, so a stray key is still refused. */
+const noAttributes = z.object({}).strict();
+const hornedOnly = z.object({ hornStatus: hornStatusSchema.optional() }).strict();
+
+/**
+ * Adding a species to `SPECIES` without adding it here is a compile error rather than a silent
+ * pass-through — `satisfies Record<Species, …>` does that work, exactly as the event payload
+ * registry does for a new event type.
+ */
+export const speciesAttributeSchemas = {
+  cattle: hornedOnly,
+  // A sheep can be horned too — Dorper rams are, Merinos vary — so both apply.
+  sheep: z
+    .object({ hornStatus: hornStatusSchema.optional(), woolClass: woolClassSchema.optional() })
+    .strict(),
+  goat: hornedOnly,
+  pig: noAttributes,
+  poultry: noAttributes,
+  game: hornedOnly,
+} satisfies Record<Species, z.ZodType>;
+
+/** The attribute schema for a species — what a capture screen may offer, and nothing else. */
+export function attributeSchemaFor(species: Species): z.ZodType {
+  return speciesAttributeSchemas[species];
+}
+
+/** Which attributes this species has, for a screen deciding what to render. */
+export function attributeKeysFor(species: Species): readonly string[] {
+  const schema = speciesAttributeSchemas[species] as unknown as {
+    shape?: Record<string, unknown>;
+  };
+  return schema.shape === undefined ? [] : Object.keys(schema.shape);
+}
 
 // ── AnimalIdentifier ──────────────────────────────────────────────────────────
 // Many per animal (FR-109), unique per farm per type (enforced in the DB). One is primary.

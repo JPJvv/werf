@@ -37,6 +37,7 @@ import { useRecordAnimal } from './LocalHerd';
 import { useRecordPurchase } from './LocalLifecycle';
 import { farmDay } from '../farmTime';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
+import type { TranslationKey } from '../i18n/dictionaries';
 
 type Herd = schemas.SessionEnterprise;
 
@@ -87,6 +88,10 @@ export function AddAnimalScreen() {
   const [breed, setBreed] = useState('');
   // Where it came from (FR-106). "Bought" is not a different KIND of animal — it is the same herd
   // row plus a purchase event, which is why this lives here rather than on a screen of its own.
+  // FR-107. Per-species, and the screen asks only what THIS species has: a wool class field on a
+  // cattle capture is a question nobody can answer, and one more thing to skip in a crush.
+  const [hornStatus, setHornStatus] = useState<schemas.HornStatus | ''>('');
+  const [woolClass, setWoolClass] = useState('');
   const [bought, setBought] = useState(false);
   const [seller, setSeller] = useState('');
   const [priceRands, setPriceRands] = useState('');
@@ -104,9 +109,24 @@ export function AddAnimalScreen() {
 
   const purchaseIsValid = !bought || (seller.trim() !== '' && priceIsValid(priceRands));
 
+  // What this species carries, straight from the schema — so a species added to the vocabulary
+  // cannot quietly go unrepresented here, and the screen and the server cannot disagree.
+  const attributeKeys = selectedSpecies ? schemas.attributeKeysFor(selectedSpecies) : [];
+  const asksHorns = attributeKeys.includes('hornStatus');
+  const asksWool = attributeKeys.includes('woolClass');
+  // Validated on the device before the save, not only on arrival: a capture refused days later,
+  // by which time nobody remembers which animal it was, is a rule that reached nobody.
+  const attributes = {
+    ...(asksHorns && hornStatus !== '' ? { hornStatus } : {}),
+    ...(asksWool && woolClass.trim() !== '' ? { woolClass: woolClass.trim().toUpperCase() } : {}),
+  };
+  const attributesAreValid =
+    selectedSpecies === '' ||
+    schemas.attributeSchemaFor(selectedSpecies).safeParse(attributes).success;
+
   const save = (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedSpecies || !purchaseIsValid) return;
+    if (!selectedSpecies || !purchaseIsValid || !attributesAreValid) return;
 
     const occurredAt = new Date();
     const animal = schemas.newAnimalSchema.parse({
@@ -117,6 +137,7 @@ export function AddAnimalScreen() {
       species: selectedSpecies,
       sex,
       breed: breed.trim() || null,
+      attributes,
       // A bought animal carries where it came from on the herd row too, because "who did I buy
       // this from" is asked of the ANIMAL, and an evidence pack reads `source`/`acquired_at`
       // rather than trawling the event log (FR-603).
@@ -142,6 +163,10 @@ export function AddAnimalScreen() {
     // person. Cleared: the per-animal breed and price.
     setBreed('');
     setPriceRands('');
+    // Cleared with the breed, for the same reason: horn status and wool class are per ANIMAL, and
+    // carrying the last one forward would quietly stamp it on the next fifty head.
+    setHornStatus('');
+    setWoolClass('');
     setJustSaved(true);
   };
 
@@ -262,6 +287,62 @@ export function AddAnimalScreen() {
             className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
           />
         </div>
+
+        {/* FR-107, rendered from the species' own schema. Both optional — a farmer tagging fifty
+            head is not stopping to record horn status on each one, and demanding it would mean the
+            animal does not get recorded at all. */}
+        {asksHorns && (
+          <div className="mb-4 flex flex-col">
+            <label htmlFor="hornStatus" className="mb-1 text-label uppercase text-soil-700">
+              {t('animals.new.hornStatus')}
+            </label>
+            <select
+              id="hornStatus"
+              name="hornStatus"
+              value={hornStatus}
+              onChange={(e) => {
+                setJustSaved(false);
+                setHornStatus(e.target.value as schemas.HornStatus | '');
+              }}
+              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+            >
+              <option value="">{t('animals.new.notSaid')}</option>
+              {schemas.HORN_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {t(`animals.horn.${status}` as TranslationKey)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {asksWool && (
+          <div className="mb-4 flex flex-col">
+            <label htmlFor="woolClass" className="mb-1 text-label uppercase text-soil-700">
+              {t('animals.new.woolClass')}
+            </label>
+            <input
+              id="woolClass"
+              name="woolClass"
+              type="text"
+              autoComplete="off"
+              value={woolClass}
+              onChange={(e) => {
+                setJustSaved(false);
+                setWoolClass(e.target.value);
+              }}
+              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body uppercase tabular-nums text-soil-900"
+            />
+            {/* A free field rather than a picker, and the reason is on the schema: the SA classing
+                code list is Cape Wools' and is not in this app, so a fabricated picker would be
+                wrong in a way a wool farmer spots immediately. */}
+            {woolClass.trim() !== '' && !attributesAreValid && (
+              <p className="mt-1 border-l-4 border-klei-700 bg-klei-100 p-2 text-body text-soil-900">
+                {t('animals.new.woolClassHint')}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* FR-106. Off by default: most animals on a farm were born there, and asking every
             capture where it came from would tax the common case to serve the rarer one. */}

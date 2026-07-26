@@ -26,6 +26,7 @@ export * from './livestock/evidence';
 export * from './livestock/herd-summary';
 export * from './livestock/classes';
 export * from './livestock/mob-tally';
+export * from './livestock/attributes';
 export * from './rainfall';
 export * from './herd-scope';
 export * from './dates';

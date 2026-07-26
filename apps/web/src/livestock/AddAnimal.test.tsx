@@ -203,4 +203,71 @@ describe('recording an animal', () => {
     await user.click(screen.getByRole('button', { name: /save animal/i }));
     expect(capturedHerdId()).toBe(CATTLE_HERD.id);
   });
+
+  // ── Species-specific attributes (FR-107) ────────────────────────────────────────────────
+  /** The whole attributes record on the last captured animal. */
+  function capturedAttributes(): Record<string, unknown> {
+    const herd = JSON.parse(
+      window.localStorage.getItem('werf-herd:0190f3a0-0000-7000-8000-0000000000f1') ?? '[]',
+    ) as Array<Record<string, unknown>>;
+    return (herd[0]?.['attributes'] ?? {}) as Record<string, unknown>;
+  }
+
+  it('⭐ asks a cattle farm about horns and never about wool', async () => {
+    // A wool class field on a cattle capture is a question nobody can answer and one more thing to
+    // skip in a crush. The screen renders what the SPECIES schema says, not a fixed list.
+    cachedSession(['beef_cattle'], [CATTLE_HERD]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    expect(screen.queryByLabelText(/wool class/i)).toBeNull();
+
+    await user.selectOptions(screen.getByLabelText(/horns/i), 'polled');
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    expect(capturedAttributes()).toEqual({ hornStatus: 'polled' });
+  });
+
+  it('asks a sheep farm about both, because a sheep can be horned too', async () => {
+    cachedSession(['sheep'], [FLOCK]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/wool class/i), 'bfy');
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    // Typed lower case, stored as the classer writes it.
+    expect(capturedAttributes()).toEqual({ woolClass: 'BFY' });
+  });
+
+  it('saves an animal with nothing said about either, which is the crush case', async () => {
+    cachedSession(['sheep'], [FLOCK]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    expect(capturedAttributes()).toEqual({});
+  });
+
+  it('refuses a wool class that is not a code, on the device rather than days later', async () => {
+    cachedSession(['sheep'], [FLOCK]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/wool class/i), 'good stuff');
+
+    expect(screen.getByText(/classer’s code/i)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+    // Nothing captured: a refusal that let the animal through would be no refusal at all.
+    expect(
+      JSON.parse(
+        window.localStorage.getItem('werf-herd:0190f3a0-0000-7000-8000-0000000000f1') ?? '[]',
+      ),
+    ).toHaveLength(0);
+  });
 });

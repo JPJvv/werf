@@ -51,6 +51,7 @@ import {
   recordVaccination,
   recordWeaning,
   recordWeight,
+  validateAttributes,
 } from '@werf/domain';
 import { APP_DB } from '../db/db.module';
 import {
@@ -170,7 +171,11 @@ export class LivestockService {
           acquiredAt: input.acquiredAt,
           brandId: input.brandId,
           brandAppliedAt: input.brandAppliedAt,
-          attributes: input.attributes,
+          // FR-107. Checked HERE rather than in the wire schema, because the rule is per SPECIES
+          // and a Zod object cannot know the species until the whole body is parsed. A `woolClass`
+          // on a cow is refused rather than stored: it means a screen or an importer has gone
+          // wrong, and finding it in the data six months later is finding it too late.
+          attributes: validateAttributes(input.species, input.attributes),
           photoKey: input.photoKey,
           createdBy: userId,
         })

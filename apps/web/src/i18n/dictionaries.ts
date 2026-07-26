@@ -284,6 +284,17 @@ const en = {
   'animals.new.species': 'Species',
   'animals.new.sex': 'Sex',
   'animals.new.breed': 'Breed (optional)',
+  // FR-107. "Not said" rather than "None": a farmer who has not looked has not said the animal is
+  // polled, and the two are different facts about a breeding decision.
+  'animals.new.notSaid': 'Not said',
+  'animals.new.hornStatus': 'Horns (optional)',
+  'animals.new.woolClass': 'Wool class (optional)',
+  'animals.new.woolClassHint':
+    'A wool class is the classer’s code — letters and digits, in capitals.',
+  'animals.horn.horned': 'Horned',
+  'animals.horn.polled': 'Polled — born without horns',
+  'animals.horn.dehorned': 'Dehorned',
+  'animals.horn.scurred': 'Scurs',
   'animals.new.save': 'Save animal',
   'animals.new.saved': 'Saved — your work is saved',
   'animals.new.another': 'Record another',
@@ -830,6 +841,15 @@ const af: Record<TranslationKey, string> = {
   'animals.new.species': 'Spesie',
   'animals.new.sex': 'Geslag',
   'animals.new.breed': 'Ras (opsioneel)',
+  'animals.new.notSaid': 'Nie gesê nie',
+  'animals.new.hornStatus': 'Horings (opsioneel)',
+  'animals.new.woolClass': 'Wolklas (opsioneel)',
+  'animals.new.woolClassHint':
+    '’n Wolklas is die klasseerder se kode — letters en syfers, in hoofletters.',
+  'animals.horn.horned': 'Gehoring',
+  'animals.horn.polled': 'Poenskop — sonder horings gebore',
+  'animals.horn.dehorned': 'Onthoring',
+  'animals.horn.scurred': 'Skurwe horinkies',
   'animals.new.save': 'Stoor dier',
   'animals.new.saved': 'Gestoor — jou werk is gestoor',
   'animals.new.another': 'Teken nog een aan',

@@ -440,6 +440,46 @@ describe('weight capture (FR-140)', () => {
   });
 
   // ── Mobs (FR-102) ───────────────────────────────────────────────────────────────────
+  describe('species-specific attributes (FR-107)', () => {
+    it('stores the attributes the species actually has', async () => {
+      const a = await tenant('Alpha');
+
+      const animal = await service.recordAnimal(
+        a.userId,
+        animalBody({ farmId: a.farmId, species: 'cattle', attributes: { hornStatus: 'polled' } }),
+      );
+
+      expect(animal.attributes).toEqual({ hornStatus: 'polled' });
+    });
+
+    it('⭐ refuses an attribute the species does not have, and stores no row', async () => {
+      // One `animals` table for every species (ADR-0004) means the column cannot enforce this, and
+      // an unvalidated JSONB column is where typos accumulate quietly for a year.
+      const a = await tenant('Alpha');
+
+      await expect(
+        service.recordAnimal(
+          a.userId,
+          animalBody({ farmId: a.farmId, species: 'cattle', attributes: { woolClass: 'BFY' } }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(animals));
+      expect(rows).toHaveLength(0);
+    });
+
+    it('accepts an animal with no attributes at all, on any species', async () => {
+      const a = await tenant('Alpha');
+
+      const animal = await service.recordAnimal(
+        a.userId,
+        animalBody({ farmId: a.farmId, species: 'pig' }),
+      );
+
+      expect(animal.attributes).toEqual({});
+    });
+  });
+
   describe('mob creation (FR-102)', () => {
     const mobBody = (over: Partial<schemas.NewMob> & { farmId: string }): schemas.NewMob =>
       schemas.newMobSchema.parse({

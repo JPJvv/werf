@@ -3,11 +3,17 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-07-26 (fifth session) · **Branch:** `phase-2/livestock` (tip = this docs commit; `cc1b149` is the last code commit below it)
+**Last updated:** 2026-07-27 (sixth session) · **Branch:** `phase-2/livestock` @ `395b658`, PUSHED
 
 > **Gate note, and it matters more than it looks:** the e2e lane was reporting green against a stale
-> bundle until this session. Fixed — see §4 A7. If you see e2e fail and then pass on a re-run, that
-> is not a flake and it is not this bug either; read A7 before assuming.
+> bundle until the fifth session. Fixed — see §4 A7. If you see e2e fail and then pass on a re-run,
+> that is not a flake and it is not this bug either; read A7 before assuming.
+
+> ⛔ **The one thing owed before the PR can be marked ready: a THIRD review-agent pass.** §3b's
+> NOT APPROVABLE came from `compliance-checker`, and seven commits of compliance-gated code have
+> landed since. The author of a fix cannot clear the finding that produced it — run `reviewer`,
+> `sync-auditor` and `compliance-checker` over `5c769b4..HEAD` and read the output yourself. A green
+> `pnpm verify` is not that. See §2.1d.
 
 ---
 
@@ -17,11 +23,12 @@
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **Code complete, NOT merged, and the exit gate does NOT read true.** `pnpm verify` green: 77 files / 750 tests, bundle 133.72 KB gz. **CI green on draft PR #3, both lanes, at `664dc23`** — including e2e/axe, so that is verified at HEAD rather than inferred. ⛔ The three review agents ran this session and `compliance-checker` returned **NOT APPROVABLE** — two SEV-1 food-safety findings, §3b. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. All twelve §3b findings are now CLOSED IN CODE — but the gate still does not read true, because nothing has re-reviewed them.** `pnpm verify` green: 77 files / **770** tests (was 750), bundle 133.73 KB gz. Seven commits this session, §2c. ⛔ `compliance-checker`'s **NOT APPROVABLE** verdict stands until a third agent pass says otherwise: the fixes are the author's own claim about the author's own work. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
-**Working tree is clean as at this commit. No stashes.**
+**Working tree is clean as at this commit. No stashes.** Verified with `git status` at the start of
+the sixth session (it reconciled — the first time this line has been true when read) and again here.
 
 > ⚠️ **That sentence was FALSE for the whole of the fourth session and nobody noticed until a review
 > caught it.** Sixteen modified files and two new ones — a half-built B1 breeding slice — sat
@@ -30,11 +37,11 @@
 
 ```
 main                   9452ebc   (Phase 0 + 1)
-phase-2/livestock      THIS      ← HEAD is this docs commit; `cc1b149` is the last
-                                 code commit below it. Draft PR open, DO NOT MERGE
+phase-2/livestock      395b658   ← HEAD, PUSHED. Draft PR #3 open, DO NOT MERGE
 phase-2/breeding       29caf57   ⚠️ PARKED, half-built. The B1 server half, stacked on
-                                 cc1b149. Server + sync only: no integration tests for
-                                 either endpoint, and no client half at all. §4 B1
+                                 cc1b149 — now SEVEN commits behind this branch, and
+                                 those commits changed the health payload and the move
+                                 write path it sits on. Rebase before touching it. §4 B1
 docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330,
                                  so it is now well behind this branch
 ```
@@ -47,20 +54,22 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
 
 1. ~~**Phase 2 PR — open it now?**~~ ✅ **DONE 2026-07-26 (fifth session).** The three agents ran
    first, as owed. The PR is open **as a DRAFT** — CI signal without committing to merge, since CI
-   has never run on this code at all (G5). ⛔ **It must not be marked ready while §3b's two SEV-1
-   findings are open.**
+   has never run on this code at all (G5). ⛔ **It must still not be marked ready — §2.1d.**
 
-1b. **⛔ NEW AND NOW THE LIVE ONE — how do you want §3b's SEV-1 findings handled?**
-   `compliance-checker` returned **NOT APPROVABLE**. Two SEV-1s put meat inside an active
-   withdrawal into the food chain, and one of them is in `cc1b149`, a commit made THIS session.
-   The options are not equivalent:
-   (a) fix the server-side membership bug now (contained: compare farm-local DAYS inclusively, not
-       instants — see §3b finding 1) and defer the client-side group guard as a named slice;
-   (b) fix both, which means syncing mob-subject health events to the device first — a real slice,
-       comparable to the FR-102 tally;
-   (c) accept and merge with the hole documented, which for a food-safety guard I would argue
-       against in writing.
-   → _Answer:_
+1b. ~~**How do you want §3b's SEV-1 findings handled?**~~ ✅ **RESOLVED 2026-07-27 by doing option
+   (b), the widest one** — both SEV-1s fixed, plus every other finding in §3b except the two halves
+   of finding 5 that are argued against below. §5 already prescribed this order, so it was followed
+   rather than re-asked. Seven commits, §2c. **What this does NOT resolve is 1d.**
+
+1d. **⛔ NEW AND NOW THE LIVE ONE — the third review-agent pass.**
+   §3b's **NOT APPROVABLE** was `compliance-checker`'s verdict. Seven commits of compliance-gated
+   code have since landed *in response to it*, written by the same agent that is now reporting them
+   closed. That is the author marking their own homework, and on a food-safety guard it is not
+   good enough. `reviewer`, `sync-auditor` and `compliance-checker` need to run over
+   `5c769b4..HEAD` before the PR is marked ready, and **the output must be read directly, not
+   summarised** (CLAUDE.md, compliance gate). Not run this session: the session's standing
+   instruction is not to spawn agents unasked.
+   → _Answer (say the word and it runs):_
 
 1c. **NEW — install the defect-class hook?** Proposed at the end of the fifth session, **not
    installed**, awaiting your call. A `PostToolUse` hook on `Edit|Write` that greps the changed
@@ -87,14 +96,25 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    — which `phase-2/livestock` now also carries and has since rewritten (195 insertions / 54
    deletions apart), so it will conflict. Drop it or resolve by hand; nothing in it is still wanted.
 
-3. **What is the next slice?** ⚠️ **The honest answer changed this session: it is probably not a
-   feature at all.** The review pass (§3b) produced two SEV-1 food-safety findings and a set of
-   SEV-2s, and closing those should come before anything new. After them, the buildable Phase 2
-   remainders are: **finishing B1** (the server half is now committed on `phase-2/breeding`; what
-   is left is integration tests, a client cache and two capture screens) and **walking a camp
-   boundary by GPS** (§4 B7). Everything else is blocked on something that does not exist, named
-   in §4. **Phase 3's checklist is now written** (G2 closed), so `/loop` has something to consume
-   — but §2.4 and §2.5 gate it.
+3. **What is the next slice?** §3b is now done, so this is a live question again. In order of my
+   own preference: **(i) the third agent pass (§2.1d) — not a slice, but it gates the PR**;
+   **(ii) finishing B1** (the server half is committed on `phase-2/breeding`; what is left is
+   integration tests, a client cache and two capture screens — and it now needs a rebase, see §1);
+   **(iii) walking a camp boundary by GPS** (§4 B7). Everything else is blocked on something that
+   does not exist, named in §4. **Phase 3's checklist is written** (G2 closed), so `/loop` has
+   something to consume — but §2.4 and §2.5 gate its very first line.
+   → _Answer:_
+
+3b. **NEW — a `transfer` tally reason, and what a `purchase` is allowed to clear.** Raised by §3b
+   finding 5 and deliberately NOT built this session, because it is a modelling decision rather
+   than a defect. With no transfer reason in the group model, splitting a dipped flock has to be
+   expressed as sale-out + purchase-in — which trips the withdrawal guard on the way out and
+   launders the withholding on the way in, since head arriving by `purchase` is unconditionally
+   clear. Two questions, and the second is the one I cannot answer alone: does the group model get
+   a `transfer` reason (mob → mob, same farm, withholding carried across)? And should a purchase
+   be able to record a DECLARED withdrawal from the seller, or is "unknown history" the honest
+   answer for bought-in stock? Inventing a withdrawal for an animal whose treatment we never saw
+   is the same class of defect as hardcoding a regulated number.
    → _Answer:_
 
 4. **🇿🇦 Has the labour-law review been booked?** It gates Phase 3 (sub-phase 3l) and is on someone
@@ -212,31 +232,90 @@ the branch; capture authorship is audit logging, not the worker tracking ADR-001
 
 ---
 
-## 3b. ⛔ The SECOND review-agent pass (2026-07-26, fifth session) — findings are OPEN
+## 2c. Seven commits closing §3b (2026-07-27, sixth session)
+
+The gate ran green after every one, and **each fix was verified in BOTH directions** — the new test
+was watched to fail against the old expression before being kept. That discipline is the point of
+the section; a test written after a fix that was never seen to fail proves only that it compiles.
+
+| Commit | Finding | What |
+|---|---|---|
+| `6690d85` | **SEV-1 #1** | **A dip and a move on the same day cleared meat still in withdrawal.** Membership was rebuilt from real move INSTANTS and compared against a dose instant that is partly fabricated. Now compared in farm-local DAYS, inclusive at BOTH ends. Also: `administeredOn` is now STORED on the health payload — the dose day was used for the arithmetic and then thrown away, so the guard had nothing to read but the invented instant |
+| `4f552e8` | MED #7 | **The device folded the tally log over its own output.** `initialHeadCount` is a field on `mobSchema`/`newMobSchema` now, not a property of a comment |
+| `7b17c2e` | SEV-2 #4, #5, MED #6, #8 | **Individual SLAUGHTER is guarded** (a flag on the death payload, both halves built); **the as-at cut** takes the whole `(occurredAt, id)` pair; **a move's FROM side** is reconstructed from the log instead of stamped from `animals.mob_id`, and a back-dated move no longer walks the animal backwards |
+| `7197d80` | SEV-2 #3 | **A mob could be tallied to slaughter with an individually-treated animal in it.** The guard now asks "is anything standing in this mob still inside a withholding" rather than "was this mob dosed" |
+| `511cf3c` | SEV-3 #9, #11, LOW #12 | The pack states a photo REFERENCE instead of claiming "Yes"; the translated refusal is what the farmer reads with the domain's English underneath; `toISOString().slice(0,10)` is out of the test assertions |
+| `8812347` | **SEV-1 #2** | **Dip a whole flock, and refuse to send a dipped one to the abattoir.** The slice — see the note below |
+| `395b658` | SEV-3 #10 | The evidence pack carries the possession trail, a per-animal certificate, and retired identifiers |
+
+**⭐ The finding-2 slice was bigger than the finding said, and the reason generalises.** §3b filed it
+as "the guard is server-only; mob-subject health events must reach the device first." The real hole
+was one level down: the device could not RECORD a whole-flock dose at all — `StoredHealthEvent`
+required an `animalId` and the screen fanned a dose out per animal, so a flock run by head count,
+which has no animal rows and never will, could not be dipped from the phone. The guard had nothing
+to read because the capture did not exist. **When a review says "X cannot see Y", check that Y is
+something the product can produce before believing the fix is a read path.**
+
+**Finding 5 is CLOSED WITH AN ARGUMENT, not with code, and the argument is the deliverable:**
+
+- **`death`, `theft` and `recount` are deliberately NOT guarded.** They reduce head identically, but
+  none of them puts meat into the food chain, and refusing to record a death would refuse to record
+  a FACT — which is worse than recording it, and is how a guard teaches people to work around it.
+  Both bounds are tested: a dipped flock can still record a death.
+- **The `purchase`/`transfer` half is a modelling decision, not a defect**, and it is now §2.3b for
+  the repo owner. It needs a tally reason that does not exist and an answer about bought-in stock
+  whose treatment history we never saw.
+
+**The rules that came out of this session:**
+
+- **A boundary between two clocks of different precision must be compared at the COARSER one.** A
+  dose is day-grained and a move is instant-grained; comparing them with `<` decides a residue
+  question on which of two arbitrary readings is larger. This is the general form of finding 1, and
+  it will recur wherever a captured DAY meets a captured INSTANT.
+- **A value used for arithmetic and then discarded is a value the next guard cannot check.**
+  `administeredOn` computed the withdrawal and was thrown away; every later question about the dose
+  had to be answered from an instant invented to store it.
+- **Verify a fix in BOTH directions or it is a guess.** Every fix here was watched to fail before it
+  was kept — the exclusive boundary failing exactly two tests, `mob.headCount` rendering exactly the
+  predicted 318, dropping `!withheld` failing the abattoir test alone.
+- **"The read path is wrong" and "the write path is wrong" are two findings.** `cc1b149` fixed
+  reading `animals.mob_id`; the write path kept stamping it into an append-only log. Finding 8 was
+  the same bug wearing the other hat.
+- **The author of a fix cannot close the review that found it.** Recorded here because this session
+  produced seven commits against a NOT APPROVABLE verdict and cannot itself lift it (§2.1d).
+
+---
+
+## 3b. The SECOND review-agent pass (2026-07-26, fifth session) — ✅ ALL TWELVE CLOSED IN CODE 2026-07-27
+
+> ⛔ **"Closed in code" is not "cleared."** Every fix is in §2c with a test, and the gate is green —
+> but `compliance-checker`'s NOT APPROVABLE verdict was the AGENT's, and only a fresh agent pass can
+> retire it. §2.1d. Do not read the table below as a clean bill of health.
 
 `reviewer`, `sync-auditor` and `compliance-checker` were run over `a6c8eff..HEAD` (the ten commits
 §4 A6 owed). **Unlike the first pass, these findings are CARRIED, not fixed** — the two SEV-1s need
 slices rather than edits, and this session was scoped to docs, review and reconciliation.
 
-**`compliance-checker` verdict: NOT APPROVABLE.**
+**`compliance-checker` verdict: NOT APPROVABLE** — and it STANDS until §2.1d runs, whatever the
+Fixed column below says.
 
 ⭐ **Two of the three agents independently found the same top defect**, which by this repo's own
 rule (§3) is the finding to trust most.
 
-| # | Sev | What is wrong |
-|---|---|---|
-| 1 | **SEV-1** | **Mob membership is compared as INSTANTS; dosing is day-precise. False CLEAR.** `mobMembership`/`latestMeatClearForAnimal` (`livestock.service.ts`) reconstruct intervals from real move instants, but a dose's `occurredAt` is fabricated — `RecordHealthScreen` stamps a back-dated dose `T12:00:00.000Z` and a same-day dose `now()`. So: dip the flock at 06:00, move them out of the dip camp at 12:00, record the dip that evening → the dip lands after the interval closed, the animal is CLEAR the next morning. A back-dated dip at midday loses to any morning move. And an exact tie (two events back-dated to the same day) is excluded from the source mob by `<` and attributed only to the destination. **This is the exact workflow `cc1b149`'s own commit message says it fixed.** The integration tests cannot catch it — they dip and move on DIFFERENT days. **Fix:** compare farm-local DAYS, inclusive at BOTH ends, using the dose's `administeredOn` rather than the fabricated instant. On the day of a move the animal counts as having been in both mobs — over-withholding costs a farmer a day, under-withholding is a residue traceback. Found by `compliance-checker` **and** `sync-auditor` independently |
-| 2 | **SEV-1** | **The new group guard does not run at capture, and offline is the default state.** `AdjustMobScreen` has no withdrawal check; the guard is server-only. Flock dipped Monday; Tuesday, no signal, farmer tallies 40 to slaughter; the screen says "saved, 260 head"; the truck loads; Friday the flush 400s and FR-009 sets it aside permanently. The individual path's own header says catching this at capture "is the only version of this rule that reaches the person who can still act on it" — and the group path is where the exposure is WORST (smallholders, no second system). **Not fixable by a screen change alone:** `withdrawal.ts` is keyed on `animalId` and mob-subject health events never reach the device, so they must be synced first. Raised by all three agents |
-| 3 | SEV-2 | **The group guard is blind to individually-dosed animals in the same mob.** It filters `eq(events.mobId, mobId)`, but health events are animal-XOR-mob, so an individual treatment stores `mob_id = NULL`. Cow treated individually, moved into a counted mob, tallied to slaughter → nothing fires |
-| 4 | SEV-2 | **Individual slaughter is still unguarded.** `recordDeath` has no withdrawal assertion and `cause` is free text, so "slaughter for the workers' rations" is an ordinary death. The group path now blocks `slaughter` and the individual path does not — the mirror image of the hole `cc1b149` closed |
-| 5 | SEV-2 | **The group guard is routed around by the other tally reasons.** It fires only on `sale`/`slaughter`; `death`, `theft` and `recount` reduce head identically and are unchecked. And with no transfer reason in the group model, splitting a dipped flock is expressed as sale-out/purchase-in — and head arriving by `purchase` is unconditionally clear |
-| 6 | MED | **The as-at fold cuts on `occurred_at` alone while the projection orders on `(occurred_at, id)`.** So validation folds in same-instant tallies the projection places AFTER the event being validated — and can refuse an honest back-dated capture with a 400, which is set aside permanently. `cc1b149` fixed this ordering in the projection and left it in the cut |
-| 7 | MED | **The client folds over a MUTABLE baseline; the server folds over the immutable one.** `herd.ts` uses `mob.headCount`; the server uses `mobs.initialHeadCount` (which is what migration 0018 exists for). Harmless today only because nothing writes back into the local store — **it detonates the moment PowerSync hydrates `mobs` in Phase 3**, double-counting every tally. `schemas.NewMob` cannot even express the right baseline. Fix it now while it is one field, not a migration under load |
-| 8 | MED | **`fromMobId` is stamped from `animals.mob_id`** at write time — the very column `cc1b149` stopped trusting at read time — and it is then baked permanently into an append-only log that `mobMembership` reconstructs from |
-| 9 | SEV-3 | **The evidence pack prints "Photograph on file: Yes" off a client-writable `photoKey` with no object storage behind it.** Known (§4 B2), but it is an unverifiable assertion in a document handed to the SAPS Stock Theft Unit. Print the reference and its state, or omit the line — never a bare "Yes" |
-| 10 | SEV-3 | **The pack is missing "movement history, treatment history establishing continuous possession"**, which `legal-compliance.md §3.2` requires and which IS the reverse-onus defence. It also prints ONE brand certificate for the whole incident (first non-null), which over-claims when stock carries different marks; and it excludes tombstoned identifiers — a tag reissued after the theft is exactly the number the animal was wearing |
-| 11 | SEV-3 | **`toISOString().slice(0,10)` is back — in TEST assertions this time** (`RecordHealth.test.tsx`, `ReadModels.test.tsx`, `Lifecycle.test.tsx`), asserting regulated dates in UTC against code that computes in SAST. **This is a concrete candidate for §4 A8's one unexplained failure: it fires for two hours out of twenty-four.** Production code is clean |
-| 12 | LOW | Raw English domain error text is shown to the farmer on an Afrikaans device — `AdjustMobScreen` prefers `error.message` over the translated `tally.refused`, so the translated string is only the fallback |
+| # | Sev | What is wrong | Fixed |
+|---|---|---|---|
+| 1 | **SEV-1** | **Mob membership is compared as INSTANTS; dosing is day-precise. False CLEAR.** `mobMembership`/`latestMeatClearForAnimal` (`livestock.service.ts`) reconstruct intervals from real move instants, but a dose's `occurredAt` is fabricated — `RecordHealthScreen` stamps a back-dated dose `T12:00:00.000Z` and a same-day dose `now()`. So: dip the flock at 06:00, move them out of the dip camp at 12:00, record the dip that evening → the dip lands after the interval closed, the animal is CLEAR the next morning. A back-dated dip at midday loses to any morning move. And an exact tie (two events back-dated to the same day) is excluded from the source mob by `<` and attributed only to the destination. **This is the exact workflow `cc1b149`'s own commit message says it fixed.** The integration tests cannot catch it — they dip and move on DIFFERENT days. **Fix:** compare farm-local DAYS, inclusive at BOTH ends, using the dose's `administeredOn` rather than the fabricated instant. On the day of a move the animal counts as having been in both mobs — over-withholding costs a farmer a day, under-withholding is a residue traceback. Found by `compliance-checker` **and** `sync-auditor` independently | `6690d85` |
+| 2 | **SEV-1** | **The new group guard does not run at capture, and offline is the default state.** `AdjustMobScreen` has no withdrawal check; the guard is server-only. Flock dipped Monday; Tuesday, no signal, farmer tallies 40 to slaughter; the screen says "saved, 260 head"; the truck loads; Friday the flush 400s and FR-009 sets it aside permanently. The individual path's own header says catching this at capture "is the only version of this rule that reaches the person who can still act on it" — and the group path is where the exposure is WORST (smallholders, no second system). **Not fixable by a screen change alone:** `withdrawal.ts` is keyed on `animalId` and mob-subject health events never reach the device, so they must be synced first. Raised by all three agents | `8812347` |
+| 3 | SEV-2 | **The group guard is blind to individually-dosed animals in the same mob.** It filters `eq(events.mobId, mobId)`, but health events are animal-XOR-mob, so an individual treatment stores `mob_id = NULL`. Cow treated individually, moved into a counted mob, tallied to slaughter → nothing fires | `7197d80` |
+| 4 | SEV-2 | **Individual slaughter is still unguarded.** `recordDeath` has no withdrawal assertion and `cause` is free text, so "slaughter for the workers' rations" is an ordinary death. The group path now blocks `slaughter` and the individual path does not — the mirror image of the hole `cc1b149` closed | `7b17c2e` |
+| 5 | SEV-2 | **The group guard is routed around by the other tally reasons.** It fires only on `sale`/`slaughter`; `death`, `theft` and `recount` reduce head identically and are unchecked. And with no transfer reason in the group model, splitting a dipped flock is expressed as sale-out/purchase-in — and head arriving by `purchase` is unconditionally clear | ⚖️ §2c |
+| 6 | MED | **The as-at fold cuts on `occurred_at` alone while the projection orders on `(occurred_at, id)`.** So validation folds in same-instant tallies the projection places AFTER the event being validated — and can refuse an honest back-dated capture with a 400, which is set aside permanently. `cc1b149` fixed this ordering in the projection and left it in the cut | `7b17c2e` |
+| 7 | MED | **The client folds over a MUTABLE baseline; the server folds over the immutable one.** `herd.ts` uses `mob.headCount`; the server uses `mobs.initialHeadCount` (which is what migration 0018 exists for). Harmless today only because nothing writes back into the local store — **it detonates the moment PowerSync hydrates `mobs` in Phase 3**, double-counting every tally. `schemas.NewMob` cannot even express the right baseline. Fix it now while it is one field, not a migration under load | `4f552e8` |
+| 8 | MED | **`fromMobId` is stamped from `animals.mob_id`** at write time — the very column `cc1b149` stopped trusting at read time — and it is then baked permanently into an append-only log that `mobMembership` reconstructs from | `7b17c2e` |
+| 9 | SEV-3 | **The evidence pack prints "Photograph on file: Yes" off a client-writable `photoKey` with no object storage behind it.** Known (§4 B2), but it is an unverifiable assertion in a document handed to the SAPS Stock Theft Unit. Print the reference and its state, or omit the line — never a bare "Yes" | `511cf3c` |
+| 10 | SEV-3 | **The pack is missing "movement history, treatment history establishing continuous possession"**, which `legal-compliance.md §3.2` requires and which IS the reverse-onus defence. It also prints ONE brand certificate for the whole incident (first non-null), which over-claims when stock carries different marks; and it excludes tombstoned identifiers — a tag reissued after the theft is exactly the number the animal was wearing | `395b658` |
+| 11 | SEV-3 | **`toISOString().slice(0,10)` is back — in TEST assertions this time** (`RecordHealth.test.tsx`, `ReadModels.test.tsx`, `Lifecycle.test.tsx`), asserting regulated dates in UTC against code that computes in SAST. **This is a concrete candidate for §4 A8's one unexplained failure: it fires for two hours out of twenty-four.** Production code is clean | `511cf3c` |
+| 12 | LOW | Raw English domain error text is shown to the farmer on an Afrikaans device — `AdjustMobScreen` prefers `error.message` over the translated `tally.refused`, so the translated string is only the fallback | `511cf3c` |
 
 **Verified clean by this pass, and recorded so it is not re-audited:** tenancy across all three
 layers for 0017/0018 (no new table to classify; both `direct` on `farm_id`); `tenancy.spec.ts` still
@@ -293,10 +372,10 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | # | Gap |
 |---|---|
 | A1–A3 | ✅ All three agents run 2026-07-26 over the branch at `a6c8eff`. Findings fixed, not filed — §3 |
-| A4 | ◐ **CI HAS NOW RUN, AND BOTH LANES PASS.** Draft PR #3, run `30211760029`, 2026-07-26: `Lint · Typecheck · Test · Build` green in 3m00s, `E2E · axe (both themes)` green in 1m31s. **This is the first time CI has ever executed against this code.** It also settles two things that were open: the e2e lane ran at HEAD (`664dc23`), so the "not re-run since `cc1b149`" worry is closed and it did NOT need a separate local run; and the shared-testcontainer change (A5) survived a real CI machine under real contention. The remaining half of this clause is CI green **on `main`**, which can only go true at merge |
-| A6 | ✅ **DONE 2026-07-26 (fifth session).** All three agents run once over `a6c8eff..HEAD` (ten commits, not nine — `cc1b149` landed after the old count was written). ⛔ **The findings are OPEN, and `compliance-checker` said NOT APPROVABLE — §3b.** The pass is done; the work it produced is not |
+| A4 | ◐ **CI GREEN AGAIN 2026-07-27 on the seven §2c commits** — run `30259203581` at `395b658`: `Lint · Typecheck · Test · Build` 3m49s, `E2E · axe (both themes)` 1m25s. So the fixes are verified on a real CI machine, not only locally. Earlier note stands: **CI HAS NOW RUN, AND BOTH LANES PASS.** Draft PR #3, run `30211760029`, 2026-07-26: `Lint · Typecheck · Test · Build` green in 3m00s, `E2E · axe (both themes)` green in 1m31s. **This is the first time CI has ever executed against this code.** It also settles two things that were open: the e2e lane ran at HEAD (`664dc23`), so the "not re-run since `cc1b149`" worry is closed and it did NOT need a separate local run; and the shared-testcontainer change (A5) survived a real CI machine under real contention. The remaining half of this clause is CI green **on `main`**, which can only go true at merge |
+| A6 | ✅ Pass done 2026-07-26; **the work it produced is now done too — all twelve findings closed in code 2026-07-27, §2c.** ⛔ **But a THIRD pass over `5c769b4..HEAD` is owed and is the last thing gating the PR — §2.1d.** `compliance-checker` said NOT APPROVABLE and only `compliance-checker` can withdraw it |
 | A7 | ✅ **FIXED 2026-07-26 — the e2e lane could report green against code that no longer existed.** `vite preview` serves `dist`, and `turbo.json`'s `build` task declared no `outputs`, so turbo cached only LOGS: a cache hit printed "FULL TURBO" and wrote no files, leaving whatever bundle was already on disk. Proven rather than theorised — a screen's heading was replaced with a literal and the suite stayed 25-green, then kept FAILING for five consecutive runs after the source was restored, because the broken bundle was never replaced either way. Two changes: `outputs: ["dist/**"]` in `turbo.json`, and `pnpm test:e2e` now builds first (turbo-cached, so free when nothing changed). Verified in both directions — breaking a heading now fails 2 tests, restoring it returns 25 green. **This is why the earlier "2 failed then clean on a re-run" was never a flake; do not re-diagnose it as one.** |
-| A8 | ⚠️ **ONE unexplained unit-suite failure, cause unknown — do not dismiss it.** A single `pnpm verify` run reported `1 failed | 76 passed` and the next EIGHT runs were clean (4 full-suite, 4 targeted). Which test it was is unknown, because the log was discarded before the failure detail was read. **What HAS been ruled out:** the flake recorded in memory as "`confirmTotpEnrolment` reds when a code straddles a 30s boundary" cannot be it — `TOTP_DRIFT_STEPS = 1`, so `verifyTotp` accepts ±1 step and a boundary crossing is tolerated by design. That recorded explanation is simply wrong and has been corrected. If this recurs, capture the failing test name FIRST; a one-in-nine failure in a suite the PR gate depends on is worth a real diagnosis, not a re-run. |
+| A8 | ⚠️ **STILL OPEN, but there is now a live candidate.** §3b finding 11's `toISOString().slice(0,10)` in test assertions was fixed in `511cf3c`, and the two-hour SAST/UTC divergence was DEMONSTRATED rather than assumed — it fits the shape exactly (one run in nine, no reproduction). **That is a candidate, not a diagnosis:** the failing test name was never captured, so this cannot be closed on it. If the suite reds again, capture the test name FIRST. Original note follows. ⚠️ **ONE unexplained unit-suite failure, cause unknown — do not dismiss it.** A single `pnpm verify` run reported `1 failed | 76 passed` and the next EIGHT runs were clean (4 full-suite, 4 targeted). Which test it was is unknown, because the log was discarded before the failure detail was read. **What HAS been ruled out:** the flake recorded in memory as "`confirmTotpEnrolment` reds when a code straddles a 30s boundary" cannot be it — `TOTP_DRIFT_STEPS = 1`, so `verifyTotp` accepts ±1 step and a boundary crossing is tolerated by design. That recorded explanation is simply wrong and has been corrected. If this recurs, capture the failing test name FIRST; a one-in-nine failure in a suite the PR gate depends on is worth a real diagnosis, not a re-run. |
 | A5 | ✅ **FIXED 2026-07-26 (fifth session).** `startWerfTestDatabase()` now memoises ONE container per worker process instead of one per suite (`packages/db/src/testing.ts`), so at most `maxWorkers` (4) exist at once rather than ten. `stop()` on the shared handle is a no-op — the first suite to finish must not pull the database out from under the three behind it in the same worker — and teardown happens on worker exit, with Ryuk reaping anything that outlives a crash. `bootWerfTestDatabase()` is the escape hatch for a suite that genuinely needs a private one. Verified: 77 files / 750 tests still green. Done before CI ever ran the suite, which was the point |
 
 **Named Phase 2 remainders (the phase can close without them; they are not silent):**
@@ -304,12 +383,12 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | # | Gap |
 |---|---|
 | B1 | ◐ **The server half now EXISTS and is PARKED on `phase-2/breeding` (`29caf57`), stacked on `cc1b149`.** It was found uncommitted in the working tree this session, under a STATUS that claimed a clean tree. What is there: `species_gestation` + migration 0019 (deliberately NOT jurisdiction-scoped and NOT effective-dated — biology, not law; `poultry` and `game` have no rows on purpose so the server refuses rather than inventing), a new `reference-global` sync classification with three tenancy tests, both capture endpoints, and a server-side due-date projection that is not accepted from the body. **What is missing, and why it is not on the phase branch: zero integration tests for either endpoint** (the repo's bar for an API write path is a real Postgres in testcontainers) **and no client half at all** — no screens, no reference cache, no route. That is exactly the shape §2b said not to build. Finishing it is a slice of its own |
-| B2 | **FR-108 photos — BLOCKED on infrastructure, not design.** No S3/MinIO anywhere in the repo, no upload endpoint; `architecture.md` plans presigned direct-from-client upload and none of it exists. Building only the local half would set `photo_key` with no image behind it, and `evidence-pack.pdf.ts` prints "Photograph on file: Yes" off exactly that field — the pack would claim a photograph the Stock Theft Unit cannot be shown. See decision §2.8 |
+| B2 | **FR-108 photos — BLOCKED on infrastructure, not design.** ⚠️ Note the pack no longer over-claims because of it: `395b658`/`511cf3c` print the photo REFERENCE and say the image is not attached, instead of asserting "Yes". The gap is unchanged; what changed is that it can no longer make the pack lie. No S3/MinIO anywhere in the repo, no upload endpoint; `architecture.md` plans presigned direct-from-client upload and none of it exists. Building only the local half would set `photo_key` with no image behind it, and `evidence-pack.pdf.ts` prints "Photograph on file: Yes" off exactly that field — the pack would claim a photograph the Stock Theft Unit cannot be shown. See decision §2.8 |
 | B3 | ✅ **CLOSED 2026-07-26 (`5e279b1`).** Strict per-species attribute schemas, enforced on the device and on the server from the same schema. The ADR-0006 seam assumption was wrong and the checklist line is corrected |
 | B4 | **FR-132 due/overdue** — needs a vaccination programme schedule that does not exist. A tile carrying a number the app cannot compute is worse than one carrying none |
 | B5 | **FR-602 unmarked-past-window flag** — the domain function is done and tested, but the prescribed window is dated reference data `regulatory_rates` does not carry, and inventing it in code is exactly the defect the domain rules forbid |
 | B6 | ✅ **CLOSED 2026-07-26 (`bb17b24`).** The last Phase 1 gap. Enrolment offers the passkey first, sign-in uses it, Settings → Security lists/adds/revokes |
-| B7 | ◐ **Three of four closed** (`00f1016`): sale weight, dose value/unit/route, dip method. **Remaining: walking a camp boundary by GPS.** The land API accepts a GeoJSON polygon and dual-writes it to PostGIS; nothing in the client produces one, so boundaries can only be typed. Needs a capture screen that collects points by walking and closes the ring — a real slice, not a field |
+| B7 | ◐ **Three of four closed** (`00f1016`): sale weight, dose value/unit/route, dip method. ⭐ A fifth arrived unplanned in `8812347` — **a counted flock can now be dosed as a mob**, which was missing rather than gapped: the screen could only dose individual animals, so a group-only flock could not be dipped from the phone at all. **Remaining: walking a camp boundary by GPS.** The land API accepts a GeoJSON polygon and dual-writes it to PostGIS; nothing in the client produces one, so boundaries can only be typed. Needs a capture screen that collects points by walking and closes the ring — a real slice, not a field |
 | B8, B10, B11, B12 | ✅ Closed in the third session |
 | B9 | ✅ **CLOSED 2026-07-26 (`06884c7`).** `/animals/groups/count`. Append-only `tally` events, migrations 0017/0018, deltas that compose, a recount that supersedes, and a server-side re-derivation that is order-independent |
 
@@ -334,40 +413,48 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
    step one because §1 asserted "Working tree is clean. No stashes." through an
    entire session in which sixteen modified files and a half-built breeding
    slice sat underneath it, and nothing in the loop was ever going to catch it.
-   Also check `git branch -a`: `phase-2/breeding` is PARKED and half-built.
+   (It DID reconcile at the start of the sixth session. Keep checking anyway —
+   one true reading is not a reason to stop looking.)
+   Also check `git branch -a`: `phase-2/breeding` is PARKED, half-built, and now
+   SEVEN commits behind — and those commits changed the health payload and the
+   move write path it is stacked on. Rebase it before touching it.
 
 2. Then read STATUS.md, CLAUDE.md, and docs/04-delivery/phase-checklists.md.
-   Answer the decisions in §2 with me before planning. §2.1b is the live one.
+   Answer the decisions in §2 with me before planning. §2.1d is the live one.
 
-⛔ PHASE 2'S EXIT GATE DOES NOT READ TRUE, whatever §1 used to say. The three
-review agents ran (§3b) and compliance-checker returned NOT APPROVABLE: two
-SEV-1 findings put meat inside an active withdrawal into the food chain, and
-two of the three agents found the first one independently. Draft PR #3 is open
-and CI is GREEN on both lanes — green CI is not the gate here, the SEV-1s are.
-DO NOT MARK IT READY, and do not merge it.
+⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE, and the reason has CHANGED —
+read this rather than assuming it is the same blocker as last time.
 
-THE FIRST WORK OF THE NEXT SESSION IS §3b, NOT A FEATURE. In order:
+All twelve §3b findings, both SEV-1s included, are closed in code with tests
+(§2c). `pnpm verify` is green at 77 files / 770 tests. What is NOT done is the
+re-review: `compliance-checker` returned NOT APPROVABLE, and the seven commits
+that answer it were written by the same agent now reporting them fixed. The
+author of a fix cannot close the finding that produced it.
 
-  1. §3b finding 1 — CONTAINED, do this first. Compare farm-local DAYS,
-     inclusive at BOTH ends, from the dose's `administeredOn`, instead of
-     comparing a real move instant against a fabricated dose instant. Add the
-     SAME-DAY test the suite has never had: the existing withdrawal tests dip
-     and move on different days, which is why this survived.
-  2. §3b finding 7 — CHEAP NOW, EXPENSIVE LATER. The client folds over
-     `mob.headCount` where the server folds over `mobs.initialHeadCount`.
-     Harmless only because nothing writes back into the local store; it
-     detonates when PowerSync hydrates `mobs` in Phase 3. One field today,
-     a migration under load later.
-  3. §3b findings 3, 4, 5, 6, 8 — SEV-2 and below, all contained.
-  4. §3b finding 2 — a REAL SLICE, not an edit. Mob-subject health events must
-     reach the device before AdjustMobScreen can guard anything.
+THE FIRST WORK OF THE NEXT SESSION IS §2.1d — the third agent pass over
+`5c769b4..HEAD`, all three agents, output READ DIRECTLY and not summarised
+(CLAUDE.md, compliance gate). It is the last thing standing between this branch
+and a PR that can be marked ready. It was not run this session only because the
+standing instruction here is not to spawn agents unasked.
 
-Phase 1 has NO open gaps. Phase 3's checklist now EXISTS, so /loop has
-something to consume — but §2.4 (labour-law review booked) and §2.5 (Gazette
-figures re-verified) gate its very first line, and both have been open for
-three sessions. DO NOT seed regulatory_rates from the July 2026 table.
+After it, and only after it:
 
-Also open and cheap to answer: §2.1b (how to handle the SEV-1s) and §2.1c
-(install the defect-class hook — recommendation and its caveats are written up
-there, it just needs a yes or no).
+  1. Whatever the pass finds. Same discipline as §2c — write the test, watch it
+     FAIL against the old code, then keep it. A test written after a fix that
+     was never seen to fail proves only that it compiles.
+  2. §2.3b — the `transfer` tally reason and what a `purchase` may clear. A
+     modelling decision, mine to raise and yours to make. It is the one part of
+     §3b finding 5 that code cannot settle.
+  3. Then a feature again: B1 (rebase first) or B7's GPS boundary walk.
+
+Phase 1 has NO open gaps. Phase 3's checklist EXISTS, so /loop has something to
+consume — but §2.4 (labour-law review booked) and §2.5 (Gazette figures
+re-verified) gate its very first line, and both have been open for four
+sessions. DO NOT seed regulatory_rates from the July 2026 table.
+
+Also open and cheap to answer: §2.1c (the defect-class hook — recommendation and
+its caveats are written up there, it just needs a yes or no). Note that this
+session removed the last `toISOString().slice(0,10)` from the tree, so the hook
+would currently be silent; that is an argument for installing it now, while it
+costs nothing, rather than after the pattern comes back a fourth time.
 ```

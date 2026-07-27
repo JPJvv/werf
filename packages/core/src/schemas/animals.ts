@@ -87,18 +87,45 @@ export const mobSchema = z.object({
   name: z.string().min(1),
   species: speciesSchema,
   landUnitId: uuidSchema.nullable(),
-  /** Present for group-only management (FR-102); null when the mob is a bag of individuals. */
+  /**
+   * The CURRENT count (FR-102); null when the mob is a bag of individuals rather than a head count.
+   *
+   * ⭐ Derived, never edited. It is `initialHeadCount` folded over the mob's whole tally log, and
+   * both sides run that same fold from that same baseline (`@werf/domain projectHeadCount`). Reading
+   * this is fine; writing to it — or folding a delta onto it — is the bug migration 0018 exists to
+   * make impossible, because two devices syncing out of order then land on two different numbers.
+   */
   headCount: z.number().int().nonnegative().nullable(),
+  /**
+   * ⭐ The count the mob was CREATED with, and the ONLY correct baseline for the tally fold.
+   *
+   * Immutable, which is what makes it usable: `headCount` moves every time a tally lands, so folding
+   * the log over it counts every tally twice. Today a device gets away with folding over `headCount`
+   * only because nothing writes back into the local store — the moment the mob table is hydrated
+   * from the server, that accident stops holding and every counted mob is silently wrong.
+   */
+  initialHeadCount: z.number().int().nonnegative().nullable(),
   ...auditTimestampsSchema,
 });
 export type Mob = z.infer<typeof mobSchema>;
 
+/**
+ * A mob as a device composes it offline, and as it is held in the local register.
+ *
+ * `initialHeadCount` is on this shape and it is NOT redundant with `headCount`. At creation the two
+ * are equal — which is exactly why the distinction is easy to lose and worth stating: one of them is
+ * a running total and the other is a fixed point, and only the fixed one may be folded over.
+ *
+ * It is not read from the body server-side; `recordMob` sets the baseline from the count that was
+ * captured, so the two cannot disagree even if a client sent something else.
+ */
 export const newMobSchema = mobSchema
   .pick({ id: true, farmId: true, name: true, species: true })
   .extend({
     enterpriseId: mobSchema.shape.enterpriseId.default(null),
     landUnitId: mobSchema.shape.landUnitId.default(null),
     headCount: mobSchema.shape.headCount.default(null),
+    initialHeadCount: mobSchema.shape.initialHeadCount.default(null),
   });
 export type NewMob = z.infer<typeof newMobSchema>;
 

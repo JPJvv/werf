@@ -75,6 +75,10 @@ export function AddMobScreen() {
       name: name.trim(),
       species,
       headCount: count,
+      // Equal at creation and never again: `headCount` is the running total every tally moves,
+      // `initialHeadCount` is the fixed point the tally log is folded over. Setting both here is
+      // what the server does with the same value, so the two sides fold from the same baseline.
+      initialHeadCount: count,
       landUnitId: campId === '' ? null : campId,
     });
     recordMob(mob);

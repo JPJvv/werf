@@ -240,6 +240,52 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(screen.getByRole('link', { name: /file a stock-theft report/i })).toBeTruthy();
   });
 
+  it('⭐ folds the log over the CREATED count, not over the running one', async () => {
+    // The failure this pins does not exist yet and cannot be seen from the screen today: nothing
+    // writes back into the local mob register, so its `headCount` is still the created count and
+    // folding over it happens to give the right answer. When PowerSync hydrates `mobs` in Phase 3
+    // the register will hold the SERVER's current count, and a fold over that adds every tally a
+    // second time — 300 head, 9 lambs, and a device that says 318 while the server says 309, on
+    // every counted mob at once and with nothing on screen to suggest anything went wrong.
+    //
+    // So the row here is shaped the way a hydrated one will be: the baseline where the fold starts,
+    // and a `headCount` the server has already advanced past it.
+    cachedSession();
+    window.localStorage.setItem(
+      MOBS_KEY,
+      JSON.stringify([
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Flock A',
+          species: 'sheep',
+          landUnitId: null,
+          enterpriseId: FLOCK.id,
+          headCount: 309,
+          initialHeadCount: 300,
+        },
+      ]),
+    );
+    seedTallies([
+      {
+        id: '0190f3a0-0000-7000-8000-00000000c001',
+        farmId: FARM_ID,
+        mobId: MOB_ID,
+        occurredAt: '2026-07-20T10:00:00.000Z',
+        reason: 'birth',
+        count: 9,
+        delta: 9,
+      },
+    ]);
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: /flock a/i }));
+
+    expect(screen.getByText('309')).toBeTruthy();
+    expect(screen.queryByText('318')).toBeNull();
+  });
+
   it('does not offer a group that is managed as individual animals', async () => {
     // head_count is null: its number comes from counting the animal rows, and a tally here would
     // start a second count of the same sheep.

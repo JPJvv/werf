@@ -224,6 +224,11 @@ export class LivestockService {
           // The baseline the tally fold starts from (FR-102). Written once, here, and never again:
           // `head_count` moves with the log while this stays as first recorded, which is what lets
           // the server and an offline client derive the same number from the same events.
+          //
+          // Taken from the COUNT THAT WAS CAPTURED, not from the body's own `initialHeadCount`.
+          // The client carries the field too — its local fold needs the same baseline — but the two
+          // are set from one number on each side rather than one being asked to restate the other,
+          // which is the only way they cannot come to disagree.
           initialHeadCount: input.headCount,
           createdBy: userId,
         })

@@ -126,12 +126,20 @@ export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
  * work. A recount is the one absolute in the log and resets the running total, because "I walked
  * the camp and counted 297" is a stronger fact than arithmetic on a number just shown to be wrong.
  *
- * The mob store itself is never mutated; it holds each mob's count as first recorded, which is the
- * baseline this folds over. The server derives the same number from the same events with the same
- * function AND the same total order — `(occurredAt, id)`, never `occurredAt` alone, because the
- * capture screen gives every tally on a day the same instant and a fold containing a recount does
- * not commute. Ordering on the instant alone left this at the mercy of the capture-store append
- * order here and the query plan there, which is how the same log could produce two different counts.
+ * ⭐ The fold starts from `initialHeadCount` — the count the mob was created with — and NOT from
+ * `headCount`, which is the running total this function produces. Folding a log over its own output
+ * counts every tally twice. That this file used to fold over `headCount` and still gave the right
+ * answer was an accident of one fact: nothing writes back into the local mob register, so the count
+ * it holds happens to still be the created one. The accident ends the moment `mobs` is hydrated from
+ * the server, and it ends silently, on every counted mob at once — which is why this is a named
+ * field now rather than a comment saying "do not write here".
+ *
+ * The server derives the same number from the same events with the same function, from the same
+ * immutable baseline (`mobs.initial_head_count`, migration 0018) AND the same total order —
+ * `(occurredAt, id)`, never `occurredAt` alone, because the capture screen gives every tally on a
+ * day the same instant and a fold containing a recount does not commute. Ordering on the instant
+ * alone left this at the mercy of the capture-store append order here and the query plan there,
+ * which is how the same log could produce two different counts.
  */
 export function projectMobs(
   mobs: readonly StoredMob[],
@@ -147,7 +155,10 @@ export function projectMobs(
   return mobs.map((mob) => {
     const applied = byMob.get(mob.id);
     if (applied === undefined) return mob;
-    const headCount = projectHeadCount(mob.headCount, applied);
+    // The `??` covers mobs already sitting in a device's register from before the baseline was a
+    // field of its own. For those the two are genuinely the same number, because nothing has ever
+    // written back into that register — which is precisely the accident this field ends relying on.
+    const headCount = projectHeadCount(mob.initialHeadCount ?? mob.headCount, applied);
     return headCount === mob.headCount ? mob : { ...mob, headCount };
   });
 }

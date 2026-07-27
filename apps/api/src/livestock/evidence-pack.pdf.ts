@@ -56,10 +56,15 @@ export function renderEvidencePackPdf(pack: schemas.EvidencePack): Promise<Buffe
     line('Discovered', formatInstant(pack.discoveredAt));
     line('Last seen', formatInstant(pack.lastSeenAt));
     line('Last-seen GPS (GeoJSON)', pack.lastSeenLocationGeojson ?? '—');
-    // Null the moment the linked animals carry different marks — the per-animal line below is the
-    // authoritative one, and naming a single certificate over mixed marks would claim coverage the
-    // registration does not give.
-    line('Registered brand certificate', pack.brandCertificateReference ?? 'See each animal below');
+    // Null the moment the linked animals are not ALL covered by one reference — the per-animal
+    // line below is the authoritative one, and naming a single certificate over a mixed set claims
+    // coverage the registration does not give. When NO animal carries one, say so rather than
+    // pointing at per-animal lines that every one of them leaves blank.
+    line(
+      'Registered brand certificate',
+      pack.brandCertificateReference ??
+        (pack.animals.some((a) => a.certificateReference !== null) ? 'See each animal below' : '—'),
+    );
     line('Case number', pack.caseNumber ?? '—');
     line('Reporting station', pack.reportingStation ?? '—');
     if (pack.observations !== null) {

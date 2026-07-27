@@ -61,14 +61,23 @@ export interface EvidencePackInput {
  * `evidencePackSchema` parses them back to Dates (the same wire discipline as every capture); the
  * parse is also what enforces the no-suspect contract structurally.
  */
-/** The one certificate covering every marked animal here, or null when they do not agree. */
+/**
+ * The one certificate covering EVERY animal in the incident, or null.
+ *
+ * ⭐ Every animal, not every marked animal — and the difference is the whole point. Filtering the
+ * unmarked ones out first meant three animals, one carrying `AIS-FS-0042` and two carrying no mark
+ * at all, printed that certificate at the head of the pack: an assertion of registered ownership
+ * over two animals it does not cover. That is the same over-claim the per-animal reference was
+ * introduced to stop, one case further along.
+ *
+ * So: null unless the whole set is covered by a single reference. The per-animal lines carry the
+ * truth in every other case, and the header says to read them.
+ */
 function soleCertificate(animals: ReadonlyArray<EvidencePackAnimalInput>): string | null {
-  const distinct = new Set(
-    animals
-      .map((a) => a.certificateReference)
-      .filter((ref): ref is string => ref !== null && ref !== ''),
-  );
-  return distinct.size === 1 ? [...distinct][0]! : null;
+  if (animals.length === 0) return null;
+  const distinct = new Set(animals.map((a) => a.certificateReference ?? ''));
+  const only = [...distinct][0] ?? '';
+  return distinct.size === 1 && only !== '' ? only : null;
 }
 
 export function assembleEvidencePack(input: EvidencePackInput): schemas.EvidencePack {

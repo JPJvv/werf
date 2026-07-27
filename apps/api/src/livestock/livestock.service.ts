@@ -994,7 +994,12 @@ export class LivestockService {
       // ⭐ The possession trail (legal-compliance.md § 3.2). Under the Stock Theft Act's reverse
       // onus this is the DEFENCE — a pack that identifies an animal and cannot show it was here,
       // being kept and treated, week after week, has omitted the part that does the legal work.
-      const trail = await possessionTrail(tx, farmId, animalIds);
+      const trail = await possessionTrail(
+        tx,
+        farmId,
+        animalIds,
+        await farmJurisdiction(tx, farmId),
+      );
 
       return assembleEvidencePack({
         farmId,
@@ -1391,6 +1396,7 @@ async function possessionTrail(
   tx: CaptureTx,
   farmId: string,
   animalIds: readonly string[],
+  jurisdiction: string,
 ): Promise<{
   movements: Map<string, { occurredAt: Date; from: string | null; to: string | null }[]>;
   treatments: Map<string, { occurredAt: Date; kind: string; product: string }[]>;
@@ -1448,6 +1454,55 @@ async function possessionTrail(
     const list = treatments.get(row.animalId) ?? [];
     list.push({ occurredAt: row.occurredAt, kind: row.type, product });
     treatments.set(row.animalId, list);
+  }
+
+  // ⭐ AND THE WHOLE-FLOCK DOSES, which the query above cannot see: a dip or a mob vaccination
+  // stores `animal_id = NULL`, so an animal plunge-dipped with its flock every month would print
+  // "Treatment history: None recorded." in the one document whose value is showing continuous
+  // husbandry. That is the smallholder's animal, and it is the smallholder's defence.
+  //
+  // Which mob doses reached which animal is the same question the withdrawal guard answers, so it
+  // is answered by the same reconstruction rather than a second one that could disagree.
+  for (const animalId of animalIds) {
+    const wasIn = await mobMembership(tx, farmId, animalId, jurisdiction);
+    if (wasIn.length === 0) continue;
+    const mobDoses = await tx
+      .select({
+        occurredAt: events.occurredAt,
+        type: events.type,
+        payload: events.payload,
+        mobId: events.mobId,
+      })
+      .from(events)
+      .where(
+        and(
+          eq(events.farmId, farmId),
+          inArray(
+            events.mobId,
+            wasIn.map((m) => m.mobId),
+          ),
+          inArray(events.type, ['treatment', 'vaccination', 'dip']),
+          isNull(events.deletedAt),
+        ),
+      )
+      .orderBy(events.occurredAt, events.id);
+
+    const list = treatments.get(animalId) ?? [];
+    for (const dose of mobDoses) {
+      const product = (dose.payload as { product?: unknown }).product;
+      if (typeof product !== 'string') continue;
+      const day = doseDayOf(dose, jurisdiction);
+      const reached = wasIn.some(
+        (m) => m.mobId === dose.mobId && day >= m.fromDay && (m.toDay === null || day <= m.toDay),
+      );
+      if (reached) list.push({ occurredAt: dose.occurredAt, kind: dose.type, product });
+    }
+    if (list.length > 0) {
+      // One history, in occurrence order, however the dose was given — a farmer reading this to an
+      // officer should not have to merge two lists in their head.
+      list.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+      treatments.set(animalId, list);
+    }
   }
 
   return { movements, treatments };

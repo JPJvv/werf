@@ -8,6 +8,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { inflateSync } from 'node:zlib';
 import type { input as ZodInput } from 'zod';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
@@ -2611,6 +2612,37 @@ describe('weight capture (FR-140)', () => {
       return { animalId: animal!.id };
     }
 
+    /**
+     * The visible text of a pdfkit document. It writes each run as a literal `(…) Tj`, so the
+     * assertions below can be about what a Stock Theft Unit officer actually reads rather than
+     * about the file being non-empty — which is all `%PDF-` proves.
+     */
+    function extractPdfText(pdf: Buffer): string {
+      // pdfkit deflates its content streams, so the text is not in the bytes as-is. Inflate every
+      // stream that will inflate, then pull the literal `(…) Tj` runs out of the page operators.
+      const raw = pdf.toString('latin1');
+      let text = '';
+      for (const match of raw.matchAll(/stream\r?\n([\s\S]*?)endstream/g)) {
+        const body = Buffer.from(match[1]!, 'latin1');
+        let content: string;
+        try {
+          content = inflateSync(body).toString('latin1');
+        } catch {
+          content = body.toString('latin1');
+        }
+        // pdfkit emits each run as KERNED HEX inside a `TJ` array — `[<4d6f> 15 <76> …] TJ` — so
+        // the letters are split across several `<…>` groups by the kerning pairs. Decoding every
+        // hex group in the stream and concatenating puts the word back together.
+        for (const show of content.matchAll(/\[([^\]]*)\]\s*TJ/g)) {
+          for (const hex of show[1]!.matchAll(/<([0-9A-Fa-f]+)>/g)) {
+            text += Buffer.from(hex[1]!, 'hex').toString('latin1');
+          }
+          text += ' ';
+        }
+      }
+      return text;
+    }
+
     it('creates an incident, links its animals, and stores the last-seen GPS mirror via the trigger', async () => {
       const a = await tenant('Alpha');
       const { animalId } = await anAnimalWithTrail(a.farmId);
@@ -2713,6 +2745,133 @@ describe('weight capture (FR-140)', () => {
 
       expect(pdf.length).toBeGreaterThan(0);
       expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+
+      // ⭐ And it says what it is supposed to say. Asserting only the magic bytes let the whole
+      // renderer be reverted without a single test noticing — including the line that used to
+      // claim "Photograph on file: Yes" for an image nobody can be shown.
+      const text = extractPdfText(pdf);
+      expect(text).toContain('Movement history');
+      expect(text).toContain('Treatment history');
+      expect(text).toContain('image not attached to this pack');
+      expect(text).not.toContain('Photograph on file: Yes');
+    });
+
+    it('⭐ carries the POSSESSION TRAIL — movements, and doses given to the animal AND its mob', async () => {
+      // legal-compliance.md § 3.2, and the reverse-onus defence. Identification says the animal is
+      // yours; this says it was HERE, being kept and treated, right up to the loss.
+      //
+      // The mob dose is the half that was missing and it is the smallholder's half: a plunge dip is
+      // captured against the flock and stores `animal_id = NULL`, so an animal dipped with its mob
+      // every month printed "None recorded" in the document meant to show continuous husbandry.
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      const [dipCamp] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dip camp mob', species: 'cattle' })
+        .returning();
+      const [noord] = await elevated.db
+        .insert(landUnits)
+        .values({ farmId: a.farmId, kind: 'camp', code: 'NOORD' })
+        .returning();
+      const productId = await aVetProduct();
+
+      await elevated.db.update(animals).set({ mobId: dipCamp!.id }).where(eq(animals.id, animalId));
+
+      // Its own treatment, a whole-mob dip it was present for, and a walk to another camp.
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-10T06:00:00.000Z',
+          administeredOn: '2026-07-10',
+        }),
+      );
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipCamp!.id,
+          productId,
+          occurredAt: '2026-07-12T06:00:00.000Z',
+          administeredOn: '2026-07-12',
+          method: 'plunge',
+        }),
+      );
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-07-14T06:00:00.000Z',
+          toLandUnitId: noord!.id,
+        }),
+      );
+
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+      const [entry] = pack.animals;
+
+      // The camp is named by its CODE — a pack goes to a police station, and a uuid tells them
+      // nothing.
+      expect(entry!.movements).toHaveLength(1);
+      expect(entry!.movements[0]).toMatchObject({ to: 'NOORD' });
+
+      // BOTH routes, in occurrence order.
+      expect(entry!.treatments.map((t) => t.kind)).toEqual(['treatment', 'dip']);
+      expect(entry!.treatments.every((t) => t.product.length > 0)).toBe(true);
+    });
+
+    it('⭐ keeps a RETIRED identifier, flagged — it is the number the animal was wearing', async () => {
+      // Every other read in the product excludes tombstones and is right to. This document is the
+      // exception: a tag replaced after the loss is the number on the animal at a roadblock.
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(animalIdentifiers).values({
+        farmId: a.farmId,
+        animalId,
+        type: 'visual_tag',
+        value: 'FS-0311',
+        deletedAt: new Date('2026-07-01T00:00:00.000Z'),
+      });
+
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+      const identifiers = pack.animals[0]!.identifiers;
+
+      expect(identifiers).toContainEqual({ type: 'visual_tag', value: 'FS-1024', retired: false });
+      expect(identifiers).toContainEqual({ type: 'visual_tag', value: 'FS-0311', retired: true });
+    });
+
+    it('does not name ONE certificate over an incident whose stock carries different marks', async () => {
+      // Naming a single certificate over a mixed set asserts registered ownership over animals it
+      // does not cover — an over-claim in the one document whose value is that each line is a fact.
+      const a = await tenant('Alpha');
+      const { animalId: first } = await anAnimalWithTrail(a.farmId);
+      const [unmarked] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, species: 'cattle', sex: 'female' })
+        .returning();
+
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 2, animalIds: [first, unmarked!.id] }),
+      );
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.brandCertificateReference).toBeNull();
+      const refs = pack.animals.map((an) => an.certificateReference);
+      expect(refs).toContain('AIS-FS-0042');
+      expect(refs).toContain(null);
     });
 
     it('is a 404 for an incident on another farm', async () => {

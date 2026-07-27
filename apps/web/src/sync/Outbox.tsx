@@ -229,8 +229,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const sentLog = useMemo(() => factory(`werf-sent:${farmId}`), [factory, farmId]);
   const sent = useSyncExternalStore(sentLog.subscribe, sentLog.all);
 
-  // The pending queue, in send order: animals first (the FK root), then the events that point at
-  // them. A record is pending until its id is confirmed in the sent-log.
+  // The pending queue, in send order. Two rules decide it, and the second is not obvious:
+  //   1. FOREIGN KEYS — a row must not arrive before what it points at. Land, then mobs, then
+  //      animals, then everything that references them.
+  //   2. SAFETY — a capture a server-side guard READS must not arrive after the capture that guard
+  //      JUDGES. A withdrawal check is a point-in-time query; it cannot refuse a dose it has not
+  //      received yet. So moves and health events precede every disposal.
+  // A record is pending until its id is confirmed in the sent-log.
   const queue = useMemo<readonly FlushItem[]>(() => {
     const items: FlushItem[] = [];
     // Land goes before animals: a herd row can carry `land_unit_id`, so an animal that arrived
@@ -257,18 +262,6 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
-    // A tally references its mob and nothing else, so it follows the mobs immediately. It is named
-    // by the mob it adjusts: "three off Flock A" is a sentence a farmer recognises; the uuid is not.
-    for (const tally of tallies) {
-      if (!sent.has(tally.id)) {
-        items.push({
-          id: tally.id,
-          kind: 'tally',
-          detail: mobs.find((m) => m.id === tally.mobId)?.name ?? null,
-          send: (token) => livestockApi.recordTally(tally, token),
-        });
-      }
-    }
     for (const animal of animals) {
       if (!sent.has(animal.id)) {
         items.push({
@@ -289,6 +282,56 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // in the product, and the fix is to read the number off the animal again.
           detail: identifier.value,
           send: (token) => livestockApi.createIdentifier(identifier, token),
+        });
+      }
+    }
+    // ⭐ MOVES AND HEALTH EVENTS GO BEFORE EVERY DISPOSAL, and this is a SAFETY ordering rather
+    // than a foreign-key one. The FK graph is satisfied either way — both reference only animals
+    // and mobs, which are already ahead.
+    //
+    // The server's withdrawal guard is a point-in-time check against what has LANDED. It cannot
+    // refuse what it has not yet received. With health last, a single device could do this: treat
+    // five cattle on Monday offline, tally forty of their mob to the abattoir on Tuesday offline,
+    // reconnect on Friday — the tally arrived first, the guard found no dose, and it returned 201.
+    // Meat inside an active withdrawal, with an affirmative answer from the boundary that exists
+    // to prevent it.
+    //
+    // So the order is: the EVIDENCE a guard reads (where the animal was, what it was given) before
+    // the ACT the guard judges (a sale, a slaughter, a tally out of a flock). Moves come first of
+    // the two because membership decides which doses reached which animal.
+    for (const move of moves) {
+      if (!sent.has(move.id)) {
+        items.push({
+          id: move.id,
+          kind: 'move',
+          detail: labels.get(move.animalId) ?? null,
+          send: (token) => livestockApi.recordMove(move, token),
+        });
+      }
+    }
+    // A mob-subject event has no tag number to show; the mob's name is not in `labels`, which is an
+    // animal register, so the row simply carries no detail rather than a misleading one.
+    for (const event of health) {
+      if (!sent.has(event.id)) {
+        items.push({
+          id: event.id,
+          kind: 'health',
+          detail: event.animalId === null ? null : (labels.get(event.animalId) ?? null),
+          send: (token) => livestockApi.recordHealth(event, token),
+        });
+      }
+    }
+    // A tally references its mob and nothing else. It sits HERE, after the doses, and not up with
+    // the mobs where the FK graph alone would put it — a `sale`/`slaughter` tally is judged against
+    // the withholding, so it must not overtake the dose that creates one. It is named by the mob it
+    // adjusts: "three off Flock A" is a sentence a farmer recognises; the uuid is not.
+    for (const tally of tallies) {
+      if (!sent.has(tally.id)) {
+        items.push({
+          id: tally.id,
+          kind: 'tally',
+          detail: mobs.find((m) => m.id === tally.mobId)?.name ?? null,
+          send: (token) => livestockApi.recordTally(tally, token),
         });
       }
     }
@@ -313,31 +356,6 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         detail: labels.get(event.animalId) ?? null,
         send: (token) => sendLifecycleEvent(event, token),
       });
-    }
-    // Moves reference an animal AND its destination camp/mob, so they come after all three.
-    for (const move of moves) {
-      if (!sent.has(move.id)) {
-        items.push({
-          id: move.id,
-          kind: 'move',
-          detail: labels.get(move.animalId) ?? null,
-          send: (token) => livestockApi.recordMove(move, token),
-        });
-      }
-    }
-    // Health events reference an animal OR a mob, so they follow both — and mobs are already sent
-    // ahead of animals, so a whole-flock dip is behind its mob by the same ordering. A mob-subject
-    // event has no tag number to show; the mob's name is not in `labels`, which is an animal
-    // register, so the row simply carries no detail rather than a misleading one.
-    for (const event of health) {
-      if (!sent.has(event.id)) {
-        items.push({
-          id: event.id,
-          kind: 'health',
-          detail: event.animalId === null ? null : (labels.get(event.animalId) ?? null),
-          send: (token) => livestockApi.recordHealth(event, token),
-        });
-      }
     }
     // A theft incident points at a camp AND at the animals it concerns, so it comes after both.
     // Its evidence pack cannot be generated until it has been through here, which is why the

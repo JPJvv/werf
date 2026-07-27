@@ -23,6 +23,10 @@ const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
 const ANIMAL_ID = '0190f3a0-0000-7000-8000-0000000000a1';
 const WEIGHT_ID = '0190f3a0-0000-7000-8000-0000000000e1';
 const DEATH_ID = '0190f3a0-0000-7000-8000-0000000000e2';
+const MOB_ID = '0190f3a0-0000-7000-8000-0000000000b1';
+const DIP_ID = '0190f3a0-0000-7000-8000-0000000000c1';
+const TALLY_ID = '0190f3a0-0000-7000-8000-0000000000c2';
+const MOVE_ID = '0190f3a0-0000-7000-8000-0000000000c3';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -93,6 +97,70 @@ function seedCaptures(): void {
   );
 }
 
+/**
+ * One offline window in which a flock is dipped, an animal is walked, and head is tallied OUT of
+ * that flock to the abattoir — captured in the order a farmer does them, all still pending.
+ */
+function seedDoseThenDisposal(): void {
+  window.localStorage.setItem(
+    `werf-mobs:${FARM_ID}`,
+    JSON.stringify([
+      {
+        id: MOB_ID,
+        farmId: FARM_ID,
+        name: 'Flock A',
+        species: 'cattle',
+        landUnitId: null,
+        enterpriseId: null,
+        headCount: 300,
+        initialHeadCount: 300,
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    `werf-health:${FARM_ID}`,
+    JSON.stringify([
+      {
+        id: DIP_ID,
+        farmId: FARM_ID,
+        animalId: null,
+        mobId: MOB_ID,
+        kind: 'dip',
+        occurredAt: '2026-07-20T06:00:00.000Z',
+        administeredOn: '2026-07-20',
+        productId: '0190f3a0-0000-7000-8000-0000000000d1',
+        method: 'plunge',
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    `werf-tallies:${FARM_ID}`,
+    JSON.stringify([
+      {
+        id: TALLY_ID,
+        farmId: FARM_ID,
+        mobId: MOB_ID,
+        occurredAt: '2026-07-21T12:00:00.000Z',
+        reason: 'slaughter',
+        count: 40,
+        delta: -40,
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    `werf-moves:${FARM_ID}`,
+    JSON.stringify([
+      {
+        id: MOVE_ID,
+        farmId: FARM_ID,
+        animalId: ANIMAL_ID,
+        occurredAt: '2026-07-20T08:00:00.000Z',
+        toMobId: MOB_ID,
+      },
+    ]),
+  );
+}
+
 /** A fetch that always accepts (201). Returns the mock so a test can inspect the calls. */
 function acceptingFetch() {
   return vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -154,6 +222,43 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     const init = fetchMock.mock.calls[0]![1]!;
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer access-token');
+  });
+
+  it('⭐ sends the DOSE and the MOVE before the disposal the server must judge against them', async () => {
+    // ⭐ A safety ordering, not a foreign-key one — the FK graph is satisfied either way.
+    //
+    // The server's withdrawal guard is a point-in-time query. It cannot refuse a dose it has not
+    // received. With health sent second-to-last, one device could do all of this offline and get a
+    // 201: dip the flock Monday, tally forty of it to the abattoir Tuesday, reconnect Friday. The
+    // tally arrived first, the guard found no withholding, and the boundary that exists to stop
+    // meat inside a withdrawal affirmatively let it through.
+    //
+    // The move matters for the same reason one level down: membership decides WHICH doses reached
+    // which animal, so it has to be on the server before anything is judged against it.
+    cachedSession();
+    seedCaptures();
+    seedDoseThenDisposal();
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+
+    const paths = postedPaths(fetchMock);
+    const at = (suffix: string) => paths.findIndex((p) => p.endsWith(suffix));
+
+    expect(at('/livestock/dips')).toBeGreaterThanOrEqual(0);
+    expect(at('/livestock/mob-tallies')).toBeGreaterThanOrEqual(0);
+    expect(at('/livestock/moves')).toBeGreaterThanOrEqual(0);
+
+    // The evidence before the act it is read against.
+    expect(at('/livestock/dips')).toBeLessThan(at('/livestock/mob-tallies'));
+    expect(at('/livestock/moves')).toBeLessThan(at('/livestock/mob-tallies'));
+    expect(at('/livestock/dips')).toBeLessThan(at('/livestock/deaths'));
+
+    // And the foreign-key rule still holds underneath it.
+    expect(at('/livestock/mobs')).toBeLessThan(at('/livestock/dips'));
+    expect(at('/livestock/animals')).toBeLessThan(at('/livestock/moves'));
   });
 
   it('does not re-send after a cold start — the sent-log makes a re-flush a no-op', async () => {

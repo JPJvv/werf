@@ -2260,6 +2260,129 @@ describe('weight capture (FR-140)', () => {
       expect(slaughtered.payload).toMatchObject({ slaughtered: true });
     });
 
+    it('⭐ blocks a group tally when ONE animal in the mob was treated individually', async () => {
+      // Health events are animal-XOR-mob, so an individual treatment stores `mob_id = NULL`. The
+      // group guard filtered on `events.mob_id` and therefore saw the plunge dip and missed the
+      // cow the vet had come out for — and a tally to slaughter takes head out of the mob without
+      // naming which head, so the treated one is exactly as likely to be on the truck as any other.
+      const a = await tenant('Alpha');
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({
+          farmId: a.farmId,
+          name: 'Ossies',
+          species: 'cattle',
+          headCount: 40,
+          initialHeadCount: 40,
+        })
+        .returning();
+      const [treated] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: mob!.id, species: 'cattle', sex: 'male' })
+        .returning();
+      const productId = await aVetProduct(); // meat 28d → clears 2026-08-17
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId: treated!.id,
+          productId,
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: mob!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+            reason: 'slaughter',
+            count: 10,
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      // Clear the day the withholding runs out, so the guard is not simply refusing everything.
+      const after = await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId: mob!.id,
+          occurredAt: '2026-08-17T06:00:00.000Z',
+          reason: 'slaughter',
+          count: 10,
+        }),
+      );
+      expect(after.type).toBe('tally');
+    });
+
+    it('⭐ blocks a group tally for an animal that carried its withholding INTO the mob', async () => {
+      // Dipped in the dip camp, walked into the ox mob, and the ox mob sold for slaughter. Neither
+      // half of the old guard could see it: the dip names a different mob, and the animal was never
+      // individually dosed.
+      const a = await tenant('Alpha');
+      const [dipCamp] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dip camp flock', species: 'cattle' })
+        .returning();
+      const [oxen] = await elevated.db
+        .insert(mobs)
+        .values({
+          farmId: a.farmId,
+          name: 'Ossies',
+          species: 'cattle',
+          headCount: 40,
+          initialHeadCount: 40,
+        })
+        .returning();
+      const [ox] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: dipCamp!.id, species: 'cattle', sex: 'male' })
+        .returning();
+      const productId = await aVetProduct();
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipCamp!.id,
+          productId,
+          method: 'plunge',
+        }),
+      );
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: ox!.id,
+          occurredAt: '2026-07-22T06:00:00.000Z',
+          toMobId: oxen!.id,
+        }),
+      );
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: oxen!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+            reason: 'sale',
+            count: 10,
+            counterparty: 'Senekal Abattoir',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
     it('does not withhold an animal in a DIFFERENT mob from the one dipped', async () => {
       // The other side of the same join: widening the guard must not start refusing sales the
       // farmer is entitled to make. An over-broad guard trains people to work around it.

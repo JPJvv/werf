@@ -21,7 +21,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, gt, inArray, isNull, lt, lte, or, type SQL } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
@@ -1185,6 +1185,13 @@ async function assertClearOfMeatWithdrawal(
  * it — dip the flock on Monday, tally forty to the abattoir on Tuesday, and nothing anywhere said
  * no. The farm most likely to run stock as an uncounted mob is also the one least likely to have a
  * second system catching it, so the absence landed hardest where it mattered most.
+ *
+ * ⭐ A dose reaches the head in this mob by TWO routes and the guard reads both, because health
+ * events are animal-XOR-mob. Filtering `events.mob_id` alone finds the plunge dip and misses the
+ * cow that was treated individually — that event stores `mob_id = NULL` — so a mixed mob holding
+ * one individually-dosed animal tallied to slaughter with nothing firing. The question this asks is
+ * not "was this mob dosed" but "is anything standing in it today still inside a withholding", which
+ * is the question the truck at the gate actually poses.
  */
 async function assertMobClearOfMeatWithdrawal(
   tx: CaptureTx,
@@ -1192,13 +1199,81 @@ async function assertMobClearOfMeatWithdrawal(
   mobId: string,
   occurredAt: Date,
 ): Promise<void> {
-  const latestClear = await latestMeatClear(tx, farmId, eq(events.mobId, mobId));
-  const day = farmLocalDay(occurredAt, await farmJurisdiction(tx, farmId));
+  const jurisdiction = await farmJurisdiction(tx, farmId);
+  const day = farmLocalDay(occurredAt, jurisdiction);
+
+  // Route 1: doses given to the MOB — the plunge dip, the mob vaccination.
+  let latestClear = await latestMeatClear(tx, farmId, eq(events.mobId, mobId));
+
+  // Route 2: doses that reached an animal STANDING IN this mob on the day. Its own treatments, and
+  // any mob dose from a flock it was in at the time — an animal dipped in the dip camp and since
+  // walked into this one carries its withholding with it.
+  for (const memberId of await mobMembersOn(tx, farmId, mobId, day, jurisdiction)) {
+    const clear = await latestMeatClearForAnimal(tx, farmId, memberId, jurisdiction);
+    if (clear !== undefined && (latestClear === undefined || clear > latestClear)) {
+      latestClear = clear;
+    }
+  }
+
   if (isWithinWithdrawal(latestClear, day)) {
     throw new ValidationError(
       `This group is within its meat withdrawal period until ${latestClear}; none of it can go for slaughter or sale before then`,
     );
   }
+}
+
+/**
+ * The animals standing in a mob on a given farm-local day, from the move log (FR-103).
+ *
+ * The candidates are narrowed in SQL first — an animal is only ever in this mob if it points at it
+ * now or if some move of its own names it — so a group-only flock costs one query that returns
+ * nothing, which is the case this guard exists for and the one that must stay cheap. Membership is
+ * then reconstructed per candidate rather than read off `animals.mob_id`, for the same reason it is
+ * everywhere else here: that column is overwritten by every move and is wrong in both directions
+ * the moment stock is walked out of a camp.
+ */
+async function mobMembersOn(
+  tx: CaptureTx,
+  farmId: string,
+  mobId: string,
+  day: string,
+  jurisdiction: string,
+): Promise<readonly string[]> {
+  const touched = await tx
+    .selectDistinct({ animalId: events.animalId })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        eq(events.type, 'move'),
+        // A move's own `mob_id` column is the DESTINATION, so it finds the arrivals. The departures
+        // are in the payload's `fromMobId` — and they matter, because a tally can be back-dated to
+        // a day the animal had not left yet.
+        or(eq(events.mobId, mobId), sql`${events.payload}->>'fromMobId' = ${mobId}`),
+        isNull(events.deletedAt),
+      ),
+    );
+  const pointing = await tx
+    .select({ id: animals.id })
+    .from(animals)
+    .where(and(eq(animals.farmId, farmId), eq(animals.mobId, mobId), isNull(animals.deletedAt)));
+
+  const candidates = [
+    ...new Set([
+      ...pointing.map((row) => row.id),
+      ...touched.map((row) => row.animalId).filter((id): id is string => id !== null),
+    ]),
+  ];
+
+  const members: string[] = [];
+  for (const animalId of candidates) {
+    const wasIn = await mobMembership(tx, farmId, animalId, jurisdiction);
+    const inIt = wasIn.some(
+      (m) => m.mobId === mobId && day >= m.fromDay && (m.toDay === null || day <= m.toDay),
+    );
+    if (inIt) members.push(animalId);
+  }
+  return members;
 }
 
 /**

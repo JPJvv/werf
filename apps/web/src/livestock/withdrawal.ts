@@ -15,10 +15,20 @@
  * (ADR-0005) — so a device with a stale register can be wrong at the margin. That asymmetry is
  * deliberate and it is safe in the direction that matters: the server still refuses what the client
  * lets through, and the client warns about what the server would refuse.
+ *
+ * Both entry points read BOTH routes a dose takes, because health events are animal-XOR-mob. An
+ * asymmetry here is not a rounding error — it is this guard silently disagreeing with the one that
+ * will actually refuse. The individual path was blind to mob doses and the group path was blind to
+ * individual ones; each was found by a different review agent, from its own side. Membership is
+ * reconstructed from the move log in farm-local days, the same shape the server runs, so the two
+ * answer the same question rather than two similar-looking ones.
  */
 
 import { isWithinWithdrawal, withholdUntil } from '@werf/domain';
+import { farmDay } from '../farmTime';
+import type { StoredAnimal } from './LocalHerd';
 import type { StoredHealthEvent } from './LocalHealth';
+import type { StoredMove } from './LocalMoves';
 import type { StoredVetProduct } from './LocalVetProducts';
 
 export interface WithdrawalStatus {
@@ -28,55 +38,119 @@ export interface WithdrawalStatus {
   readonly blocked: boolean;
 }
 
+/** One stretch of farm-local DAYS during which an animal belonged to a mob. `toDay` null = still in. */
+interface MobInterval {
+  readonly mobId: string;
+  readonly fromDay: string;
+  readonly toDay: string | null;
+}
+
 /**
- * Whether an animal may be sold for slaughter on `disposalOn`, and from when if not.
+ * When an animal was in which mob, from the device's own move log — the same reconstruction the
+ * server runs, in the same farm-local DAYS, inclusive at BOTH ends (a move day belongs to both
+ * mobs, and a food-safety boundary must fail toward blocking).
  *
- * The LATEST clear date across every health event on the animal wins: an animal dosed twice is held
- * by whichever withholding runs longest, and taking the most recent event instead would release it
- * early whenever the second product had a shorter period than the first.
+ * The client log holds only the DESTINATION of each move, because that is all a capture sends. So
+ * the opening mob is the animal's `mobId` AS FIRST CAPTURED, which is exactly what the herd store
+ * keeps: it is append-only and never rewritten. Pass the RAW animal for that reason — a projected
+ * one carries where it is NOW, which is the denormalised value this whole reconstruction exists to
+ * stop trusting.
+ */
+function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): readonly MobInterval[] {
+  const mine = moves
+    .filter((m) => m.animalId === animal.id && m.toMobId !== undefined)
+    .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+
+  const intervals: MobInterval[] = [];
+  let openMob = animal.mobId ?? null;
+  let openedOn = '0000-01-01';
+
+  for (const move of mine) {
+    const to = move.toMobId ?? null;
+    if (to === openMob) continue;
+    const movedOn = farmDay(new Date(move.occurredAt));
+    if (openMob !== null) intervals.push({ mobId: openMob, fromDay: openedOn, toDay: movedOn });
+    openMob = to;
+    openedOn = movedOn;
+  }
+  if (openMob !== null) intervals.push({ mobId: openMob, fromDay: openedOn, toDay: null });
+  return intervals;
+}
+
+/** Was this mob the animal's on that day? Inclusive at both ends, like the server. */
+function inMobOn(wasIn: readonly MobInterval[], mobId: string, day: string): boolean {
+  return wasIn.some(
+    (m) => m.mobId === mobId && day >= m.fromDay && (m.toDay === null || day <= m.toDay),
+  );
+}
+
+/** True when this dose reached this animal — its own, or its mob's while it was in that mob. */
+function reachedAnimal(
+  event: StoredHealthEvent,
+  animal: StoredAnimal,
+  wasIn: readonly MobInterval[],
+): boolean {
+  if (event.animalId === animal.id) return true;
+  const mobId = event.mobId ?? null;
+  // `administeredOn` is the recorded day. Nothing is derived from an instant here, deliberately.
+  return mobId !== null && inMobOn(wasIn, mobId, event.administeredOn);
+}
+
+/**
+ * Whether an animal may be sold or slaughtered on `disposalOn`, and from when if not.
+ *
+ * BOTH ROUTES A DOSE TAKES. Its own treatments, and every dose given to a mob WHILE IT WAS IN THAT
+ * MOB — a plunge dip is captured against the flock and stores `animal_id = NULL`, so reading only
+ * animal-subject events cleared every individual in a dipped mob. Membership comes from the move
+ * log, never from where the animal is now: one dipped in the dip camp and since walked out must
+ * stay withheld, and one that joined a dipped mob afterwards must not be blocked for a dose it
+ * never received.
+ *
+ * The LATEST clear date wins: an animal dosed twice is held by whichever withholding runs longest.
  */
 export function meatWithdrawalFor(
-  animalId: string,
+  animal: StoredAnimal,
   disposalOn: string,
   events: readonly StoredHealthEvent[],
   products: readonly StoredVetProduct[],
+  moves: readonly StoredMove[] = [],
 ): WithdrawalStatus {
-  // ⚠️ Animal-subject events only. A dose given to the animal's MOB reaches it too, and the server
-  // reads that route by reconstructing membership from the move log. This device does not, so an
-  // animal in a dipped mob previews CLEAR here and is correctly refused on the flush. That is the
-  // known edge of the preview, and it fails in the direction the header describes: the server
-  // refuses what this lets through. `meatWithdrawalForMob` below covers the group-only path, which
-  // has no membership to reconstruct.
+  const wasIn = mobMembership(animal, moves);
   return latestClearAcross(
-    events.filter((e) => e.animalId === animalId),
+    events.filter((e) => reachedAnimal(e, animal, wasIn)),
     disposalOn,
     products,
   );
 }
 
 /**
- * Whether head may be tallied out of a MOB for slaughter on `disposalOn`, and from when if not.
+ * Whether head may be tallied out of a MOB for slaughter or sale on `disposalOn`.
  *
- * ⭐ The group-only path, and the one that had no client-side guard at all. A flock run by head
- * count has no `animals` rows, so every animal-keyed check was structurally incapable of firing for
- * it: dip the flock Monday, tally forty to the abattoir Tuesday with no signal, see "saved — 260
- * head", load the truck. The refusal arrived on Friday's flush, as a 400 that FR-009 correctly sets
- * aside forever — days after the only moment anyone could have acted on it.
+ * Both routes again, from the other side. The mob's own doses are the obvious half; the half that
+ * was missing is an animal in the mob treated INDIVIDUALLY, whose event stores `mob_id = NULL`. A
+ * tally takes head out without naming WHICH head, so the treated one is exactly as likely to be on
+ * the truck as any other.
  *
- * This is the SMALLHOLDER path. The farm most likely to run stock as an uncounted mob is the one
- * least likely to have a second system catching the mistake.
+ * This is the SMALLHOLDER path. A flock run by head count has no `animals` rows, so every
+ * animal-keyed check was structurally incapable of firing for it. But a mob may ALSO hold
+ * individually-registered animals, which is why the herd is read here rather than assumed empty.
  */
 export function meatWithdrawalForMob(
   mobId: string,
   disposalOn: string,
   events: readonly StoredHealthEvent[],
   products: readonly StoredVetProduct[],
+  animals: readonly StoredAnimal[] = [],
+  moves: readonly StoredMove[] = [],
 ): WithdrawalStatus {
-  return latestClearAcross(
-    events.filter((e) => e.mobId === mobId),
-    disposalOn,
-    products,
-  );
+  const reaches = (event: StoredHealthEvent): boolean => {
+    if ((event.mobId ?? null) === mobId) return true;
+    if (event.animalId === null) return false;
+    const animal = animals.find((a) => a.id === event.animalId);
+    // An individually-dosed animal counts only if it is standing in this mob on the disposal day.
+    return animal !== undefined && inMobOn(mobMembership(animal, moves), mobId, disposalOn);
+  };
+  return latestClearAcross(events.filter(reaches), disposalOn, products);
 }
 
 /**

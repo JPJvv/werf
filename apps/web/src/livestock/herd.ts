@@ -243,12 +243,23 @@ function ageInDays(dob: unknown, today: string): number | undefined {
  */
 export function useWithholdingCount(herdId?: string): number {
   const animals = useEffectiveAnimals(herdId);
+  // The RAW herd and the move log, because the guard reconstructs mob membership from them — a
+  // projected animal carries where it is NOW, which is the value that reconstruction exists to
+  // stop trusting. The projected list decides only WHICH animals are still alive.
+  const raw = useAnimals();
+  const moves = useMoves();
   const healthEvents = useHealthEvents();
   const products = useVetProducts();
   return useMemo(() => {
     const today = farmDay(new Date());
-    return animals.filter(
-      (a) => a.status === 'alive' && meatWithdrawalFor(a.id, today, healthEvents, products).blocked,
-    ).length;
-  }, [animals, healthEvents, products]);
+    const byId = new Map(raw.map((a) => [a.id, a]));
+    return animals.filter((a) => {
+      const stored = byId.get(a.id);
+      return (
+        a.status === 'alive' &&
+        stored !== undefined &&
+        meatWithdrawalFor(stored, today, healthEvents, products, moves).blocked
+      );
+    }).length;
+  }, [animals, raw, moves, healthEvents, products]);
 }

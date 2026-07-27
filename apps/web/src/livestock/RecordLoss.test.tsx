@@ -20,6 +20,8 @@ const EVENTS_KEY = `werf-events:${FARM_ID}`;
 const HEALTH_KEY = `werf-health:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
 const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
+const MOB_ID = '0190f3a0-0000-7000-8000-00000000b001';
+const MOVES_KEY = `werf-moves:${FARM_ID}`;
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -103,6 +105,40 @@ function seedActiveWithdrawal(animalId: string): void {
         occurredAt: new Date().toISOString(),
         administeredOn: farmToday(),
         productId: PRODUCT_ID,
+      },
+    ]),
+  );
+}
+
+/** The flock dipped today, against the MOB — no animal named anywhere in the dose. */
+function seedMobDip(mobId: string): void {
+  window.localStorage.setItem(
+    PRODUCTS_KEY,
+    JSON.stringify([
+      {
+        id: PRODUCT_ID,
+        name: 'Tickaway',
+        registrationNumber: 'G4321 Act 36/1947',
+        species: ['cattle'],
+        meatWithdrawalDays: 28,
+        milkWithdrawalHours: null,
+        route: 'topical',
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    HEALTH_KEY,
+    JSON.stringify([
+      {
+        id: '0190f3a0-0000-7000-8000-00000000e002',
+        farmId: FARM_ID,
+        animalId: null,
+        mobId,
+        kind: 'dip',
+        occurredAt: new Date().toISOString(),
+        administeredOn: farmToday(),
+        productId: PRODUCT_ID,
+        method: 'plunge',
       },
     ]),
   );
@@ -295,6 +331,98 @@ describe('recording a loss', () => {
     await user.click(screen.getByRole('button', { name: /record slaughter/i }));
 
     expect(storedEvents().find((e) => e['type'] === 'death')).toMatchObject({ slaughtered: true });
+  });
+
+  it('⭐ refuses to slaughter an animal whose MOB was dipped, though it was never dosed by name', async () => {
+    // Health events are animal-XOR-mob, so a plunge dip stores `animal_id = NULL`. The client guard
+    // read only animal-subject events, so it previewed CLEAR for every individual in a dipped
+    // flock — while the server, which reconstructs membership, correctly refused. A capture-time
+    // guard that disagrees with the one that will actually refuse is worse than none: it tells the
+    // farmer the animal is fine.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female', mobId: MOB_ID }));
+    seedMobDip(MOB_ID);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+
+    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /record slaughter/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+  });
+
+  it('does NOT withhold an animal that joined the dipped mob AFTER the dip', async () => {
+    // The bound, and it is the reason membership is reconstructed rather than read off the current
+    // mob. An animal that walked in the next day was never in the race, and blocking its sale for
+    // 28 days is a guard inventing a residue — which is how a guard teaches its own workaround.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female', mobId: null }));
+    seedMobDip(MOB_ID);
+    window.localStorage.setItem(
+      MOVES_KEY,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-00000000e003',
+          farmId: FARM_ID,
+          animalId: 'a1',
+          // Tomorrow, so it is unambiguously after today's dip whatever the clock says.
+          occurredAt: new Date(Date.now() + 86_400_000).toISOString(),
+          toMobId: MOB_ID,
+          batchId: null,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+
+    expect(screen.queryByText(/treated and cannot be sold for slaughter yet/i)).toBeNull();
+  });
+
+  it('⭐ judges a BACK-DATED slaughter on the day it happened, not on today', async () => {
+    // The disposal day was stamped `new Date()` and never asked. So an animal slaughtered inside a
+    // withholding and written up after the clear date passed the guard, and the durable record said
+    // it was legal — the same defect class as the health screen stamping `now()`.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    seedActiveWithdrawal('a1');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+
+    // The day is ASKED, and it defaults to today.
+    const day = screen.getByLabelText(/what day/i) as HTMLInputElement;
+    expect(day.value).toBe(farmToday());
+    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+  });
+
+  it('stores a locale-independent cause for a slaughter', async () => {
+    // A translated string in an audit field means the register varies by which phone captured it.
+    // The machine-readable fact is the flag; the cause must not be farmer-facing copy.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+    await user.click(screen.getByRole('button', { name: /record slaughter/i }));
+
+    expect(storedEvents().find((e) => e['type'] === 'death')).toMatchObject({
+      cause: 'slaughtered',
+      slaughtered: true,
+    });
   });
 
   it('drops the home tile count when an animal is sold, and it survives a cold start', () => {

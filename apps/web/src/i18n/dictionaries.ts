@@ -488,6 +488,9 @@ const en = {
   'loss.missing': 'Missing',
   'loss.causeMissing': 'What did you find? (optional)',
   'loss.lastSeenDay': 'When was it last seen?',
+  // Asked, never assumed. FR-131 is judged on the day the meat entered the food chain, and a
+  // slaughter is often written up days later.
+  'loss.disposalDay': 'What day?',
   // Says WHY the app is about to use the GPS, before it asks — a phone that silently reaches for
   // location is a phone a farmer stops trusting.
   'loss.gpsExplain':
@@ -1029,6 +1032,7 @@ const af: Record<TranslationKey, string> = {
   'loss.missing': 'Vermis',
   'loss.causeMissing': 'Wat het jy gekry? (opsioneel)',
   'loss.lastSeenDay': 'Wanneer laas gesien?',
+  'loss.disposalDay': 'Watter dag?',
   'loss.gpsExplain':
     'Om dit aan te teken neem ’n GPS-punt van waar jy staan. Dit werk sonder sein, en dit is wat die rekord bruikbaar maak vir die Veediefstal-eenheid.',
   'loss.locating': 'Kry tans die GPS-punt…',

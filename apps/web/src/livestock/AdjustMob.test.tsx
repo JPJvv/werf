@@ -23,6 +23,8 @@ const MOB_ID = '0190f3a0-0000-7000-8000-00000000b001';
 const HEALTH_KEY = `werf-health:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
 const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
+const HERD_KEY = `werf-herd:${FARM_ID}`;
+const ANIMAL_ID = '0190f3a0-0000-7000-8000-00000000a001';
 
 const FLOCK = { id: '0190f3a0-0000-7000-8000-00000000e002', name: 'Dorper flock', type: 'sheep' };
 
@@ -364,6 +366,68 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
     expect(storedTallies()).toHaveLength(1);
+  });
+
+  it('⭐ refuses a flock tally when ONE animal in it was treated individually', async () => {
+    // A mob may hold individually-registered animals, and their treatment stores `mob_id = NULL`.
+    // The client guard filtered on the mob alone, so it previewed CLEAR while the server — which
+    // reads both routes — correctly refused. The two must answer the same question; a capture-time
+    // guard narrower than the one that actually refuses is the failure it was built to prevent.
+    cachedSession();
+    seedFlock();
+    window.localStorage.setItem(
+      HERD_KEY,
+      JSON.stringify([
+        {
+          id: ANIMAL_ID,
+          farmId: FARM_ID,
+          species: 'sheep',
+          sex: 'female',
+          breed: null,
+          status: 'alive',
+          mobId: MOB_ID,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      PRODUCTS_KEY,
+      JSON.stringify([
+        {
+          id: PRODUCT_ID,
+          name: 'Terramycin LA',
+          registrationNumber: 'G1234 Act 36/1947',
+          species: ['sheep'],
+          meatWithdrawalDays: 28,
+          milkWithdrawalHours: null,
+          route: 'intramuscular',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      HEALTH_KEY,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-00000000f002',
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          mobId: null,
+          kind: 'treatment',
+          occurredAt: new Date().toISOString(),
+          administeredOn: farmToday(),
+          productId: PRODUCT_ID,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+
+    expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    expect(storedTallies()).toHaveLength(0);
   });
 
   it('does not offer a group that is managed as individual animals', async () => {

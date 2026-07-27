@@ -29,6 +29,8 @@ import { farmToday } from '../farmTime';
 import { useEffectiveMobs } from './herd';
 import { useRecordTally } from './LocalTallies';
 import { useHealthEvents } from './LocalHealth';
+import { useAnimals } from './LocalHerd';
+import { useMoves } from './LocalMoves';
 import { useVetProducts } from './LocalVetProducts';
 import { meatWithdrawalForMob } from './withdrawal';
 
@@ -93,6 +95,11 @@ export function AdjustMobScreen() {
   const mobs = useEffectiveMobs();
   const healthEvents = useHealthEvents();
   const products = useVetProducts();
+  // A counted mob can ALSO hold individually-registered animals, and a treatment given to one of
+  // them stores `mob_id = NULL`. The raw herd and the move log are what let the guard see it — the
+  // tally takes head out without naming which head.
+  const herd = useAnimals();
+  const moves = useMoves();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState<schemas.TallyReason | null>(null);
@@ -140,7 +147,9 @@ export function AdjustMobScreen() {
   // the smallholder's, and the farm least likely to have a second system catching the mistake.
   const intoFoodChain = reason === 'sale' || reason === 'slaughter';
   const withdrawal =
-    selected === null ? null : meatWithdrawalForMob(selected.id, day, healthEvents, products);
+    selected === null
+      ? null
+      : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves);
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
 
   const canSave =

@@ -24,8 +24,10 @@ import { uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
-import { farmDay, farmToday } from '../farmTime';
+import { farmToday } from '../farmTime';
 import { useEffectiveAnimals } from './herd';
+import { useAnimals } from './LocalHerd';
+import { useMoves } from './LocalMoves';
 import { useRecordDeath, useRecordMissing, useRecordSale } from './LocalLifecycle';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { currentPoint, type FixFailure } from './geolocation';
@@ -40,6 +42,9 @@ import { speciesLabel, sexLabel } from './AnimalsScreen';
  * sale to an abattoir does, and a withdrawal guard cannot find that fact inside a sentence.
  */
 type Outcome = 'died' | 'slaughtered' | 'sold' | 'missing';
+
+/** The stored `cause` for a slaughter. Locale-independent on purpose — see `save`. */
+const SLAUGHTER_CAUSE = 'slaughtered';
 
 interface SavedSummary {
   readonly what: string;
@@ -81,6 +86,10 @@ export function RecordLossScreen() {
   const healthEvents = useHealthEvents();
   const products = useVetProducts();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
+  // The RAW herd row and the move log: the withdrawal guard reconstructs which mob this animal
+  // was in on the day of each dose, and a projected animal carries only where it is NOW.
+  const stored = useAnimals();
+  const moves = useMoves();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -89,6 +98,11 @@ export function RecordLossScreen() {
   const [priceRands, setPriceRands] = useState('');
   const [saleWeight, setSaleWeight] = useState('');
   const [lastSeenDay, setLastSeenDay] = useState(today);
+  // ⭐ ASKED, never assumed — the same rule the health screen learned the hard way. A slaughter
+  // on Monday written up on Thursday is a Monday fact, and FR-131 is judged on the day the meat
+  // entered the food chain. Stamping it with the capture day lets an animal slaughtered inside a
+  // withholding pass the guard, and leaves a durable record saying it was legal.
+  const [disposalDay, setDisposalDay] = useState(today);
   const [locating, setLocating] = useState(false);
   const [fixFailed, setFixFailed] = useState<FixFailure | null>(null);
   const [lastSaved, setLastSaved] = useState<SavedSummary | null>(null);
@@ -99,10 +113,14 @@ export function RecordLossScreen() {
 
   // FR-131. Checked at capture, not only on the server: a sale refused days later, after the truck
   // has gone, is a rule that reached nobody. See ./withdrawal.
+  //
+  // Judged on the DAY THE FARMER GAVE, not on today — a back-dated disposal must be judged against
+  // the withholding as it stood when the animal actually left.
+  const selectedStored = selected === null ? undefined : stored.find((a) => a.id === selected.id);
   const withdrawal =
-    selected === null
+    selectedStored === undefined
       ? null
-      : meatWithdrawalFor(selected.id, farmDay(new Date()), healthEvents, products);
+      : meatWithdrawalFor(selectedStored, disposalDay, healthEvents, products, moves);
   // Both routes into the food chain, and the guard has to cover both. A server-only check on the
   // slaughter path arrives days after the animal has been eaten.
   const intoFoodChain = outcome === 'sold' || outcome === 'slaughtered';
@@ -116,6 +134,7 @@ export function RecordLossScreen() {
     setPriceRands('');
     setSaleWeight('');
     setLastSeenDay(today());
+    setDisposalDay(today());
     setFixFailed(null);
   };
 
@@ -136,7 +155,9 @@ export function RecordLossScreen() {
       id: uuidv7(),
       farmId: activeFarm.id,
       animalId: selected.id,
-      occurredAt: new Date(),
+      // Midday on the farm's day, exactly as the tally and missing paths do it: the farmer gave a
+      // DAY, and midday cannot slide either side of it when the instant is read back in any zone.
+      occurredAt: new Date(`${disposalDay}T12:00:00.000Z`),
       currentStatus: 'alive' as const,
     };
 
@@ -147,7 +168,12 @@ export function RecordLossScreen() {
       if (withheld) return;
       // The cause is the act itself, so nothing is asked for: standing at a carcass with gloves on,
       // a required free-text box to type "slaughtered" is an obstacle and not a record.
-      recordDeath({ ...base, cause: t('loss.slaughtered'), slaughtered: true });
+      //
+      // ⭐ A STABLE value, never `t('loss.slaughtered')`. That would write "Slaughtered" from an
+      // English device and "Geslag" from an Afrikaans one into a register a residue traceback or an
+      // export auditor reads — farmer-facing copy leaking into the data, which is the mirror of the
+      // defect that put raw English in front of the farmer. The machine-readable fact is the flag.
+      recordDeath({ ...base, cause: SLAUGHTER_CAUSE, slaughtered: true });
     } else if (outcome === 'sold') {
       if (counterparty.trim().length === 0 || !priceIsValid(priceRands)) return;
       recordSale({
@@ -198,7 +224,7 @@ export function RecordLossScreen() {
     outcome === 'died'
       ? cause.trim().length > 0
       : outcome === 'slaughtered'
-        ? !withheld
+        ? !withheld && disposalDay !== ''
         : outcome === 'sold'
           ? counterparty.trim().length > 0 &&
             priceIsValid(priceRands) &&
@@ -309,6 +335,23 @@ export function RecordLossScreen() {
                 </div>
               )}
 
+              {intoFoodChain && (
+                <div className="mb-4 flex flex-col">
+                  <label htmlFor="disposalDay" className="mb-1 text-label uppercase text-soil-700">
+                    {t('loss.disposalDay')}
+                  </label>
+                  <input
+                    id="disposalDay"
+                    name="disposalDay"
+                    type="date"
+                    max={today()}
+                    value={disposalDay}
+                    onChange={(e) => setDisposalDay(e.target.value)}
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+                  />
+                </div>
+              )}
+
               {outcome === 'missing' && (
                 <>
                   {/* Asked, never assumed: a missing report is filed after the fact, and stock
@@ -342,7 +385,10 @@ export function RecordLossScreen() {
                   rather than in a document. Warning FORM — tinted panel, left rule — never the
                   ochre action shape (NFR-411). */}
               {withheld && withdrawal?.clearFrom !== null && (
-                <p className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                <p
+                  role="alert"
+                  className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
+                >
                   {t('loss.withheld')}{' '}
                   <span className="font-data tabular-nums">{withdrawal!.clearFrom}</span>
                 </p>

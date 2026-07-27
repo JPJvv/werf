@@ -276,7 +276,14 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   through ONE lookup, and an untagged animal says "without a number" rather than showing a blank
 ☑ Move animals between mobs and camps; movement retained as an event, never an overwrite (FR-103) —
   API + SCREEN DONE (commit cc91a9b). `POST /livestock/moves` sends only the DESTINATION; the FROM
-  side is read from the animal's own row, so the stored history cannot disagree with the herd. Two
+  side is never restated by the client.
+  ⚠️ CORRECTED 2026-07-27 (`7b17c2e`). This line used to say the FROM side "is read from the
+  animal's own row, so the stored history cannot disagree with the herd" — which was the DEFECT,
+  written up as the design. `animals.mob_id` is the denormalised "where is it now", and arrival
+  order is not `occurred_at` order: a move dated the 2nd arriving after one dated the 9th recorded
+  the 9th's destination as its own origin, permanently, in an append-only log the withdrawal guard
+  reconstructs membership from. The FROM side is now reconstructed from the move log at that
+  event's own place in it, and a back-dated move no longer walks the animal backwards. Two
   writes, two different facts: the append-only `move` event is the history, the animal row's
   land_unit_id/mob_id are a denormalised "where is it now". The screen is multi-select by design —
   a farmer opens a gate and a camp empties — so this also closes FR-112's selection UI for the event
@@ -433,14 +440,26 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
   queue with nothing on the phone explaining why — days after the truck has gone. It says NO and
   says WHEN in one panel; the LATEST clear date across all treatments wins; and a DEATH is never
   withheld, because the rule is about meat entering the food chain, not about recording what happened.
-  ⛔ **REMAINDER, named 2026-07-26 after the review pass — the GROUP path is guarded SERVER-SIDE
-  ONLY.** `cc1b149` added the missing mob-level guard on the server (a plunge-dipped flock could be
-  tallied to the abattoir the next day with nothing refusing it), but added no device half. So an
-  offline group sale inside a withholding is refused ON FLUSH, not at capture — which is precisely
-  the failure this line declares unacceptable two paragraphs above, and it lands on the smallholder
-  path where the exposure is worst. It is not fixable by a screen change alone: `withdrawal.ts` is
-  keyed on `animalId` and mob-subject health events do not reach the device at all, so they must be
-  synced first. All three review agents raised this independently. See STATUS.md §3b.
+  ✅ **THE GROUP PATH IS NOW GUARDED AT CAPTURE TOO (2026-07-27, `8812347`).** The remainder this
+  line used to name is closed, and it was wider than it looked: the device could not RECORD a
+  whole-flock dose at all, so the guard had nothing to read. A counted mob is now a dose subject on
+  the health screen, and a `sale`/`slaughter` tally out of a withheld mob is refused offline with
+  the clear date on screen.
+  ✅ Individual SLAUGHTER is guarded too (`7b17c2e`) — a flag on the death payload, not a word in
+  free text, because a guard cannot read intent out of a sentence.
+  ✅ Both client guards read BOTH routes a dose takes (`713634b`). A dose reaches an animal by its
+  own treatment or by its mob's, and each client guard had been reading one column while the server
+  read both — so the device previewed CLEAR and the flush refused.
+  ✅ The flush now sends doses and moves BEFORE any disposal (`16fbb6a`). A point-in-time guard
+  cannot refuse a dose that has not arrived yet.
+  ⛔ **REMAINDER, named 2026-07-27 — a CROSS-DEVICE race is still open and cannot be closed by
+  ordering.** Device A records the dip; device B, which has not seen it, tallies to the abattoir.
+  Both are honest captures and neither device can know. Ordering fixes the single-device case only.
+  The answer is a retroactive compliance flag on the disposal rather than a refusal, and it is a
+  slice of its own. See STATUS.md §2.3c.
+  ⛔ **REMAINDER — head arriving by `purchase` is unconditionally clear**, and with no `transfer`
+  reason in the group model, splitting a dipped flock has to be expressed as sale-out + purchase-in.
+  That is a modelling decision, not a defect, and it is STATUS.md §2.3b for the repo owner.
 ◐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132) — the
   CAPTURE is done (the health screen records a vaccination against a programme, commit d32451a). The
   DUE/OVERDUE read model is still ◐ and is named honestly: it needs a vaccination PROGRAMME SCHEDULE
@@ -622,14 +641,23 @@ Quality gates
   an ORDER, not an exact call list, because it is deliberately at-least-once and every endpoint is
   idempotent on the client id; what IS strict is that a later open sends nothing. The jsdom
   coverage (`src/sync/Outbox.test.tsx`) remains as the fast, detailed version
-☑ compliance-checker passes on FR-131 and FR-601–605; legal-compliance.md read first — run
+⛔ compliance-checker passes on FR-131 and FR-601–605; legal-compliance.md read first — run
   2026-07-23 (health, SA identity) and 2026-07-25 (withdrawal periods + evidence pack). One real
-  finding, fixed: product registrations must resolve by the TREATMENT day, not today. Its two
+  finding, fixed: product registrations must resolve by the TREATMENT day, not today.
+  ⚠️ **DEMOTED FROM ☑ 2026-07-27.** This line read ☑ while the same file said NOT APPROVABLE forty
+  lines below it. Three passes have now run; the third (2026-07-27) found a NEW SEV-1 in the code
+  written to close the second's findings. **It goes back to ☑ only when a pass returns APPROVABLE**,
+  and the passes so far are the reason to expect one more. Its two
   carry-forwards are now closed as well — `created_by`/`updated_by` on `theft_incidents` and
   `branding_registers` (migration 0015), because on a document handed to the SAPS Stock Theft Unit
   the reporter is part of the evidence, not metadata
 ☑ axe-core: 0 violations in BOTH themes on every new screen; pnpm verify exits 0; pnpm test:e2e
-  green — 0 violations. (Counts as at the commit that wrote this line: 21 e2e tests, 73 files /
+  green — 0 violations.
+  ⚠️ **THIS CLAIM WAS TRUE OF THE ROUTES AND FALSE OF THE CONTROLS UNTIL 2026-07-27 (`e5792d3`).**
+  The e2e seed wrote only the session, so every capture screen rendered its empty state under axe —
+  and the spec's own "assert the heading rendered first" guard passed anyway, because the heading
+  sits outside the conditional. The pickers, the date fields and both withholding panels had never
+  been audited. There is now a populated pass per theme that walks each screen to its controls. (Counts as at the commit that wrote this line: 21 e2e tests, 73 files /
   668 tests, 124.82 KB gz. **The live figures are in the "Where the gate stands" paragraph below
   and nowhere else** — this line kept a stale second copy that disagreed with it by 26 lines'
   distance, which is why it now says where to look instead of restating a number.)
@@ -657,29 +685,35 @@ home tile, entirely offline for the capture paths.
 > word that hid the difference. Everything before the pack in this sentence is still an offline
 > path end to end.
 
-**Where the gate stands (2026-07-26, fifth session, branch `phase-2/livestock`).** `pnpm verify`
-exits 0 (**77 files / 750 tests**, bundle 133.72 KB gz); `pnpm test:e2e` was last green at 25 tests,
-0 axe violations in both themes on every screen, including the offline cold-start capture on the
-built PWA — **but not re-run since `cc1b149`**, which touched `AdjustMobScreen.tsx` and the
-dictionaries, and given A7 that is worth one real run rather than an inference.
+**Where the gate stands (2026-07-27, sixth session, branch `phase-2/livestock`).** `pnpm verify`
+exits 0 (**77 files / 781 tests**, bundle 135.08 KB gz); `pnpm test:e2e` green at **27 tests**, 0 axe
+violations in both themes — including the new populated pass over the capture screens' controls, and
+the offline cold-start capture on the built PWA. CI green on both lanes on draft PR #3.
 
-⛔ **THE EXIT GATE DOES NOT READ TRUE, and the previous version of this paragraph said it did.**
-The gate has five clauses and two are unmet:
+⛔ **THE EXIT GATE DOES NOT READ TRUE.** The gate has five clauses. `pnpm verify` ✅,
+`pnpm test:e2e` ✅, CI-green-on-`main` ⚪ (unmeetable before the merge, by construction). Two remain
+unmet, and the FIRST one below is the live blocker:
 
 - **"the `reviewer`, `sync-auditor` and `compliance-checker` agents pass" — THEY DO NOT.** All
   three were run over `a6c8eff..HEAD` on 2026-07-26 (fifth session) and `compliance-checker`
-  returned **NOT APPROVABLE**, with two SEV-1 findings that put meat inside an active withdrawal
-  into the food chain. `sync-auditor` independently found the same boundary defect. The findings
-  are recorded in STATUS.md §3b and are **open**, not fixed — unlike the previous pass, this one
-  is being carried rather than closed, because the fixes are slices rather than edits.
+  returned **NOT APPROVABLE**. All twelve of those findings are now closed in code (STATUS.md §2c).
+  ⛔ **A THIRD pass ran 2026-07-27 over `5c769b4..HEAD` and the verdict is STILL NOT APPROVABLE** —
+  on a NEW SEV-1 found in the code written to close the previous ones: the outbox flush sent health
+  events after the disposals the withdrawal guard had to judge against them, so a point-in-time
+  guard returned 201 for meat inside an active withholding. That, and seven other findings across
+  the three agents, are fixed in `16fbb6a`…`e5792d3` (STATUS.md §2d). **A FOURTH pass is owed, and
+  the pattern so far is that each pass finds real defects in the previous pass's fixes.**
 - **"CI green on `main`" — structurally unmeetable before the PR exists**, because CI does not run
   on feature branches (STATUS.md §4 G5). This clause can only ever go true AT MERGE. Read it that
   way rather than treating it as a pre-PR blocker; it is the one clause the phase cannot satisfy
   by working harder.
 
-The other three clauses hold: `pnpm verify` exits 0, every checklist line is ☑ or ◐ with its
-remainder named (the FR-131 group-path remainder was added above after the review pass — it had
-been reading as ☑-shaped prose over a real gap), and the end-to-end sentence is TRUE. The two
+The other three clauses hold — but the second of them only as of 2026-07-27. `pnpm verify` exits 0;
+every checklist line is ☑ or ◐ with its remainder named; and the end-to-end sentence is TRUE.
+⚠️ **The checklist clause was FALSE for a whole session and nothing caught it**: three lines
+described the code as it stood BEFORE the fixes — one of them writing the FR-103 defect up as the
+design — and a ☑ on the compliance-checker line contradicted this same file forty lines below it.
+Reconciled 2026-07-27. **When a fix lands, the checklist line it makes stale is part of the diff.** The two
 clauses of that sentence which were false when it was first written — creating a camp, and tagging
 an animal — were the first two slices of this stretch of work.
 

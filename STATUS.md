@@ -3,17 +3,17 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-07-27 (sixth session) · **Branch:** `phase-2/livestock` @ `395b658`, PUSHED
+**Last updated:** 2026-07-27 (sixth session) · **Branch:** `phase-2/livestock` @ `e5792d3`, PUSHED
 
 > **Gate note, and it matters more than it looks:** the e2e lane was reporting green against a stale
 > bundle until the fifth session. Fixed — see §4 A7. If you see e2e fail and then pass on a re-run,
 > that is not a flake and it is not this bug either; read A7 before assuming.
 
-> ⛔ **The one thing owed before the PR can be marked ready: a THIRD review-agent pass.** §3b's
-> NOT APPROVABLE came from `compliance-checker`, and seven commits of compliance-gated code have
-> landed since. The author of a fix cannot clear the finding that produced it — run `reviewer`,
-> `sync-auditor` and `compliance-checker` over `5c769b4..HEAD` and read the output yourself. A green
-> `pnpm verify` is not that. See §2.1d.
+> ⛔ **The third review pass RAN (2026-07-27) and the verdict is STILL NOT APPROVABLE** — on a NEW
+> SEV-1 in the code written to close the previous SEV-1s. That finding and seven others are fixed in
+> `16fbb6a`…`e5792d3` (§2d). **A FOURTH pass is owed**, and the reason is now empirical rather than
+> procedural: pass two found twelve defects, pass three found eight more IN THE FIXES FOR THEM. The
+> author of a fix cannot close the finding that produced it. See §2.1d.
 
 ---
 
@@ -23,7 +23,7 @@
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. All twelve §3b findings are now CLOSED IN CODE — but the gate still does not read true, because nothing has re-reviewed them.** `pnpm verify` green: 77 files / **770** tests (was 750), bundle 133.73 KB gz. Seven commits this session, §2c. ⛔ `compliance-checker`'s **NOT APPROVABLE** verdict stands until a third agent pass says otherwise: the fixes are the author's own claim about the author's own work. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. Twenty findings closed in code across two review passes — and the gate still does not read true.** `pnpm verify` green: 77 files / **781** tests (was 750), bundle 135.08 KB gz; `pnpm test:e2e` **27** tests (was 25). Thirteen commits this session: §2c (twelve §3b findings) and §2d (eight more, from the third pass, all IN those fixes). ⛔ `compliance-checker` returned **NOT APPROVABLE** twice. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
@@ -61,14 +61,18 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    of finding 5 that are argued against below. §5 already prescribed this order, so it was followed
    rather than re-asked. Seven commits, §2c. **What this does NOT resolve is 1d.**
 
-1d. **⛔ NEW AND NOW THE LIVE ONE — the third review-agent pass.**
-   §3b's **NOT APPROVABLE** was `compliance-checker`'s verdict. Seven commits of compliance-gated
-   code have since landed *in response to it*, written by the same agent that is now reporting them
-   closed. That is the author marking their own homework, and on a food-safety guard it is not
-   good enough. `reviewer`, `sync-auditor` and `compliance-checker` need to run over
-   `5c769b4..HEAD` before the PR is marked ready, and **the output must be read directly, not
-   summarised** (CLAUDE.md, compliance gate). Not run this session: the session's standing
-   instruction is not to spawn agents unasked.
+1d. ~~**The third review-agent pass.**~~ ✅ **RAN 2026-07-27**, all three agents over
+   `5c769b4..HEAD`, output read directly. ⛔ **Verdict: still NOT APPROVABLE.** Eight findings, §2d,
+   all now fixed — including a **new SEV-1** nobody had looked at: the outbox flush sent doses
+   AFTER the disposals the guard judges against them, so the boundary returned 201 for meat inside
+   an active withholding.
+
+1e. **⛔ NEW AND NOW THE LIVE ONE — the FOURTH pass, and it is not a formality.**
+   The evidence is no longer procedural. Pass two found twelve defects; pass three found eight more,
+   **every one of them inside the fixes for those twelve** — a new SEV-1, two guards that disagreed
+   with the server, a `??` that reintroduced the very bug it was written to fix, and an axe lane
+   auditing seventeen screens with almost no widgets on them. There is no reason to believe pass
+   four finds nothing. Run all three over `7c2acd9..HEAD` and read the output.
    → _Answer (say the word and it runs):_
 
 1c. **NEW — install the defect-class hook?** Proposed at the end of the fifth session, **not
@@ -103,6 +107,18 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    **(iii) walking a camp boundary by GPS** (§4 B7). Everything else is blocked on something that
    does not exist, named in §4. **Phase 3's checklist is written** (G2 closed), so `/loop` has
    something to consume — but §2.4 and §2.5 gate its very first line.
+   → _Answer:_
+
+3c. **NEW — the CROSS-DEVICE withdrawal race. Ordering cannot close it; this needs a decision.**
+   `16fbb6a` fixed the single-device case: doses and moves now flush before any disposal, so one
+   phone's own captures are judged in the right order. Two phones cannot be fixed that way. Device A
+   records the dip; device B, which has never seen it, tallies to the abattoir. Both captures are
+   honest, both are offline, and neither device can know. The server sees them in arrival order and
+   the disposal may legitimately arrive first.
+   My view: a REFUSAL is wrong here — the disposal already happened, and refusing it days later just
+   loses the record. The answer is a retroactive compliance flag on the stored disposal event plus
+   something that surfaces it (the treatment register, or the "needs your attention" screen), which
+   is the same shape as the `withinWithdrawal` flag `e5792d3` added for a death. That is a slice.
    → _Answer:_
 
 3b. **NEW — a `transfer` tally reason, and what a `purchase` is allowed to clear.** Raised by §3b
@@ -286,6 +302,52 @@ something the product can produce before believing the fix is a read path.**
 
 ---
 
+## 2d. The THIRD review-agent pass (2026-07-27) — eight findings, all in §2c's own fixes
+
+All three agents over `5c769b4..HEAD`. **`compliance-checker`: still NOT APPROVABLE.** Every finding
+below is now fixed, each verified in both directions.
+
+⭐ **The headline is not any one finding — it is that pass three found eight defects inside pass
+two's twelve fixes.** Two of them were found by two agents independently, which by §3's rule is the
+signal to trust most.
+
+| Commit | Sev | What |
+|---|---|---|
+| `16fbb6a` | **SEV-1** | **The flush sent the dose AFTER the disposal it had to be judged against.** The queue was ordered by foreign keys alone, so health events — which CREATE a withholding — went second-to-last. The server's guard is a point-in-time query and cannot refuse what it has not received: dip the flock Monday offline, tally forty to the abattoir Tuesday, reconnect Friday, and the tally POSTs first and gets a **201**. It also falsified the invariant §2c had just written into `withdrawal.ts` — "the server still refuses what the client lets through" |
+| `713634b` | SEV-2 ⭐⭐ | **Both client guards disagreed with the server, in opposite directions.** `reviewer` found the individual path blind to MOB doses; `sync-auditor` found the group path blind to INDIVIDUAL ones. Health events are animal-XOR-mob; each guard read one column. Membership is now reconstructed on the device from the move log, the same shape the server runs |
+| `713634b` | SEV-3 | **A slaughter/sale was stamped `new Date()` and the day never asked** — so one inside a withholding, written up after the clear date, passed and left a record saying it was legal. Same defect class as the health screen's `now()`. Also: `t('loss.slaughtered')` was writing **farmer-facing copy into an audit field** |
+| `3b0d2e8` | MED | **The `??` reintroduced finding 7 as a fallback.** `initialHeadCount ?? headCount` fires on both `undefined` (legacy, safe) and `null` (explicit, dangerous) — so a hydrated row with no baseline would fold the log over its own output, silently, on every counted mob at once |
+| `3b0d2e8` | MED | **The client refused to record a true back-dated fact.** It folded the whole log then judged a past capture against the present: sell the flock on the 20th, remember five ewes died on the 18th, and Save is disabled. The server was fixed for exactly this; the screen was not, so the capture never reached it |
+| `f38af66` | SEV-3 ⭐⭐ | **The possession trail dropped every whole-flock dose** (both agents). An animal dipped with its mob monthly printed "Treatment history: None recorded" in the document whose value is showing continuous husbandry — the smallholder's animal, and the reverse-onus defence |
+| `f38af66` | SEV-3 | **The certificate still over-claimed, one case along.** Nulls were filtered before counting distinct values, so one marked animal among two unmarked printed its certificate at the head of the pack |
+| `e5792d3` | SEV-2 | **A blocked "Slaughtered" sat one tap from a silent "Died".** A death must never be refused — but saying nothing taught the workaround. It is now recorded AND flagged `withinWithdrawal`, on the event and on the screen |
+| `e5792d3` | SEV-2 | **axe was auditing seventeen screens and almost no widgets.** The e2e seed wrote only the session, so every capture screen rendered its empty state — and the spec's own "assert it rendered" guard passed, because the heading sits outside the conditional |
+
+**⚠️ A correction to §2c, which overstated its own rigour.** §2c claimed *each* fix was verified in
+both directions. That was false for findings 9 and 10: the pack tests asserted `%PDF-` and a
+non-zero length, so the entire renderer could be reverted — including "Photograph on file: Yes" —
+without a single test noticing, and `possessionTrail` had no coverage at all. Both now have real
+assertions. **A claim about test rigour is itself a claim that needs checking.**
+
+**The rules that came out of this pass:**
+
+- **A guard's inputs must arrive before the thing it guards.** FK ordering answers "will this row
+  insert"; it does not answer "will the check have the evidence". Any queue feeding a server-side
+  rule needs the second question asked of it explicitly.
+- **When a premise changes, go back for the comments that rested on it.** "The device cannot see mob
+  doses" was true when written and false three commits later, in the same branch, by my own change —
+  and the guard built on it stayed narrow.
+- **`??` is not `=== undefined`.** Where `null` and `undefined` mean opposite things, a nullish
+  fallback silently picks the dangerous reading.
+- **An assertion that cannot fail is not a test.** `%PDF-` proves a file exists, not that it says
+  anything. Ask of every test: what edit would this catch?
+- **An empty-state audit is not a screen audit.** A heading rendering outside a conditional will
+  satisfy a "did it render" guard while the controls under test are absent.
+- **A checklist line is part of the diff that makes it stale.** Three lines described pre-fix
+  behaviour for a whole session, one of them documenting a defect as the design.
+
+---
+
 ## 3b. The SECOND review-agent pass (2026-07-26, fifth session) — ✅ ALL TWELVE CLOSED IN CODE 2026-07-27
 
 > ⛔ **"Closed in code" is not "cleared."** Every fix is in §2c with a test, and the gate is green —
@@ -372,9 +434,10 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | # | Gap |
 |---|---|
 | A1–A3 | ✅ All three agents run 2026-07-26 over the branch at `a6c8eff`. Findings fixed, not filed — §3 |
-| A4 | ◐ **CI GREEN AGAIN 2026-07-27 on the seven §2c commits** — run `30259203581` at `395b658`: `Lint · Typecheck · Test · Build` 3m49s, `E2E · axe (both themes)` 1m25s. So the fixes are verified on a real CI machine, not only locally. Earlier note stands: **CI HAS NOW RUN, AND BOTH LANES PASS.** Draft PR #3, run `30211760029`, 2026-07-26: `Lint · Typecheck · Test · Build` green in 3m00s, `E2E · axe (both themes)` green in 1m31s. **This is the first time CI has ever executed against this code.** It also settles two things that were open: the e2e lane ran at HEAD (`664dc23`), so the "not re-run since `cc1b149`" worry is closed and it did NOT need a separate local run; and the shared-testcontainer change (A5) survived a real CI machine under real contention. The remaining half of this clause is CI green **on `main`**, which can only go true at merge |
-| A6 | ✅ Pass done 2026-07-26; **the work it produced is now done too — all twelve findings closed in code 2026-07-27, §2c.** ⛔ **But a THIRD pass over `5c769b4..HEAD` is owed and is the last thing gating the PR — §2.1d.** `compliance-checker` said NOT APPROVABLE and only `compliance-checker` can withdraw it |
+| A4 | ◐ **CI GREEN 2026-07-27 on the §2c commits** — run `30259203581` at `395b658`: `Lint · Typecheck · Test · Build` 3m49s, `E2E · axe (both themes)` 1m25s. So the fixes are verified on a real CI machine, not only locally. Earlier note stands: **CI HAS NOW RUN, AND BOTH LANES PASS.** Draft PR #3, run `30211760029`, 2026-07-26: `Lint · Typecheck · Test · Build` green in 3m00s, `E2E · axe (both themes)` green in 1m31s. **This is the first time CI has ever executed against this code.** It also settles two things that were open: the e2e lane ran at HEAD (`664dc23`), so the "not re-run since `cc1b149`" worry is closed and it did NOT need a separate local run; and the shared-testcontainer change (A5) survived a real CI machine under real contention. The remaining half of this clause is CI green **on `main`**, which can only go true at merge |
+| A6 | ✅ **THREE passes now run.** 2026-07-26 over `a6c8eff..HEAD` (twelve findings, §3b, all closed in §2c) and 2026-07-27 over `5c769b4..HEAD` (eight findings, §2d, all closed). ⛔ **Still NOT APPROVABLE, and a FOURTH pass is owed over `7c2acd9..HEAD` — §2.1e.** The empirical case for it: pass three found eight defects inside pass two's twelve fixes. Original note: Pass done 2026-07-26; **the work it produced is now done too — all twelve findings closed in code 2026-07-27, §2c.** ⛔ **But a THIRD pass over `5c769b4..HEAD` is owed and is the last thing gating the PR — §2.1d.** `compliance-checker` said NOT APPROVABLE and only `compliance-checker` can withdraw it |
 | A7 | ✅ **FIXED 2026-07-26 — the e2e lane could report green against code that no longer existed.** `vite preview` serves `dist`, and `turbo.json`'s `build` task declared no `outputs`, so turbo cached only LOGS: a cache hit printed "FULL TURBO" and wrote no files, leaving whatever bundle was already on disk. Proven rather than theorised — a screen's heading was replaced with a literal and the suite stayed 25-green, then kept FAILING for five consecutive runs after the source was restored, because the broken bundle was never replaced either way. Two changes: `outputs: ["dist/**"]` in `turbo.json`, and `pnpm test:e2e` now builds first (turbo-cached, so free when nothing changed). Verified in both directions — breaking a heading now fails 2 tests, restoring it returns 25 green. **This is why the earlier "2 failed then clean on a re-run" was never a flake; do not re-diagnose it as one.** |
+| A9 | ⚠️ **NEW, AND IT IS THE SAME MISTAKE A8 RECORDS.** One `pnpm test:e2e` run on 2026-07-27 reported **25 passed with exit code 1** — so two failed — and **the failing test names were discarded**, because the command piped the run through `tail -4` while its exit code gated a commit. Three consecutive runs since are 27-green, and `pnpm verify` is green, so this is *probably* a build-cache race between a `prettier --write` and the `turbo build` that `test:e2e` runs first. **That is a guess and it is recorded as one.** ⚠️ **Never pipe a test run through `tail`/`grep` when its result decides whether to commit** — capture the failure first, exactly as A8 says and exactly as was not done here |
 | A8 | ⚠️ **STILL OPEN, but there is now a live candidate.** §3b finding 11's `toISOString().slice(0,10)` in test assertions was fixed in `511cf3c`, and the two-hour SAST/UTC divergence was DEMONSTRATED rather than assumed — it fits the shape exactly (one run in nine, no reproduction). **That is a candidate, not a diagnosis:** the failing test name was never captured, so this cannot be closed on it. If the suite reds again, capture the test name FIRST. Original note follows. ⚠️ **ONE unexplained unit-suite failure, cause unknown — do not dismiss it.** A single `pnpm verify` run reported `1 failed | 76 passed` and the next EIGHT runs were clean (4 full-suite, 4 targeted). Which test it was is unknown, because the log was discarded before the failure detail was read. **What HAS been ruled out:** the flake recorded in memory as "`confirmTotpEnrolment` reds when a code straddles a 30s boundary" cannot be it — `TOTP_DRIFT_STEPS = 1`, so `verifyTotp` accepts ±1 step and a boundary crossing is tolerated by design. That recorded explanation is simply wrong and has been corrected. If this recurs, capture the failing test name FIRST; a one-in-nine failure in a suite the PR gate depends on is worth a real diagnosis, not a re-run. |
 | A5 | ✅ **FIXED 2026-07-26 (fifth session).** `startWerfTestDatabase()` now memoises ONE container per worker process instead of one per suite (`packages/db/src/testing.ts`), so at most `maxWorkers` (4) exist at once rather than ten. `stop()` on the shared handle is a no-op — the first suite to finish must not pull the database out from under the three behind it in the same worker — and teardown happens on worker exit, with Ryuk reaping anything that outlives a crash. `bootWerfTestDatabase()` is the escape hatch for a suite that genuinely needs a private one. Verified: 77 files / 750 tests still green. Done before CI ever ran the suite, which was the point |
 
@@ -407,54 +470,53 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 ## 5. How to resume
 
 ```
-1. RUN `git status` AND RECONCILE AGAINST §1. Do this FIRST, before reading
-   anything else and before planning a single thing. If the tree is not clean,
-   §1 is lying to you — say so and reconcile it before any other work. This is
-   step one because §1 asserted "Working tree is clean. No stashes." through an
-   entire session in which sixteen modified files and a half-built breeding
-   slice sat underneath it, and nothing in the loop was ever going to catch it.
-   (It DID reconcile at the start of the sixth session. Keep checking anyway —
-   one true reading is not a reason to stop looking.)
-   Also check `git branch -a`: `phase-2/breeding` is PARKED, half-built, and now
-   SEVEN commits behind — and those commits changed the health payload and the
-   move write path it is stacked on. Rebase it before touching it.
+1. RUN `git status` AND RECONCILE AGAINST §1. First, before reading anything
+   else and before planning. §1 asserted "Working tree is clean. No stashes."
+   through an entire session in which sixteen modified files and a half-built
+   breeding slice sat underneath it. It has reconciled on the last two readings;
+   keep checking anyway.
+   Also `git branch -a`: `phase-2/breeding` is PARKED, half-built, and now
+   THIRTEEN commits behind — and those commits changed the health payload, the
+   move write path and the outbox ordering it is stacked on. Rebase it first.
 
 2. Then read STATUS.md, CLAUDE.md, and docs/04-delivery/phase-checklists.md.
-   Answer the decisions in §2 with me before planning. §2.1d is the live one.
+   Answer §2 with me before planning. §2.1e is the live one.
 
-⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE, and the reason has CHANGED —
-read this rather than assuming it is the same blocker as last time.
+⛔ PHASE 2'S EXIT GATE DOES NOT READ TRUE. Two clauses of five are unmet, and
+the checklist clause was itself false for a whole session before 2026-07-27 —
+three lines described pre-fix behaviour, one writing a defect up as the design.
 
-All twelve §3b findings, both SEV-1s included, are closed in code with tests
-(§2c). `pnpm verify` is green at 77 files / 770 tests. What is NOT done is the
-re-review: `compliance-checker` returned NOT APPROVABLE, and the seven commits
-that answer it were written by the same agent now reporting them fixed. The
-author of a fix cannot close the finding that produced it.
+THE FIRST WORK OF THE NEXT SESSION IS §2.1e — THE FOURTH AGENT PASS over
+`7c2acd9..HEAD`, all three agents, output read directly (CLAUDE.md compliance
+gate). This is not a formality and the evidence says so:
 
-THE FIRST WORK OF THE NEXT SESSION IS §2.1d — the third agent pass over
-`5c769b4..HEAD`, all three agents, output READ DIRECTLY and not summarised
-(CLAUDE.md, compliance gate). It is the last thing standing between this branch
-and a PR that can be marked ready. It was not run this session only because the
-standing instruction here is not to spawn agents unasked.
+    pass two    twelve findings over the feature work
+    pass three  EIGHT more, every one inside pass two's fixes — including a
+                new SEV-1, two client guards that disagreed with the server,
+                and a `??` that reintroduced the bug it was written to fix
 
-After it, and only after it:
+There is no reason to expect pass four to find nothing. Twenty findings are
+closed in code with tests; what is NOT established is that the closing did not
+introduce more, because that is exactly what happened last time.
 
-  1. Whatever the pass finds. Same discipline as §2c — write the test, watch it
-     FAIL against the old code, then keep it. A test written after a fix that
-     was never seen to fail proves only that it compiles.
-  2. §2.3b — the `transfer` tally reason and what a `purchase` may clear. A
-     modelling decision, mine to raise and yours to make. It is the one part of
-     §3b finding 5 that code cannot settle.
-  3. Then a feature again: B1 (rebase first) or B7's GPS boundary walk.
+After the pass, and only after it:
+
+  1. Whatever it finds. Same discipline: write the test, watch it FAIL against
+     the old code, then keep it. And check the CLAIM as well as the code —
+     §2c said "each fix verified in both directions" and that was false for two
+     of them (§2d).
+  2. §2.3c — the CROSS-DEVICE withdrawal race. Ordering fixed one phone; two
+     phones need a retroactive flag on the disposal, not a refusal. A slice.
+  3. §2.3b — the `transfer` tally reason and what a `purchase` may clear. A
+     modelling decision, mine to raise and yours to make.
+  4. Then a feature again: B1 (rebase first) or B7's GPS boundary walk.
 
 Phase 1 has NO open gaps. Phase 3's checklist EXISTS, so /loop has something to
 consume — but §2.4 (labour-law review booked) and §2.5 (Gazette figures
 re-verified) gate its very first line, and both have been open for four
 sessions. DO NOT seed regulatory_rates from the July 2026 table.
 
-Also open and cheap to answer: §2.1c (the defect-class hook — recommendation and
-its caveats are written up there, it just needs a yes or no). Note that this
-session removed the last `toISOString().slice(0,10)` from the tree, so the hook
-would currently be silent; that is an argument for installing it now, while it
-costs nothing, rather than after the pattern comes back a fourth time.
+Also open and cheap: §2.1c (the defect-class hook — yes or no). Note it would
+currently be silent, since the tree has no `toISOString().slice(0,10)` left.
+That is an argument for installing it now rather than after a fourth relapse.
 ```

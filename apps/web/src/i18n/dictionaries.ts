@@ -473,6 +473,7 @@ const en = {
   'loss.pick': 'Which animal?',
   'loss.outcome': 'What happened?',
   'loss.died': 'Died',
+  'loss.slaughtered': 'Slaughtered',
   'loss.sold': 'Sold',
   // FR-131. Says no AND says when — a refusal with no way forward is what makes someone stop
   // recording treatments at all.
@@ -501,8 +502,10 @@ const en = {
   'loss.saleWeight': 'Weight sold on, kg (optional)',
   'loss.save': 'Record death',
   'loss.saveSale': 'Record sale',
+  'loss.saveSlaughter': 'Record slaughter',
   'loss.savedSuffix': 'recorded — marked dead',
   'loss.savedSuffixSold': 'recorded — marked sold',
+  'loss.savedSuffixSlaughtered': 'recorded — slaughtered',
   'loss.empty': 'No live animals to record a loss against.',
   'loss.back': 'Back to animals',
   // Stock theft (FR-603, Stock Theft Act 57 of 1959). ZA copy names the SAPS Stock Theft Unit
@@ -1011,6 +1014,7 @@ const af: Record<TranslationKey, string> = {
   'loss.pick': 'Watter dier?',
   'loss.outcome': 'Wat het gebeur?',
   'loss.died': 'Gevrek',
+  'loss.slaughtered': 'Geslag',
   'loss.sold': 'Verkoop',
   'loss.withheld':
     'Hierdie dier is behandel en kan nog nie vir slag verkoop word nie. Dit mag verkoop word vanaf',
@@ -1035,8 +1039,10 @@ const af: Record<TranslationKey, string> = {
   'loss.saleWeight': 'Gewig verkoop op, kg (opsioneel)',
   'loss.save': 'Teken vrektes aan',
   'loss.saveSale': 'Teken verkoop aan',
+  'loss.saveSlaughter': 'Teken slag aan',
   'loss.savedSuffix': 'aangeteken — as dood gemerk',
   'loss.savedSuffixSold': 'aangeteken — as verkoop gemerk',
+  'loss.savedSuffixSlaughtered': 'aangeteken — geslag',
   'loss.empty': 'Geen lewende diere om ’n verlies teen aan te teken nie.',
   'loss.back': 'Terug na diere',
   'theft.title': 'Veediefstal',

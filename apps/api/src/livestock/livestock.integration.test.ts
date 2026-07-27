@@ -925,6 +925,62 @@ describe('weight capture (FR-140)', () => {
       expect(event.enterpriseId).toBe(herd!.id);
     });
 
+    it('⭐ validates a tally against what the PROJECTION puts before it, ties included', async () => {
+      // The as-at fold cut on `occurred_at <= this one` while the projection orders on
+      // `(occurred_at, id)`, so a tally sharing an instant but sorting AFTER this one was folded in
+      // anyway. Ties are ordinary rather than exotic: the capture screen stamps every tally on a
+      // day with the same instant.
+      //
+      // The cost is a wrong REFUSAL, which is the expensive kind. The flock is sold out on the
+      // 14th; a second phone in a dead zone recorded five dead the same day, BEFORE the truck came.
+      // Validated against a flock the sale had already emptied, an honest capture takes a 400 — and
+      // FR-009 sets a 400 aside permanently, so five dead sheep are simply lost.
+      const a = await tenant('Alpha');
+      const [mob] = await elevated.db
+        .insert(mobs)
+        .values({
+          farmId: a.farmId,
+          name: 'Flock A',
+          species: 'sheep',
+          headCount: 300,
+          initialHeadCount: 300,
+        })
+        .returning();
+
+      // The two ids fix the order the projection runs in: the deaths sort first.
+      const deaths = '0190f3a0-0000-7000-8000-00000000a001';
+      const sale = '0190f3a0-0000-7000-8000-00000000a002';
+      const sameInstant = '2026-07-14T05:30:00.000Z';
+
+      await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          id: sale,
+          farmId: a.farmId,
+          mobId: mob!.id,
+          occurredAt: sameInstant,
+          reason: 'sale',
+          count: 300,
+          counterparty: 'Senekal Abattoir',
+        }),
+      );
+
+      const late = await service.recordMobTally(
+        a.userId,
+        tallyBody({
+          id: deaths,
+          farmId: a.farmId,
+          mobId: mob!.id,
+          occurredAt: sameInstant,
+          reason: 'death',
+          count: 5,
+        }),
+      );
+
+      expect(late.type).toBe('tally');
+      expect(late.payload).toMatchObject({ reason: 'death', delta: -5 });
+    });
+
     it('refuses a tally on a group that is managed as individual animals', async () => {
       const a = await tenant('Alpha');
       const [mob] = await elevated.db
@@ -1164,6 +1220,60 @@ describe('weight capture (FR-140)', () => {
         tx.select().from(animals).where(eq(animals.id, animalId)),
       );
       expect(now!.mobId).toBeNull();
+    });
+
+    it('⭐ a BACK-DATED move records where the animal actually was, and does not walk it backwards', async () => {
+      // Arrival order is not `occurred_at` order — a phone out of signal for a week sends a move
+      // dated the 2nd long after one dated the 9th has landed. The FROM side used to be stamped
+      // from `animals.mob_id`, the denormalised "where is it now", so the late arrival recorded the
+      // 9th's DESTINATION as the 2nd's origin. That is baked into an append-only log the withdrawal
+      // guard reconstructs mob membership from, so it is wrong for good.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const [home] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Home flock', species: 'sheep' })
+        .returning();
+      const [dipCamp] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dip camp flock', species: 'sheep' })
+        .returning();
+      const [far] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Far camp flock', species: 'sheep' })
+        .returning();
+      await elevated.db.update(animals).set({ mobId: home!.id }).where(eq(animals.id, animalId));
+
+      // Captured on the phone that had signal.
+      await service.recordMove(
+        a.userId,
+        moveBody({
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-04-09T06:00:00.000Z',
+          toMobId: far!.id,
+        }),
+      );
+
+      // The one that was stuck in a pocket for a week. It happened FIRST.
+      const backDated = await service.recordMove(
+        a.userId,
+        moveBody({
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-04-02T06:00:00.000Z',
+          toMobId: dipCamp!.id,
+        }),
+      );
+
+      // Where it came from on the 2nd was the home flock — not the far camp it is in today.
+      expect(backDated.payload).toMatchObject({ fromMobId: home!.id, toMobId: dipCamp!.id });
+
+      // And it is still in the far camp: a move that describes last week must not relocate it.
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      expect(now!.mobId).toBe(far!.id);
     });
 
     it('refuses a move that changes nothing', async () => {
@@ -2080,6 +2190,74 @@ describe('weight capture (FR-140)', () => {
         }),
       );
       expect(sold.type).toBe('sale');
+    });
+
+    it('⭐ blocks an individual SLAUGHTER inside a withdrawal, and never blocks a death', async () => {
+      // The mirror image of the hole the group tally path closed. `slaughter` has been a
+      // first-class tally reason since FR-102 and the individual path had only a free-text
+      // `cause` — so "slaughtered for the workers' rations" was an ordinary death and nothing
+      // fired. The flag exists because a guard cannot read that fact out of a typed sentence.
+      //
+      // And the other half matters as much: a DEATH is not a food-safety event. Refusing to record
+      // one would refuse to record a fact, which is worse than recording it.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const other = await anAnimal(a.farmId);
+      const productId = await aVetProduct(); // meat 28d → clears 2026-08-17
+
+      for (const id of [animalId, other]) {
+        await service.recordTreatment(
+          a.userId,
+          treatmentBody({
+            farmId: a.farmId,
+            animalId: id,
+            productId,
+            administeredOn: '2026-07-20',
+          }),
+        );
+      }
+
+      await expect(
+        service.recordDeath(
+          a.userId,
+          schemas.recordDeathRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            animalId,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+            cause: 'Slaughtered for rations',
+            slaughtered: true,
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      // The same animal, on the same day, having simply died: recorded without argument.
+      const died = await service.recordDeath(
+        a.userId,
+        schemas.recordDeathRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: other,
+          occurredAt: '2026-08-16T06:00:00.000Z',
+          cause: 'Tick-borne disease',
+        }),
+      );
+      expect(died.type).toBe('death');
+      expect(died.payload).not.toHaveProperty('slaughtered');
+
+      // And the slaughter goes through once the withholding has run.
+      const slaughtered = await service.recordDeath(
+        a.userId,
+        schemas.recordDeathRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-08-17T06:00:00.000Z',
+          cause: 'Slaughtered for rations',
+          slaughtered: true,
+        }),
+      );
+      expect(slaughtered.payload).toMatchObject({ slaughtered: true });
     });
 
     it('does not withhold an animal in a DIFFERENT mob from the one dipped', async () => {

@@ -57,6 +57,11 @@ export interface StoredDeath extends StoredEventBase {
   readonly type: 'death';
   readonly status: 'dead';
   readonly cause: string;
+  /**
+   * Slaughtered for consumption rather than found dead — COMPLIANCE-GATED (FR-131). A flag and not
+   * a word inside `cause`, because the withdrawal guard has to be able to read it.
+   */
+  readonly slaughtered?: boolean;
 }
 
 /** A sale (FR-106) → 'sold'. `priceCents` is Money — integer cents, never a float (CLAUDE.md). */
@@ -119,6 +124,7 @@ interface CaptureBase {
 
 export interface DeathCapture extends CaptureBase {
   readonly cause: string;
+  readonly slaughtered?: boolean;
 }
 
 export interface SaleCapture extends CaptureBase {
@@ -225,8 +231,15 @@ export function useRecordDeath(): (capture: DeathCapture) => void {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
-      recordDeath({ ...domainBase(c), cause: c.cause });
-      store.append({ ...storedBase(c), type: 'death', status: 'dead', cause: c.cause });
+      const slaughtered = c.slaughtered === true ? { slaughtered: true as const } : {};
+      recordDeath({ ...domainBase(c), cause: c.cause, ...slaughtered });
+      store.append({
+        ...storedBase(c),
+        type: 'death',
+        status: 'dead',
+        cause: c.cause,
+        ...slaughtered,
+      });
     },
     [store],
   );

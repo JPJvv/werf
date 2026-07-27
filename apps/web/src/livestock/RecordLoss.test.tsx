@@ -11,11 +11,15 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { farmToday } from '../farmTime';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
 const HERD_KEY = `werf-herd:${FARM_ID}`;
 const EVENTS_KEY = `werf-events:${FARM_ID}`;
+const HEALTH_KEY = `werf-health:${FARM_ID}`;
+const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
+const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -67,6 +71,41 @@ function storedEvents(): Array<Record<string, unknown>> {
 
 function seedHerd(...animals: Array<Record<string, unknown>>): void {
   window.localStorage.setItem(HERD_KEY, JSON.stringify(animals));
+}
+
+/**
+ * An animal dosed TODAY with a 28-day meat withdrawal, and the register that says so — the state a
+ * device is genuinely in when a farmer opens this screen a week after a dipping.
+ */
+function seedActiveWithdrawal(animalId: string): void {
+  window.localStorage.setItem(
+    PRODUCTS_KEY,
+    JSON.stringify([
+      {
+        id: PRODUCT_ID,
+        name: 'Terramycin LA',
+        registrationNumber: 'G1234 Act 36/1947',
+        species: ['cattle'],
+        meatWithdrawalDays: 28,
+        milkWithdrawalHours: 96,
+        route: 'intramuscular',
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    HEALTH_KEY,
+    JSON.stringify([
+      {
+        id: '0190f3a0-0000-7000-8000-00000000e001',
+        farmId: FARM_ID,
+        animalId,
+        kind: 'treatment',
+        occurredAt: new Date().toISOString(),
+        administeredOn: farmToday(),
+        productId: PRODUCT_ID,
+      },
+    ]),
+  );
 }
 
 function seedSale(animalId: string): void {
@@ -179,6 +218,83 @@ describe('recording a loss', () => {
     const sale = storedEvents().find((e) => e['type'] === 'sale');
     expect(sale).toBeTruthy();
     expect(sale).not.toHaveProperty('weightKg');
+  });
+
+  it('⭐ records a SLAUGHTER as its own outcome, not as a death with a word typed in', async () => {
+    // FR-131 needs to be able to READ "this went into the food chain". Home slaughter is the
+    // ordinary disposal on most of these farms and it was landing as an ordinary death, so the
+    // guard that blocks a sale inside a withdrawal had nothing to fire on — the mirror image of
+    // the hole the group tally path closed.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+    await user.click(screen.getByRole('button', { name: /record slaughter/i }));
+
+    expect(screen.getByText(/slaughtered/i)).toBeTruthy();
+    const death = storedEvents().find((e) => e['type'] === 'death');
+    expect(death).toMatchObject({ type: 'death', status: 'dead', slaughtered: true });
+  });
+
+  it('⭐ refuses a slaughter inside an active meat withdrawal, at capture', async () => {
+    // Offline is the default state, so a server-only refusal arrives days after the animal has
+    // been eaten. It says WHEN as well as no: a refusal with no way forward is what makes someone
+    // stop recording treatments at all.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    seedActiveWithdrawal('a1');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+
+    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /record slaughter/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(storedEvents().find((e) => e['type'] === 'death')).toBeUndefined();
+  });
+
+  it('refuses a SALE inside an active meat withdrawal, at capture', async () => {
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    seedActiveWithdrawal('a1');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Sold' }));
+    await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
+    await user.type(screen.getByLabelText(/^price/i), '8500');
+
+    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+  });
+
+  it('still lets an untreated animal be slaughtered', async () => {
+    // The bound: a guard that refuses what it should not is a guard people learn to work around.
+    cachedSession();
+    seedHerd(animal('a2', { sex: 'female' }));
+    // The dose is on a DIFFERENT animal — one withdrawal must not hold the whole herd.
+    seedActiveWithdrawal('a1');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+    await user.click(screen.getByRole('button', { name: /record slaughter/i }));
+
+    expect(storedEvents().find((e) => e['type'] === 'death')).toMatchObject({ slaughtered: true });
   });
 
   it('drops the home tile count when an animal is sold, and it survives a cold start', () => {

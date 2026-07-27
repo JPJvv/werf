@@ -114,6 +114,9 @@ export const livestockApi = {
         animalId: death.animalId,
         occurredAt: death.occurredAt,
         cause: death.cause,
+        // FR-131. The server refuses a slaughter inside an active withdrawal, so the flag has to
+        // cross the wire — a flag the device keeps to itself is a guard the boundary cannot run.
+        ...(death.slaughtered === true ? { slaughtered: true } : {}),
       },
       token,
     ),

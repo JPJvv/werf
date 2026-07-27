@@ -34,7 +34,12 @@ import { useVetProducts } from './LocalVetProducts';
 import { meatWithdrawalFor } from './withdrawal';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
-type Outcome = 'died' | 'sold' | 'missing';
+/**
+ * ⭐ `slaughtered` is its own outcome and not a `cause` someone types into `died`, because FR-131
+ * has to be able to READ it. Slaughtering for the pot puts meat into the food chain exactly as a
+ * sale to an abattoir does, and a withdrawal guard cannot find that fact inside a sentence.
+ */
+type Outcome = 'died' | 'slaughtered' | 'sold' | 'missing';
 
 interface SavedSummary {
   readonly what: string;
@@ -98,7 +103,10 @@ export function RecordLossScreen() {
     selected === null
       ? null
       : meatWithdrawalFor(selected.id, farmDay(new Date()), healthEvents, products);
-  const withheld = outcome === 'sold' && withdrawal !== null && withdrawal.blocked;
+  // Both routes into the food chain, and the guard has to cover both. A server-only check on the
+  // slaughter path arrives days after the animal has been eaten.
+  const intoFoodChain = outcome === 'sold' || outcome === 'slaughtered';
+  const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
 
   const reset = () => {
     setSelectedId(null);
@@ -135,6 +143,11 @@ export function RecordLossScreen() {
     if (outcome === 'died') {
       if (cause.trim().length === 0) return;
       recordDeath({ ...base, cause: cause.trim() });
+    } else if (outcome === 'slaughtered') {
+      if (withheld) return;
+      // The cause is the act itself, so nothing is asked for: standing at a carcass with gloves on,
+      // a required free-text box to type "slaughtered" is an obstacle and not a record.
+      recordDeath({ ...base, cause: t('loss.slaughtered'), slaughtered: true });
     } else if (outcome === 'sold') {
       if (counterparty.trim().length === 0 || !priceIsValid(priceRands)) return;
       recordSale({
@@ -175,21 +188,25 @@ export function RecordLossScreen() {
   const savedSuffix = (o: Outcome): TranslationKey =>
     o === 'died'
       ? 'loss.savedSuffix'
-      : o === 'sold'
-        ? 'loss.savedSuffixSold'
-        : 'loss.savedSuffixMissing';
+      : o === 'slaughtered'
+        ? 'loss.savedSuffixSlaughtered'
+        : o === 'sold'
+          ? 'loss.savedSuffixSold'
+          : 'loss.savedSuffixMissing';
 
   const canSave =
     outcome === 'died'
       ? cause.trim().length > 0
-      : outcome === 'sold'
-        ? counterparty.trim().length > 0 &&
-          priceIsValid(priceRands) &&
-          weightIsValid(saleWeight) &&
-          !withheld
-        : outcome === 'missing'
-          ? lastSeenDay !== '' && !locating
-          : false;
+      : outcome === 'slaughtered'
+        ? !withheld
+        : outcome === 'sold'
+          ? counterparty.trim().length > 0 &&
+            priceIsValid(priceRands) &&
+            weightIsValid(saleWeight) &&
+            !withheld
+          : outcome === 'missing'
+            ? lastSeenDay !== '' && !locating
+            : false;
 
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
@@ -254,7 +271,7 @@ export function RecordLossScreen() {
                   {t('loss.outcome')}
                 </legend>
                 <div className="flex gap-2">
-                  {(['died', 'sold', 'missing'] as const).map((o) => (
+                  {(['died', 'slaughtered', 'sold', 'missing'] as const).map((o) => (
                     <button
                       key={o}
                       type="button"
@@ -319,11 +336,11 @@ export function RecordLossScreen() {
                 </>
               )}
 
-              {/* ⭐ The withholding warning, shown the moment "Sold" is chosen and BEFORE the
-                  buyer's name is typed. It answers "so when CAN I sell?" in the same breath as
-                  saying no, which is the whole point of the rule existing in the app rather than
-                  in a document. Warning FORM — tinted panel, left rule — never the ochre action
-                  shape (NFR-411). */}
+              {/* ⭐ The withholding warning, shown the moment "Sold" or "Slaughtered" is chosen and
+                  BEFORE the buyer's name is typed. It answers "so when CAN I sell?" in the same
+                  breath as saying no, which is the whole point of the rule existing in the app
+                  rather than in a document. Warning FORM — tinted panel, left rule — never the
+                  ochre action shape (NFR-411). */}
               {withheld && withdrawal?.clearFrom !== null && (
                 <p className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
                   {t('loss.withheld')}{' '}
@@ -397,9 +414,11 @@ export function RecordLossScreen() {
                     : t(
                         outcome === 'died'
                           ? 'loss.save'
-                          : outcome === 'sold'
-                            ? 'loss.saveSale'
-                            : 'loss.saveMissing',
+                          : outcome === 'slaughtered'
+                            ? 'loss.saveSlaughter'
+                            : outcome === 'sold'
+                              ? 'loss.saveSale'
+                              : 'loss.saveMissing',
                       )}
                 </button>
               )}

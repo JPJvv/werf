@@ -21,7 +21,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, gt, inArray, isNull, lte, or, type SQL } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, lte, or, type SQL } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
@@ -308,13 +308,10 @@ export class LivestockService {
         await assertMobClearOfMeatWithdrawal(tx, input.farmId, input.mobId, input.occurredAt);
       }
 
-      const headAsAt = await deriveHeadCount(
-        tx,
-        input.farmId,
-        input.mobId,
-        mob.initialHeadCount,
-        input.occurredAt,
-      );
+      const headAsAt = await deriveHeadCount(tx, input.farmId, input.mobId, mob.initialHeadCount, {
+        occurredAt: input.occurredAt,
+        id: input.id,
+      });
 
       const { event } = recordMobTally({
         id: input.id,
@@ -472,6 +469,21 @@ export class LivestockService {
         );
       if (!current) throw new NotFoundError('Animal not found');
 
+      // ⭐ The FROM side is reconstructed from the move log at this event's place in it, NOT read
+      // off `animals.mob_id` / `animals.land_unit_id`. Those are the denormalised "where is it
+      // now", and arrival order is not `occurred_at` order: a phone out of signal for a week sends
+      // a move dated the 18th long after one dated the 20th has landed. Stamping the current column
+      // onto it writes the 20th's destination as the 18th's origin — and it goes into an APPEND-ONLY
+      // log that the withdrawal guard reconstructs membership from, so the wrong answer is baked in
+      // permanently. Fixing the read path and leaving the write path is how a bug survives its fix.
+      const before = await positionBefore(
+        tx,
+        input.farmId,
+        input.animalId,
+        { occurredAt: input.occurredAt, id: input.id },
+        current,
+      );
+
       const { event, animalChange } = recordMove({
         id: input.id,
         farmId: input.farmId,
@@ -479,8 +491,8 @@ export class LivestockService {
         occurredAt: input.occurredAt,
         currentStatus: current.status,
         enterpriseId: current.enterpriseId,
-        fromLandUnitId: current.landUnitId,
-        fromMobId: current.mobId,
+        fromLandUnitId: before.landUnitId,
+        fromMobId: before.mobId,
         // Omit vs null is load-bearing all the way down: spreading an undefined key would make the
         // domain read it as "unchanged", which is what we want, but only if it is genuinely absent.
         ...(input.toLandUnitId === undefined ? {} : { toLandUnitId: input.toLandUnitId }),
@@ -493,16 +505,21 @@ export class LivestockService {
 
       const stored = await insertEvent(tx, event);
 
-      // The denormalised position follows the history, not the other way round.
-      await tx
-        .update(animals)
-        .set({
-          landUnitId: animalChange.landUnitId,
-          mobId: animalChange.mobId,
-          updatedBy: userId,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(animals.id, input.animalId), eq(animals.farmId, input.farmId)));
+      // The denormalised position follows the history, not the other way round — and "the history"
+      // means the LATEST move in the log, not the last one to arrive. A back-dated move that lands
+      // behind one already stored describes where the animal was, not where it is; writing it to
+      // the animal row would walk the herd backwards to last week's camp.
+      if (before.isLatest) {
+        await tx
+          .update(animals)
+          .set({
+            landUnitId: animalChange.landUnitId,
+            mobId: animalChange.mobId,
+            updatedBy: userId,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(animals.id, input.animalId), eq(animals.farmId, input.farmId)));
+      }
 
       return stored;
     });
@@ -524,6 +541,15 @@ export class LivestockService {
         input.animalId,
       );
 
+      // ⭐ FR-131 on the individual slaughter path. A death is not a food-safety event and must
+      // never be refused — refusing to record a fact is worse than recording it — but a SLAUGHTER
+      // is a disposal into the food chain exactly as a sale to an abattoir is. The group path has
+      // blocked `slaughter` since FR-102; leaving the individual path open was the mirror image of
+      // the hole that closed, and it is the path with a named animal and a stored clear date.
+      if (input.slaughtered) {
+        await assertClearOfMeatWithdrawal(tx, input.farmId, input.animalId, input.occurredAt);
+      }
+
       const base = {
         id: input.id,
         farmId: input.farmId,
@@ -532,6 +558,7 @@ export class LivestockService {
         currentStatus,
         enterpriseId,
         cause: input.cause,
+        ...(input.slaughtered ? { slaughtered: true } : {}),
         createdBy: userId,
       };
       const { event } = recordDeath(
@@ -1058,12 +1085,19 @@ async function deriveHeadCount(
   mobId: string,
   initialHead: number | null,
   /**
-   * Fold only what happened up to and including this instant. Used to validate a capture against
-   * the count AS AT the day it describes rather than against today's, so a back-dated tally
-   * arriving from a phone that was out of signal is judged on the flock it was actually describing.
+   * Fold only what the projection places BEFORE this event. Used to validate a capture against the
+   * count as at the day it describes rather than against today's, so a back-dated tally arriving
+   * from a phone that was out of signal is judged on the flock it was actually describing.
    * Omitted for the authoritative write, which folds the entire log.
+   *
+   * ⭐ It takes the whole `(occurredAt, id)` pair, not just the instant, because that is the order
+   * the projection below runs in and a cut must agree with it. Cutting on `occurred_at <= asAt`
+   * folded in same-instant tallies the projection places AFTER this one — and ties are ordinary
+   * here, since the capture screen stamps every tally on a day with the same instant. The visible
+   * cost was not a wrong count but a wrong REFUSAL: an honest back-dated capture judged against
+   * head that had not left yet gets a 400, and FR-009 sets a 400 aside permanently.
    */
-  asAt?: Date,
+  asAt?: { readonly occurredAt: Date; readonly id: string },
 ): Promise<number | null> {
   const rows = await tx
     .select({ id: events.id, occurredAt: events.occurredAt, payload: events.payload })
@@ -1074,7 +1108,14 @@ async function deriveHeadCount(
         eq(events.mobId, mobId),
         eq(events.type, 'tally'),
         isNull(events.deletedAt),
-        ...(asAt === undefined ? [] : [lte(events.occurredAt, asAt)]),
+        ...(asAt === undefined
+          ? []
+          : [
+              or(
+                lt(events.occurredAt, asAt.occurredAt),
+                and(eq(events.occurredAt, asAt.occurredAt), lt(events.id, asAt.id)),
+              )!,
+            ]),
       ),
     )
     // ⭐ A TOTAL order, and it is load-bearing rather than tidiness. `occurred_at` alone has ties —
@@ -1249,6 +1290,71 @@ interface MobInterval {
   readonly toDay: string | null;
 }
 
+/** One `move` event's before/after, as the domain always writes all four sides of it. */
+interface StoredMovePayload {
+  readonly fromLandUnitId?: string | null;
+  readonly toLandUnitId?: string | null;
+  readonly fromMobId?: string | null;
+  readonly toMobId?: string | null;
+}
+
+/**
+ * Where an animal was immediately BEFORE `at`, reconstructed from the move log (FR-103), and
+ * whether `at` is the latest move it has.
+ *
+ * Ordered by the same `(occurredAt, id)` total order everything else here uses, so "before" means
+ * the same thing to this function as it does to the projections. With no moves at all the animal's
+ * own columns are the honest answer: nothing has overwritten them.
+ *
+ * A back-dated move landing behind existing ones does leave those later moves carrying a `fromMobId`
+ * that is now stale — an append-only log cannot go back and correct them. It does not matter, and
+ * that is by construction rather than luck: `mobMembership` reads a `fromMobId` only off the FIRST
+ * move, and takes every later position from the preceding move's `toMobId`.
+ */
+async function positionBefore(
+  tx: CaptureTx,
+  farmId: string,
+  animalId: string,
+  at: { readonly occurredAt: Date; readonly id: string },
+  current: { readonly landUnitId: string | null; readonly mobId: string | null },
+): Promise<{ landUnitId: string | null; mobId: string | null; isLatest: boolean }> {
+  const moves = await tx
+    .select({ id: events.id, occurredAt: events.occurredAt, payload: events.payload })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        eq(events.animalId, animalId),
+        eq(events.type, 'move'),
+        isNull(events.deletedAt),
+      ),
+    )
+    .orderBy(events.occurredAt, events.id);
+
+  if (moves.length === 0) return { ...current, isLatest: true };
+
+  const precedes = (move: { occurredAt: Date; id: string }) =>
+    move.occurredAt < at.occurredAt ||
+    (move.occurredAt.getTime() === at.occurredAt.getTime() && move.id < at.id);
+
+  const prior = moves.filter(precedes);
+  const isLatest = prior.length === moves.length;
+
+  if (prior.length > 0) {
+    const p = prior[prior.length - 1]!.payload as StoredMovePayload;
+    return { landUnitId: p.toLandUnitId ?? null, mobId: p.toMobId ?? null, isLatest };
+  }
+
+  // Nothing precedes it, so the animal was still wherever it was before the log begins — which the
+  // earliest move records as its own FROM side.
+  const earliest = moves[0]!.payload as StoredMovePayload;
+  return {
+    landUnitId: earliest.fromLandUnitId ?? null,
+    mobId: earliest.fromMobId ?? null,
+    isLatest,
+  };
+}
+
 /**
  * When an animal was in which mob, reconstructed from its `move` events (FR-103).
  *
@@ -1295,20 +1401,21 @@ async function mobMembership(
   let openedOn = dayOf(new Date(0));
 
   for (const move of moves) {
-    const { fromMobId, toMobId } = move.payload as {
-      fromMobId?: string | null;
-      toMobId?: string | null;
-    };
-    // A move that names no mob change leaves the animal where it is — `recordMove` sends only the
-    // dimensions that changed, so an absent `toMobId` means "same mob, different camp".
-    if (toMobId === undefined) continue;
+    const { fromMobId, toMobId } = move.payload as StoredMovePayload;
+    // A move that names no mob change leaves the animal where it is: it walked to another camp
+    // without leaving its flock. The domain resolves an omitted destination to the origin before
+    // it writes, so the payload always carries BOTH sides and "no mob change" is the two being
+    // EQUAL — testing for an absent key here tested for something that never occurs, and split one
+    // membership interval into two adjacent ones on every camp-only move.
+    const to = toMobId ?? null;
+    if (to === (fromMobId ?? null)) continue;
     const movedOn = dayOf(move.occurredAt);
     // Both intervals claim the move DAY: the animal was in the source mob that morning and the
     // destination mob that afternoon, and a dose recorded against either on that day reached it.
     if (openMob !== null) {
       intervals.push({ mobId: openMob, fromDay: openedOn, toDay: movedOn });
     }
-    openMob = toMobId ?? (fromMobId === undefined ? openMob : null);
+    openMob = to;
     openedOn = movedOn;
   }
   if (openMob !== null) intervals.push({ mobId: openMob, fromDay: openedOn, toDay: null });

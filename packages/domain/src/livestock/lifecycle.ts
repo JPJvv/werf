@@ -141,12 +141,19 @@ export function recordBirth(input: BirthInput): LifecycleCapture {
 export interface DeathInput extends CaptureBase {
   readonly cause: string;
   readonly disposal?: string;
+  /**
+   * Slaughtered for consumption rather than found dead — COMPLIANCE-GATED (FR-131). Carried as a
+   * flag so the withdrawal guard has something it can actually read: a caller cannot be asked to
+   * infer "this one went into the food chain" from the cause text a farmer typed.
+   */
+  readonly slaughtered?: boolean;
 }
 
 export function recordDeath(input: DeathInput): LifecycleCapture {
   const statusChange = transitionTo(input, 'dead');
   const payload: Record<string, unknown> = { cause: input.cause };
   if (input.disposal !== undefined) payload.disposal = input.disposal;
+  if (input.slaughtered) payload.slaughtered = true;
   return capture(buildEvent(input, 'death', schemas.deathPayloadSchema, payload), statusChange);
 }
 

@@ -58,10 +58,21 @@ export const weightPayloadSchema = z.object({
 });
 export type WeightPayload = z.infer<typeof weightPayloadSchema>;
 
-/** Death (FR-105): the cause, and how the carcass was disposed of. Drives status → 'dead'. */
+/**
+ * Death (FR-105): the cause, and how the carcass was disposed of. Drives status → 'dead'.
+ *
+ * ⭐ `slaughtered` is a compliance-gated FLAG rather than a word in `cause`, and it is the whole
+ * reason this schema is not just free text. An animal slaughtered on the farm goes into the food
+ * chain exactly as a sale to an abattoir does, so FR-131's withdrawal guard has to fire for it — and
+ * a guard cannot read "slaughtered for the workers' rations" out of a sentence someone typed. The
+ * group path (`tally`) has had `slaughter` as a first-class reason since FR-102; without this the
+ * individual path was the mirror image of the hole that closed.
+ */
 export const deathPayloadSchema = z.object({
   cause: z.string().min(1),
   disposal: z.string().min(1).optional(),
+  /** True when the animal was slaughtered for consumption rather than found dead. */
+  slaughtered: z.boolean().optional(),
 });
 export type DeathPayload = z.infer<typeof deathPayloadSchema>;
 

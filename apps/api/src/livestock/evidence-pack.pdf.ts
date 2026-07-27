@@ -56,7 +56,10 @@ export function renderEvidencePackPdf(pack: schemas.EvidencePack): Promise<Buffe
     line('Discovered', formatInstant(pack.discoveredAt));
     line('Last seen', formatInstant(pack.lastSeenAt));
     line('Last-seen GPS (GeoJSON)', pack.lastSeenLocationGeojson ?? '—');
-    line('Registered brand certificate', pack.brandCertificateReference ?? '—');
+    // Null the moment the linked animals carry different marks — the per-animal line below is the
+    // authoritative one, and naming a single certificate over mixed marks would claim coverage the
+    // registration does not give.
+    line('Registered brand certificate', pack.brandCertificateReference ?? 'See each animal below');
     line('Case number', pack.caseNumber ?? '—');
     line('Reporting station', pack.reportingStation ?? '—');
     if (pack.observations !== null) {
@@ -77,12 +80,18 @@ export function renderEvidencePackPdf(pack: schemas.EvidencePack): Promise<Buffe
         .text(`Animal ${index + 1}`);
       doc.moveDown(0.2);
       line('Animal ID', animal.animalId);
+      // Retired identifiers are printed and SAID to be retired. The number an animal was wearing
+      // when it walked off is the number on it at a roadblock, and dropping it would drop the most
+      // useful line on the page.
       const identifiers =
         animal.identifiers.length === 0
           ? '—'
-          : animal.identifiers.map((i) => `${i.type}: ${i.value}`).join('; ');
+          : animal.identifiers
+              .map((i) => `${i.type}: ${i.value}${i.retired ? ' (retired)' : ''}`)
+              .join('; ');
       line('Identifiers', identifiers);
       line('Registered mark', animal.mark ?? '—');
+      line('Brand certificate', animal.certificateReference ?? '—');
       line('Acquired', animal.acquiredAt ?? '—');
       line('Source (ownership chain)', animal.source ?? '—');
       // ⭐ The REFERENCE and its state, never a bare "Yes". This document is handed to the SAPS
@@ -96,6 +105,27 @@ export function renderEvidencePackPdf(pack: schemas.EvidencePack): Promise<Buffe
           ? 'None on file'
           : `Reference ${animal.photoKey} — image not attached to this pack`,
       );
+
+      // ⭐ The possession trail. Under the Stock Theft Act's reverse onus this is the DEFENCE:
+      // identification says the animal is yours, this says it was HERE, being kept and treated,
+      // right up to the loss. Printed in occurrence order, with camp codes rather than ids.
+      doc.moveDown(0.3).font('Helvetica-Bold').fontSize(10).text('Movement history');
+      doc.font('Helvetica');
+      if (animal.movements.length === 0) {
+        doc.text('  None recorded.');
+      }
+      for (const move of animal.movements) {
+        doc.text(`  ${formatInstant(move.occurredAt)}  ${move.from ?? '—'} → ${move.to ?? '—'}`);
+      }
+
+      doc.moveDown(0.3).font('Helvetica-Bold').fontSize(10).text('Treatment history');
+      doc.font('Helvetica');
+      if (animal.treatments.length === 0) {
+        doc.text('  None recorded.');
+      }
+      for (const dose of animal.treatments) {
+        doc.text(`  ${formatInstant(dose.occurredAt)}  ${dose.kind}: ${dose.product}`);
+      }
     }
 
     doc.end();

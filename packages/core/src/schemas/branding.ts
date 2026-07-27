@@ -61,12 +61,53 @@ export type NewBrandingRegister = z.infer<typeof newBrandingRegisterSchema>;
 /** One identified animal in the pack: how it is identified and its ownership/movement/treatment trail. */
 export const evidenceAnimalSchema = z.object({
   animalId: uuidSchema,
-  identifiers: z.array(z.object({ type: z.string().min(1), value: z.string().min(1) })),
+  /**
+   * Every identifier this animal has EVER carried, retired ones included and marked as such.
+   *
+   * ⭐ Excluding tombstoned identifiers was exactly backwards for this document. A tag that was
+   * replaced after the loss is the number the animal was WEARING when it walked off, and it is the
+   * number on the recovered animal at a roadblock or a sale yard. It is stated as retired rather
+   * than silently mixed in, because the pack's whole value is that every line in it is a fact.
+   */
+  identifiers: z.array(
+    z.object({
+      type: z.string().min(1),
+      value: z.string().min(1),
+      retired: z.boolean(),
+    }),
+  ),
   mark: z.string().min(1).nullable(),
+  /**
+   * The certificate for THIS animal's mark. Per-animal, because stock in one incident can carry
+   * different marks and one certificate printed for the whole incident over-claims — it asserts
+   * that every animal listed is covered by a registration that may cover only some of them.
+   */
+  certificateReference: z.string().min(1).nullable(),
   photoKey: z.string().min(1).nullable(),
   /** Acquisition → current: the ownership chain establishing continuous possession. */
   acquiredAt: dateSchema.nullable(),
   source: z.string().min(1).nullable(),
+  /**
+   * ⭐ The possession trail (legal-compliance.md § 3.2), and it is not decoration: under the Stock
+   * Theft Act's reverse onus, continuous possession is the DEFENCE. A pack that identifies an
+   * animal and cannot show it was on this farm, being kept and treated, week after week, has left
+   * out the part that does the legal work. Camp codes and dates, in occurrence order.
+   */
+  movements: z.array(
+    z.object({
+      occurredAt: timestampSchema,
+      from: z.string().min(1).nullable(),
+      to: z.string().min(1).nullable(),
+    }),
+  ),
+  /** Dosing history — the other half of the same trail. Husbandry nobody performs on stolen stock. */
+  treatments: z.array(
+    z.object({
+      occurredAt: timestampSchema,
+      kind: z.string().min(1),
+      product: z.string().min(1),
+    }),
+  ),
 });
 export type EvidenceAnimal = z.infer<typeof evidenceAnimalSchema>;
 
@@ -78,7 +119,13 @@ export const evidencePackSchema = z.object({
   lastSeenLocationGeojson: z.string().min(1).nullable(),
   headCount: z.number().int().positive(),
   animals: z.array(evidenceAnimalSchema),
-  /** The registered brand certificate reference for the ownership proof. */
+  /**
+   * The incident-level brand certificate — set ONLY when every marked animal in it carries the same
+   * one, and null the moment they do not. The per-animal reference is the authoritative field; this
+   * is a convenience for the ordinary case of a single farm mark, and it goes null rather than
+   * picking a winner because a pack that names one certificate over mixed marks claims coverage it
+   * does not have.
+   */
   brandCertificateReference: z.string().min(1).nullable(),
   /** What was found and reported — facts only. */
   observations: z.string().min(1).nullable(),

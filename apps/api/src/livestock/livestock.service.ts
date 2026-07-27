@@ -28,6 +28,7 @@ import {
   brandingRegisters,
   events,
   farms,
+  landUnits,
   mobs,
   theftIncidentAnimals,
   theftIncidents,
@@ -965,27 +966,35 @@ export class LivestockService {
                 animalId: animalIdentifiers.animalId,
                 type: animalIdentifiers.type,
                 value: animalIdentifiers.value,
+                deletedAt: animalIdentifiers.deletedAt,
               })
               .from(animalIdentifiers)
+              // ⭐ RETIRED IDENTIFIERS INCLUDED, which is the opposite of what every other read
+              // here does and is correct only for this document. A tag replaced after the loss is
+              // the number the animal was WEARING when it walked off, and the number on it at a
+              // roadblock. They are flagged rather than mixed in — every line in this pack is a
+              // fact, including the fact that a number is no longer current.
               .where(
                 and(
                   eq(animalIdentifiers.farmId, farmId),
                   inArray(animalIdentifiers.animalId, animalIds),
-                  isNull(animalIdentifiers.deletedAt),
                 ),
               );
 
-      const identifiersByAnimal = new Map<string, { type: string; value: string }[]>();
+      const identifiersByAnimal = new Map<
+        string,
+        { type: string; value: string; retired: boolean }[]
+      >();
       for (const row of identifierRows) {
         const list = identifiersByAnimal.get(row.animalId) ?? [];
-        list.push({ type: row.type, value: row.value });
+        list.push({ type: row.type, value: row.value, retired: row.deletedAt !== null });
         identifiersByAnimal.set(row.animalId, list);
       }
 
-      // The ownership proof is the registered brand certificate the stolen stock carried — the first
-      // one present among the linked animals (the common case is a single farm mark).
-      const brandCertificateReference =
-        animalRows.map((r) => r.certificateReference).find((ref) => ref !== null) ?? null;
+      // ⭐ The possession trail (legal-compliance.md § 3.2). Under the Stock Theft Act's reverse
+      // onus this is the DEFENCE — a pack that identifies an animal and cannot show it was here,
+      // being kept and treated, week after week, has omitted the part that does the legal work.
+      const trail = await possessionTrail(tx, farmId, animalIds);
 
       return assembleEvidencePack({
         farmId,
@@ -993,7 +1002,6 @@ export class LivestockService {
         lastSeenAt: incident.lastSeenAt,
         lastSeenLocationGeojson: incident.lastSeenLocationGeojson,
         headCount: incident.headCount,
-        brandCertificateReference,
         observations: incident.observations,
         caseNumber: incident.caseNumber,
         reportingStation: incident.reportingStation,
@@ -1001,9 +1009,12 @@ export class LivestockService {
           animalId: r.animalId,
           identifiers: identifiersByAnimal.get(r.animalId) ?? [],
           mark: r.mark ?? null,
+          certificateReference: r.certificateReference ?? null,
           photoKey: r.photoKey,
           acquiredAt: r.acquiredAt,
           source: r.source,
+          movements: trail.movements.get(r.animalId) ?? [],
+          treatments: trail.treatments.get(r.animalId) ?? [],
         })),
       });
     });
@@ -1363,6 +1374,83 @@ interface MobInterval {
   readonly mobId: string;
   readonly fromDay: string;
   readonly toDay: string | null;
+}
+
+/**
+ * The possession trail for a set of animals — where each was walked and what each was dosed with,
+ * in occurrence order (FR-603, legal-compliance.md § 3.2).
+ *
+ * ⭐ This is the reverse-onus defence, not a nicety. Identification proves an animal is yours;
+ * continuous possession proves it was HERE, being kept, right up to the loss — a movement log
+ * across camps and a treatment log nobody performs on stolen stock. Two queries for the whole
+ * incident rather than two per animal, because a pack is generated for a herd, not a head.
+ *
+ * Camps are rendered as CODES. A pack goes to a police station, and a UUID tells them nothing.
+ */
+async function possessionTrail(
+  tx: CaptureTx,
+  farmId: string,
+  animalIds: readonly string[],
+): Promise<{
+  movements: Map<string, { occurredAt: Date; from: string | null; to: string | null }[]>;
+  treatments: Map<string, { occurredAt: Date; kind: string; product: string }[]>;
+}> {
+  const movements = new Map<
+    string,
+    { occurredAt: Date; from: string | null; to: string | null }[]
+  >();
+  const treatments = new Map<string, { occurredAt: Date; kind: string; product: string }[]>();
+  if (animalIds.length === 0) return { movements, treatments };
+
+  const camps = await tx
+    .select({ id: landUnits.id, code: landUnits.code })
+    .from(landUnits)
+    .where(eq(landUnits.farmId, farmId));
+  const codeOf = new Map(camps.map((c) => [c.id, c.code]));
+  const named = (id: unknown): string | null =>
+    typeof id === 'string' ? (codeOf.get(id) ?? null) : null;
+
+  const rows = await tx
+    .select({
+      animalId: events.animalId,
+      type: events.type,
+      occurredAt: events.occurredAt,
+      payload: events.payload,
+    })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        inArray(events.animalId, [...animalIds]),
+        inArray(events.type, ['move', 'treatment', 'vaccination', 'dip']),
+        isNull(events.deletedAt),
+      ),
+    )
+    .orderBy(events.occurredAt, events.id);
+
+  for (const row of rows) {
+    if (row.animalId === null) continue;
+    if (row.type === 'move') {
+      const p = row.payload as StoredMovePayload;
+      const list = movements.get(row.animalId) ?? [];
+      list.push({
+        occurredAt: row.occurredAt,
+        from: named(p.fromLandUnitId),
+        to: named(p.toLandUnitId),
+      });
+      movements.set(row.animalId, list);
+      continue;
+    }
+    // The product NAME is stamped onto the event server-side at capture, so the pack prints what
+    // was actually given rather than resolving a registration that may since have been superseded.
+    const product = (row.payload as { product?: unknown }).product;
+    if (typeof product !== 'string') continue;
+    const list = treatments.get(row.animalId) ?? [];
+    list.push({ occurredAt: row.occurredAt, kind: row.type, product });
+    treatments.set(row.animalId, list);
+  }
+
+  return { movements, treatments };
 }
 
 /** One `move` event's before/after, as the domain always writes all four sides of it. */

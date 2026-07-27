@@ -13,16 +13,35 @@
 
 import { schemas } from '@werf/core';
 
-/** One identified animal's facts, as gathered from the herd + identifier + brand rows. */
+/** One identified animal's facts, as gathered from the herd + identifier + brand + event rows. */
 export interface EvidencePackAnimalInput {
   readonly animalId: string;
-  readonly identifiers: ReadonlyArray<{ readonly type: string; readonly value: string }>;
+  /** Every identifier it has ever carried — RETIRED ONES INCLUDED, flagged. See the schema. */
+  readonly identifiers: ReadonlyArray<{
+    readonly type: string;
+    readonly value: string;
+    readonly retired: boolean;
+  }>;
   /** The registered mark this animal carries, or null if unmarked. */
   readonly mark: string | null;
+  /** The certificate for THIS animal's mark — per animal, because marks can differ in one loss. */
+  readonly certificateReference: string | null;
   readonly photoKey: string | null;
   /** Acquisition record — the start of the ownership chain (YYYY-MM-DD). */
   readonly acquiredAt: string | null;
   readonly source: string | null;
+  /** The possession trail: where it was walked and when, in occurrence order (camp codes). */
+  readonly movements: ReadonlyArray<{
+    readonly occurredAt: Date;
+    readonly from: string | null;
+    readonly to: string | null;
+  }>;
+  /** The possession trail: what it was dosed with and when, in occurrence order. */
+  readonly treatments: ReadonlyArray<{
+    readonly occurredAt: Date;
+    readonly kind: string;
+    readonly product: string;
+  }>;
 }
 
 export interface EvidencePackInput {
@@ -31,8 +50,6 @@ export interface EvidencePackInput {
   readonly lastSeenAt: Date | null;
   readonly lastSeenLocationGeojson: string | null;
   readonly headCount: number;
-  /** The registered brand certificate reference — the ownership proof. */
-  readonly brandCertificateReference: string | null;
   readonly observations: string | null;
   readonly caseNumber: string | null;
   readonly reportingStation: string | null;
@@ -44,6 +61,16 @@ export interface EvidencePackInput {
  * `evidencePackSchema` parses them back to Dates (the same wire discipline as every capture); the
  * parse is also what enforces the no-suspect contract structurally.
  */
+/** The one certificate covering every marked animal here, or null when they do not agree. */
+function soleCertificate(animals: ReadonlyArray<EvidencePackAnimalInput>): string | null {
+  const distinct = new Set(
+    animals
+      .map((a) => a.certificateReference)
+      .filter((ref): ref is string => ref !== null && ref !== ''),
+  );
+  return distinct.size === 1 ? [...distinct][0]! : null;
+}
+
 export function assembleEvidencePack(input: EvidencePackInput): schemas.EvidencePack {
   return schemas.evidencePackSchema.parse({
     farmId: input.farmId,
@@ -53,13 +80,30 @@ export function assembleEvidencePack(input: EvidencePackInput): schemas.Evidence
     headCount: input.headCount,
     animals: input.animals.map((a) => ({
       animalId: a.animalId,
-      identifiers: a.identifiers.map((i) => ({ type: i.type, value: i.value })),
+      identifiers: a.identifiers.map((i) => ({
+        type: i.type,
+        value: i.value,
+        retired: i.retired,
+      })),
       mark: a.mark,
+      certificateReference: a.certificateReference,
       photoKey: a.photoKey,
       acquiredAt: a.acquiredAt,
       source: a.source,
+      movements: a.movements.map((m) => ({
+        occurredAt: m.occurredAt.toISOString(),
+        from: m.from,
+        to: m.to,
+      })),
+      treatments: a.treatments.map((tr) => ({
+        occurredAt: tr.occurredAt.toISOString(),
+        kind: tr.kind,
+        product: tr.product,
+      })),
     })),
-    brandCertificateReference: input.brandCertificateReference,
+    // Derived here rather than accepted, so the "one mark or none" rule cannot be got wrong by a
+    // caller: distinct references across the linked animals, and null unless there is exactly one.
+    brandCertificateReference: soleCertificate(input.animals),
     observations: input.observations,
     caseNumber: input.caseNumber,
     reportingStation: input.reportingStation,

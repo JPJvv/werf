@@ -13,18 +13,36 @@ const base: EvidencePackInput = {
   lastSeenAt: new Date('2026-07-21T15:00:00.000Z'),
   lastSeenLocationGeojson: '{"type":"Point","coordinates":[26.15,-29.1]}',
   headCount: 2,
-  brandCertificateReference: 'AIS-FS-0042',
   observations: 'Two heifers missing from Camp 3; fence cut on the northern boundary.',
   caseNumber: 'CAS 123/07/2026',
   reportingStation: 'Senekal SAPS',
   animals: [
     {
       animalId: '01900000-0000-7000-8000-0000000000a1',
-      identifiers: [{ type: 'visual_tag', value: 'FS-1024' }],
+      identifiers: [
+        { type: 'visual_tag', value: 'FS-1024', retired: false },
+        // The tag it was wearing before it was re-tagged. The pack must keep it.
+        { type: 'visual_tag', value: 'FS-0311', retired: true },
+      ],
       mark: 'FR',
+      certificateReference: 'AIS-FS-0042',
       photoKey: 'photos/a1.jpg',
       acquiredAt: '2024-03-01',
       source: 'Bought at Senekal auction',
+      movements: [
+        {
+          occurredAt: new Date('2026-06-02T08:00:00.000Z'),
+          from: 'NOORD',
+          to: 'CAMP 3',
+        },
+      ],
+      treatments: [
+        {
+          occurredAt: new Date('2026-06-18T06:00:00.000Z'),
+          kind: 'dip',
+          product: 'Tickaway',
+        },
+      ],
     },
   ],
 };
@@ -38,11 +56,62 @@ describe('assembleEvidencePack (FR-603)', () => {
     expect(pack.caseNumber).toBe('CAS 123/07/2026');
     expect(pack.lastSeenAt?.toISOString()).toBe('2026-07-21T15:00:00.000Z');
     expect(pack.animals[0]).toMatchObject({
-      identifiers: [{ type: 'visual_tag', value: 'FS-1024' }],
       mark: 'FR',
+      certificateReference: 'AIS-FS-0042',
       acquiredAt: '2024-03-01',
       source: 'Bought at Senekal auction',
     });
+  });
+
+  it('⭐ keeps a RETIRED identifier, flagged — it is the number the animal was wearing', () => {
+    // Every other read in the product excludes tombstones. This document is the exception, and the
+    // reason is concrete: a tag replaced after the loss is the number on the animal at a roadblock
+    // or in a sale yard. Excluding it drops the most useful line on the page.
+    const pack = assembleEvidencePack(base);
+
+    expect(pack.animals[0]!.identifiers).toEqual([
+      { type: 'visual_tag', value: 'FS-1024', retired: false },
+      { type: 'visual_tag', value: 'FS-0311', retired: true },
+    ]);
+  });
+
+  it('⭐ carries the possession trail — the reverse-onus defence, not decoration', () => {
+    // legal-compliance.md § 3.2. Identification proves the animal is yours; movement and treatment
+    // history prove it was HERE, being kept, right up to the loss. A pack without them has left
+    // out the part that does the legal work.
+    const pack = assembleEvidencePack(base);
+
+    expect(pack.animals[0]!.movements).toEqual([
+      { occurredAt: new Date('2026-06-02T08:00:00.000Z'), from: 'NOORD', to: 'CAMP 3' },
+    ]);
+    expect(pack.animals[0]!.treatments).toEqual([
+      { occurredAt: new Date('2026-06-18T06:00:00.000Z'), kind: 'dip', product: 'Tickaway' },
+    ]);
+  });
+
+  it('⭐ names ONE incident certificate only when every mark agrees, never a winner', () => {
+    // Printing the first non-null over mixed marks asserts that every animal listed is covered by
+    // a registration that may cover only some of them — an over-claim in the one document whose
+    // value is that each line is a fact.
+    const mixed = assembleEvidencePack({
+      ...base,
+      animals: [
+        base.animals[0]!,
+        {
+          ...base.animals[0]!,
+          animalId: '01900000-0000-7000-8000-0000000000a2',
+          certificateReference: 'AIS-FS-0099',
+        },
+      ],
+    });
+    expect(mixed.brandCertificateReference).toBeNull();
+    expect(mixed.animals.map((a) => a.certificateReference)).toEqual([
+      'AIS-FS-0042',
+      'AIS-FS-0099',
+    ]);
+
+    // The ordinary case — one farm mark — still gets the convenience line.
+    expect(assembleEvidencePack(base).brandCertificateReference).toBe('AIS-FS-0042');
   });
 
   it('carries an open loss where the stock was never re-sighted (null last-seen)', () => {

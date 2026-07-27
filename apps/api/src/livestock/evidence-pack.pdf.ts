@@ -85,7 +85,17 @@ export function renderEvidencePackPdf(pack: schemas.EvidencePack): Promise<Buffe
       line('Registered mark', animal.mark ?? '—');
       line('Acquired', animal.acquiredAt ?? '—');
       line('Source (ownership chain)', animal.source ?? '—');
-      line('Photograph on file', animal.photoKey === null ? 'No' : 'Yes');
+      // ⭐ The REFERENCE and its state, never a bare "Yes". This document is handed to the SAPS
+      // Stock Theft Unit, and "Yes" is an assertion the product cannot currently back: `photo_key`
+      // is client-writable and there is no object storage behind it yet (STATUS §4 B2), so a pack
+      // could claim a photograph nobody can be shown. A line that names the reference and says
+      // plainly that the image is not attached is a fact; "Yes" was a claim.
+      line(
+        'Photograph',
+        animal.photoKey === null
+          ? 'None on file'
+          : `Reference ${animal.photoKey} — image not attached to this pack`,
+      );
     }
 
     doc.end();

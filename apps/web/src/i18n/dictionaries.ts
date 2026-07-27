@@ -435,8 +435,10 @@ const en = {
   'tally.price': 'Price for the lot (optional)',
   'tally.tooMany': 'This group has',
   'tally.tooManyFix': 'Count the group and record what you find.',
-  // The fallback when a capture is refused by something the screen did not predict. The domain's
-  // own message is shown when there is one; this covers a throw that carries none.
+  // Shown whenever a capture is refused by something the screen did not predict. This is the LINE
+  // THE FARMER READS — the domain's own message is printed underneath it as detail, never in place
+  // of it, because domain errors are raised in English from a package that has no locale and an
+  // Afrikaans device must not be handed raw English as its explanation.
   'tally.refused':
     'That change could not be recorded. Check the group and the number, and try again.',
   'tally.theftNote': 'This changes the count. It does not file a stock-theft report.',

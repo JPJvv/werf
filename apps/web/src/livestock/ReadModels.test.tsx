@@ -9,11 +9,19 @@
  * none, and "3 withholding" is both true today and the number that stops the wrong animal going
  * onto a truck.
  */
+/**
+ * ⭐ Dates here go through `farmDay`/`farmToday`, never `toISOString().slice(0, 10)`. The code under
+ * test computes in the FARM's zone; a UTC slice names yesterday between 00:00 and 02:00 SAST, so an
+ * assertion written that way reds for two hours out of every twenty-four and passes for the other
+ * twenty-two. That is not a flake — it is a test asserting a different day from the one the product
+ * is right about.
+ */
 
 import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
+import { farmDay, farmToday } from '../farmTime';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -71,10 +79,7 @@ function animal(id: string, sex: string, ageDays: number | null) {
     species: 'cattle',
     breed: null,
     sex,
-    dob:
-      ageDays === null
-        ? null
-        : new Date(Date.now() - ageDays * 86_400_000).toISOString().slice(0, 10),
+    dob: ageDays === null ? null : farmDay(new Date(Date.now() - ageDays * 86_400_000)),
     dobEstimated: false,
     status: 'alive',
     statusAt: null,
@@ -176,7 +181,7 @@ describe('the home grid as an instrument (FR-017)', () => {
           animalId: id,
           kind: 'treatment',
           occurredAt: new Date().toISOString(),
-          administeredOn: new Date().toISOString().slice(0, 10),
+          administeredOn: farmToday(),
           productId: PRODUCT_ID,
           batchId: null,
         },

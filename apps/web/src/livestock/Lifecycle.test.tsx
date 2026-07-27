@@ -12,12 +12,20 @@
  *  • A WEANING derives the age rather than asking a farmer in a race to work out that a calf is
  *    207 days old.
  */
+/**
+ * ⭐ Dates here go through `farmDay`/`farmToday`, never `toISOString().slice(0, 10)`. The code under
+ * test computes in the FARM's zone; a UTC slice names yesterday between 00:00 and 02:00 SAST, so an
+ * assertion written that way reds for two hours out of every twenty-four and passes for the other
+ * twenty-two. That is not a flake — it is a test asserting a different day from the one the product
+ * is right about.
+ */
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
+import { farmDay } from '../farmTime';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -347,7 +355,7 @@ describe('the weaning session (FR-111)', () => {
     const damId = uuidv7();
     const calfId = uuidv7();
     // Born a known number of days ago, so the derived age is a fact rather than a guess.
-    const born = new Date(Date.now() - 205 * 86_400_000).toISOString().slice(0, 10);
+    const born = farmDay(new Date(Date.now() - 205 * 86_400_000));
     seedHerd(animal(damId), animal(calfId, { damId, dob: born }));
     const user = userEvent.setup();
     window.history.pushState({}, '', '/animals/wean');

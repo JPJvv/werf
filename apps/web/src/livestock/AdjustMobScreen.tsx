@@ -96,7 +96,7 @@ export function AdjustMobScreen() {
   const [counterparty, setCounterparty] = useState('');
   const [priceRands, setPriceRands] = useState('');
   const [lastSaved, setLastSaved] = useState<{ name: string; head: number } | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
+  const [refused, setRefused] = useState<{ detail: string | null } | null>(null);
 
   if (!activeFarm) return null;
 
@@ -148,8 +148,13 @@ export function AdjustMobScreen() {
 
     // The domain is the authority on whether this capture is legal, and `canSave` above is a
     // preview of its answer rather than a second implementation of it. If the two ever disagree,
-    // the farmer must see the domain's own message — not a blank screen from an exception thrown
-    // out of a click handler with their capture lost.
+    // the farmer must see SOMETHING — not a blank screen from an exception thrown out of a click
+    // handler with their capture lost.
+    //
+    // ⭐ What they see is the translated string, and the domain's own message goes underneath it.
+    // Domain errors are raised in English by design (they are thrown from a package with no
+    // locale), so preferring `error.message` put raw English in front of an Afrikaans farmer and
+    // left the translated line as a fallback that fired only when the throw was not an Error.
     try {
       recordTally({
         id: uuidv7(),
@@ -168,7 +173,7 @@ export function AdjustMobScreen() {
         ...(price === undefined ? {} : { priceCents: price }),
       });
     } catch (error) {
-      setRefused(error instanceof Error ? error.message : t('tally.refused'));
+      setRefused({ detail: error instanceof Error ? error.message : null });
       return;
     }
 
@@ -192,12 +197,13 @@ export function AdjustMobScreen() {
       )}
 
       {refused && (
-        <p
+        <div
           role="alert"
           className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
         >
-          {refused}
-        </p>
+          <p>{t('tally.refused')}</p>
+          {refused.detail !== null && <p className="mt-1 text-soil-700">{refused.detail}</p>}
+        </div>
       )}
 
       {counted.length === 0 ? (

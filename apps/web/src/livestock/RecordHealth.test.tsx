@@ -11,12 +11,20 @@
  *    client that could send it could claim a shorter withhold by relabelling.
  *  • A dosing run is one action: one batch id across every animal, one event each.
  */
+/**
+ * ⭐ Dates here go through `farmDay`/`farmToday`, never `toISOString().slice(0, 10)`. The code under
+ * test computes in the FARM's zone; a UTC slice names yesterday between 00:00 and 02:00 SAST, so an
+ * assertion written that way reds for two hours out of every twenty-four and passes for the other
+ * twenty-two. That is not a flake — it is a test asserting a different day from the one the product
+ * is right about.
+ */
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
+import { farmDay } from '../farmTime';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -139,7 +147,7 @@ describe('recording a treatment (FR-130/131)', () => {
     await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
 
     // 28 days from today, computed through the same pure domain function the server uses.
-    const clear = new Date(Date.now() + 28 * 86_400_000).toISOString().slice(0, 10);
+    const clear = farmDay(new Date(Date.now() + 28 * 86_400_000));
     expect(screen.getByText(/may be sold for slaughter from/i)).toBeTruthy();
     expect(screen.getByText(clear)).toBeTruthy();
   });
@@ -156,7 +164,7 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    const threeDaysBack = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
+    const threeDaysBack = farmDay(new Date(Date.now() - 3 * 86_400_000));
     const dayField = screen.getByLabelText(/when was it given/i);
     await user.clear(dayField);
     await user.type(dayField, threeDaysBack);
@@ -338,7 +346,7 @@ describe('recording a treatment (FR-130/131)', () => {
 describe('the withdrawal guard on a sale (FR-131)', () => {
   /** A treatment already on the device, `daysAgo` days back. */
   function seedTreatment(animalId: string, daysAgo: number): void {
-    const administeredOn = new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+    const administeredOn = farmDay(new Date(Date.now() - daysAgo * 86_400_000));
     window.localStorage.setItem(
       HEALTH_KEY,
       JSON.stringify([
@@ -373,7 +381,7 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
     // It says no AND says when: a refusal with no way forward is what makes someone stop
     // recording treatments at all.
     expect(screen.getByText(/cannot be sold for slaughter yet/i)).toBeTruthy();
-    const clear = new Date(Date.now() + 25 * 86_400_000).toISOString().slice(0, 10);
+    const clear = farmDay(new Date(Date.now() + 25 * 86_400_000));
     expect(screen.getByText(clear)).toBeTruthy();
 
     await user.type(screen.getByLabelText(/buyer/i), 'Bloem Abattoir');

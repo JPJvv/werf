@@ -425,6 +425,29 @@ describe('recording a loss', () => {
     });
   });
 
+  it('⭐ records a DEATH inside a withholding — and says so rather than saying nothing', async () => {
+    // A death is never refused: refusing to record a fact is the worse failure. But "Died" sits one
+    // tap from the blocked "Slaughtered", so silence here teaches the workaround — stopped on one
+    // button, the farmer taps the next and the residue leaves with no trace it was ever in
+    // question. The fact is kept AND the circumstance is kept.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    seedActiveWithdrawal('a1');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Died' }));
+
+    expect(screen.getByText(/still inside a meat withdrawal on this day/i)).toBeTruthy();
+
+    // And it saves anyway — the note is not a refusal.
+    await user.type(screen.getByLabelText(/cause/i), 'Tick-borne disease');
+    await user.click(screen.getByRole('button', { name: /record death/i }));
+    expect(storedEvents().find((e) => e['type'] === 'death')).toBeTruthy();
+  });
+
   it('drops the home tile count when an animal is sold, and it survives a cold start', () => {
     cachedSession();
     seedHerd(animal('a1'), animal('a2'));

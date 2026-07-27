@@ -190,6 +190,9 @@ export function AdjustMobScreen() {
       ? null
       : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves);
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
+  // The reasons that are recorded rather than refused still say so — same rule as the death path.
+  const noteWithdrawal =
+    !intoFoodChain && reason !== null && withdrawal !== null && withdrawal.blocked;
 
   const canSave =
     selected !== null &&
@@ -268,6 +271,16 @@ export function AdjustMobScreen() {
       {/* ⭐ Says no AND says when, in the same panel — a refusal with no way forward is what makes
           someone stop recording dips at all. Warning FORM: tinted panel with a left rule, never the
           ochre action shape (NFR-411). */}
+      {noteWithdrawal && withdrawal?.clearFrom !== null && (
+        <p
+          role="status"
+          className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
+        >
+          {t('tally.withinWithdrawal')}{' '}
+          <span className="font-data tabular-nums">{withdrawal!.clearFrom}</span>
+        </p>
+      )}
+
       {withheld && withdrawal?.clearFrom !== null && (
         <p
           role="alert"

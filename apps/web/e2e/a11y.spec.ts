@@ -198,6 +198,62 @@ const CAPTURE_SCREENS = [
   { path: '/not-sent', heading: /what needs your attention/i },
 ] as const;
 
+/**
+ * ⭐ The screens where the CONTROLS only exist once the farm has stock, walked through far enough
+ * to render them.
+ *
+ * The sweep above audits every screen's default state, and for most of them that is the state with
+ * the controls in it. For these three it is not: each takes a `length === 0` branch on an empty
+ * device and renders one sentence. The heading still appears — it sits outside the conditional —
+ * so the sweep's own "assert it rendered before auditing" guard passed while auditing almost
+ * nothing. That is the same defect as the one-theme shortcut, one layer down: the audit ran, and it
+ * ran on a page that did not contain the thing under test.
+ *
+ * Each `act` leaves the screen showing the widgets a farmer actually touches — including both
+ * withholding panels, which are the newest controls here and the two that carry a colour meaning
+ * (NFR-411), so they are exactly what a contrast rule needs to see in both themes.
+ */
+const POPULATED_SCREENS = [
+  {
+    path: '/animals/loss',
+    heading: /record a loss/i,
+    act: async (page: Page) => {
+      await page
+        .getByRole('button', { name: /bonsmara/i })
+        .first()
+        .click();
+      await page.getByRole('button', { name: 'Slaughtered' }).click();
+      // The animal was dosed today, so this renders the withholding panel and its clear date.
+      await expect(page.getByText(/cannot be sold for slaughter yet/i)).toBeVisible();
+    },
+  },
+  {
+    path: '/animals/groups/count',
+    heading: /change a group’s numbers/i,
+    act: async (page: Page) => {
+      await page
+        .getByRole('button', { name: /ossies/i })
+        .first()
+        .click();
+      await page.getByRole('button', { name: /^sold$/i }).click();
+      await expect(page.getByText(/cannot go for slaughter or sale yet/i)).toBeVisible();
+    },
+  },
+  {
+    path: '/animals/health',
+    heading: /treat or vaccinate/i,
+    act: async (page: Page) => {
+      // The mob picker — the control a group-only flock is dosed through, and new enough that it
+      // had never been audited at all.
+      await page
+        .getByRole('button', { name: /ossies/i })
+        .first()
+        .click();
+      await expect(page.getByLabel(/product/i)).toBeVisible();
+    },
+  },
+] as const;
+
 for (const theme of THEMES) {
   test(`the Phase 2 capture screens have no accessibility violations in the ${theme} theme`, async ({
     page,
@@ -211,6 +267,22 @@ for (const theme of THEMES) {
 
       const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
       expect(results.violations, `violations on ${path} in the ${theme} theme`).toEqual([]);
+    }
+  });
+
+  test(`the capture screens have no violations WITH THEIR CONTROLS SHOWING in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme, populated: true });
+
+    for (const { path, heading, act } of POPULATED_SCREENS) {
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+      await act(page);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+      const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+      expect(results.violations, `violations on a populated ${path} in ${theme}`).toEqual([]);
     }
   });
 }

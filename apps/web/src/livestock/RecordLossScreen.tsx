@@ -125,6 +125,9 @@ export function RecordLossScreen() {
   // slaughter path arrives days after the animal has been eaten.
   const intoFoodChain = outcome === 'sold' || outcome === 'slaughtered';
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
+  // ⭐ A death is RECORDED, never refused — but not silently. "Died" sits one tap from the blocked
+  // "Slaughtered", so a guard that says nothing here teaches its own workaround.
+  const deathWithinWithdrawal = outcome === 'died' && withdrawal !== null && withdrawal.blocked;
 
   const reset = () => {
     setSelectedId(null);
@@ -384,6 +387,16 @@ export function RecordLossScreen() {
                   breath as saying no, which is the whole point of the rule existing in the app
                   rather than in a document. Warning FORM — tinted panel, left rule — never the
                   ochre action shape (NFR-411). */}
+              {deathWithinWithdrawal && withdrawal?.clearFrom !== null && (
+                <p
+                  role="status"
+                  className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
+                >
+                  {t('loss.deathWithinWithdrawal')}{' '}
+                  <span className="font-data tabular-nums">{withdrawal!.clearFrom}</span>
+                </p>
+              )}
+
               {withheld && withdrawal?.clearFrom !== null && (
                 <p
                   role="alert"

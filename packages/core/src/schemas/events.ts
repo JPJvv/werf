@@ -73,6 +73,11 @@ export const deathPayloadSchema = z.object({
   disposal: z.string().min(1).optional(),
   /** True when the animal was slaughtered for consumption rather than found dead. */
   slaughtered: z.boolean().optional(),
+  /**
+   * True when the subject was inside an active MEAT WITHHOLDING on the day this was recorded.
+   * Stamped server-side, never refused — see `recordDeath` in the livestock service.
+   */
+  withinWithdrawal: z.boolean().optional(),
 });
 export type DeathPayload = z.infer<typeof deathPayloadSchema>;
 
@@ -265,6 +270,8 @@ export const tallyPayloadSchema = z
     counterparty: z.string().min(1).optional(),
     /** Money as integer cents, never a float (CLAUDE.md § Money). The whole lot, not per head. */
     priceCents: moneySchema.nonnegative().optional(),
+    /** True when the mob was inside an active meat withholding on the day of this tally. */
+    withinWithdrawal: z.boolean().optional(),
   })
   .superRefine((payload, ctx) => {
     const isRecount = payload.reason === 'recount';

@@ -309,6 +309,13 @@ export class LivestockService {
         await assertMobClearOfMeatWithdrawal(tx, input.farmId, input.mobId, input.occurredAt);
       }
 
+      // The reasons that are NOT refused still record the circumstance, for the same reason the
+      // individual death path does: a blocked `slaughter` is one tap from an unblocked `death`.
+      const mobWithinWithdrawal =
+        input.reason !== 'sale' &&
+        input.reason !== 'slaughter' &&
+        (await mobIsWithinMeatWithdrawal(tx, input.farmId, input.mobId, input.occurredAt));
+
       const headAsAt = await deriveHeadCount(tx, input.farmId, input.mobId, mob.initialHeadCount, {
         occurredAt: input.occurredAt,
         id: input.id,
@@ -324,6 +331,7 @@ export class LivestockService {
         currentHead: headAsAt,
         counterparty: input.counterparty,
         priceCents: input.priceCents,
+        ...(mobWithinWithdrawal ? { withinWithdrawal: true } : {}),
         // FR-113: filed under the mob's own herd, derived here rather than trusted from the body.
         enterpriseId: mob.enterpriseId ?? input.enterpriseId,
         locationGeojson: input.locationGeojson,
@@ -551,6 +559,22 @@ export class LivestockService {
         await assertClearOfMeatWithdrawal(tx, input.farmId, input.animalId, input.occurredAt);
       }
 
+      // ⭐ And an ordinary DEATH inside a withholding is recorded with that circumstance attached.
+      // "Died" is one tap from the blocked "Slaughtered", so saying nothing here would teach the
+      // workaround: stopped on one button, the farmer taps the next, and the residue leaves with
+      // nothing anywhere showing it was ever in question. The fact is kept; so is the context.
+      const withinWithdrawal =
+        input.slaughtered !== true &&
+        isWithinWithdrawal(
+          await latestMeatClearForAnimal(
+            tx,
+            input.farmId,
+            input.animalId,
+            await farmJurisdiction(tx, input.farmId),
+          ),
+          farmLocalDay(input.occurredAt, await farmJurisdiction(tx, input.farmId)),
+        );
+
       const base = {
         id: input.id,
         farmId: input.farmId,
@@ -560,6 +584,7 @@ export class LivestockService {
         enterpriseId,
         cause: input.cause,
         ...(input.slaughtered ? { slaughtered: true } : {}),
+        ...(withinWithdrawal ? { withinWithdrawal: true } : {}),
         createdBy: userId,
       };
       const { event } = recordDeath(
@@ -1215,6 +1240,36 @@ async function assertMobClearOfMeatWithdrawal(
   mobId: string,
   occurredAt: Date,
 ): Promise<void> {
+  const latestClear = await latestMeatClearForMob(tx, farmId, mobId, occurredAt);
+  const day = farmLocalDay(occurredAt, await farmJurisdiction(tx, farmId));
+  if (isWithinWithdrawal(latestClear, day)) {
+    throw new ValidationError(
+      `This group is within its meat withdrawal period until ${latestClear}; none of it can go for slaughter or sale before then`,
+    );
+  }
+}
+
+/** The same question without the refusal — for the tally reasons that are recorded, not refused. */
+async function mobIsWithinMeatWithdrawal(
+  tx: CaptureTx,
+  farmId: string,
+  mobId: string,
+  occurredAt: Date,
+): Promise<boolean> {
+  const latestClear = await latestMeatClearForMob(tx, farmId, mobId, occurredAt);
+  return isWithinWithdrawal(
+    latestClear,
+    farmLocalDay(occurredAt, await farmJurisdiction(tx, farmId)),
+  );
+}
+
+/** The latest meat clear date reaching anything standing in this mob on the day. */
+async function latestMeatClearForMob(
+  tx: CaptureTx,
+  farmId: string,
+  mobId: string,
+  occurredAt: Date,
+): Promise<string | undefined> {
   const jurisdiction = await farmJurisdiction(tx, farmId);
   const day = farmLocalDay(occurredAt, jurisdiction);
 
@@ -1231,11 +1286,7 @@ async function assertMobClearOfMeatWithdrawal(
     }
   }
 
-  if (isWithinWithdrawal(latestClear, day)) {
-    throw new ValidationError(
-      `This group is within its meat withdrawal period until ${latestClear}; none of it can go for slaughter or sale before then`,
-    );
-  }
+  return latestClear;
 }
 
 /**

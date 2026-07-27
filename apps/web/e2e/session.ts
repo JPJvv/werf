@@ -55,19 +55,131 @@ export function cachedSession(
   };
 }
 
+/**
+ * A herd, a counted flock, a vet product and a dose — enough that a capture screen renders its
+ * CONTROLS rather than its empty state.
+ *
+ * ⭐ This exists because the a11y lane was auditing seventeen screens and almost no widgets. With
+ * only the session seeded, every capture screen took its `length === 0` branch and rendered one
+ * sentence — while the spec's own guard ("assert the heading is visible before auditing") passed,
+ * because the heading sits OUTSIDE the conditional. So the animal picker, the outcome buttons, the
+ * withholding panels, the date fields and the mob picker had never been in front of axe in either
+ * theme, on a page the checklist claimed was covered.
+ */
+export const FIXTURE = {
+  animalId: '0190f3a0-0000-7000-8000-0000000000a1',
+  mobId: '0190f3a0-0000-7000-8000-0000000000b1',
+  productId: '0190f3a0-0000-7000-8000-0000000000d1',
+  campId: '0190f3a0-0000-7000-8000-0000000000c1',
+} as const;
+
+/** localStorage entries that put a farm's worth of stock on the device. */
+export function populatedStores(): Record<string, unknown> {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    [`werf-land:${FARM_ID}`]: [
+      {
+        id: FIXTURE.campId,
+        farmId: FARM_ID,
+        code: 'NOORD',
+        name: null,
+        hectares: 12,
+        kind: 'camp',
+      },
+    ],
+    [`werf-herd:${FARM_ID}`]: [
+      {
+        id: FIXTURE.animalId,
+        farmId: FARM_ID,
+        enterpriseId: HERD.id,
+        species: 'cattle',
+        breed: 'Bonsmara',
+        sex: 'female',
+        dob: null,
+        dobEstimated: false,
+        status: 'alive',
+        statusAt: null,
+        damId: null,
+        sireId: null,
+        mobId: null,
+        landUnitId: FIXTURE.campId,
+        source: null,
+        acquiredAt: null,
+        brandId: null,
+        brandAppliedAt: null,
+        attributes: {},
+        photoKey: null,
+      },
+    ],
+    [`werf-mobs:${FARM_ID}`]: [
+      {
+        id: FIXTURE.mobId,
+        farmId: FARM_ID,
+        enterpriseId: HERD.id,
+        name: 'Ossies',
+        species: 'cattle',
+        landUnitId: FIXTURE.campId,
+        headCount: 300,
+        initialHeadCount: 300,
+      },
+    ],
+    [`werf-vet-products:${FARM_ID}`]: [
+      {
+        id: FIXTURE.productId,
+        name: 'Terramycin LA',
+        registrationNumber: 'G1234 Act 36/1947',
+        species: ['cattle'],
+        meatWithdrawalDays: 28,
+        milkWithdrawalHours: 96,
+        route: 'intramuscular',
+      },
+    ],
+    // A dose given TODAY, so the withholding panels — the two newest controls on these screens,
+    // and the ones that carry a colour meaning — actually render under the audit.
+    [`werf-health:${FARM_ID}`]: [
+      {
+        id: '0190f3a0-0000-7000-8000-0000000000f1',
+        farmId: FARM_ID,
+        animalId: FIXTURE.animalId,
+        mobId: null,
+        kind: 'treatment',
+        occurredAt: new Date().toISOString(),
+        administeredOn: today,
+        productId: FIXTURE.productId,
+      },
+      {
+        id: '0190f3a0-0000-7000-8000-0000000000f2',
+        farmId: FARM_ID,
+        animalId: null,
+        mobId: FIXTURE.mobId,
+        kind: 'dip',
+        occurredAt: new Date().toISOString(),
+        administeredOn: today,
+        productId: FIXTURE.productId,
+        method: 'plunge',
+      },
+    ],
+  };
+}
+
 export interface SeedOptions {
   /** False to boot signed out. */
   session?: boolean;
+  /** True to put a herd, a counted flock and an active withholding on the device. */
+  populated?: boolean;
   theme?: string;
   secondFactor?: 'complete' | 'required';
 }
 
-/** Seeds the session (and optionally the theme) before any app code runs. */
+/** Seeds the session (and optionally the theme and the stores) before any app code runs. */
 export async function seed(page: Page, options: SeedOptions = {}): Promise<void> {
   await page.addInitScript(
-    ([sessionKey, session, themeKey, theme]) => {
+    ([sessionKey, session, themeKey, theme, stores]) => {
       if (session) window.localStorage.setItem(sessionKey as string, session as string);
       if (theme) window.localStorage.setItem(themeKey as string, theme as string);
+      for (const [key, value] of Object.entries(stores as Record<string, unknown>)) {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }
     },
     [
       SESSION_KEY,
@@ -76,6 +188,7 @@ export async function seed(page: Page, options: SeedOptions = {}): Promise<void>
         : JSON.stringify(cachedSession(options.secondFactor ?? 'complete')),
       THEME_STORAGE_KEY,
       options.theme ?? '',
+      options.populated === true ? populatedStores() : {},
     ] as const,
   );
 }

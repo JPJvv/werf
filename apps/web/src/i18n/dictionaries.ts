@@ -445,6 +445,8 @@ const en = {
   // refusal, because it is the same rule reaching the same person at the same moment.
   'tally.withheld':
     'This group was dipped or treated and cannot go for slaughter or sale yet. It may go from',
+  'tally.withinWithdrawal':
+    'This group was still inside a meat withdrawal on this day. Recording this is correct — but meat from it must not go into the food chain. The withdrawal runs to',
   'tally.theftNote': 'This changes the count. It does not file a stock-theft report.',
   'tally.theftLink': 'File a stock-theft report',
   'tally.save': 'Save',
@@ -491,6 +493,10 @@ const en = {
   // Asked, never assumed. FR-131 is judged on the day the meat entered the food chain, and a
   // slaughter is often written up days later.
   'loss.disposalDay': 'What day?',
+  // Recorded, never refused — but never silent either. "Died" is one tap from a blocked
+  // "Slaughtered", so saying nothing here would teach the workaround.
+  'loss.deathWithinWithdrawal':
+    'This animal was still inside a meat withdrawal on this day. Recording the death is correct — but meat from it must not go into the food chain. The withdrawal runs to',
   // Says WHY the app is about to use the GPS, before it asks — a phone that silently reaches for
   // location is a phone a farmer stops trusting.
   'loss.gpsExplain':
@@ -997,6 +1003,8 @@ const af: Record<TranslationKey, string> = {
     'Daardie verandering kon nie aangeteken word nie. Kyk na die groep en die getal, en probeer weer.',
   'tally.withheld':
     'Hierdie groep is gedip of behandel en kan nog nie vir slag of verkoop gaan nie. Dit mag gaan vanaf',
+  'tally.withinWithdrawal':
+    'Hierdie groep was op hierdie dag nog binne ’n vleisonttrekkingstydperk. Om dit aan te teken is reg — maar vleis daarvan mag nie in die voedselketting ingaan nie. Die onttrekking loop tot',
   'tally.theftNote': 'Dit verander die getal. Dit dien nie ’n veediefstalverslag in nie.',
   'tally.theftLink': 'Dien ’n veediefstalverslag in',
   'tally.save': 'Stoor',
@@ -1033,6 +1041,8 @@ const af: Record<TranslationKey, string> = {
   'loss.causeMissing': 'Wat het jy gekry? (opsioneel)',
   'loss.lastSeenDay': 'Wanneer laas gesien?',
   'loss.disposalDay': 'Watter dag?',
+  'loss.deathWithinWithdrawal':
+    'Hierdie dier was op hierdie dag nog binne ’n vleisonttrekkingstydperk. Om die vrekte aan te teken is reg — maar vleis daarvan mag nie in die voedselketting ingaan nie. Die onttrekking loop tot',
   'loss.gpsExplain':
     'Om dit aan te teken neem ’n GPS-punt van waar jy staan. Dit werk sonder sein, en dit is wat die rekord bruikbaar maak vir die Veediefstal-eenheid.',
   'loss.locating': 'Kry tans die GPS-punt…',

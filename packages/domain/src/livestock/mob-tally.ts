@@ -62,6 +62,8 @@ export interface MobTallyInput {
   readonly counterparty?: string | undefined;
   /** Integer cents (Money), never a float. The price of the whole lot, not per head. */
   readonly priceCents?: number | undefined;
+  /** The mob was inside an active meat withholding on the day. Recorded, never refused. */
+  readonly withinWithdrawal?: boolean | undefined;
   /** The herd this event files under (FR-113) — resolved from the mob by the caller. */
   readonly enterpriseId?: string | null | undefined;
   readonly notes?: string | null | undefined;
@@ -115,6 +117,7 @@ export function recordMobTally(input: MobTallyInput): MobTallyCapture {
 
   if (input.counterparty !== undefined) payload.counterparty = input.counterparty;
   if (input.priceCents !== undefined) payload.priceCents = input.priceCents;
+  if (input.withinWithdrawal) payload.withinWithdrawal = true;
 
   // Re-checked against the payload schema so the two rules — this function's and the schema's —
   // cannot drift apart, exactly as every other capture in this package does it.

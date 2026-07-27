@@ -147,6 +147,8 @@ export interface DeathInput extends CaptureBase {
    * infer "this one went into the food chain" from the cause text a farmer typed.
    */
   readonly slaughtered?: boolean;
+  /** The animal was inside an active meat withholding on the day. Recorded, never refused. */
+  readonly withinWithdrawal?: boolean;
 }
 
 export function recordDeath(input: DeathInput): LifecycleCapture {
@@ -154,6 +156,7 @@ export function recordDeath(input: DeathInput): LifecycleCapture {
   const payload: Record<string, unknown> = { cause: input.cause };
   if (input.disposal !== undefined) payload.disposal = input.disposal;
   if (input.slaughtered) payload.slaughtered = true;
+  if (input.withinWithdrawal) payload.withinWithdrawal = true;
   return capture(buildEvent(input, 'death', schemas.deathPayloadSchema, payload), statusChange);
 }
 

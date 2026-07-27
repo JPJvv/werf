@@ -47,7 +47,17 @@ export type DipMethod = NonNullable<schemas.DipPayload['method']>;
 export interface StoredHealthEvent {
   readonly id: string;
   readonly farmId: string;
-  readonly animalId: string;
+  /**
+   * ⭐ The subject is an animal XOR a mob, exactly as the wire contract has always been. A plunge
+   * dip is the canonical whole-flock operation and a group-only flock has no `animals` rows at all,
+   * so an animal-only local log could not record the dose the smallholder path is built around —
+   * and the withdrawal guard on `AdjustMobScreen` had nothing to read.
+   *
+   * `mobId` is optional rather than required so records already in a device's register stay
+   * readable: they are animal-subject, which is what an absent `mobId` means.
+   */
+  readonly animalId: string | null;
+  readonly mobId?: string | null;
   readonly kind: HealthKind;
   /** ISO 8601 instant it was captured on the farm. */
   readonly occurredAt: string;

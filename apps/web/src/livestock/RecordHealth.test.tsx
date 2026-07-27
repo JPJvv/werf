@@ -32,6 +32,8 @@ const HERD_KEY = `werf-herd:${FARM_ID}`;
 const HEALTH_KEY = `werf-health:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
 const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
+const MOBS_KEY = `werf-mobs:${FARM_ID}`;
+const MOB_ID = '0190f3a0-0000-7000-8000-00000000b001';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -118,6 +120,25 @@ function seedHerd(count: number): string[] {
     ),
   );
   return ids;
+}
+
+/** A 300-head flock run BY THE COUNT — no animal rows anywhere, which is the whole point. */
+function seedFlock(): void {
+  window.localStorage.setItem(
+    MOBS_KEY,
+    JSON.stringify([
+      {
+        id: MOB_ID,
+        farmId: FARM_ID,
+        name: 'Flock A',
+        species: 'cattle',
+        landUnitId: null,
+        enterpriseId: null,
+        headCount: 300,
+        initialHeadCount: 300,
+      },
+    ]),
+  );
 }
 
 function storedHealth(): Array<Record<string, unknown>> {
@@ -430,5 +451,52 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
     expect(screen.getByRole('button', { name: /record death/i }).hasAttribute('disabled')).toBe(
       false,
     );
+  });
+});
+
+describe('dipping a whole flock (FR-133)', () => {
+  it('⭐ doses a COUNTED group with one event against the mob, not one per head', async () => {
+    // A flock run by head count has no `animals` rows, so before this the screen could not dose it
+    // at all — and a plunge dip on a whole flock is the operation FR-133 is written for. Fanning
+    // out per animal is impossible here and would be inventing animals if it were not.
+    cachedSession();
+    seedProducts(28);
+    seedFlock();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^dip$/i }));
+    await user.selectOptions(screen.getByLabelText(/product/i), PRODUCT_ID);
+    await user.click(screen.getByRole('button', { name: /record/i }));
+
+    const stored = storedHealth();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ kind: 'dip', mobId: MOB_ID, animalId: null });
+  });
+
+  it('treats the subject as an animal XOR a mob, because the wire contract does', async () => {
+    // Offering a state the server refuses only queues a capture that can never be sent, and it
+    // reads as a sync bug rather than as the impossible selection it is.
+    cachedSession();
+    seedProducts(28);
+    seedFlock();
+    const animals = seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/health');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /cattle/i }));
+
+    expect(screen.getByRole('button', { name: /flock a/i }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    await user.click(screen.getByRole('button', { name: /^dip$/i }));
+    await user.selectOptions(screen.getByLabelText(/product/i), PRODUCT_ID);
+    await user.click(screen.getByRole('button', { name: /record/i }));
+
+    expect(storedHealth()[0]).toMatchObject({ animalId: animals[0], mobId: null });
   });
 });

@@ -195,7 +195,10 @@ export const livestockApi = {
       {
         id: event.id,
         farmId: event.farmId,
+        // Animal XOR mob — the server refuses both and refuses neither. A whole-mob dip carries
+        // the mob and no animal.
         animalId: event.animalId,
+        mobId: event.mobId ?? null,
         occurredAt: event.occurredAt,
         administeredOn: event.administeredOn,
         productId: event.productId,

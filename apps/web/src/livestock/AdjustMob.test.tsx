@@ -13,12 +13,16 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { farmToday } from '../farmTime';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
 const MOBS_KEY = `werf-mobs:${FARM_ID}`;
 const TALLIES_KEY = `werf-tallies:${FARM_ID}`;
 const MOB_ID = '0190f3a0-0000-7000-8000-00000000b001';
+const HEALTH_KEY = `werf-health:${FARM_ID}`;
+const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
+const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
 
 const FLOCK = { id: '0190f3a0-0000-7000-8000-00000000e002', name: 'Dorper flock', type: 'sheep' };
 
@@ -72,6 +76,40 @@ function seedFlock(headCount: number | null = 300): void {
         landUnitId: null,
         enterpriseId: FLOCK.id,
         headCount,
+      },
+    ]),
+  );
+}
+
+/** The flock dipped TODAY with a 28-day meat withdrawal, and the register that says so. */
+function seedDip(): void {
+  window.localStorage.setItem(
+    PRODUCTS_KEY,
+    JSON.stringify([
+      {
+        id: PRODUCT_ID,
+        name: 'Tickaway',
+        registrationNumber: 'G4321 Act 36/1947',
+        species: ['sheep'],
+        meatWithdrawalDays: 28,
+        milkWithdrawalHours: null,
+        route: 'topical',
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    HEALTH_KEY,
+    JSON.stringify([
+      {
+        id: '0190f3a0-0000-7000-8000-00000000f001',
+        farmId: FARM_ID,
+        animalId: null,
+        mobId: MOB_ID,
+        kind: 'dip',
+        occurredAt: new Date().toISOString(),
+        administeredOn: farmToday(),
+        productId: PRODUCT_ID,
+        method: 'plunge',
       },
     ]),
   );
@@ -284,6 +322,48 @@ describe('changing a group’s numbers (FR-102)', () => {
 
     expect(screen.getByText('309')).toBeTruthy();
     expect(screen.queryByText('318')).toBeNull();
+  });
+
+  it('⭐ refuses to tally a DIPPED flock to the abattoir, at capture and offline', async () => {
+    // The last SEV-1. Dip the flock Monday; Tuesday, no signal, tally forty to slaughter. Without
+    // this the screen said "saved — 260 head", the truck loaded, and the server's refusal arrived
+    // on Friday's flush as a 400 that FR-009 correctly sets aside forever — days after the only
+    // moment anyone could act on it. The individual sale path has been guarded at capture since
+    // the health slice; this is the path where the exposure is worse, because a flock run by head
+    // count is the smallholder's.
+    cachedSession();
+    seedFlock();
+    seedDip();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+
+    // Says no AND says when.
+    expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^save$/i }).hasAttribute('disabled')).toBe(true);
+    expect(storedTallies()).toHaveLength(0);
+  });
+
+  it('still lets a dipped flock record a DEATH — a dead sheep is not food', async () => {
+    // The bound. The guard exists to keep meat out of the food chain, not to stop a farmer
+    // recording what happened. Refusing to record a fact is worse than recording it.
+    cachedSession();
+    seedFlock();
+    seedDip();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^died$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '3');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(storedTallies()).toHaveLength(1);
   });
 
   it('does not offer a group that is managed as individual animals', async () => {

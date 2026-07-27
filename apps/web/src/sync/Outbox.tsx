@@ -325,13 +325,16 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
-    // Health events reference an animal, so they follow the animals like every other event.
+    // Health events reference an animal OR a mob, so they follow both — and mobs are already sent
+    // ahead of animals, so a whole-flock dip is behind its mob by the same ordering. A mob-subject
+    // event has no tag number to show; the mob's name is not in `labels`, which is an animal
+    // register, so the row simply carries no detail rather than a misleading one.
     for (const event of health) {
       if (!sent.has(event.id)) {
         items.push({
           id: event.id,
           kind: 'health',
-          detail: labels.get(event.animalId) ?? null,
+          detail: event.animalId === null ? null : (labels.get(event.animalId) ?? null),
           send: (token) => livestockApi.recordHealth(event, token),
         });
       }

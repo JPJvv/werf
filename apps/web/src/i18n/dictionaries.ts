@@ -441,6 +441,10 @@ const en = {
   // Afrikaans device must not be handed raw English as its explanation.
   'tally.refused':
     'That change could not be recorded. Check the group and the number, and try again.',
+  // FR-131 on the group path. Says no AND says when — the same shape as the individual sale's
+  // refusal, because it is the same rule reaching the same person at the same moment.
+  'tally.withheld':
+    'This group was dipped or treated and cannot go for slaughter or sale yet. It may go from',
   'tally.theftNote': 'This changes the count. It does not file a stock-theft report.',
   'tally.theftLink': 'File a stock-theft report',
   'tally.save': 'Save',
@@ -988,6 +992,8 @@ const af: Record<TranslationKey, string> = {
   'tally.tooManyFix': 'Tel die groep en teken aan wat jy kry.',
   'tally.refused':
     'Daardie verandering kon nie aangeteken word nie. Kyk na die groep en die getal, en probeer weer.',
+  'tally.withheld':
+    'Hierdie groep is gedip of behandel en kan nog nie vir slag of verkoop gaan nie. Dit mag gaan vanaf',
   'tally.theftNote': 'Dit verander die getal. Dit dien nie ’n veediefstalverslag in nie.',
   'tally.theftLink': 'Dien ’n veediefstalverslag in',
   'tally.save': 'Stoor',

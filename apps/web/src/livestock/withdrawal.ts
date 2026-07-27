@@ -41,17 +41,58 @@ export function meatWithdrawalFor(
   events: readonly StoredHealthEvent[],
   products: readonly StoredVetProduct[],
 ): WithdrawalStatus {
+  // ⚠️ Animal-subject events only. A dose given to the animal's MOB reaches it too, and the server
+  // reads that route by reconstructing membership from the move log. This device does not, so an
+  // animal in a dipped mob previews CLEAR here and is correctly refused on the flush. That is the
+  // known edge of the preview, and it fails in the direction the header describes: the server
+  // refuses what this lets through. `meatWithdrawalForMob` below covers the group-only path, which
+  // has no membership to reconstruct.
+  return latestClearAcross(
+    events.filter((e) => e.animalId === animalId),
+    disposalOn,
+    products,
+  );
+}
+
+/**
+ * Whether head may be tallied out of a MOB for slaughter on `disposalOn`, and from when if not.
+ *
+ * ⭐ The group-only path, and the one that had no client-side guard at all. A flock run by head
+ * count has no `animals` rows, so every animal-keyed check was structurally incapable of firing for
+ * it: dip the flock Monday, tally forty to the abattoir Tuesday with no signal, see "saved — 260
+ * head", load the truck. The refusal arrived on Friday's flush, as a 400 that FR-009 correctly sets
+ * aside forever — days after the only moment anyone could have acted on it.
+ *
+ * This is the SMALLHOLDER path. The farm most likely to run stock as an uncounted mob is the one
+ * least likely to have a second system catching the mistake.
+ */
+export function meatWithdrawalForMob(
+  mobId: string,
+  disposalOn: string,
+  events: readonly StoredHealthEvent[],
+  products: readonly StoredVetProduct[],
+): WithdrawalStatus {
+  return latestClearAcross(
+    events.filter((e) => e.mobId === mobId),
+    disposalOn,
+    products,
+  );
+}
+
+/**
+ * The LATEST clear date across a set of doses wins: a subject dosed twice is held by whichever
+ * withholding runs longest, and taking the most recent event instead would release it early
+ * whenever the second product had a shorter period than the first.
+ */
+function latestClearAcross(
+  events: readonly StoredHealthEvent[],
+  disposalOn: string,
+  products: readonly StoredVetProduct[],
+): WithdrawalStatus {
   const withdrawalDays = new Map(products.map((p) => [p.id, p.meatWithdrawalDays]));
 
   let latest: string | undefined;
   for (const event of events) {
-    // ⚠️ Animal-subject events only. That is correct TODAY solely because `StoredHealthEvent`
-    // requires an `animalId` and the health screen fans a mob dose out per animal — the local log
-    // never holds a mob-subject event. The server's guard reads both routes (it has to: a plunge
-    // dip is captured against the mob). If this store is ever widened to hold a mob-subject event,
-    // widen this filter in the same commit, or the client will preview "clear" for an animal the
-    // server will correctly refuse to sell.
-    if (event.animalId !== animalId) continue;
     const days = withdrawalDays.get(event.productId);
     // A product the device does not know about contributes nothing. That is the honest answer —
     // guessing a withdrawal would be inventing a regulated number — and the server still holds the

@@ -28,6 +28,9 @@ import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveMobs } from './herd';
 import { useRecordTally } from './LocalTallies';
+import { useHealthEvents } from './LocalHealth';
+import { useVetProducts } from './LocalVetProducts';
+import { meatWithdrawalForMob } from './withdrawal';
 
 /**
  * The reasons, in the order a farmer meets them rather than alphabetically or grouped by sign.
@@ -88,6 +91,8 @@ export function AdjustMobScreen() {
   // The PROJECTED mobs — each carrying the head standing in it after every adjustment the device
   // holds, which is the number the farmer is about to change.
   const mobs = useEffectiveMobs();
+  const healthEvents = useHealthEvents();
+  const products = useVetProducts();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState<schemas.TallyReason | null>(null);
@@ -124,12 +129,27 @@ export function AdjustMobScreen() {
   const tooMany = projected !== null && projected < 0;
   const changesNothing = !isRecount && typed === 0;
 
+  // ⭐ FR-131 on the group path, AT CAPTURE. The server refuses this and that refusal is the
+  // authoritative one — but it arrives on the next flush, which on this product is Friday. Dip the
+  // flock Monday; Tuesday, no signal, tally forty to the abattoir; the screen says "saved, 260
+  // head"; the truck loads. The 400 lands three days later and FR-009 correctly sets it aside
+  // forever, by which time the only thing it can do is explain what already happened.
+  //
+  // The individual sale path has been guarded at capture since the health slice, for reasons its
+  // own header states. This is the path where the exposure is worse: a flock run by head count is
+  // the smallholder's, and the farm least likely to have a second system catching the mistake.
+  const intoFoodChain = reason === 'sale' || reason === 'slaughter';
+  const withdrawal =
+    selected === null ? null : meatWithdrawalForMob(selected.id, day, healthEvents, products);
+  const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
+
   const canSave =
     selected !== null &&
     reason !== null &&
     typed !== null &&
     !tooMany &&
     !changesNothing &&
+    !withheld &&
     day !== '' &&
     priceIsValid(priceRands);
 
@@ -193,6 +213,19 @@ export function AdjustMobScreen() {
         >
           {lastSaved.name} {t('tally.saved')}{' '}
           <span className="font-data tabular-nums">{lastSaved.head}</span> {t('tally.headUnit')}
+        </p>
+      )}
+
+      {/* ⭐ Says no AND says when, in the same panel — a refusal with no way forward is what makes
+          someone stop recording dips at all. Warning FORM: tinted panel with a left rule, never the
+          ochre action shape (NFR-411). */}
+      {withheld && withdrawal?.clearFrom !== null && (
+        <p
+          role="alert"
+          className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
+        >
+          {t('tally.withheld')}{' '}
+          <span className="font-data tabular-nums">{withdrawal!.clearFrom}</span>
         </p>
       )}
 

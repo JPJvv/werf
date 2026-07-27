@@ -27,7 +27,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
-import { useEffectiveAnimals } from './herd';
+import { useEffectiveAnimals, useEffectiveMobs } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { useVetProducts, type StoredVetProduct } from './LocalVetProducts';
 import {
@@ -64,10 +64,15 @@ export function RecordHealthScreen() {
   const labels = useAnimalLabels();
   const recordHealth = useRecordHealth();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
+  // ⭐ A flock run by head count has no `animals` rows, so it could not be dosed from this screen
+  // at all — and a plunge dip on a whole flock is the canonical operation FR-133 exists for. The
+  // subject of a health event is an animal XOR a mob; only the animal half was ever built.
+  const countedMobs = useEffectiveMobs().filter((m) => m.headCount !== null);
 
   const [kind, setKind] = useState<HealthKind>('treatment');
   const [productId, setProductId] = useState('');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [selectedMob, setSelectedMob] = useState<string | null>(null);
   const [administeredBy, setAdministeredBy] = useState('');
   const [reason, setReason] = useState('');
   const [doseValue, setDoseValue] = useState('');
@@ -83,9 +88,13 @@ export function RecordHealthScreen() {
   const [administeredOn, setAdministeredOn] = useState(() => farmToday());
 
   const chosen = live.filter((a) => selected.has(a.id));
+  const chosenMob = countedMobs.find((m) => m.id === selectedMob) ?? null;
   // A product registered for cattle is not a product for sheep. Filtering by what is actually
   // selected keeps a wrong choice off the screen rather than relying on the farmer to notice.
-  const speciesInSelection = useMemo(() => new Set(chosen.map((a) => a.species)), [chosen]);
+  const speciesInSelection = useMemo(
+    () => new Set(chosenMob ? [chosenMob.species] : chosen.map((a) => a.species)),
+    [chosen, chosenMob],
+  );
   const usable = useMemo(
     () =>
       products.filter(
@@ -101,8 +110,18 @@ export function RecordHealthScreen() {
 
   const clearDate = meatClearDate(product, administeredOn);
 
+  // Animal XOR mob, enforced on the screen rather than explained in help text: picking a flock
+  // clears any animals picked, and picking an animal clears the flock. The wire contract refuses
+  // both at once, so offering a state that cannot be sent would only queue a capture that jams.
+  const toggleMob = (id: string) => {
+    setDosedCount(null);
+    setSelected(new Set());
+    setSelectedMob((held) => (held === id ? null : id));
+  };
+
   const toggle = (id: string) => {
     setDosedCount(null);
+    setSelectedMob(null);
     setSelected((held) => {
       const next = new Set(held);
       if (next.has(id)) next.delete(id);
@@ -113,6 +132,7 @@ export function RecordHealthScreen() {
 
   const selectAll = () => {
     setDosedCount(null);
+    setSelectedMob(null);
     setSelected(new Set(live.map((a) => a.id)));
   };
 
@@ -121,7 +141,7 @@ export function RecordHealthScreen() {
   // one that never had it, because nobody knows to go back.
   const blocked =
     product === undefined ||
-    chosen.length === 0 ||
+    (chosen.length === 0 && chosenMob === null) ||
     administeredOn === '' ||
     (kind === 'treatment' && !doseIsValid(doseValue));
 
@@ -138,10 +158,7 @@ export function RecordHealthScreen() {
         ? new Date().toISOString()
         : new Date(`${administeredOn}T12:00:00.000Z`).toISOString();
 
-    const events: StoredHealthEvent[] = chosen.map((animal) => ({
-      id: uuidv7(),
-      farmId: activeFarm.id,
-      animalId: animal.id,
+    const common = {
       kind,
       occurredAt,
       administeredOn,
@@ -158,11 +175,25 @@ export function RecordHealthScreen() {
       ...(kind === 'treatment' && doseUnit.trim() !== '' ? { doseUnit: doseUnit.trim() } : {}),
       ...(kind === 'treatment' && route !== '' ? { route } : {}),
       ...(kind === 'dip' && method !== '' ? { method } : {}),
-    }));
+    };
+
+    // ⭐ ONE event for a whole flock, not one per head. A counted mob has no animal rows to fan out
+    // to, and inventing them would be inventing animals; the event names the mob, exactly as the
+    // server has always accepted.
+    const events: StoredHealthEvent[] = chosenMob
+      ? [{ id: uuidv7(), farmId: activeFarm.id, animalId: null, mobId: chosenMob.id, ...common }]
+      : chosen.map((animal) => ({
+          id: uuidv7(),
+          farmId: activeFarm.id,
+          animalId: animal.id,
+          mobId: null,
+          ...common,
+        }));
     recordHealth(events);
 
-    setDosedCount(events.length);
+    setDosedCount(chosenMob ? (chosenMob.headCount ?? 0) : events.length);
     setSelected(new Set());
+    setSelectedMob(null);
     setReason('');
     setDoseValue('');
   };
@@ -180,7 +211,7 @@ export function RecordHealthScreen() {
         </p>
       )}
 
-      {live.length === 0 ? (
+      {live.length === 0 && countedMobs.length === 0 ? (
         <p className="text-body text-soil-700">{t('health.noAnimals')}</p>
       ) : products.length === 0 ? (
         // The register has not reached this device yet. Say so plainly: a farmer must not be left
@@ -221,6 +252,37 @@ export function RecordHealthScreen() {
               {t('move.selectAll')}
             </button>
           </div>
+
+          {/* ⭐ The flocks come FIRST, because a whole-flock dip is the operation this screen is
+              most often opened for on a farm that runs stock by the head count. One tap doses the
+              lot; there are no individual rows to select and there never will be. */}
+          {countedMobs.length > 0 && (
+            <ul className="mb-4 flex list-none flex-col gap-2 p-0">
+              {countedMobs.map((mob) => {
+                const isSelected = selectedMob === mob.id;
+                return (
+                  <li key={mob.id}>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => toggleMob(mob.id)}
+                      className={`flex min-h-touch-min w-full items-center justify-between rounded border p-3 text-left text-body ${
+                        isSelected
+                          ? 'border-soil-900 bg-sand-100 text-soil-900'
+                          : 'border-soil-200 bg-sand-50 text-soil-900'
+                      }`}
+                    >
+                      <span>{mob.name}</span>
+                      <span className="text-soil-700">
+                        <span className="font-data tabular-nums">{mob.headCount}</span>{' '}
+                        {t('tally.headUnit')}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           <ul className="mb-6 flex list-none flex-col gap-2 p-0">
             {live.map((animal) => {

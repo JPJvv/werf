@@ -136,8 +136,18 @@ export type PregnancyTestPayload = z.infer<typeof pregnancyTestPayloadSchema>;
  * treatment date — never a number typed into code) and STORED on the event, so a later sale /
  * slaughter guard reads the rule that applied at treatment time, not on read. Absent when the
  * product carries no withdrawal (e.g. a zero-withdrawal vaccine).
+ *
+ * ⭐ `administeredOn` — the farm-local day the dose was GIVEN — is stored alongside them, and it is
+ * not a duplicate of the event's `occurred_at`. A dose is day-grained: the farmer knows the day and
+ * nothing finer, so a back-dated capture FABRICATES an instant (midday) to fill `occurred_at`.
+ * Every regulated question about this event is a question about the day — which withdrawal applied,
+ * which mob the animal was in when it was dosed — and answering it by comparing a fabricated instant
+ * against a real one is a coin flip dressed as logic. The day is the precision the data has, so the
+ * day is what is recorded.
  */
-const withholdFields = {
+const dosingFields = {
+  /** The farm-local day the dose was given (YYYY-MM-DD). The base for every withdrawal comparison. */
+  administeredOn: dateSchema,
   meatWithholdUntil: dateSchema.optional(),
   milkWithholdUntil: dateSchema.optional(),
 } as const;
@@ -163,7 +173,7 @@ export const treatmentPayloadSchema = z.object({
   route: treatmentRouteSchema.optional(),
   administeredBy: z.string().min(1).optional(),
   reason: z.string().min(1).optional(),
-  ...withholdFields,
+  ...dosingFields,
 });
 export type TreatmentPayload = z.infer<typeof treatmentPayloadSchema>;
 
@@ -173,7 +183,7 @@ export const vaccinationPayloadSchema = z.object({
   programme: z.string().min(1).optional(),
   batch: z.string().min(1).optional(),
   administeredBy: z.string().min(1).optional(),
-  ...withholdFields,
+  ...dosingFields,
 });
 export type VaccinationPayload = z.infer<typeof vaccinationPayloadSchema>;
 
@@ -182,7 +192,7 @@ export const dipPayloadSchema = z.object({
   product: z.string().min(1),
   method: z.enum(['plunge', 'spray', 'pour_on', 'hand']).optional(),
   reason: z.string().min(1).optional(),
-  ...withholdFields,
+  ...dosingFields,
 });
 export type DipPayload = z.infer<typeof dipPayloadSchema>;
 

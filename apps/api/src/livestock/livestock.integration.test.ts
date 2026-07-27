@@ -1910,6 +1910,178 @@ describe('weight capture (FR-140)', () => {
       expect(sold.type).toBe('sale');
     });
 
+    it('⭐ still withholds when the dip and the move happen on the SAME DAY, dip recorded last', async () => {
+      // ⭐ The ordinary workflow, and the one every test above stepped around by dipping and moving
+      // on DIFFERENT days. You dip at first light, walk the stock out of the dip camp mid-morning,
+      // and sit down to record the dip that evening — so the dip's instant lands AFTER the move's.
+      // Membership was reconstructed from real move instants and compared against a dose instant
+      // that is partly fabricated (a back-dated dose is stamped midday), so the dip fell outside
+      // the interval it belonged to and the animal read CLEAR the next morning. Meat inside an
+      // active withdrawal, from an animal the app affirmatively said was safe.
+      //
+      // Days are the precision the data has, and the move day belongs to BOTH mobs.
+      const a = await tenant('Alpha');
+      const [dipCamp] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dip camp flock', species: 'sheep', headCount: 300 })
+        .returning();
+      const [elsewhere] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Far camp flock', species: 'sheep', headCount: 40 })
+        .returning();
+      const [member] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: dipCamp!.id, species: 'sheep', sex: 'female' })
+        .returning();
+      const productId = await aVetProduct(); // meat 28d → clears 2026-08-17
+
+      // Walked out of the dip camp mid-morning.
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: member!.id,
+          occurredAt: '2026-07-20T08:00:00.000Z',
+          toMobId: elsewhere!.id,
+        }),
+      );
+
+      // The dip is written up that evening — same day, later instant.
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipCamp!.id,
+          productId,
+          occurredAt: '2026-07-20T18:00:00.000Z',
+          administeredOn: '2026-07-20',
+          method: 'plunge',
+        }),
+      );
+
+      await expect(
+        service.recordSale(
+          a.userId,
+          saleBody({
+            farmId: a.farmId,
+            animalId: member!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('⭐ still withholds when the dip and the move carry the IDENTICAL instant', async () => {
+      // Two day-grained captures back-dated to the same day are stamped with the same fabricated
+      // midday instant, so an exact tie is ordinary rather than exotic. A half-open interval
+      // excluded the tie from the source mob and attributed it only to the destination — the
+      // animal walks out of the tie clear of a dose it received.
+      const a = await tenant('Alpha');
+      const [dipCamp] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dip camp flock', species: 'sheep', headCount: 300 })
+        .returning();
+      const [elsewhere] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Far camp flock', species: 'sheep', headCount: 40 })
+        .returning();
+      const [member] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: dipCamp!.id, species: 'sheep', sex: 'female' })
+        .returning();
+      const productId = await aVetProduct();
+
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: member!.id,
+          occurredAt: '2026-07-20T12:00:00.000Z',
+          toMobId: elsewhere!.id,
+        }),
+      );
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipCamp!.id,
+          productId,
+          occurredAt: '2026-07-20T12:00:00.000Z',
+          administeredOn: '2026-07-20',
+          method: 'plunge',
+        }),
+      );
+
+      await expect(
+        service.recordSale(
+          a.userId,
+          saleBody({
+            farmId: a.farmId,
+            animalId: member!.id,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('does NOT withhold an animal that left the day BEFORE the dip — inclusivity stops at the move day', async () => {
+      // The bound on the fix. Claiming the move day for both mobs is deliberate over-withholding
+      // for exactly one day; it must not spread. An animal that was somewhere else the whole day
+      // the flock went through the dip was never dosed, and refusing its sale for 28 days would be
+      // a guard inventing a residue.
+      const a = await tenant('Alpha');
+      const [dipCamp] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Dip camp flock', species: 'sheep', headCount: 300 })
+        .returning();
+      const [elsewhere] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Far camp flock', species: 'sheep', headCount: 40 })
+        .returning();
+      const [early] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, mobId: dipCamp!.id, species: 'sheep', sex: 'female' })
+        .returning();
+      const productId = await aVetProduct();
+
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: early!.id,
+          occurredAt: '2026-07-19T14:00:00.000Z',
+          toMobId: elsewhere!.id,
+        }),
+      );
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipCamp!.id,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+          method: 'plunge',
+        }),
+      );
+
+      const sold = await service.recordSale(
+        a.userId,
+        saleBody({
+          farmId: a.farmId,
+          animalId: early!.id,
+          occurredAt: '2026-08-16T06:00:00.000Z',
+        }),
+      );
+      expect(sold.type).toBe('sale');
+    });
+
     it('does not withhold an animal in a DIFFERENT mob from the one dipped', async () => {
       // The other side of the same join: widening the guard must not start refusing sales the
       // farmer is entitled to make. An over-broad guard trains people to work around it.

@@ -61,8 +61,17 @@ export function isWithinWithdrawal(clearDate: string | undefined, disposalOn: st
   return clearDate !== undefined && disposalOn < clearDate;
 }
 
-/** Compute and attach the withhold-until dates to a health payload from the injected periods. */
-function attachWithhold(base: HealthBase, payload: Record<string, unknown>): void {
+/**
+ * Attach the dosing day and the withhold-until dates computed from the injected periods.
+ *
+ * ⭐ `administeredOn` goes ONTO the payload, and that is not redundant with the event's `occurredAt`.
+ * A dose is day-grained — the farmer knows the day — so a back-dated capture invents an instant to
+ * fill `occurredAt`. Every later regulated question about this event (which withdrawal applied,
+ * which mob the animal was in when it was dosed) is a question about the DAY, and it must be
+ * answered from the day that was recorded rather than from an instant that was made up to store it.
+ */
+function attachDosing(base: HealthBase, payload: Record<string, unknown>): void {
+  payload.administeredOn = base.administeredOn;
   if (base.meatWithdrawalDays !== undefined) {
     payload.meatWithholdUntil = withholdUntil(base.administeredOn, base.meatWithdrawalDays);
   }
@@ -84,7 +93,7 @@ function buildHealthEvent(
       'A health event must be recorded against exactly one of an animal or a mob',
     );
   }
-  attachWithhold(base, payload);
+  attachDosing(base, payload);
   if (!payloadSchema.safeParse(payload).success) {
     throw new ValidationError(`Invalid ${type} payload`);
   }

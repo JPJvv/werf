@@ -1119,8 +1119,9 @@ async function assertClearOfMeatWithdrawal(
   animalId: string,
   occurredAt: Date,
 ): Promise<void> {
-  const latestClear = await latestMeatClearForAnimal(tx, farmId, animalId);
-  const saleDay = farmLocalDay(occurredAt, await farmJurisdiction(tx, farmId));
+  const jurisdiction = await farmJurisdiction(tx, farmId);
+  const latestClear = await latestMeatClearForAnimal(tx, farmId, animalId, jurisdiction);
+  const saleDay = farmLocalDay(occurredAt, jurisdiction);
   if (isWithinWithdrawal(latestClear, saleDay)) {
     throw new ValidationError(
       `This animal is within its meat withdrawal period until ${latestClear}; it cannot be sold for slaughter before then`,
@@ -1181,8 +1182,9 @@ async function latestMeatClearForAnimal(
   tx: CaptureTx,
   farmId: string,
   animalId: string,
+  jurisdiction: string,
 ): Promise<string | undefined> {
-  const wasIn = await mobMembership(tx, farmId, animalId);
+  const wasIn = await mobMembership(tx, farmId, animalId, jurisdiction);
 
   // Every mob the animal has ever been in, so one query fetches the candidates; the interval check
   // below decides which of them were actually its mob on the day of the dose.
@@ -1194,22 +1196,52 @@ async function latestMeatClearForAnimal(
 
   return latestMeatClear(tx, farmId, subjectFilter, (row) => {
     // An animal-subject event is the animal's own dose and always counts. A mob-subject event
-    // counts only if the animal was in that mob when it was given.
+    // counts only if the animal was in that mob on the DAY it was given.
     if (row.mobId === null) return true;
+    const doseDay = doseDayOf(row, jurisdiction);
     return wasIn.some(
       (m) =>
-        m.mobId === row.mobId &&
-        row.occurredAt >= m.from &&
-        (m.to === null || row.occurredAt < m.to),
+        m.mobId === row.mobId && doseDay >= m.fromDay && (m.toDay === null || doseDay <= m.toDay),
     );
   });
 }
 
-/** One stretch of time during which an animal belonged to a particular mob. `to === null` = still. */
+/**
+ * The farm-local DAY a dose was given, from the day the farmer recorded rather than the instant
+ * stored to hold it.
+ *
+ * `administeredOn` is on the payload for exactly this. The fallback covers health events written
+ * before it was stored: converting `occurred_at` to a farm-local day recovers the same answer for
+ * both capture branches (a back-dated dose is stamped midday UTC on its own day, a same-day dose
+ * carries a real instant on today), which an instant comparison did not.
+ */
+function doseDayOf(row: { payload: unknown; occurredAt: Date }, jurisdiction: string): string {
+  const administeredOn = (row.payload as { administeredOn?: unknown }).administeredOn;
+  return typeof administeredOn === 'string'
+    ? administeredOn
+    : farmLocalDay(row.occurredAt, jurisdiction);
+}
+
+/**
+ * One stretch of FARM-LOCAL DAYS during which an animal belonged to a particular mob.
+ * `toDay === null` = still in it.
+ *
+ * ⭐ Days, and INCLUSIVE AT BOTH ENDS, and both halves of that are load-bearing.
+ *
+ * Days, because the other side of the comparison is a dose, and a dose is day-grained: a back-dated
+ * one carries an instant that was invented to store it. Comparing an invented instant against a real
+ * move instant decides a residue question on which of two arbitrary clock readings is larger — dip
+ * the flock at 06:00, walk them out of the dip camp at 12:00, record the dip that evening, and the
+ * dip lands after the interval closed and the animal is CLEAR the next morning.
+ *
+ * Inclusive at both ends, because on the day of a move the animal was genuinely in both mobs, and
+ * because a boundary in a food-safety guard must fail toward BLOCKING. Over-withholding costs a
+ * farmer a day of a sale; under-withholding is a residue traceback from an abattoir.
+ */
 interface MobInterval {
   readonly mobId: string;
-  readonly from: Date;
-  readonly to: Date | null;
+  readonly fromDay: string;
+  readonly toDay: string | null;
 }
 
 /**
@@ -1229,7 +1261,9 @@ async function mobMembership(
   tx: CaptureTx,
   farmId: string,
   animalId: string,
+  jurisdiction: string,
 ): Promise<readonly MobInterval[]> {
+  const dayOf = (instant: Date) => farmLocalDay(instant, jurisdiction);
   const moves = await tx
     .select({ occurredAt: events.occurredAt, payload: events.payload })
     .from(events)
@@ -1248,12 +1282,12 @@ async function mobMembership(
       .select({ mobId: animals.mobId })
       .from(animals)
       .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId)));
-    return row?.mobId ? [{ mobId: row.mobId, from: new Date(0), to: null }] : [];
+    return row?.mobId ? [{ mobId: row.mobId, fromDay: dayOf(new Date(0)), toDay: null }] : [];
   }
 
   const intervals: MobInterval[] = [];
   let openMob = (moves[0]!.payload as { fromMobId?: string | null }).fromMobId ?? null;
-  let openedAt = new Date(0);
+  let openedOn = dayOf(new Date(0));
 
   for (const move of moves) {
     const { fromMobId, toMobId } = move.payload as {
@@ -1263,13 +1297,16 @@ async function mobMembership(
     // A move that names no mob change leaves the animal where it is — `recordMove` sends only the
     // dimensions that changed, so an absent `toMobId` means "same mob, different camp".
     if (toMobId === undefined) continue;
+    const movedOn = dayOf(move.occurredAt);
+    // Both intervals claim the move DAY: the animal was in the source mob that morning and the
+    // destination mob that afternoon, and a dose recorded against either on that day reached it.
     if (openMob !== null) {
-      intervals.push({ mobId: openMob, from: openedAt, to: move.occurredAt });
+      intervals.push({ mobId: openMob, fromDay: openedOn, toDay: movedOn });
     }
     openMob = toMobId ?? (fromMobId === undefined ? openMob : null);
-    openedAt = move.occurredAt;
+    openedOn = movedOn;
   }
-  if (openMob !== null) intervals.push({ mobId: openMob, from: openedAt, to: null });
+  if (openMob !== null) intervals.push({ mobId: openMob, fromDay: openedOn, toDay: null });
 
   return intervals;
 }
@@ -1283,7 +1320,8 @@ async function latestMeatClear(
   tx: CaptureTx,
   farmId: string,
   subjectFilter: SQL | undefined,
-  applies: (row: { mobId: string | null; occurredAt: Date }) => boolean = () => true,
+  applies: (row: { mobId: string | null; occurredAt: Date; payload: unknown }) => boolean = () =>
+    true,
 ): Promise<string | undefined> {
   const rows = await tx
     .select({ payload: events.payload, mobId: events.mobId, occurredAt: events.occurredAt })

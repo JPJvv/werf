@@ -188,14 +188,22 @@ export interface TallyRecord {
  * caller must supply the same total order — the server's query orders by `(occurred_at, id)` for
  * exactly this reason.
  */
+/** Byte order, the same order Postgres gives a timestamptz or a uuid. */
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function projectHeadCount(
   createdWith: number | null,
   tallies: readonly TallyRecord[],
 ): number | null {
   if (createdWith === null) return null;
-  const ordered = [...tallies].sort(
-    (a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id),
-  );
+  // ⭐ Plain `<`/`>`, never `localeCompare`. The invariant this projection defends is that the
+  // server and an offline device cannot derive different counts from the same log — and the server
+  // sorts in Postgres, on a `timestamptz` and a `uuid`, which is a byte comparison. `localeCompare`
+  // is locale-sensitive by contract; it happens to agree for ISO timestamps and lowercase hex, but
+  // "happens to agree" is not what an invariant is made of.
+  const ordered = [...tallies].sort((a, b) => cmp(a.occurredAt, b.occurredAt) || cmp(a.id, b.id));
   let head = createdWith;
   for (const tally of ordered) {
     if (tally.reason === 'recount') {

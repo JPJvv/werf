@@ -155,10 +155,16 @@ export function projectMobs(
   return mobs.map((mob) => {
     const applied = byMob.get(mob.id);
     if (applied === undefined) return mob;
-    // The `??` covers mobs already sitting in a device's register from before the baseline was a
-    // field of its own. For those the two are genuinely the same number, because nothing has ever
-    // written back into that register — which is precisely the accident this field ends relying on.
-    const headCount = projectHeadCount(mob.initialHeadCount ?? mob.headCount, applied);
+    // ⭐ `undefined`, NOT `?? `. The two mean opposite things and only one of them is safe:
+    //   • undefined — a mob written before the baseline was a field. Its `headCount` IS the created
+    //     count, because nothing has ever written back into this register. Fall back to it.
+    //   • null — an EXPLICIT "no baseline", which is what a hydrated row would carry. Folding the
+    //     log over `headCount` there is exactly the double-count this field exists to prevent, and
+    //     `projectHeadCount` already returns null for a null baseline, which is the honest answer.
+    // A `??` cannot tell them apart, so it would reintroduce the defect as a fallback the moment
+    // PowerSync hydrates `mobs` — silently, on every counted mob at once.
+    const baseline = mob.initialHeadCount === undefined ? mob.headCount : mob.initialHeadCount;
+    const headCount = projectHeadCount(baseline, applied);
     return headCount === mob.headCount ? mob : { ...mob, headCount };
   });
 }

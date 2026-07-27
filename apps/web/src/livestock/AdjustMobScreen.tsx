@@ -19,15 +19,17 @@
  * (NFR-007). The count on screen updates from the local projection, not from a server round trip.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { projectHeadCount } from '@werf/domain';
 import { schemas, uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveMobs } from './herd';
-import { useRecordTally } from './LocalTallies';
+import { useRecordTally, useTallies } from './LocalTallies';
+import { useMobs } from './LocalMobs';
 import { useHealthEvents } from './LocalHealth';
 import { useAnimals } from './LocalHerd';
 import { useMoves } from './LocalMoves';
@@ -93,6 +95,10 @@ export function AdjustMobScreen() {
   // The PROJECTED mobs — each carrying the head standing in it after every adjustment the device
   // holds, which is the number the farmer is about to change.
   const mobs = useEffectiveMobs();
+  const tallies = useTallies();
+  // The RAW mobs: the fold below needs the mob's BASELINE, and a projected mob's `headCount` has
+  // already had the whole log applied to it. Folding over that would count every tally twice.
+  const storedMobs = useMobs();
   const healthEvents = useHealthEvents();
   const products = useVetProducts();
   // A counted mob can ALSO hold individually-registered animals, and a treatment given to one of
@@ -117,9 +123,42 @@ export function AdjustMobScreen() {
   // with it — so those are not offered here rather than being offered and refused.
   const counted = mobs.filter((m) => m.headCount !== null);
   const selected = counted.find((m) => m.id === selectedId) ?? null;
-  const currentHead = selected?.headCount ?? null;
 
   const typed = parseCount(count);
+  const captureId = useMemo(() => uuidv7(), [selectedId, day]);
+
+  /**
+   * ⭐ The count AS AT THE DAY BEING DESCRIBED, not today's.
+   *
+   * `useEffectiveMobs()` folds the WHOLE local log, and the day field lets a farmer back-date. So
+   * validating against it judges a past capture against the present, and refuses a true fact:
+   * record "sold the whole flock, 300 head, on the 20th", then remember five ewes died on the
+   * 18th — today's count is 0, the projection is −5, and Save is disabled. The five dead ewes
+   * cannot be recorded at all.
+   *
+   * Refusing at capture is worse than a 400, because a 400 at least leaves a queued record to
+   * recover. The server was fixed for exactly this; the screen has to agree, or the capture never
+   * reaches the server that would accept it.
+   *
+   * Cut on the same `(occurredAt, id)` total order the projection runs in — ties are ordinary here,
+   * since every tally on a day shares one instant.
+   */
+  const currentHead = useMemo(() => {
+    if (selected === null) return null;
+    const at = `${day}T12:00:00.000Z`;
+    const before = tallies.filter(
+      (t) =>
+        t.mobId === selected.id && (t.occurredAt < at || (t.occurredAt === at && t.id < captureId)),
+    );
+    const stored = storedMobs.find((m) => m.id === selected.id);
+    const baseline =
+      stored === undefined
+        ? null
+        : stored.initialHeadCount === undefined
+          ? stored.headCount
+          : stored.initialHeadCount;
+    return projectHeadCount(baseline, before);
+  }, [selected, storedMobs, tallies, day, captureId]);
   const isRecount = reason === 'recount';
   const trade = reason === 'sale' || reason === 'purchase';
 
@@ -186,7 +225,8 @@ export function AdjustMobScreen() {
     // left the translated line as a fallback that fired only when the throw was not an Error.
     try {
       recordTally({
-        id: uuidv7(),
+        // The id the as-at fold above cut on, so what was validated is what is written.
+        id: captureId,
         farmId: activeFarm.id,
         mobId: selected.id,
         // Midday on the farm's day, exactly as the missing report does it: the farmer gave a DAY,

@@ -1555,7 +1555,9 @@ async function mobMembership(
     const [row] = await tx
       .select({ mobId: animals.mobId })
       .from(animals)
-      .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId)));
+      // Soft-delete respected here as everywhere else — this was the one read of `animals` in this
+      // file that omitted it.
+      .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId), isNull(animals.deletedAt)));
     return row?.mobId ? [{ mobId: row.mobId, fromDay: dayOf(new Date(0)), toDay: null }] : [];
   }
 

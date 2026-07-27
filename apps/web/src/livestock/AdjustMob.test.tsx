@@ -430,6 +430,40 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(storedTallies()).toHaveLength(0);
   });
 
+  it('⭐ lets a BACK-DATED tally be recorded against the flock as it stood THAT day', async () => {
+    // The client mirror of the as-at cut the server already got. The screen folded the WHOLE local
+    // log and then judged a past capture against the present, so: sell the whole flock on the 20th,
+    // then remember five ewes died on the 18th — today's count is 0, the projection is −5, Save is
+    // disabled, and a true fact cannot be recorded at all. Refusing at capture is worse than a 400,
+    // because a 400 at least leaves a queued record to recover.
+    cachedSession();
+    seedFlock();
+    seedTallies([
+      {
+        id: '0190f3a0-0000-7000-8000-00000000a010',
+        farmId: FARM_ID,
+        mobId: MOB_ID,
+        occurredAt: '2026-07-20T12:00:00.000Z',
+        reason: 'sale',
+        count: 300,
+        delta: -300,
+      },
+    ]);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^died$/i }));
+    await user.clear(screen.getByLabelText(/what day/i));
+    await user.type(screen.getByLabelText(/what day/i), '2026-07-18');
+    await user.type(screen.getByLabelText(/how many/i), '5');
+
+    // The flock stood at 300 on the 18th, so five dying is an ordinary fact.
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(storedTallies().some((t) => t['count'] === 5 && t['delta'] === -5)).toBe(true);
+  });
+
   it('does not offer a group that is managed as individual animals', async () => {
     // head_count is null: its number comes from counting the animal rows, and a tally here would
     // start a second count of the same sheep.

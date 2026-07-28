@@ -676,7 +676,8 @@ Quality gates
   and nowhere else** — this line kept a stale second copy that disagreed with it by 26 lines'
   distance, which is why it now says where to look instead of restating a number.)
   The stock-theft list and capture, and the "what needs your attention" screen, are in the
-  both-theme axe sweep alongside the thirteen capture screens
+  both-theme axe sweep alongside the other capture screens (`CAPTURE_SCREENS` holds 19 entries as
+  at 2026-07-28; the count is deliberately not restated here for the same reason as above)
 ```
 
 **Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe, including the new
@@ -699,14 +700,24 @@ home tile, entirely offline for the capture paths.
 > word that hid the difference. Everything before the pack in this sentence is still an offline
 > path end to end.
 
-**Where the gate stands (2026-07-27, sixth session, branch `phase-2/livestock`).** `pnpm verify`
-exits 0 (**77 files / 781 tests**, bundle 135.08 KB gz); `pnpm test:e2e` green at **27 tests**, 0 axe
-violations in both themes — including the new populated pass over the capture screens' controls, and
-the offline cold-start capture on the built PWA. CI green on both lanes on draft PR #3.
+**Where the gate stands (2026-07-28, eighth session — AUDIT, branch `phase-2/livestock` @ `7917645`).**
+`pnpm verify` exits 0 **on CI** (**78 files / 806 tests**, bundle **138.72 KB** gz); CI green on both
+lanes at HEAD — run `30374965420`, 2026-07-28, which is the first run to cover `f38af66`, `e5792d3`
+and the B1 slice `2590c9f`.
 
-⛔ **THE EXIT GATE DOES NOT READ TRUE.** The gate has five clauses. `pnpm verify` ✅,
-`pnpm test:e2e` ✅, CI-green-on-`main` ⚪ (unmeetable before the merge, by construction). Two remain
-unmet, and the FIRST one below is the live blocker:
+◐ **`pnpm test:e2e` is NOT green and this line no longer claims it is.** A cold local run on
+2026-07-28 was **25 passed / 2 failed, exit 1** — `a11y.spec.ts:50` and `:64`, both light theme,
+both on the second-factor choice screen. See STATUS.md §4 A9; the cause is narrowed but not proven.
+
+⚠️ **`pnpm verify` cannot be fully run on a machine with no Docker.** 13 test files — the entire
+testcontainers integration tier, 272 of the 806 tests — fail to boot with *"Could not find a working
+container runtime strategy"* and the gate exits 1. That is an environment condition, not a defect,
+but "the gate is green" is only checkable where Docker runs, and locally it is 534 of 806.
+
+⛔ **THE EXIT GATE DOES NOT READ TRUE.** The gate has five clauses. `pnpm verify` ✅ (on CI),
+`pnpm test:e2e` ◐ **(demoted 2026-07-28 — it fails cold, see above)**, CI-green-on-`main` ⚪
+(unmeetable before the merge, by construction). **THREE clauses are now unmet, not two**, and the
+FIRST one below is still the live blocker:
 
 - **"the `reviewer`, `sync-auditor` and `compliance-checker` agents pass" — THEY DO NOT.** All
   three were run over `a6c8eff..HEAD` on 2026-07-26 (fifth session) and `compliance-checker`
@@ -715,8 +726,13 @@ unmet, and the FIRST one below is the live blocker:
   on a NEW SEV-1 found in the code written to close the previous ones: the outbox flush sent health
   events after the disposals the withdrawal guard had to judge against them, so a point-in-time
   guard returned 201 for meat inside an active withholding. That, and seven other findings across
-  the three agents, are fixed in `16fbb6a`…`e5792d3` (STATUS.md §2d). **A FOURTH pass is owed, and
-  the pattern so far is that each pass finds real defects in the previous pass's fixes.**
+  the three agents, are fixed in `16fbb6a`…`e5792d3` (STATUS.md §2d).
+  ⛔ **THE FOURTH PASS RAN 2026-07-28 over `7c2acd9..HEAD` and the verdict is STILL NOT APPROVABLE**
+  — seven findings including a **NEW SEV-1** (`AdjustMobScreen.tsx:128` memoises the capture id, so
+  a second tally on the same mob on the same day silently overwrites the first and never reaches the
+  server) and three SEV-2s. **Three of the four are inside pass three's own fixes.** `reviewer`
+  returned NOT APPROVABLE independently. STATUS.md §2f. **The pattern is now measured four passes
+  running: each pass finds real defects in the previous pass's fixes.**
 - **"CI green on `main`" — structurally unmeetable before the PR exists**, because CI does not run
   on feature branches (STATUS.md §4 G5). This clause can only ever go true AT MERGE. Read it that
   way rather than treating it as a pre-PR blocker; it is the one clause the phase cannot satisfy
@@ -736,20 +752,23 @@ an animal — were the first two slices of this stretch of work.
 > is one clause of five. A gate is not read by checking the clause that is easiest to check.
 
 **What Phase 2 still leaves for its successor, named rather than implied:**
-- **FR-120/121 mating and pregnancy diagnosis** — domain logic done, API and screens not started.
-  The largest remaining capture, and the species-gestation reference data it needs does not exist.
+- ~~**FR-120/121 mating and pregnancy diagnosis**~~ — **CLOSED 2026-07-28 (`2590c9f`), closes B1.**
+  ⚠️ This line said "API and screens not started" for a whole session AFTER they were built, and so
+  did its duplicate below. Both are the §2d defect class again: *a checklist line is part of the diff
+  that makes it stale.* Caught by the eighth session's audit, not by the commit that made it false.
+  ⛔ Note what is closed is the SLICE, not its correctness: pass four found a SEV-2 in it — a
+  diagnosis for a species with no gestation row is refused 400 by the server and set aside forever,
+  so "the fact is still recorded" is false on the wire. STATUS.md §2f.
 - **FR-108 photos** — `photo_key` exists; the local store and deferred upload do not.
 - ~~**FR-107 species-specific attribute validation**~~ — **CLOSED** (commit 5e279b1).
 - ~~**FR-014/014c passkey enrolment and management from the client**~~ — **CLOSED** (commit
   bb17b24). The last Phase 1 gap. Enrolment offers the passkey FIRST and TOTP as the fallback,
   sign-in satisfies the second factor with it, and Settings → Security lists, adds and revokes.
-- **FR-120/121 mating and pregnancy diagnosis** — the domain is complete and tested and takes
-  `gestationDays` INJECTED, which is the point: it is reference data, not a magic number. What is
-  missing is a `species_gestation` reference table (biology, so NOT jurisdiction-scoped, unlike
-  `veterinary_products`), its sync classification and seed, a reference endpoint, a client cache and
-  two capture screens. Comparable in size to the FR-102 tally slice. **Deliberately not half-built:**
-  the server half alone would repeat the FR-603 mistake this phase already made once, where a
-  complete server capability with no client route read as missing functionality.
+- ~~**FR-120/121 mating and pregnancy diagnosis**~~ — **CLOSED 2026-07-28 (`2590c9f`).** Everything
+  this paragraph listed as missing now exists: `species_gestation` + migration 0019 (biology, so NOT
+  jurisdiction-scoped, unlike `veterinary_products`), its `reference-global` sync classification and
+  seed, the reference endpoint, the client cache, and both capture screens wired through `App.tsx`.
+  It was not half-built, which was the point of parking it.
 - **FR-108 photos** — BLOCKED on infrastructure, not on design. `photo_key` exists and
   `architecture.md` plans presigned direct-from-client upload to S3; there is no object storage
   anywhere in this repo and no upload endpoint. Building only the local half would set `photo_key`

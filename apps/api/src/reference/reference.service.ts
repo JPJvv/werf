@@ -20,8 +20,8 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, gt, isNull, lte, or } from 'drizzle-orm';
-import { farms, veterinaryProducts, type AppDb } from '@werf/db';
+import { and, asc, eq, gt, isNull, lte, or } from 'drizzle-orm';
+import { farms, speciesGestation, veterinaryProducts, type AppDb } from '@werf/db';
 import { NotFoundError } from '@werf/core';
 import { APP_DB } from '../db/db.module';
 import { assertCanCapture, type CaptureTx } from '../common/event-capture';
@@ -43,6 +43,21 @@ const productProjection = {
 
 export type ReferenceVetProduct = {
   [K in keyof typeof productProjection]: (typeof veterinaryProducts.$inferSelect)[K];
+};
+
+/**
+ * What the client is given for a gestation figure. `source` travels with it deliberately: a farmer
+ * shown a projected calving date is entitled to the "says who?", and a figure whose provenance
+ * stays on the server is a figure nobody can check.
+ */
+const gestationProjection = {
+  species: speciesGestation.species,
+  gestationDays: speciesGestation.gestationDays,
+  source: speciesGestation.source,
+} as const;
+
+export type ReferenceSpeciesGestation = {
+  [K in keyof typeof gestationProjection]: (typeof speciesGestation.$inferSelect)[K];
 };
 
 @Injectable()
@@ -84,6 +99,28 @@ export class ReferenceService {
           ),
         )
         .orderBy(veterinaryProducts.name);
+    });
+  }
+
+  /**
+   * The species gestation figures a due-date projection is made from (FR-121).
+   *
+   * Unlike every other reference read here there is NO jurisdiction filter and NO `onDay`, because
+   * this is biology rather than law: a gestation period neither stops at a border nor changes on a
+   * date a Gazette names. The membership check stays all the same — "filtered by nothing" is not
+   * "granted to anyone", and a caller with no farm has no business pulling a table.
+   *
+   * A species with no row is not an oversight (`poultry` does not gestate; `game` is a category
+   * spanning a hundred days of variation). The absent row is what stops a screen offering breeding
+   * capture for them and what makes `gestationDaysFor` refuse rather than invent.
+   */
+  async listSpeciesGestation(userId: string, farmId: string): Promise<ReferenceSpeciesGestation[]> {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, farmId);
+      return tx
+        .select(gestationProjection)
+        .from(speciesGestation)
+        .orderBy(asc(speciesGestation.species));
     });
   }
 }

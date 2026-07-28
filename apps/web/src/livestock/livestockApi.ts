@@ -18,6 +18,7 @@ import type {
   StoredWeaning,
 } from './LocalLifecycle';
 import type { StoredHealthEvent } from './LocalHealth';
+import type { StoredMating, StoredPregnancyTest } from './LocalBreeding';
 import type { StoredMove } from './LocalMoves';
 import type { StoredTally } from './LocalTallies';
 import type { StoredTheftIncident } from './LocalTheft';
@@ -164,6 +165,50 @@ export const livestockApi = {
         occurredAt: weaning.occurredAt,
         weightKg: weaning.weightKg,
         ...(weaning.ageDays === undefined ? {} : { ageDays: weaning.ageDays }),
+      },
+      token,
+    ),
+
+  /**
+   * A mating / service (FR-120), filed against the DAM. The sire, when it is an animal on this
+   * farm, is sent as an id the server checks to BE on this farm — a mating is the first link of a
+   * pedigree, and a sire pointing across a tenancy boundary corrupts every ancestry read from it.
+   */
+  recordMating: (mating: StoredMating, token: string): Promise<void> =>
+    post(
+      '/livestock/matings',
+      {
+        id: mating.id,
+        farmId: mating.farmId,
+        animalId: mating.animalId,
+        occurredAt: mating.occurredAt,
+        method: mating.method,
+        ...(mating.sireId === undefined ? {} : { sireId: mating.sireId }),
+        ...(mating.sireCode === undefined ? {} : { sireCode: mating.sireCode }),
+        ...(mating.bullInAt === undefined ? {} : { bullInAt: mating.bullInAt }),
+        ...(mating.bullOutAt === undefined ? {} : { bullOutAt: mating.bullOutAt }),
+      },
+      token,
+    ),
+
+  /**
+   * A pregnancy diagnosis (FR-121), filed against the DAM. Note what is NOT sent: no due date,
+   * only the SERVICE DATE the server projects it from. The device previews a date from its cached
+   * gestation figures so the farmer sees one standing at the gate; a device that could send the
+   * date could assert a calving date nothing on the server can check, into the field a calving
+   * report is planned from. Same division of labour as the withdrawal period (ADR-0005).
+   */
+  recordPregnancyTest: (test: StoredPregnancyTest, token: string): Promise<void> =>
+    post(
+      '/livestock/pregnancy-tests',
+      {
+        id: test.id,
+        farmId: test.farmId,
+        animalId: test.animalId,
+        occurredAt: test.occurredAt,
+        method: test.method,
+        result: test.result,
+        ...(test.matingDate === undefined ? {} : { matingDate: test.matingDate }),
       },
       token,
     ),

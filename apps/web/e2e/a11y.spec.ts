@@ -182,6 +182,8 @@ const CAPTURE_SCREENS = [
   { path: '/animals/groups/new', heading: /record a group/i },
   { path: '/animals/groups/count', heading: /change a group’s numbers/i },
   { path: '/animals/move', heading: /move animals/i },
+  { path: '/animals/mating', heading: /record a service/i },
+  { path: '/animals/pregnancy', heading: /pregnancy test/i },
   { path: '/animals/birth', heading: /record a birth/i },
   { path: '/animals/wean', heading: /weaning session/i },
   { path: '/animals/health', heading: /treat or vaccinate/i },
@@ -237,6 +239,29 @@ const POPULATED_SCREENS = [
         .click();
       await page.getByRole('button', { name: /^sold$/i }).click();
       await expect(page.getByText(/cannot go for slaughter or sale yet/i)).toBeVisible();
+    },
+  },
+  {
+    // The service window: two date fields that only exist under the running-bull branch, plus the
+    // warning panel, which is a tinted block with a left rule — a contrast rule has to see it.
+    path: '/animals/mating',
+    heading: /record a service/i,
+    act: async (page: Page) => {
+      await page.getByLabel(/which female/i).selectOption({ index: 1 });
+      await expect(page.getByLabel(/bull in/i)).toBeVisible();
+      // Drive it into the refusal so the warning panel renders under the audit too.
+      await page.getByLabel(/bull out/i).fill('2020-01-01');
+      await expect(page.getByRole('alert')).toBeVisible();
+    },
+  },
+  {
+    // The projected calving date — a tinted panel carrying a date, and the newest control here.
+    path: '/animals/pregnancy',
+    heading: /pregnancy test/i,
+    act: async (page: Page) => {
+      await page.getByLabel(/which female/i).selectOption({ index: 1 });
+      await page.getByLabel(/when was she served/i).fill('2026-01-05');
+      await expect(page.getByText(/due about/i)).toBeVisible();
     },
   },
   {

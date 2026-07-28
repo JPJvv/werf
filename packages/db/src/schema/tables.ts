@@ -18,13 +18,14 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import * as animals from './animals';
 import * as auth from './auth';
 import * as branding from './branding';
+import * as breeding from './breeding';
 import * as core from './core';
 import * as events from './events';
 import * as land from './land';
 import * as theft from './theft';
 import * as veterinary from './veterinary';
 
-const modules = [animals, auth, branding, core, events, land, theft, veterinary];
+const modules = [animals, auth, branding, breeding, core, events, land, theft, veterinary];
 
 export const SCHEMA_TABLE_NAMES: readonly string[] = modules
   .flatMap((module) => Object.values(module))

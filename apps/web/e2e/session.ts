@@ -74,8 +74,30 @@ export const FIXTURE = {
 } as const;
 
 /** localStorage entries that put a farm's worth of stock on the device. */
+/**
+ * Today ON THE FARM, not in UTC.
+ *
+ * ⚠️ This was `toISOString().slice(0, 10)`, which is the defect CLAUDE.md says keeps coming back —
+ * it has now been found in production code twice and in test assertions once, and this was a fourth
+ * instance sitting in the seed every one of those runs read. Between 00:00 and 02:00 SAST it stamps
+ * a dose with YESTERDAY's day, so the fixture and the screen under audit disagree about what day it
+ * is for two hours out of every twenty-four.
+ *
+ * It is spelled out here rather than imported from `src/farmTime` on purpose: nothing under `e2e/`
+ * reaches into `src/`, and this lane is supposed to see the app the way a browser does. The zone is
+ * the one `farms.jurisdiction` pins for ZA.
+ */
+function farmTodayForFixtures(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Johannesburg',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 export function populatedStores(): Record<string, unknown> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = farmTodayForFixtures();
   return {
     [`werf-land:${FARM_ID}`]: [
       {
@@ -122,6 +144,14 @@ export function populatedStores(): Record<string, unknown> {
         headCount: 300,
         initialHeadCount: 300,
       },
+    ],
+    // The gestation figures, as a device that has seen signal holds them (FR-121). Without these
+    // the pregnancy screen correctly renders its "no calving date can be worked out" note instead
+    // of the projection panel — which is honest behaviour, and would mean the audit never saw the
+    // control it was added for. Mirrors what migration 0019 seeds.
+    [`werf-species-gestation:${FARM_ID}`]: [
+      { species: 'cattle', gestationDays: 283, source: 'Species mean (e2e fixture)' },
+      { species: 'sheep', gestationDays: 147, source: 'Species mean (e2e fixture)' },
     ],
     [`werf-vet-products:${FARM_ID}`]: [
       {

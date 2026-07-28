@@ -4,13 +4,23 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { AuthContext } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { ReferenceService, type ReferenceVetProduct } from './reference.service';
+import {
+  ReferenceService,
+  type ReferenceSpeciesGestation,
+  type ReferenceVetProduct,
+} from './reference.service';
 
 /** The day to resolve registrations for. A calendar day, never coerced to an instant. */
 const productQuerySchema = z.object({
   farmId: schemas.uuidSchema,
   onDay: schemas.dateSchema.optional(),
 });
+
+/**
+ * Gestation is global reference data, so there is no day and no jurisdiction to resolve it for —
+ * only the farm, which is here to prove membership rather than to filter anything.
+ */
+const gestationQuerySchema = z.object({ farmId: schemas.uuidSchema });
 
 // No @UseGuards: AuthGuard is registered globally, so every route here is guarded by default.
 @Controller('reference')
@@ -30,5 +40,21 @@ export class ReferenceController {
     // No default here: "today" is a question only the service can answer, because it needs the
     // FARM's jurisdiction to know which day it is on the farm.
     return this.reference.listVeterinaryProducts(auth.userId, query.farmId, query.onDay);
+  }
+
+  /**
+   * The species gestation figures (FR-121) this device projects due dates from. Cached by the
+   * client for the same reason the product register is: a pregnancy diagnosis happens in a race
+   * with no signal, and the whole value of projecting a calving date is that the farmer sees it
+   * standing there rather than three weeks later.
+   *
+   * No `onDay` — biology does not change on a date, so there is nothing to resolve it for.
+   */
+  @Get('species-gestation')
+  async listSpeciesGestation(
+    @CurrentUser() auth: AuthContext,
+    @Query(new ZodValidationPipe(gestationQuerySchema)) query: z.infer<typeof gestationQuerySchema>,
+  ): Promise<ReferenceSpeciesGestation[]> {
+    return this.reference.listSpeciesGestation(auth.userId, query.farmId);
   }
 }

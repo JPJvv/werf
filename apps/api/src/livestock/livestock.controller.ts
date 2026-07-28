@@ -147,6 +147,36 @@ export class LivestockController {
   }
 
   /**
+   * Record a mating / service (FR-120), against the DAM. Natural service or AI; the sire is an
+   * animal on this farm or an external code; a running bull is a bull-in/bull-out WINDOW rather
+   * than a day, because that is what an extensive herd actually knows.
+   */
+  @Post('matings')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMating(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMatingRequestSchema))
+    body: schemas.RecordMatingRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMating(auth.userId, body);
+  }
+
+  /**
+   * Record a pregnancy diagnosis (FR-121), against the DAM. The due date is projected HERE from
+   * the species gestation reference table and is not accepted from the body — the client previews
+   * one from its cached copy, the server stores the one it can vouch for.
+   */
+  @Post('pregnancy-tests')
+  @HttpCode(HttpStatus.CREATED)
+  async recordPregnancyTest(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordPregnancyTestRequestSchema))
+    body: schemas.RecordPregnancyTestRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordPregnancyTest(auth.userId, body);
+  }
+
+  /**
    * Record a purchase (FR-106) — an acquisition against an animal already in the herd. Unlike a
    * sale it changes no status: the animal arrived alive and stays alive.
    */

@@ -24,6 +24,7 @@ import {
   farmUsers,
   landUnits,
   mobs,
+  speciesGestation,
   theftIncidentAnimals,
   theftIncidents,
   users,
@@ -2883,6 +2884,340 @@ describe('weight capture (FR-140)', () => {
       );
 
       await expect(service.buildEvidencePack(a.userId, incident.id)).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  /**
+   * Breeding capture (FR-120/121), against a real Postgres.
+   *
+   * The interesting cases here are the ones only a real database can answer: the DUE DATE is
+   * projected from the `species_gestation` rows migration 0019 seeds — so the arithmetic runs
+   * against the figures the product actually ships rather than a fixture — and a species with no
+   * row REFUSES rather than inventing one.
+   *
+   * ⭐ Note that `species_gestation` is deliberately absent from `reset()`'s truncate list in
+   * `packages/db/src/testing.ts`. It is reference data seeded by its own migration and no farm ever
+   * writes it, so it must survive between tests. Adding it to that list would empty the table and
+   * red every projection below for a reason that looks nothing like the cause.
+   */
+  describe('breeding capture (FR-120/121)', () => {
+    /** The figure migration 0019 seeds for cattle. The projection test reads it back from the
+     *  DATABASE and asserts against this, so a changed seed fails at the seed rather than silently
+     *  moving every expectation with it. */
+    const CATTLE_DAYS = 283;
+
+    /** A bull on the farm, so a natural service has both ends. */
+    async function aSire(farmId: string): Promise<string> {
+      const [row] = await elevated.db
+        .insert(animals)
+        .values({ farmId, species: 'cattle', sex: 'male' })
+        .returning();
+      return row!.id;
+    }
+
+    /** A female of any species — the projection cases need a ewe and a game animal. */
+    async function aFemaleOf(farmId: string, species: string): Promise<string> {
+      const [row] = await elevated.db
+        .insert(animals)
+        .values({ farmId, species, sex: 'female' })
+        .returning();
+      return row!.id;
+    }
+
+    /** `matingDate + days`, computed here rather than copied out of the implementation. */
+    function dayAfter(from: string, days: number): string {
+      const [y, m, d] = from.split('-').map(Number);
+      return new Date(Date.UTC(y!, m! - 1, d!) + days * 86_400_000).toISOString().slice(0, 10);
+    }
+
+    it('files a service against the DAM, carrying a sire that is on this farm', async () => {
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+      const sire = await aSire(a.farmId);
+
+      const mating = await service.recordMating(
+        a.userId,
+        schemas.recordMatingRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: dam,
+          occurredAt: '2026-01-05T12:00:00.000Z',
+          method: 'natural',
+          sireId: sire,
+        }),
+      );
+
+      expect(mating.type).toBe('mating');
+      expect(mating.animalId).toBe(dam);
+      expect(mating.payload).toMatchObject({ method: 'natural', sireId: sire });
+
+      // Being served changes no status: a pregnancy is an observation about an animal that stays
+      // alive, not a state in the lifecycle machine.
+      const [row] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, dam)),
+      );
+      expect(row!.status).toBe('alive');
+    });
+
+    it('keeps a running-bull WINDOW rather than collapsing it to a service day', async () => {
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+
+      const mating = await service.recordMating(
+        a.userId,
+        schemas.recordMatingRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: dam,
+          occurredAt: '2026-01-05T12:00:00.000Z',
+          method: 'natural',
+          bullInAt: '2026-01-05',
+          bullOutAt: '2026-02-16',
+        }),
+      );
+
+      expect(mating.payload).toMatchObject({ bullInAt: '2026-01-05', bullOutAt: '2026-02-16' });
+    });
+
+    it('refuses a service naming a sire on ANOTHER farm, as NOT FOUND', async () => {
+      // A mating is the first link of a pedigree. A sire pointing across a tenancy boundary
+      // corrupts every ancestry read from it afterwards, and unfixably once there is data on it.
+      //
+      // ⭐ It refuses as NOT FOUND rather than as a tenancy error, and that is the point of the
+      // assertion. A distinguishable refusal would let a caller probe a neighbour's herd one uuid
+      // at a time: "not yours" confirms the animal exists. A stranger's animal and a
+      // non-existent one must be indistinguishable from outside, which is the same posture the
+      // birth path takes for a calf.
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const dam = await anAnimal(a.farmId);
+      const theirBull = await aSire(b.farmId);
+
+      await expect(
+        service.recordMating(
+          a.userId,
+          schemas.recordMatingRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            animalId: dam,
+            occurredAt: '2026-01-05T12:00:00.000Z',
+            method: 'natural',
+            sireId: theirBull,
+          }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('refuses a service against a DAM on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const theirCow = await anAnimal(b.farmId);
+
+      await expect(
+        service.recordMating(
+          a.userId,
+          schemas.recordMatingRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            animalId: theirCow,
+            occurredAt: '2026-01-05T12:00:00.000Z',
+            method: 'natural',
+          }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('projects the due date SERVER-SIDE from the seeded gestation figure', async () => {
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+
+      // The figure the product ships, read back from the database.
+      const [seeded] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(speciesGestation).where(eq(speciesGestation.species, 'cattle')),
+      );
+      expect(seeded!.gestationDays).toBe(CATTLE_DAYS);
+
+      const test = await service.recordPregnancyTest(
+        a.userId,
+        schemas.recordPregnancyTestRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: dam,
+          occurredAt: '2026-03-20T09:00:00.000Z',
+          method: 'ultrasound',
+          result: 'pregnant',
+          matingDate: '2026-01-05',
+        }),
+      );
+
+      expect(test.payload).toMatchObject({
+        result: 'pregnant',
+        dueDate: dayAfter('2026-01-05', CATTLE_DAYS),
+      });
+    });
+
+    it('IGNORES a due date sent by a client — the projection is the server’s alone', async () => {
+      // ⭐ The contract, and the reason `dueDate` is omitted from the request schema. A device that
+      // could assert a calving date could write one nothing on the server can check, into the field
+      // a calving report is planned from. The schema strips it; this proves the strip.
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+
+      const test = await service.recordPregnancyTest(
+        a.userId,
+        schemas.recordPregnancyTestRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: dam,
+          occurredAt: '2026-03-20T09:00:00.000Z',
+          method: 'palpation',
+          result: 'pregnant',
+          matingDate: '2026-01-05',
+          dueDate: '2099-12-31',
+        }),
+      );
+
+      expect(test.payload).toMatchObject({ dueDate: dayAfter('2026-01-05', CATTLE_DAYS) });
+    });
+
+    it('records a positive diagnosis with NO service date, and projects nothing', async () => {
+      // Honest rather than empty: she is in calf, and we genuinely do not know when she will calve.
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+
+      const test = await service.recordPregnancyTest(
+        a.userId,
+        schemas.recordPregnancyTestRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: dam,
+          occurredAt: '2026-03-20T09:00:00.000Z',
+          method: 'blood',
+          result: 'pregnant',
+        }),
+      );
+
+      expect(test.payload).toMatchObject({ result: 'pregnant' });
+      expect(test.payload).not.toHaveProperty('dueDate');
+    });
+
+    it('projects nothing for an EMPTY result even when a service date is given', async () => {
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+
+      const test = await service.recordPregnancyTest(
+        a.userId,
+        schemas.recordPregnancyTestRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: dam,
+          occurredAt: '2026-03-20T09:00:00.000Z',
+          method: 'palpation',
+          result: 'open',
+          matingDate: '2026-01-05',
+        }),
+      );
+
+      expect(test.payload).not.toHaveProperty('dueDate');
+    });
+
+    it('REFUSES to project for a species with no gestation row, rather than inventing one', async () => {
+      // ⛔ `game` has no row on purpose: a springbok and a kudu are a hundred days apart, so any
+      // single figure would be wrong for most of the animals it was read for. A loud refusal is a
+      // five-minute fix; a quiet fabrication is a season of wrong calving dates nobody distrusts.
+      // The refusal is a 4xx, which the outbox sets aside and reports (FR-009) rather than jamming
+      // the queue behind it.
+      const a = await tenant('Alpha');
+      const doe = await aFemaleOf(a.farmId, 'game');
+
+      await expect(
+        service.recordPregnancyTest(
+          a.userId,
+          schemas.recordPregnancyTestRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            animalId: doe,
+            occurredAt: '2026-03-20T09:00:00.000Z',
+            method: 'visual',
+            result: 'pregnant',
+            matingDate: '2026-01-05',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('still records the diagnosis for that species when no date is being projected', async () => {
+      // The refusal above is about the PROJECTION and never about the fact. A positive test on a
+      // game animal is a real observation, and losing it to protect a date is the worse trade.
+      const a = await tenant('Alpha');
+      const doe = await aFemaleOf(a.farmId, 'game');
+
+      const test = await service.recordPregnancyTest(
+        a.userId,
+        schemas.recordPregnancyTestRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: doe,
+          occurredAt: '2026-03-20T09:00:00.000Z',
+          method: 'visual',
+          result: 'pregnant',
+        }),
+      );
+
+      expect(test.payload).toMatchObject({ result: 'pregnant' });
+    });
+
+    it('projects a SHEEP due date off the sheep figure, not the cattle one', async () => {
+      // The species is read from the animal's own row rather than taken from the request, so a
+      // client cannot project a cow's due date off a sheep's gestation or the reverse.
+      const a = await tenant('Alpha');
+      const ewe = await aFemaleOf(a.farmId, 'sheep');
+      const [figure] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(speciesGestation).where(eq(speciesGestation.species, 'sheep')),
+      );
+
+      const test = await service.recordPregnancyTest(
+        a.userId,
+        schemas.recordPregnancyTestRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: ewe,
+          occurredAt: '2026-06-01T09:00:00.000Z',
+          method: 'ultrasound',
+          result: 'pregnant',
+          matingDate: '2026-01-05',
+        }),
+      );
+
+      expect(test.payload).toMatchObject({
+        dueDate: dayAfter('2026-01-05', figure!.gestationDays),
+      });
+      // And it is genuinely a DIFFERENT date from the cattle projection. An assertion that would
+      // still pass if both read the same row is not an assertion about species at all.
+      expect(test.payload).not.toMatchObject({ dueDate: dayAfter('2026-01-05', CATTLE_DAYS) });
+    });
+
+    it('is idempotent on a re-flush — the same capture id lands once', async () => {
+      // The outbox is at-least-once: a capture re-sent after a dropped response must not duplicate.
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+      const body = schemas.recordPregnancyTestRequestSchema.parse({
+        id: randomUUID(),
+        farmId: a.farmId,
+        animalId: dam,
+        occurredAt: '2026-03-20T09:00:00.000Z',
+        method: 'palpation',
+        result: 'pregnant',
+        matingDate: '2026-01-05',
+      });
+
+      await service.recordPregnancyTest(a.userId, body);
+      await service.recordPregnancyTest(a.userId, body);
+
+      const seen = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.id, body.id)),
+      );
+      expect(seen).toHaveLength(1);
     });
   });
 });

@@ -30,6 +30,7 @@ import {
   farms,
   landUnits,
   mobs,
+  speciesGestation,
   theftIncidentAnimals,
   theftIncidents,
   veterinaryProducts,
@@ -43,9 +44,11 @@ import {
   recordBirth,
   recordDeath,
   recordDip,
+  recordMating,
   recordMissing,
   recordMobTally,
   recordMove,
+  recordPregnancyDiagnosis,
   recordPurchase,
   recordSale,
   recordTreatment,
@@ -665,6 +668,89 @@ export class LivestockService {
   }
 
   /**
+   * Records a mating / service (FR-120) against the DAM. No status change — being served is not a
+   * state in the lifecycle machine, it is something that happened to an animal that stays alive.
+   *
+   * The sire, when it is an animal on this farm, is checked to BE on this farm. That check is not
+   * bookkeeping: a mating is the first link of a pedigree, and a sire pointing across a tenancy
+   * boundary corrupts every ancestry read from it afterwards, unfixably once there is data on it.
+   */
+  async recordMating(userId: string, input: schemas.RecordMatingRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      await assertOwnedReferences(tx, input.farmId, {
+        ...(input.sireId === undefined ? {} : { sireId: input.sireId }),
+      });
+      const { enterpriseId } = await animalFacts(tx, input.farmId, input.animalId);
+
+      const event = recordMating({
+        id: input.id,
+        farmId: input.farmId,
+        animalId: input.animalId,
+        occurredAt: input.occurredAt,
+        method: input.method,
+        enterpriseId,
+        createdBy: userId,
+        ...(input.sireId === undefined ? {} : { sireId: input.sireId }),
+        ...(input.sireCode === undefined ? {} : { sireCode: input.sireCode }),
+        ...(input.bullInAt === undefined ? {} : { bullInAt: input.bullInAt }),
+        ...(input.bullOutAt === undefined ? {} : { bullOutAt: input.bullOutAt }),
+      });
+
+      return insertEvent(tx, event);
+    });
+  }
+
+  /**
+   * Records a pregnancy diagnosis (FR-121) against the DAM, and projects the due date HERE.
+   *
+   * ⭐ The due date is computed server-side from `species_gestation` and is not accepted from the
+   * body. The client previews one from its cached copy so the farmer sees a date standing in the
+   * race; this is the one that gets stored. Same division of labour as the withdrawal period
+   * (ADR-0005) and for the same reason — a date a calving report is planned from must come from a
+   * figure the server can vouch for, not from whatever a stale or edited device asserts.
+   *
+   * ⭐ It is computed AT CAPTURE and frozen onto the event. Correcting a gestation figure later
+   * must never silently move a date a farmer has already written on a calendar.
+   *
+   * A species with no gestation row REFUSES rather than quietly dropping the due date. Dropping it
+   * would produce exactly the defect this phase has already found twice — a field that is null in
+   * every record because nothing ever set it — and it would be silent at the only moment anyone
+   * could notice. The refusal is a 4xx, which the outbox sets aside and reports (FR-009) instead
+   * of jamming the queue behind it.
+   */
+  async recordPregnancyTest(userId: string, input: schemas.RecordPregnancyTestRequest) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      const { enterpriseId, species } = await animalFacts(tx, input.farmId, input.animalId);
+
+      // Only a positive result with a known service date has a due date to project. On an open or
+      // uncertain result there is nothing to compute and no gestation figure is needed — so a
+      // farmer testing a game animal can still record the result, which is a real fact, and simply
+      // gets no projection.
+      const projecting = input.result === 'pregnant' && input.matingDate !== undefined;
+      const gestationDays = projecting
+        ? await gestationDaysFor(tx, species, input.animalId)
+        : undefined;
+
+      const event = recordPregnancyDiagnosis({
+        id: input.id,
+        farmId: input.farmId,
+        animalId: input.animalId,
+        occurredAt: input.occurredAt,
+        method: input.method,
+        result: input.result,
+        enterpriseId,
+        createdBy: userId,
+        ...(input.matingDate === undefined ? {} : { matingDate: input.matingDate }),
+        ...(gestationDays === undefined ? {} : { gestationDays }),
+      });
+
+      return insertEvent(tx, event);
+    });
+  }
+
+  /**
    * Records a purchase (FR-106) — an acquisition against an animal already in the herd. Unlike a
    * sale it changes nothing about the animal's status: it arrived alive and stays alive. The money
    * uses the same `trade` payload as a sale, so buying and selling cannot drift apart.
@@ -1062,13 +1148,50 @@ async function animalFacts(
   tx: CaptureTx,
   farmId: string,
   animalId: string,
-): Promise<{ status: schemas.Animal['status']; enterpriseId: string | null }> {
+): Promise<{
+  status: schemas.Animal['status'];
+  enterpriseId: string | null;
+  species: string;
+}> {
   const [row] = await tx
-    .select({ status: animals.status, enterpriseId: animals.enterpriseId })
+    .select({
+      status: animals.status,
+      enterpriseId: animals.enterpriseId,
+      // The species is read from the animal's own row rather than taken from the request for the
+      // same reason the herd is: it is already recorded, and letting a client restate it only
+      // creates a way to project a cow's due date off a sheep's gestation.
+      species: animals.species,
+    })
     .from(animals)
     .where(and(eq(animals.id, animalId), eq(animals.farmId, farmId), isNull(animals.deletedAt)));
   if (!row) throw new NotFoundError('Animal not found');
   return row;
+}
+
+/**
+ * The gestation period for a species, from the `species_gestation` reference table (FR-121) — the
+ * source `projectDueDate` is injected FROM, so that no number is ever typed into the projection.
+ *
+ * A species with no row THROWS. It does not fall back to a nearby species and it does not quietly
+ * return undefined, and the reasoning is the same one the domain rules give for a missing regulated
+ * rate: a loud failure is a five-minute fix, and a silent one produces a whole season of wrong
+ * calving dates that nobody knows to distrust. `poultry` has no row because a hen does not gestate,
+ * and `game` has none because a springbok and a kudu are a hundred days apart — for both, refusing
+ * is the correct answer rather than a gap.
+ */
+async function gestationDaysFor(tx: CaptureTx, species: string, animalId: string): Promise<number> {
+  const [row] = await tx
+    .select({ gestationDays: speciesGestation.gestationDays })
+    .from(speciesGestation)
+    .where(eq(speciesGestation.species, species));
+  if (!row) {
+    throw new ValidationError(
+      `No gestation period is recorded for ${species}, so a due date cannot be projected ` +
+        `for animal ${animalId}. Record the diagnosis without a service date, or add the figure ` +
+        `to the species gestation reference data.`,
+    );
+  }
+  return row.gestationDays;
 }
 
 type VetProduct = typeof veterinaryProducts.$inferSelect;

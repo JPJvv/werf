@@ -54,6 +54,7 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   events: { id: 'event-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
   veterinary_products: { id: 'vet-za', jurisdiction: 'ZA' },
+  species_gestation: { id: 'gest-cattle', species: 'cattle', gestation_days: 283 },
   theft_incidents: { id: 'theft-b', farm_id: FARM_B },
   theft_incident_animals: { incident_id: 'theft-b', animal_id: 'animal-b', farm_id: FARM_B },
 };
@@ -154,8 +155,10 @@ describe('sync tenancy — no server-only leak', () => {
 describe('sync tenancy — cross-farm isolation', () => {
   it('does not sync ANY of farm B’s farm-owned rows to farm A’s user', () => {
     for (const table of Object.keys(TENANCY) as SyncedTable[]) {
-      // Reference data is shared by jurisdiction, not owned by a farm — covered separately.
-      if (TENANCY[table].scope?.kind === 'reference-jurisdiction') continue;
+      // Reference data is shared — by jurisdiction, or globally where the fact is biological
+      // rather than legal. Neither is owned by a farm, so both are covered separately below.
+      const kind = TENANCY[table].scope?.kind;
+      if (kind === 'reference-jurisdiction' || kind === 'reference-global') continue;
       expect(
         syncsToUser(table, farmBRows[table], userAFarms, graph),
         `${table}: farm B row leaked to farm A`,
@@ -200,5 +203,29 @@ describe('sync tenancy — reference data by jurisdiction', () => {
     expect(syncsToUser('veterinary_products', { jurisdiction: 'NA' }, userAFarms, graph)).toBe(
       false,
     );
+  });
+});
+
+describe('sync tenancy — global reference data', () => {
+  /**
+   * Species gestation (FR-121) is the first table classified `reference-global`, and the
+   * distinction it draws is worth a test rather than a comment. A withdrawal period is a
+   * REGISTRATION and stops at the border; a gestation period is biology and does not. So this
+   * row is filtered by nothing — and the assertion below is that it reaches a farm whose
+   * jurisdiction it does not carry, which is exactly what a jurisdiction-scoped table must not do.
+   */
+  it('syncs a gestation figure to any farm, because biology has no jurisdiction', () => {
+    expect(syncsToUser('species_gestation', { species: 'cattle' }, userAFarms, graph)).toBe(true);
+    expect(syncsToUser('species_gestation', { species: 'cattle' }, [FARM_B], graph)).toBe(true);
+  });
+
+  it('still syncs nothing to a connection that belongs to no farm', () => {
+    // "Filtered by nothing" must not become "granted to anyone". A caller with no membership has
+    // no business pulling any table, reference or otherwise.
+    expect(syncsToUser('species_gestation', { species: 'cattle' }, [], graph)).toBe(false);
+  });
+
+  it('is owned by no farm, so it never appears in a farm-ownership answer', () => {
+    expect(owningFarmIds('species_gestation', { species: 'cattle' }, graph)).toEqual([]);
   });
 });

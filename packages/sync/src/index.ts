@@ -31,12 +31,18 @@ export type SyncClassification = 'farm-scoped' | 'reference' | 'server-only';
  * - `via-membership`: the row is a user; it is owned by every farm that user is a member of.
  * - `reference-jurisdiction`: read-only reference data, filtered by the farm's jurisdiction
  *   (a ZA device never downloads Namibian withdrawal periods).
+ * - `reference-global`: read-only reference data that is TRUE EVERYWHERE and is therefore
+ *   filtered by nothing. Biology, not law: a gestation period does not stop at the border the
+ *   way a product registration does. Spelled out as its own kind rather than given a dummy
+ *   jurisdiction, because "filtered by ZA" and "not filtered at all" are different postures and
+ *   a reader must not have to infer which one a table meant.
  */
 export type RowScope =
   | { readonly kind: 'direct'; readonly column: string }
   | { readonly kind: 'via-business'; readonly column: string }
   | { readonly kind: 'via-membership' }
-  | { readonly kind: 'reference-jurisdiction'; readonly column: string };
+  | { readonly kind: 'reference-jurisdiction'; readonly column: string }
+  | { readonly kind: 'reference-global' };
 
 export interface TenancyEntry {
   readonly classification: SyncClassification;
@@ -160,6 +166,15 @@ export const TENANCY = {
     classification: 'reference',
     scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
   },
+  // Species gestation — the source a due-date projection is injected from (Phase 2, FR-121).
+  // Reference data like the two above, but GLOBAL rather than jurisdiction-filtered: a withdrawal
+  // period is a registration and stops at the border, a gestation period is biology and does not.
+  // Read-only on the device; the figure is authored by the elevated admin path, never a farmer.
+  // Four rows, so shipping all of them to every device costs nothing worth optimising.
+  species_gestation: {
+    classification: 'reference',
+    scope: { kind: 'reference-global' },
+  },
   // Stock-theft incidents (Phase 2, FR-603/605). Farm-scoped and bidirectional: the farmer captures
   // the incident at the last-seen location, in the field, offline. The canonical PostGIS
   // `last_seen_location` is stripped for the same reason land's `boundary` is — SQLite has no
@@ -225,6 +240,8 @@ export function owningFarmIds(
       return graph.membership[String(row['id'])] ?? [];
     case 'reference-jurisdiction':
       return []; // scoped by jurisdiction, not by farm ownership
+    case 'reference-global':
+      return []; // owned by nobody — true on every farm in every country
   }
 }
 
@@ -237,6 +254,9 @@ export function syncsToUser(
 ): boolean {
   const entry: TenancyEntry = TENANCY[table];
   if (entry.classification === 'server-only') return false;
+  // Global reference data syncs to everyone with a farm at all. The membership check is not a
+  // formality: it is what stops an unauthenticated or farm-less connection pulling any table.
+  if (entry.scope?.kind === 'reference-global') return userFarmIds.length > 0;
   if (entry.scope?.kind === 'reference-jurisdiction') {
     // Reference data syncs when its jurisdiction matches one of the user's farms.
     const userJurisdictions = new Set(

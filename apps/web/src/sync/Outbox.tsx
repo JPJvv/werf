@@ -47,6 +47,7 @@ import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
 import { useMoves } from '../livestock/LocalMoves';
 import { useHealthEvents } from '../livestock/LocalHealth';
+import { useBreedingEvents } from '../livestock/LocalBreeding';
 import { useTheftIncidents } from '../livestock/LocalTheft';
 import { livestockApi } from '../livestock/livestockApi';
 import { useRainfall } from '../rainfall/LocalRainfall';
@@ -141,6 +142,7 @@ export type CaptureKind =
   | 'lifecycle'
   | 'move'
   | 'health'
+  | 'breeding'
   | 'theft'
   | 'rainfall';
 
@@ -217,6 +219,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const events = useLifecycleEvents();
   const moves = useMoves();
   const health = useHealthEvents();
+  const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
   const rainfall = useRainfall();
 
@@ -345,6 +348,26 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
+    // Breeding (FR-120/121) sits here on FOREIGN KEYS ALONE, and the second question is asked
+    // explicitly because that is the rule this queue learned the hard way: a mating references the
+    // dam and, when the bull is on this farm, the sire — both animals, both already ahead — and a
+    // pregnancy diagnosis references only the dam. Nothing here CREATES evidence a server-side
+    // guard reads, and nothing here is JUDGED by one; the due date is projected from reference
+    // data the server already holds, not from anything else in this queue. So unlike the doses
+    // above, no safety ordering applies, and moving it would be harmless rather than dangerous.
+    for (const event of breeding) {
+      if (!sent.has(event.id)) {
+        items.push({
+          id: event.id,
+          kind: 'breeding',
+          detail: labels.get(event.animalId) ?? null,
+          send: (token) =>
+            event.kind === 'mating'
+              ? livestockApi.recordMating(event, token)
+              : livestockApi.recordPregnancyTest(event, token),
+        });
+      }
+    }
     // One entry per lifecycle event TYPE. Exhaustive by construction rather than by an
     // if/else with a default arm: a new event type added to the store without an endpoint here
     // fails the typecheck instead of being silently posted to /deaths.
@@ -392,6 +415,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     events,
     moves,
     health,
+    breeding,
     theftIncidents,
     rainfall,
     sent,

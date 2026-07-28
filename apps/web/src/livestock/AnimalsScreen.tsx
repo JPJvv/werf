@@ -175,6 +175,21 @@ export function AnimalsScreen() {
           >
             {t('animals.health')}
           </Link>
+          {/* Mating sits before pregnancy, and pregnancy before birth: the three are one sequence
+              on the same animal, and reading them in the order they happen is the only ordering a
+              farmer never has to think about. */}
+          <Link
+            to="/animals/mating"
+            className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+          >
+            {t('animals.mating')}
+          </Link>
+          <Link
+            to="/animals/pregnancy"
+            className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+          >
+            {t('animals.pregnancy')}
+          </Link>
           <Link
             to="/animals/birth"
             className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"

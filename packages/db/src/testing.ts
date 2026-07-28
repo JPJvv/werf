@@ -105,9 +105,16 @@ export async function bootWerfTestDatabase(): Promise<WerfTestDatabase> {
     elevatedUrl,
     appUrl,
     async reset(): Promise<void> {
-      // Every table except drizzle's migration bookkeeping. RESTART IDENTITY is harmless
-      // (we have no sequences — IDs are client-generated UUIDv7) and CASCADE lets us
+      // Every FARM table, plus drizzle's migration bookkeeping excepted. RESTART IDENTITY is
+      // harmless (we have no sequences — IDs are client-generated UUIDv7) and CASCADE lets us
       // ignore FK ordering.
+      //
+      // ⭐ `species_gestation` is ABSENT ON PURPOSE and must stay absent. It is reference data
+      // seeded by migration 0019 and written by no farm ever, so the seeded rows have to survive
+      // between tests — the breeding suite projects due dates from exactly those figures.
+      // Truncating it would empty the table and red every projection in a way that looks nothing
+      // like the cause. `regulatory_rates` and `veterinary_products` ARE here because tests insert
+      // their own rows into both through the elevated path.
       await db.execute(sql`
         TRUNCATE TABLE
           webauthn_challenges, user_sessions, user_passkeys, theft_incident_animals, theft_incidents,

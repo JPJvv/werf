@@ -23,6 +23,8 @@ import {
   birthPayloadSchema,
   deathPayloadSchema,
   dipPayloadSchema,
+  matingPayloadSchema,
+  pregnancyTestPayloadSchema,
   tallyReasonSchema,
   tradePayloadSchema,
   treatmentRouteSchema,
@@ -122,6 +124,58 @@ export const recordWeaningRequestSchema = z.object({
   ...weaningPayloadSchema.shape,
 });
 export type RecordWeaningRequest = z.infer<typeof recordWeaningRequestSchema>;
+
+/**
+ * Record a mating / service (FR-120). Filed against the DAM, like a birth — the question asked in
+ * September is "which cows were served, and by what", and it is her timeline that answers it.
+ *
+ * The sire is either an animal on this farm (`sireId`, checked to be on it) or an external bull /
+ * AI straw named by code (`sireCode`). Both are optional: an extensive herd running a bull with the
+ * cows often cannot say which cow he served on which day, which is what `bullInAt`/`bullOutAt` are
+ * for — the service is a WINDOW, not a day, and recording it as a guessed day would fabricate a
+ * precision the farmer never had.
+ */
+export const recordMatingRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  /** The DAM. */
+  animalId: uuidSchema,
+  /** When she was served, on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  ...matingPayloadSchema.shape,
+});
+export type RecordMatingRequest = z.infer<typeof recordMatingRequestSchema>;
+
+/**
+ * Record a pregnancy diagnosis (FR-121). Filed against the DAM. No status change — a pregnancy is
+ * not a state in the lifecycle machine, it is an observation about an animal that stays alive.
+ *
+ * ⭐ `dueDate` IS NOT ON THE WIRE, and its absence is the contract. The projection is
+ * `matingDate + species gestation`, and gestation is reference data the SERVER holds
+ * (`species_gestation`); letting a client post a due date would let a stale or edited device write
+ * a date nothing on the server can check, into a field a calving report is planned from. So the
+ * client sends the SERVICE DATE it knows and the server does the arithmetic — the same division of
+ * labour as the withdrawal period (ADR-0005), where the device previews and the server decides.
+ *
+ * `matingDate` is optional because a diagnosis is a fact whether or not the service date is known.
+ * Without it there is no due date, which is honest: a positive test on a cow of unknown service
+ * date tells you she is in calf and genuinely does not tell you when.
+ */
+export const recordPregnancyTestRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+  /** The DAM. */
+  animalId: uuidSchema,
+  /** When she was tested, on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  /**
+   * The service date to project from (YYYY-MM-DD), when it is known. A calendar day, never an
+   * instant: a due date is a day on the farm and never touches a timezone.
+   */
+  matingDate: dateSchema.optional(),
+  ...pregnancyTestPayloadSchema.omit({ dueDate: true }).shape,
+});
+export type RecordPregnancyTestRequest = z.infer<typeof recordPregnancyTestRequestSchema>;
 
 /**
  * Record a purchase (FR-106) — an acquisition against an animal already in the herd. Unlike a sale

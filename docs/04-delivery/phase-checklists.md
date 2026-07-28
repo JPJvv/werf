@@ -401,15 +401,29 @@ Lifecycle events (events table — append-only, the heart; database-schema.md §
   tests. Still ◐ on the READ side: nothing yet reports a season total or feeds grazing rest
 
 Breeding (P1 only; FR-122/123 deferred)
-◐ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120) — capture
-  DOMAIN LOGIC done (@werf/domain recordMating → a `mating` event against the dam; on-farm sireId or
-  external sireCode; bull-in/bull-out period). API + screen STILL DEFERRED — not reached this
-  session; it is the largest remaining Phase 2 capture
-◐ 📶 Record pregnancy diagnosis: method + result; project due date from species gestation
-  (gestation is reference data, not a magic number in code) (FR-121) — recordPregnancyDiagnosis +
-  projectDueDate done: gestation is INJECTED (never hardcoded), the due date is computed AT CAPTURE
-  and stored on the event, and is absent on an open/uncertain result. The species-gestation REFERENCE
-  DATA source (a table/seed the caller reads) + API + screen are a later slice
+☑ 📶 Record mating/service: natural or AI, sire, date, or bull-in/bull-out period (FR-120) — DOMAIN,
+  API AND SCREEN DONE (closes B1). `POST /livestock/matings`, twelve integration tests shared with
+  FR-121, and `RecordMatingScreen`. ⭐ The service is a WINDOW as often as it is a day, and the
+  screen asks which: "a bull ran with them" is a first-class answer and the DEFAULT for natural
+  service, because an extensive herd knows the six weeks and nothing finer, and a date field alone
+  would make the farmer name a day the service did not happen on. Bull-out is optional — "he is
+  still with them" is an ordinary October state. The sire is an on-farm animal or an external code
+  and BOTH are optional: a guessed sire is worse than a blank one, because a pedigree is read as
+  fact by everyone who comes after. A cross-farm sire is refused as NOT FOUND rather than as a
+  tenancy error, so a caller cannot probe a neighbour's herd one uuid at a time
+☑ 📶 Record pregnancy diagnosis: method + result; project due date from species gestation
+  (gestation is reference data, not a magic number in code) (FR-121) — DOMAIN, REFERENCE DATA, API
+  AND SCREEN DONE (closes B1). `species_gestation` + migration 0019 (deliberately NOT
+  jurisdiction-scoped and NOT effective-dated: a withdrawal period is a registration and stops at
+  the border, a gestation period is biology and does not; and a corrected figure was wrong before,
+  not superseded), `GET /reference/species-gestation`, a client reference cache, and
+  `RecordPregnancyScreen`. ⭐ THE DUE DATE NEVER CROSSES THE WIRE — the device previews one from its
+  cached figures so the farmer sees a date at the gate, and the server projects and freezes the one
+  that is stored (ADR-0005). `recordPregnancyTestRequestSchema` omits `dueDate` and a test proves
+  the strip. ⛔ A species with NO gestation row REFUSES THE PROJECTION AND KEEPS THE FACT: `poultry`
+  incubates rather than gestates and `game` spans a hundred days, so the server throws rather than
+  falling back — but the diagnosis is still recorded, because refusing it would lose a real
+  observation to protect a projection that was never available
 
 Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-checker before merge)
 ☑ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130) — SCREEN DONE

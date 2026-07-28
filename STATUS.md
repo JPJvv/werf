@@ -86,6 +86,16 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    AFTER the disposals the guard judges against them, so the boundary returned 201 for meat inside
    an active withholding.
 
+1g. ~~**How should the review agents be triggered?**~~ ✅ **ANSWERED 2026-07-28 by JP: OWNER-TRIGGERED
+   ONLY.** `compliance-checker` runs only when JP asks for it, and `reviewer`/`sync-auditor` follow
+   the same rule. **The earlier "MUST run before the commit, no exceptions" gate is replaced**
+   (`CLAUDE.md`, and the Phase 3 per-slice line is amended to match). The obligation moves rather
+   than disappearing: regulated code may be written, tested and committed, but is **not merge-ready**
+   until a pass has been asked for and its findings closed — and whoever writes it must SAY SO, so
+   the call is JP's and never made by silence. Also decided: `agent-context.md` carries **no
+   "already cleared" list**, because such a list goes stale the way this repo's comments do and
+   would suppress the finding that matters. It is a map, not a filter.
+
 1f. **⛔ NEW AND NOW THE LIVE ONE — §2f's seven findings. Nothing is fixed.**
    The fourth pass ran and produced a NEW SEV-1 plus three SEV-2s, and the eighth session was an
    audit that deliberately wrote no feature code, so every one of them is open. The SEV-1 loses a
@@ -658,11 +668,40 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 not two: the agents clause, CI-green-on-`main` (unmeetable before merge), and
 `pnpm test:e2e`, which was DEMOTED on 2026-07-28 after a cold run failed 2/27.
 
-THE FOURTH AGENT PASS IS DONE (§2f). It found seven defects and fixed NONE of
-them, because the eighth session was an audit. So:
+╔══════════════════════════════════════════════════════════════════════════╗
+║  NEXT SESSION IS A CLOSING SESSION. Nothing new gets started until the    ║
+║  list below is empty or explicitly deferred BY JP, in writing, here.      ║
+║  Eight sessions have each opened more than they closed; this one does     ║
+║  the opposite. Work the list top to bottom.                              ║
+╚══════════════════════════════════════════════════════════════════════════╝
 
-THE FIRST WORK OF THE NEXT SESSION IS FIXING §2f, IN THIS ORDER. The order is
-by what a farmer loses, not by severity label:
+  OPEN LOOP                                    WHERE      WHOSE CALL
+  ─────────────────────────────────────────────────────────────────────
+  1. §2f's seven findings — NONE fixed          §2f        mine, now
+  2. A fifth agent pass after those fixes       §2f        ⛔ JP MUST ASK
+  3. ADR-0009/0010 missing on this branch       §4 A11     mine, cheap
+  4. `phase-2/breeding` still on local+origin   §1         mine, cheap
+  5. A9 — capture a page snapshot on failure    §4 A9      mine, one line
+  6. §2.3c cross-device race — ANSWERED,        §2.3c      mine, a slice
+     NOT BUILT (shares a surface with §2f's
+     `withinWithdrawal` finding — build together)
+  7. §2.3b transfer reason / purchase clearing  §2.3b      ⛔ JP DECIDES
+  8. §2.1c defect-class hook — yes or no        §2.1c      ⛔ JP DECIDES
+  9. §2.4 labour-law review booked?             §2.4       ⛔ JP, 5 sessions
+ 10. §2.5 Gazette figures re-verified?          §2.5       ⛔ JP, 5 sessions
+ 11. §2.6 SAFEX licence conversations           §2.6       ⛔ JP DECIDES
+ 12. §2.7 phone-only invitations                §2.7       ⛔ JP DECIDES
+ 13. §2.8 object storage (blocks FR-108)        §2.8       ⛔ JP DECIDES
+
+⛔ AGENTS ARE OWNER-TRIGGERED NOW. `compliance-checker` — and `reviewer` and
+`sync-auditor` with it — are NEVER spawned unprompted (set 2026-07-28, see
+CLAUDE.md § "Compliance gate on regulated code"). Regulated work can still be
+written and committed; it just cannot be called merge-ready until JP asks for
+the pass. SAY OUT LOUD when a slice reaches that line, so the decision is JP's
+and never made by silence. Item 2 above is therefore a REQUEST, not a task.
+
+START WITH ITEM 1 — FIXING §2f, IN THIS ORDER. The order is by what a farmer
+loses, not by severity label:
 
   1. SEV-1 `AdjustMobScreen.tsx:128` — the memoised capture id. Generate the id
      inside `save()`. This one SILENTLY LOSES A CAPTURE and leaves the device
@@ -687,27 +726,24 @@ SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
 code, then keep it. And check the CLAIM as well as the code — §2c said "each
 fix verified in both directions" and that was false for two of them.
 
-THEN RUN A FIFTH PASS. Four passes have now each found real defects in the
-previous pass's fixes; there is no evidence this has bottomed out.
+THEN ASK JP FOR A FIFTH PASS (item 2). Four passes have now each found real
+defects in the previous pass's fixes; there is no evidence this has bottomed
+out. Do not spawn it — request it, and say why.
 
-Only after §2f is closed:
-
-  1. §2.3c — the CROSS-DEVICE withdrawal race. ✅ ANSWERED (flag, never refuse)
-     and NOT YET BUILT. Fully specified, so it is the first real slice.
-     ⭐ Note it now shares a surface with §2f's `withinWithdrawal` finding —
-     both need the same "needs your attention" reader. Build them together.
-  2. §2.3b — the `transfer` tally reason and what a `purchase` may clear. A
-     modelling decision, mine to raise and STILL YOURS TO MAKE.
-  3. Then a feature again: B7's GPS boundary walk — B1 is closed (§2e), so
-     that is the largest named remainder left in the phase.
-
-CHEAP AND UNBLOCKED, can be done any time:
-  - §4 A11 — cherry-pick ADR-0009/0010 ahead of the merge, or this branch
+Items 3, 4 and 5 are cheap and unblocked — do them alongside item 1 rather
+than saving them:
+  - §4 A11: cherry-pick ADR-0009/0010 ahead of the merge, or this branch
     merges into `main` carrying three references to ADRs that do not exist.
-  - §4 A9 — capture a page snapshot on e2e failure. One line, and it would
+  - Delete `phase-2/breeding`, local AND origin. Spent, still in both places.
+  - §4 A9: capture a page snapshot on e2e failure. One line, and it would
     likely end a question that has been open for four sessions.
-  - Delete `phase-2/breeding` (local AND origin). It is spent and it still
-    exists in both places.
+
+Item 6 (§2.3c) is the only NEW build worth starting in a closing session, and
+only because it shares a surface with a §2f finding.
+
+⛔ DO NOT START B7's GPS boundary walk, or any other new feature, until 1–6
+are closed. It is the largest named remainder in the phase and it will still
+be there. Adding to the pile is what the last eight sessions did.
 
 Phase 1 has NO open gaps. Phase 3's checklist EXISTS, so /loop has something to
 consume — but §2.4 (labour-law review booked) and §2.5 (Gazette figures

@@ -834,7 +834,13 @@ a session reading only this file cannot miss them.
   ⛔ NEVER BATCH PAYROLL SLICES. One rule, one diff, one review, one commit.
 □ MANDATORY HUMAN REVIEW OF EVERY DIFF in 3d–3e. Not "the gate is green" — read the diff.
   The gate cannot tell you that overtime was classified against the wrong day's rate.
-□ `compliance-checker` runs PER SLICE in this phase, before each commit, not batched at the end
+□ `compliance-checker` runs PER SLICE in this phase, not batched at the end
+  ⛔ **AMENDED 2026-07-28 — THE AGENT IS OWNER-TRIGGERED AND IS NEVER SPAWNED UNPROMPTED.** Every
+  "before commit" below now means: the slice may be written, tested and COMMITTED without it, but it
+  is **not merge-ready and its PR must not be marked ready** until JP has asked for the pass and the
+  findings are closed. Whoever writes the slice must SAY OUT LOUD that it is waiting on one, so the
+  decision is made by JP rather than by silence. Reading `legal-compliance.md` first is unchanged.
+  Governing rule: `CLAUDE.md` § "Compliance gate on regulated code"
   (CLAUDE.md). Read its output yourself; do not accept a summary of it.
 □ Hand-calculate at least one payslip on paper per payroll slice, and compare. Every slice.
 ```

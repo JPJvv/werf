@@ -95,14 +95,30 @@ React PWA → local SQLite (via PowerSync web SDK, OPFS) → PowerSync service �
 
 ## Compliance gate on regulated code
 
-**Any commit touching `jurisdictions/` or payroll domain code MUST run the `compliance-checker` agent before the commit. No exceptions.**
+**⛔ `compliance-checker` IS RUN ONLY WHEN THE REPO OWNER ASKS FOR IT. Never spawn it unprompted.**
+(Set 2026-07-28 by JP. This replaces the earlier "MUST run before the commit, no exceptions" rule.)
 
-> **Point every review agent at [`docs/04-delivery/agent-context.md`](docs/04-delivery/agent-context.md) first.**
-> It carries the repo map, the standing rules, the recurring defect classes and a **SHA-scoped clean
-> ledger**, so a pass spends its budget on the diff instead of re-deriving orientation — the fourth
-> pass cost ~583k tokens across three agents, much of it three agents learning the same things.
-> ⛔ Every clean claim in it expires the moment its file changes; the staleness check is one `git diff`
-> and it is not optional. **Update its ledger after every pass** — an untracked ledger is a liability.
+**What this does NOT change: regulated code is still not done until that pass has happened.** The
+agent is now owner-triggered rather than automatic, so the obligation moves rather than disappearing:
+
+- Code touching `jurisdictions/`, payroll, animal ID, stock theft, POPIA or export-audit logic may be
+  written, tested and committed without the agent.
+- It **must not be called merge-ready, and its PR must not be marked ready**, until the owner has
+  asked for a `compliance-checker` pass and its findings are closed. `pnpm verify` cannot tell you
+  that overtime was classified against the wrong day's rate.
+- **Say so out loud when a slice reaches that line** — "this touches regulated code and is waiting on
+  a compliance pass" — so the decision to run it is the owner's and is never made by silence.
+- Read `docs/00-business/legal-compliance.md` BEFORE writing the code either way. That is a reading
+  obligation, not an agent one, and it is unchanged.
+
+`reviewer` and `sync-auditor` follow the same "only when asked" rule as every other agent here.
+
+> **When a review agent IS asked for, point it at
+> [`docs/04-delivery/agent-context.md`](docs/04-delivery/agent-context.md) first.** It is a repo map,
+> the standing rules and the recurring defect classes — orientation the fourth pass paid ~583k tokens
+> across three agents to re-derive. It deliberately carries **no "already cleared" list**: such a list
+> goes stale exactly the way this repo's stale comments do, and would suppress the finding that
+> matters. It narrows nothing an agent audits.
 
 - **Phase 3: per slice, never batched.** One rule, one diff, one review. Read the agent's output yourself — do not accept a summary of it, and do not let the green gate stand in for it. `pnpm verify` cannot tell you that overtime was classified against the wrong day's rate.
 - **Elsewhere: batched is acceptable** — once over the branch before the PR, not once per commit.

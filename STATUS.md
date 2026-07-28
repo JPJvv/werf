@@ -4,11 +4,15 @@
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
 **Last updated:** 2026-07-28 (eighth session — AUDIT ONLY, no feature work) · **Branch:**
-`phase-2/livestock` @ `7917645`, PUSHED
+`phase-2/livestock` @ `65616c4`, PUSHED (code is unchanged since `7917645`; the three commits after
+it are docs and tooling only — `ad34446` the audit, `c158c35` the Docker hook + agent context,
+`65616c4` the agent-trigger policy and this file's closing list)
 
 > ✅ **The eighth session opened by reconciling both claims and BOTH held** — working tree clean,
-> and `git rev-parse HEAD` = `7917645` = the SHA this file names = the SHA PR #3 points at. First
-> time the SHA half has been true on read. Keep checking anyway; it has been wrong twice.
+> and `git rev-parse HEAD` = the SHA this file names = the SHA PR #3 points at. First time the SHA
+> half has been true on read. Keep checking anyway; it has been wrong twice — and note this header
+> had to be corrected once more at the END of this session, after three docs commits moved HEAD
+> underneath it. **Updating this file is itself a change that makes this file stale.**
 
 > ⚠️ **The commit pointers in this file were STALE when the seventh session opened** — §1's header
 > said `e5792d3` and its tree diagram said `395b658`, while HEAD was `b3f4878`. The working-tree

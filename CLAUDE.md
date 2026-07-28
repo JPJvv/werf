@@ -97,6 +97,13 @@ React PWA → local SQLite (via PowerSync web SDK, OPFS) → PowerSync service �
 
 **Any commit touching `jurisdictions/` or payroll domain code MUST run the `compliance-checker` agent before the commit. No exceptions.**
 
+> **Point every review agent at [`docs/04-delivery/agent-context.md`](docs/04-delivery/agent-context.md) first.**
+> It carries the repo map, the standing rules, the recurring defect classes and a **SHA-scoped clean
+> ledger**, so a pass spends its budget on the diff instead of re-deriving orientation — the fourth
+> pass cost ~583k tokens across three agents, much of it three agents learning the same things.
+> ⛔ Every clean claim in it expires the moment its file changes; the staleness check is one `git diff`
+> and it is not optional. **Update its ledger after every pass** — an untracked ledger is a liability.
+
 - **Phase 3: per slice, never batched.** One rule, one diff, one review. Read the agent's output yourself — do not accept a summary of it, and do not let the green gate stand in for it. `pnpm verify` cannot tell you that overtime was classified against the wrong day's rate.
 - **Elsewhere: batched is acceptable** — once over the branch before the PR, not once per commit.
 - Also read `docs/00-business/legal-compliance.md` BEFORE writing the code, not after. It is a decaying document: re-verify every figure against the current Government Gazette rather than trusting the table.

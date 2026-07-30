@@ -182,6 +182,44 @@ export function meatWithdrawalForMob(
 }
 
 /**
+ * The subjects (animal ids, mob ids) whose refused EVIDENCE must hold an individual animal's
+ * food-chain disposal in the outbox. It is the exact set `meatWithdrawalFor` reads: the animal
+ * itself, and every mob it has EVER stood in (a dose to any of them can be withholding it, and a
+ * mob it has since left still counts). The flush taints `provides` against these, so the two client
+ * mechanisms — the at-capture guard and the send-order guard — read the same graph and cannot drift.
+ */
+export function animalDisposalSubjects(
+  animal: StoredAnimal,
+  moves: readonly StoredMove[] = [],
+): readonly string[] {
+  return [animal.id, ...mobMembership(animal, moves).map((interval) => interval.mobId)];
+}
+
+/**
+ * The subjects whose refused evidence must hold a MOB's food-chain tally — the exact set
+ * `meatWithdrawalForMob` reads: the mob itself (its own head-count doses), plus every
+ * individually-registered animal standing in it on the disposal day AND every mob each of those has
+ * stood in (a carried-in dose withholds the member, and the member is on the truck). Without the
+ * members, a refused individual dose on one of them would not hold the flock's tally.
+ */
+export function mobDisposalSubjects(
+  mobId: string,
+  disposalOn: string,
+  animals: readonly StoredAnimal[] = [],
+  moves: readonly StoredMove[] = [],
+): readonly string[] {
+  const subjects = new Set<string>([mobId]);
+  for (const animal of animals) {
+    const intervals = mobMembership(animal, moves);
+    if (inMobOn(intervals, mobId, disposalOn)) {
+      subjects.add(animal.id);
+      for (const interval of intervals) subjects.add(interval.mobId);
+    }
+  }
+  return [...subjects];
+}
+
+/**
  * The LATEST clear date across a set of doses wins: a subject dosed twice is held by whichever
  * withholding runs longest, and taking the most recent event instead would release it early
  * whenever the second product had a shorter period than the first.

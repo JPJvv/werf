@@ -46,6 +46,8 @@ import { useAnimalLabels, useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
 import { useMoves } from '../livestock/LocalMoves';
+import { animalDisposalSubjects, mobDisposalSubjects } from '../livestock/withdrawal';
+import { farmDay } from '../farmTime';
 import { useHealthEvents } from '../livestock/LocalHealth';
 import { useBreedingEvents } from '../livestock/LocalBreeding';
 import { useTheftIncidents } from '../livestock/LocalTheft';
@@ -254,27 +256,6 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // A record is pending until its id is confirmed in the sent-log.
   const queue = useMemo<readonly FlushItem[]>(() => {
     const items: FlushItem[] = [];
-    // Where each animal stands now, folded from its first-captured mob over the move log. A disposal
-    // of an individual animal is judged against doses given to whatever mob it is in, so a refused
-    // dose on that mob must hold the sale back — the same reason a refused mob dose holds a mob
-    // tally back. Chronological so the last move wins; `toMobId` undefined means the move left the
-    // mob untouched, null means it was taken off its mob entirely.
-    const currentMobOf = new Map<string, string | null>();
-    for (const animal of animals) currentMobOf.set(animal.id, animal.mobId ?? null);
-    const movesByTime = [...moves].sort((x, y) =>
-      x.occurredAt < y.occurredAt
-        ? -1
-        : x.occurredAt > y.occurredAt
-          ? 1
-          : x.id < y.id
-            ? -1
-            : x.id > y.id
-              ? 1
-              : 0,
-    );
-    for (const mv of movesByTime) {
-      if (mv.toMobId !== undefined) currentMobOf.set(mv.animalId, mv.toMobId ?? null);
-    }
     const nonNull = (...ids: readonly (string | null | undefined)[]): string[] =>
       ids.filter((id): id is string => typeof id === 'string');
     // Land goes before animals: a herd row can carry `land_unit_id`, so an animal that arrived
@@ -380,7 +361,21 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'tally',
           detail: mobs.find((m) => m.id === tally.mobId)?.name ?? null,
           send: (token) => livestockApi.recordTally(tally, token),
-          ...(intoFoodChain ? { guardedBy: [tally.mobId] } : {}),
+          // The FULL subject set the mob guard reads — the mob AND every individually-registered
+          // member standing in it and their mob histories — not just `[tally.mobId]`. A refused
+          // individual dose on a member, or a dose carried in from a mob a member has left, must
+          // hold this tally exactly as `meatWithdrawalForMob` refuses it at capture. Shadowing the
+          // guard with a narrower set was the gap the fifth pass found in all three agents.
+          ...(intoFoodChain
+            ? {
+                guardedBy: mobDisposalSubjects(
+                  tally.mobId,
+                  farmDay(new Date(tally.occurredAt)),
+                  animals,
+                  moves,
+                ),
+              }
+            : {}),
         });
       }
     }
@@ -420,17 +415,22 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     for (const event of events) {
       if (sent.has(event.id)) continue;
       // A sale is a food-chain disposal; a death is only when it was a slaughter. Both are judged
-      // against doses given to the animal itself AND to whatever mob it now stands in — so a
-      // refused dose on either subject holds this act back.
+      // against doses given to the animal itself AND to EVERY mob it has stood in — a mob it has
+      // since left can still be withholding it — so a refused dose on any of them holds this act
+      // back. `currentMob` alone (the earlier fix) missed a dose on a mob the animal walked out of,
+      // which is exactly the carried-in class the capture guard was widened for this same session.
       const intoFoodChain =
         event.type === 'sale' || (event.type === 'death' && event.slaughtered === true);
+      const subject = animals.find((a) => a.id === event.animalId);
       items.push({
         id: event.id,
         kind: 'lifecycle',
         detail: labels.get(event.animalId) ?? null,
         send: (token) => sendLifecycleEvent(event, token),
         ...(intoFoodChain
-          ? { guardedBy: nonNull(event.animalId, currentMobOf.get(event.animalId)) }
+          ? {
+              guardedBy: subject ? animalDisposalSubjects(subject, moves) : nonNull(event.animalId),
+            }
           : {}),
       });
     }

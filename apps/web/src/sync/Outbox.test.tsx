@@ -299,6 +299,123 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(DIP_ID);
   });
 
+  it('⭐ holds a tally when a member carried a refused dose in from ANOTHER mob', async () => {
+    // The gap the FIFTH pass found in all three agents. The dip is on the DIP CAMP; an ox is moved
+    // out of it into the sale mob; the sale mob is tallied to slaughter. The dip's subject is the
+    // dip camp, not the sale mob — so a `guardedBy` of `[tally.mobId]` alone did not intersect the
+    // taint, and the tally posted while the withholding evidence (refused this round) never landed.
+    // The held set must be the FULL set the mob guard reads: the mob plus every member standing in
+    // it and their mob histories, exactly as `meatWithdrawalForMob` refuses it at capture.
+    const DIP_CAMP = '0190f3a0-0000-7000-8000-0000000000b2';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        { id: DIP_CAMP, farmId: FARM_ID, name: 'Dip camp', species: 'cattle', headCount: null },
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Ossies',
+          species: 'cattle',
+          headCount: 40,
+          initialHeadCount: 40,
+        },
+      ]),
+    );
+    // The ox: individually registered, FIRST captured in the dip camp.
+    window.localStorage.setItem(
+      `werf-herd:${FARM_ID}`,
+      JSON.stringify([
+        schemas.newAnimalSchema.parse({
+          id: ANIMAL_ID,
+          farmId: FARM_ID,
+          species: 'cattle',
+          sex: 'male',
+          mobId: DIP_CAMP,
+        }),
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-vet-products:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-0000000000d1',
+          name: 'Tickaway',
+          registrationNumber: 'G4321 Act 36/1947',
+          species: ['cattle'],
+          meatWithdrawalDays: 28,
+          milkWithdrawalHours: null,
+          route: 'topical',
+        },
+      ]),
+    );
+    // Dip the DIP CAMP (mob dose, animalId null). Move the ox into the sale mob. Tally the sale mob.
+    window.localStorage.setItem(
+      `werf-health:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: DIP_ID,
+          farmId: FARM_ID,
+          animalId: null,
+          mobId: DIP_CAMP,
+          kind: 'dip',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+          productId: '0190f3a0-0000-7000-8000-0000000000d1',
+          method: 'plunge',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-moves:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOVE_ID,
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          occurredAt: '2026-07-22T08:00:00.000Z',
+          toMobId: MOB_ID,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: TALLY_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'slaughter',
+          count: 10,
+          delta: -10,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/dips') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+
+    const paths = postedPaths(fetchMock);
+    // The move landed; the dip was refused; the tally is HELD because the ox carried the dip camp's
+    // withholding into the sale mob.
+    expect(paths.some((p) => p.endsWith('/livestock/moves'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/livestock/mob-tallies'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(TALLY_ID);
+  });
+
   it('does not re-send after a cold start — the sent-log makes a re-flush a no-op', async () => {
     cachedSession();
     seedCaptures();

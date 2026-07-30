@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { schemas } from '@werf/core';
-import { meatWithdrawalForMob } from './withdrawal';
+import { animalDisposalSubjects, meatWithdrawalForMob, mobDisposalSubjects } from './withdrawal';
 import type { StoredAnimal } from './LocalHerd';
 import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMove } from './LocalMoves';
@@ -173,5 +173,43 @@ describe('meatWithdrawalForMob — agreeing with the server', () => {
       [movedIntoOxen],
     );
     expect(status.blocked).toBe(false);
+  });
+});
+
+describe('disposal subject sets — what the outbox must hold on', () => {
+  it('⭐ an animal disposal is held by its OWN id and EVERY mob it has stood in, not just the current one', () => {
+    // The fifth-pass finding (all three agents): the flush held a sale only by the animal's current
+    // mob, so a refused dose on a mob it walked OUT of did not hold the sale. The subject set must be
+    // the whole history — here the ox began in the dip camp and moved to the ox mob, so a refused dip
+    // on the dip camp (subject = dip camp) must still intersect and hold the sale.
+    const subjects = animalDisposalSubjects(ox, [movedIntoOxen]);
+    expect(subjects).toContain(OX); // its own doses
+    expect(subjects).toContain(DIP_CAMP); // a mob it has LEFT still withholds it
+    expect(subjects).toContain(OXEN); // and the mob it is in now
+  });
+
+  it('⭐ a mob disposal is held by every member standing in it AND their mob histories, not just the mob', () => {
+    // The mirror gap: a tally held only by `[mobId]` missed an individual dose on a registered member
+    // and a dose that member carried in from another mob. The ox stands in the ox mob on the disposal
+    // day, so the ox mob's held set must include the ox and the dip camp it came from.
+    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [ox], [movedIntoOxen]);
+    expect(subjects).toContain(OXEN); // the mob's own head-count doses
+    expect(subjects).toContain(OX); // an individual member's own doses
+    expect(subjects).toContain(DIP_CAMP); // a withholding the member carried in
+  });
+
+  it('does not hold a mob for a member that is no longer standing in it on the disposal day', () => {
+    // The bound: membership is by day. If the ox has left the ox mob before the disposal day it is
+    // not on that truck, so its subjects do not hold the ox mob's tally.
+    const leftOxen: StoredMove = {
+      id: '0190f3a0-0000-7000-8000-00000000c050',
+      farmId: FARM,
+      animalId: OX,
+      occurredAt: '2026-07-30T06:00:00.000Z',
+      toMobId: '0190f3a0-0000-7000-8000-00000000b099',
+      batchId: null,
+    };
+    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [ox], [movedIntoOxen, leftOxen]);
+    expect(subjects).toEqual([OXEN]);
   });
 });

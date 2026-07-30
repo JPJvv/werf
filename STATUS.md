@@ -192,26 +192,34 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    be able to record a DECLARED withdrawal from the seller, or is "unknown history" the honest
    answer for bought-in stock? Inventing a withdrawal for an animal whose treatment we never saw
    is the same class of defect as hardcoding a regulated number.
-   → _Answer:_
+   → _Answer:_ ✅ **BOTH, decided 2026-07-30 (JP).** Add a `transfer` tally reason (mob→mob, same
+   farm, withholding carried across, no food-chain guard trip) AND let a purchase record an OPTIONAL
+   declared seller withdrawal, defaulting to "unknown history" — never invent one. **A build slice,
+   not built yet** (§5 item 2, §6).
 
 4. **🇿🇦 Has the labour-law review been booked?** It gates Phase 3 (sub-phase 3l) and is on someone
    else's calendar. Open since the second session.
-   → _Answer:_
+   → _Answer:_ ◐ **Reframed by §6 (2026-07-30):** under the compliance operating model this gates
+   Phase 3 *deploy*, not its first line. **Book it in parallel while Phase 3 is built.** Still an
+   external booking; not blocking the build.
 
 5. **🇿🇦 Have the SA wage figures been re-verified against the current Gazette?**
    `legal-compliance.md §2.2` is dated July 2026 and self-describes as decaying. Phase 3 must not
    start against stale numbers. Open since the second session.
-   → _Answer:_
+   → _Answer:_ ◐ **Reframed by §6 (2026-07-30):** build Phase 3 against PLACEHOLDER figures now;
+   verify in ONE batch before *deploy*, tracked in `compliance-register.md`. A production seed-gate
+   (Phase-3 opener) refuses unverified rows, so stale numbers cannot reach a payslip.
 
 6. **Should the SAFEX / red-meat data licence conversations start now?** ADR-0009 says start them in
    Phase 4, for the same reason the legal review starts early. Open since the second session.
-   → _Answer:_
+   → _Answer:_ ✅ **Defer to Phase 4 per ADR-0009 (JP, 2026-07-30).** No action now.
 
 7. **Phone-only invitations.** Email invitations are delivered now (FR-005). A phone-only invitation
    records the membership and reaches nobody, deliberately: SMS is ruled out for the same SIM-swap
    reason it is ruled out as a second factor, and an invitation link is credential-shaped. Is
    "handed over in person" the answer, or does this need a channel we do not operate yet?
-   → _Answer:_
+   → _Answer:_ ✅ **In-person handover (JP, 2026-07-30).** No new delivery channel; SMS stays ruled
+   out. The membership is recorded and the owner hands the invite over.
 
 8. **NEW — object storage.** FR-108 photos cannot be built without it, and it is not a design
    question but a missing tier: `architecture.md` plans presigned direct-from-client upload to S3
@@ -778,20 +786,20 @@ failure, §4 A9).
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. §2f #6 withinWithdrawal reader — BUILD      §2f/§2.3c  mine, a slice
+  1. §2f #6 withinWithdrawal reader — BUILD      §2f/§2.3c  a slice
      WITH §2.3c (they share the surface)          (regulated → batched review)
-  2. §2.3b transfer reason / purchase clearing  §2.3b      ⛔ JP DECIDES (live)
-  3. §2.4 labour-law review booked?             §2.4       ⛔ JP — NO LONGER
-     (under §6 this gates Phase 3 DEPLOY, not its first line — book in parallel)
-  4. §2.5 Gazette figures re-verified?          §2.5       ⛔ per §6: batched,
-     (compliance-register.md tracks status; verify before Phase 3 DEPLOY)
-  5. §2.6 SAFEX licence conversations           §2.6       ⛔ JP DECIDES
-  6. §2.7 phone-only invitations                §2.7       ⛔ JP DECIDES
+  2. §2.3b transfer reason + declared purchase   §2.3b      a slice (DECIDED §6;
+     withdrawal — BUILD (was a decision, now done)          build it)
+  3. §2.4 labour-law review — BOOK (external)    §2.4       gates Phase 3 DEPLOY,
+     not its first line (§6); book in parallel while Phase 3 is built
+  4. §2.5 Gazette figures — VERIFY IN A BATCH     §2.5       per §6; tracked in
+     compliance-register.md; before Phase 3 DEPLOY, not now
 
+  ✅ ALL JP DECISIONS CLOSED. Remaining loops are BUILD or EXTERNAL bookings.
   ✅ CLOSED/ACTIONED THIS SESSION: §2f ×10 (§2g) + fifth pass ×2 (§2h) ·
      ADR-0009/0010 (§4 A11) · phase-2/breeding deleted · A9 snapshot ·
-     §2.1c defect-class hook INSTALLED (`e8c8155`) · §2.8 object storage →
-     deferred to a Phase-3 infra slice (JP) · compliance operating model set (§6).
+     §2.1c hook INSTALLED (`e8c8155`) · §2.8 storage → Phase-3 infra slice ·
+     compliance model set (§6) · §2.3b / §2.6 / §2.7 all decided (§6).
 
 ⛔ AGENTS ARE OWNER-TRIGGERED. Under the new cadence (§6) the review pass is
 BATCHED — one per phase, and before any deploy — not per session or per slice.
@@ -808,10 +816,11 @@ NEXT SESSION, IN ORDER:
      together, WITH the client route (do NOT half-build a server-only capability).
      Regulated → it waits on the batched review before merge-ready.
 
-  B. ANSWER §2.3b WITH JP (item 2) before it is built — it is a modelling
-     decision (a `transfer` tally reason mob→mob carrying the withholding across;
-     whether a purchase records a DECLARED seller withdrawal or "unknown history").
-     My recommendation is on record in the session hand-off.
+  B. BUILD §2.3b (item 2) — now DECIDED (§6): a `transfer` tally reason (mob→mob,
+     same farm, withholding carried ACROSS, no food-chain guard trip) plus an
+     OPTIONAL declared seller withdrawal on a purchase (default "unknown history";
+     never invent one — that is the hardcoded-regulated-number defect). A schema
+     migration + guard + tests slice. Regulated → batched review before merge.
 
   SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
   code, then keep it — and check the CLAIM as well as the code.
@@ -872,8 +881,10 @@ Three things get called "compliance" and cost differently:
 | Review cadence | ✅ Fifth pass now (done, §2h), then batched per-phase / pre-deploy. |
 | §2.1c defect-class hook | ✅ Install both patterns, warn-only. Done — `e8c8155`, `.claude/hooks/defect-classes.sh`. |
 | §2.8 object storage (FR-108 photos) | ✅ Defer to a dedicated Phase-3 infrastructure slice; photos stay unbuilt until then (the evidence pack already says "photo not attached", so nothing lies). |
+| §2.3b transfer reason / purchase clearing | ✅ Add a `transfer` tally reason (mob→mob, same farm, withholding carried across) AND an OPTIONAL declared seller withdrawal on a purchase (default "unknown history"; never invent one). **A build slice — NOT built yet.** |
+| §2.6 SAFEX / red-meat data licence | ✅ Defer to Phase 4 per ADR-0009. No action now. |
+| §2.7 phone-only invitations | ✅ In-person handover; no new delivery channel, SMS stays ruled out. Records the membership; the owner hands the invite over. |
 
-**Still open for JP (not decided this session):** §2.3b (transfer reason / purchase clearing — a
-modelling decision, the live one), §2.6 (SAFEX licence — my note: start the conversation in Phase 4
-per ADR-0009, defer now), §2.7 (phone-only invitations — my note: "handed over in person" is the
-honest answer; no new channel, SMS stays ruled out).
+**All JP decisions are now closed.** What remains is BUILD work (a JP-owner or a session does it) and
+two EXTERNAL bookings on someone's calendar (§2.4 labour-law review, §2.5 Gazette re-verification —
+both now gate Phase 3 *deploy*, not its first line, per this section).

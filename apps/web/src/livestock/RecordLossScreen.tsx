@@ -225,7 +225,12 @@ export function RecordLossScreen() {
 
   const canSave =
     outcome === 'died'
-      ? cause.trim().length > 0
+      ? // The day is now asked for a death too, and it is clearable — so require it, exactly as the
+        // slaughter branch does. Without this a cleared date reaches `save` as `new Date('T12:...')`
+        // = Invalid Date, serialises to `occurredAt: null`, and the death is stranded in the outbox
+        // (a 400 on `timestampSchema`) with no way forward — losing the very record that carries the
+        // `withinWithdrawal` flag this input was added for.
+        cause.trim().length > 0 && disposalDay !== ''
       : outcome === 'slaughtered'
         ? !withheld && disposalDay !== ''
         : outcome === 'sold'

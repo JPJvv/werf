@@ -454,6 +454,30 @@ describe('recording a loss', () => {
     );
   });
 
+  it('⭐ will not save a death with the day cleared — no invalid, un-sendable occurredAt', async () => {
+    // The day input the back-dating fix added for `died` is clearable, and `canSave` for a death
+    // checked only the cause. A cleared date reached `save` as `new Date('T12:00:00.000Z')` = Invalid
+    // Date, serialised to `occurredAt: null`, and the death was stranded in the outbox forever (a 400
+    // on the timestamp) — losing the very record the day was added to date correctly. The slaughter
+    // branch already required the day; the death branch must too.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Died' }));
+    await user.type(screen.getByLabelText(/cause/i), 'Bloat');
+    await user.clear(screen.getByLabelText(/what day/i));
+
+    // A cause but no day: Save is disabled, so no invalid record can be captured.
+    expect(screen.getByRole('button', { name: /record death/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(storedEvents()).toHaveLength(0);
+  });
+
   it('⭐ records a DEATH inside a withholding — and says so rather than saying nothing', async () => {
     // A death is never refused: refusing to record a fact is the worse failure. But "Died" sits one
     // tap from the blocked "Slaughtered", so silence here teaches the workaround — stopped on one

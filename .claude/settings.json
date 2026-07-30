@@ -52,6 +52,10 @@
           {
             "type": "command",
             "command": "pnpm exec prettier --write \"$CLAUDE_FILE_PATH\" 2>/dev/null; pnpm exec eslint --fix \"$CLAUDE_FILE_PATH\" 2>&1 | head -30"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/defect-classes.sh"
           }
         ]
       }

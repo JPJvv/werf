@@ -319,6 +319,29 @@ describe('recording a pregnancy diagnosis (FR-121)', () => {
     expect(stored[0]).not.toHaveProperty('dueDate');
   });
 
+  it('⭐ tells a cattle farmer the figure is still syncing, NOT that cattle have no carrying period', async () => {
+    // §2f SEV-3. A cold cache and a genuine absence are different facts. The old hook merged them,
+    // so on first run — cache empty — a cattle dam showed "no calving date can be worked out for
+    // Cattle … no single carrying period would be right", which is a lie: cattle have one, it just
+    // has not reached this phone. The game case (populated cache, no game row) still reads that way,
+    // correctly; this one must not.
+    window.localStorage.removeItem(GESTATION_KEY); // cold: nothing has synced yet
+    const cow = animal({ species: 'cattle' });
+    seedHerd([cow]);
+
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/pregnancy');
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText('Which female'), cow.id as string);
+    await user.clear(screen.getByLabelText('When was she served'));
+    await user.type(screen.getByLabelText('When was she served'), '2026-01-05');
+
+    expect(screen.getByText(/has not reached this phone yet/i)).toBeTruthy();
+    // And it must NOT tell the cattle farmer the thing that is false.
+    expect(screen.queryByText(/no single carrying period/i)).toBeNull();
+  });
+
   it('sends no service date on an EMPTY result, where a due date would be a contradiction', async () => {
     const cow = animal({});
     seedHerd([cow]);

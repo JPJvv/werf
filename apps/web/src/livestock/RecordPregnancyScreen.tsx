@@ -112,11 +112,11 @@ export function RecordPregnancyScreen() {
   const suggested = lastMating === undefined ? '' : serviceDayFrom(lastMating);
   const effectiveMatingDate = matingDate ?? suggested;
 
-  const gestationDays = useGestationDays(dam?.species);
+  const gestation = useGestationDays(dam?.species);
   const projecting = result === 'pregnant' && effectiveMatingDate !== '';
   const dueDate =
-    projecting && gestationDays !== undefined
-      ? projectDueDate(effectiveMatingDate, gestationDays)
+    projecting && gestation.status === 'known'
+      ? projectDueDate(effectiveMatingDate, gestation.gestationDays)
       : null;
 
   if (!activeFarm) return null;
@@ -283,7 +283,11 @@ export function RecordPregnancyScreen() {
                   <span className="font-data tabular-nums">{dueDate}</span>{' '}
                   {t('pregnancy.dueApprox')}
                 </>
-              ) : gestationDays === undefined && dam !== undefined ? (
+              ) : gestation.status === 'notSynced' && dam !== undefined ? (
+                // Cold cache: the figure exists, it just has not reached this phone. Do NOT claim
+                // this species has no carrying period — that would be false for cattle on first run.
+                `${t('pregnancy.figureSyncing')} ${speciesLabel(t, dam.species)}. ${t('pregnancy.figureSyncingWhy')}`
+              ) : gestation.status === 'noSuchFigure' && dam !== undefined ? (
                 `${t('pregnancy.noFigure')} ${speciesLabel(t, dam.species)}. ${t('pregnancy.noFigureWhy')}`
               ) : (
                 t('pregnancy.noServiceDate')

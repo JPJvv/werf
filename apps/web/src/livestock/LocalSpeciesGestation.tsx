@@ -100,15 +100,28 @@ export function useSpeciesGestation(): readonly StoredSpeciesGestation[] {
 }
 
 /**
- * The gestation for one species, or `undefined` when the device has no figure for it — either
- * because nothing has synced yet, or because the species genuinely has none (see the header).
+ * The gestation lookup for one species. The two ABSENCES are different facts and the screen owes the
+ * farmer different answers:
  *
- * ⭐ The two cases are deliberately NOT distinguished here, because the screen's answer is the same
- * for both: show no projected date. Claiming "we don't have a figure yet" when the truth is "there
- * is no such figure" would promise a farmer a date that is never coming.
+ *  - `known`       — a figure is on the device; a date can be projected.
+ *  - `noSuchFigure`— the cache is populated but has no row for this species. Biology, not a gap:
+ *                    poultry does not gestate, `game` is a category (see the header). No date, ever.
+ *  - `notSynced`   — the cache is EMPTY. The figure exists on the server and has simply not reached
+ *                    this phone. Telling a cattle farmer "cattle have no carrying period" here is a
+ *                    lie the cold start would tell on every first run.
+ *
+ * The migration seeds several species, so an empty cache is only ever the cold-start case — the same
+ * distinction `health.noProducts` already draws for the veterinary product register. Merging the two
+ * (the old behaviour) claimed "there is no such figure" whenever nothing had synced yet.
  */
-export function useGestationDays(species: string | undefined): number | undefined {
+export type GestationLookup =
+  | { readonly status: 'known'; readonly gestationDays: number }
+  | { readonly status: 'noSuchFigure' }
+  | { readonly status: 'notSynced' };
+
+export function useGestationDays(species: string | undefined): GestationLookup {
   const figures = useSpeciesGestation();
-  if (species === undefined) return undefined;
-  return figures.find((f) => f.species === species)?.gestationDays;
+  const found = species === undefined ? undefined : figures.find((f) => f.species === species);
+  if (found !== undefined) return { status: 'known', gestationDays: found.gestationDays };
+  return figures.length === 0 ? { status: 'notSynced' } : { status: 'noSuchFigure' };
 }

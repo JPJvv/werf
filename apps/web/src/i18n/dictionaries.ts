@@ -420,6 +420,11 @@ const en = {
   'pregnancy.noFigure': 'No calving date can be worked out for',
   'pregnancy.noFigureWhy':
     'The test itself is still recorded — there is just no single carrying period for these animals that would be right.',
+  // Cold cache, NOT "no such figure". Same shape as health.noProducts: says what is true and what
+  // fixes it, and never claims cattle have no carrying period.
+  'pregnancy.figureSyncing': 'No calving date yet for',
+  'pregnancy.figureSyncingWhy':
+    'The carrying period for these animals has not reached this phone yet. Open the app once where there is signal and it will be here. The test itself is still recorded.',
   'pregnancy.noServiceDate':
     'Give the service date and a calving date will be worked out here. Without it she is still recorded as in calf.',
   'pregnancy.save': 'Record the test',
@@ -1046,6 +1051,9 @@ const af: Record<TranslationKey, string> = {
   'pregnancy.noFigure': 'Geen kalfdatum kan uitgewerk word vir',
   'pregnancy.noFigureWhy':
     'Die toets self word steeds aangeteken — daar is net nie een dragtigheidstyd vir hierdie diere wat reg sou wees nie.',
+  'pregnancy.figureSyncing': 'Nog geen kalfdatum vir',
+  'pregnancy.figureSyncingWhy':
+    'Die dragtigheidstyd vir hierdie diere het nog nie hierdie foon bereik nie. Maak die app een keer oop waar daar sein is, en dit sal hier wees. Die toets self word steeds aangeteken.',
   'pregnancy.noServiceDate':
     'Gee die dekdatum en ’n kalfdatum word hier uitgewerk. Daarsonder word sy steeds as dragtig aangeteken.',
   'pregnancy.save': 'Teken die toets aan',

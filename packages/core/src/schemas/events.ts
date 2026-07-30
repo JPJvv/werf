@@ -122,12 +122,30 @@ export type MovePayload = z.infer<typeof movePayloadSchema>;
  * against the DAM (like a birth). The sire is either an animal on this farm (`sireId`) or an
  * external bull / AI straw referenced by code (`sireCode`).
  */
-export const matingPayloadSchema = z.object({
+/**
+ * A bull window that runs backwards is not a window. The capture screen already refuses it, but the
+ * screen is a preview of the rule and not the rule — the server is the boundary. `dateSchema` is a
+ * lexicographically-sortable YYYY-MM-DD, so the comparison is a plain string one.
+ */
+export const bullWindowIsForward = (p: {
+  readonly bullInAt?: string | undefined;
+  readonly bullOutAt?: string | undefined;
+}): boolean => p.bullInAt === undefined || p.bullOutAt === undefined || p.bullOutAt >= p.bullInAt;
+
+/** The mating payload fields, without the cross-field window check — so request schemas can reuse the shape. */
+export const matingPayloadShape = {
   method: z.enum(['natural', 'ai']),
   sireId: uuidSchema.optional(),
   sireCode: z.string().min(1).optional(),
   bullInAt: dateSchema.optional(),
   bullOutAt: dateSchema.optional(),
+};
+
+// The domain validates every payload through this schema (`buildBreedingEvent`), so the window
+// order is enforced on write, not only at the screen.
+export const matingPayloadSchema = z.object(matingPayloadShape).refine(bullWindowIsForward, {
+  message: 'The bull-out date cannot be before the bull-in date',
+  path: ['bullOutAt'],
 });
 export type MatingPayload = z.infer<typeof matingPayloadSchema>;
 

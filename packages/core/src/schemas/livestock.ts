@@ -21,9 +21,10 @@ import {
 } from './primitives';
 import {
   birthPayloadSchema,
+  bullWindowIsForward,
   deathPayloadSchema,
   dipPayloadSchema,
-  matingPayloadSchema,
+  matingPayloadShape,
   pregnancyTestPayloadSchema,
   tallyReasonSchema,
   tradePayloadSchema,
@@ -135,15 +136,22 @@ export type RecordWeaningRequest = z.infer<typeof recordWeaningRequestSchema>;
  * for — the service is a WINDOW, not a day, and recording it as a guessed day would fabricate a
  * precision the farmer never had.
  */
-export const recordMatingRequestSchema = z.object({
-  id: uuidSchema,
-  farmId: uuidSchema,
-  /** The DAM. */
-  animalId: uuidSchema,
-  /** When she was served, on the farm. Not `created_at` (set on write). */
-  occurredAt: timestampSchema,
-  ...matingPayloadSchema.shape,
-});
+export const recordMatingRequestSchema = z
+  .object({
+    id: uuidSchema,
+    farmId: uuidSchema,
+    /** The DAM. */
+    animalId: uuidSchema,
+    /** When she was served, on the farm. Not `created_at` (set on write). */
+    occurredAt: timestampSchema,
+    ...matingPayloadShape,
+  })
+  // The same window-order check the payload carries, at the request boundary — a backwards window is
+  // rejected as a 400 here as well as by the domain, so the farmer's client sees a clean refusal.
+  .refine(bullWindowIsForward, {
+    message: 'The bull-out date cannot be before the bull-in date',
+    path: ['bullOutAt'],
+  });
 export type RecordMatingRequest = z.infer<typeof recordMatingRequestSchema>;
 
 /**
@@ -173,7 +181,11 @@ export const recordPregnancyTestRequestSchema = z.object({
    * instant: a due date is a day on the farm and never touches a timezone.
    */
   matingDate: dateSchema.optional(),
-  ...pregnancyTestPayloadSchema.omit({ dueDate: true }).shape,
+  // `dueDate` and `gestationDays` are STORED on the payload but never accepted from a client — both
+  // are the server's to project (ADR-0005). `matingDate` is declared explicitly above, so it is
+  // omitted here too rather than pulled in twice.
+  ...pregnancyTestPayloadSchema.omit({ dueDate: true, matingDate: true, gestationDays: true })
+    .shape,
 });
 export type RecordPregnancyTestRequest = z.infer<typeof recordPregnancyTestRequestSchema>;
 

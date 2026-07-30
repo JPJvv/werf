@@ -55,6 +55,21 @@ describe('recordMating (FR-120)', () => {
     });
     expect(running.payload).toMatchObject({ bullInAt: '2026-06-01', bullOutAt: '2026-08-31' });
   });
+
+  it('refuses a bull window that runs backwards — the server is the boundary, not just the screen', () => {
+    // §2f LOW. The capture screen refused this, but the screen is a preview of the rule. The payload
+    // schema now carries the check, and `buildBreedingEvent` validates every payload through it, so
+    // a bull-out before bull-in is a ValidationError on write however the request reached the server.
+    expect(() =>
+      recordMating({
+        ...base(),
+        method: 'natural',
+        sireId: SIRE_ID,
+        bullInAt: '2026-08-31',
+        bullOutAt: '2026-06-01',
+      }),
+    ).toThrow(ValidationError);
+  });
 });
 
 describe('projectDueDate (FR-121)', () => {

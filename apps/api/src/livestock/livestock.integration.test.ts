@@ -3059,24 +3059,29 @@ describe('weight capture (FR-140)', () => {
     it('IGNORES a due date sent by a client — the projection is the server’s alone', async () => {
       // ⭐ The contract, and the reason `dueDate` is omitted from the request schema. A device that
       // could assert a calving date could write one nothing on the server can check, into the field
-      // a calving report is planned from. The schema strips it; this proves the strip.
+      // a calving report is planned from.
       const a = await tenant('Alpha');
       const dam = await anAnimal(a.farmId);
 
-      const test = await service.recordPregnancyTest(
-        a.userId,
-        schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
-          farmId: a.farmId,
-          animalId: dam,
-          occurredAt: '2026-03-20T09:00:00.000Z',
-          method: 'palpation',
-          result: 'pregnant',
-          matingDate: '2026-01-05',
-          dueDate: '2099-12-31',
-        }),
-      );
+      // ⭐ The strip is a property of the SCHEMA, so it is asserted at the schema — the service
+      // recomputing the date from `matingDate` would keep the end-to-end test green even if the
+      // request schema had kept `dueDate`, hiding the very leak this exists to prevent. Parsing must
+      // DROP the field outright.
+      const parsed = schemas.recordPregnancyTestRequestSchema.parse({
+        id: randomUUID(),
+        farmId: a.farmId,
+        animalId: dam,
+        occurredAt: '2026-03-20T09:00:00.000Z',
+        method: 'palpation',
+        result: 'pregnant',
+        matingDate: '2026-01-05',
+        dueDate: '2099-12-31',
+      });
+      expect('dueDate' in parsed).toBe(false);
 
+      const test = await service.recordPregnancyTest(a.userId, parsed);
+
+      // And the stored date is the server's projection, never the smuggled one.
       expect(test.payload).toMatchObject({ dueDate: dayAfter('2026-01-05', CATTLE_DAYS) });
     });
 

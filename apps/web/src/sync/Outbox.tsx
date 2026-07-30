@@ -157,6 +157,19 @@ interface FlushItem {
    */
   readonly detail: string | null;
   readonly send: (token: string) => Promise<void>;
+  /**
+   * The subjects (animal ids, mob ids) this EVIDENCE establishes for a server-side guard: a move
+   * settles where an animal is, a dose settles what a mob or animal was given. If this item is set
+   * aside on a refusal, every later disposal that reads one of these subjects must be HELD, or the
+   * act lands without the evidence and the guard returns 201 for meat inside a withholding.
+   */
+  readonly provides?: readonly string[];
+  /**
+   * The subjects a DISPOSAL is judged against. When one of them was tainted by a refused evidence
+   * item earlier in the same round, this item is held back — left pending, not refused — so the
+   * next round can send it once the evidence lands or the farmer resolves the refusal.
+   */
+  readonly guardedBy?: readonly string[];
 }
 
 /** A capture the server refused on its merits, with enough to tell the farmer what and why. */
@@ -241,6 +254,29 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // A record is pending until its id is confirmed in the sent-log.
   const queue = useMemo<readonly FlushItem[]>(() => {
     const items: FlushItem[] = [];
+    // Where each animal stands now, folded from its first-captured mob over the move log. A disposal
+    // of an individual animal is judged against doses given to whatever mob it is in, so a refused
+    // dose on that mob must hold the sale back — the same reason a refused mob dose holds a mob
+    // tally back. Chronological so the last move wins; `toMobId` undefined means the move left the
+    // mob untouched, null means it was taken off its mob entirely.
+    const currentMobOf = new Map<string, string | null>();
+    for (const animal of animals) currentMobOf.set(animal.id, animal.mobId ?? null);
+    const movesByTime = [...moves].sort((x, y) =>
+      x.occurredAt < y.occurredAt
+        ? -1
+        : x.occurredAt > y.occurredAt
+          ? 1
+          : x.id < y.id
+            ? -1
+            : x.id > y.id
+              ? 1
+              : 0,
+    );
+    for (const mv of movesByTime) {
+      if (mv.toMobId !== undefined) currentMobOf.set(mv.animalId, mv.toMobId ?? null);
+    }
+    const nonNull = (...ids: readonly (string | null | undefined)[]): string[] =>
+      ids.filter((id): id is string => typeof id === 'string');
     // Land goes before animals: a herd row can carry `land_unit_id`, so an animal that arrived
     // ahead of its camp would fail the foreign key against ground the server has never seen. Same
     // rule as animals-before-events, one level further up the graph.
@@ -309,6 +345,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'move',
           detail: labels.get(move.animalId) ?? null,
           send: (token) => livestockApi.recordMove(move, token),
+          // Settles the animal's membership, and the mob it walks INTO — both are subjects a later
+          // disposal is judged against.
+          provides: nonNull(move.animalId, move.toMobId),
         });
       }
     }
@@ -321,6 +360,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'health',
           detail: event.animalId === null ? null : (labels.get(event.animalId) ?? null),
           send: (token) => livestockApi.recordHealth(event, token),
+          // A dose creates the withholding a disposal is judged against — on the animal it was
+          // given to, or on the whole mob for a plunge dip.
+          provides: nonNull(event.animalId, event.mobId),
         });
       }
     }
@@ -330,11 +372,15 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // adjusts: "three off Flock A" is a sentence a farmer recognises; the uuid is not.
     for (const tally of tallies) {
       if (!sent.has(tally.id)) {
+        // Only a sale or slaughter tally is judged against a withholding; a death or recount takes
+        // head out without putting meat into the food chain, so it is not held for evidence.
+        const intoFoodChain = tally.reason === 'sale' || tally.reason === 'slaughter';
         items.push({
           id: tally.id,
           kind: 'tally',
           detail: mobs.find((m) => m.id === tally.mobId)?.name ?? null,
           send: (token) => livestockApi.recordTally(tally, token),
+          ...(intoFoodChain ? { guardedBy: [tally.mobId] } : {}),
         });
       }
     }
@@ -373,11 +419,19 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // fails the typecheck instead of being silently posted to /deaths.
     for (const event of events) {
       if (sent.has(event.id)) continue;
+      // A sale is a food-chain disposal; a death is only when it was a slaughter. Both are judged
+      // against doses given to the animal itself AND to whatever mob it now stands in — so a
+      // refused dose on either subject holds this act back.
+      const intoFoodChain =
+        event.type === 'sale' || (event.type === 'death' && event.slaughtered === true);
       items.push({
         id: event.id,
         kind: 'lifecycle',
         detail: labels.get(event.animalId) ?? null,
         send: (token) => sendLifecycleEvent(event, token),
+        ...(intoFoodChain
+          ? { guardedBy: nonNull(event.animalId, currentMobOf.get(event.animalId)) }
+          : {}),
       });
     }
     // A theft incident points at a camp AND at the animals it concerns, so it comes after both.
@@ -458,10 +512,22 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // Rebuilt from scratch each round rather than added to: a capture refused last time gets a
     // genuine second hearing, so the set never accumulates a stale refusal.
     const refusedThisRound = new Map<string, RefusalReason>();
+    // Subjects whose EVIDENCE was set aside this round. A disposal judged against any of them is
+    // held rather than sent — evidence goes before the act in this queue, so by the time a disposal
+    // is reached its evidence has been attempted, and a tainted subject means it did not land.
+    const taintedSubjects = new Set<string>();
+    const taint = (item: FlushItem): void => {
+      for (const subject of item.provides ?? []) taintedSubjects.add(subject);
+    };
     try {
       for (const item of items) {
         if (!mountedRef.current) return;
         if (sentLog.has(item.id)) continue; // sent earlier this round
+        // The act must not overtake evidence that was refused this round. Held, not refused: it is
+        // left pending so the next reconnect sends it once the dose or move lands — or once the
+        // farmer resolves the refusal that stranded it. Marking it "needs attention" would blame
+        // the farmer for a capture the server never actually rejected.
+        if (item.guardedBy?.some((subject) => taintedSubjects.has(subject))) continue;
         try {
           await item.send(token);
           sentLog.add(item.id);
@@ -482,6 +548,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             } catch (retryErr) {
               if (isRefusal(retryErr)) {
                 refusedThisRound.set(item.id, reasonOf(retryErr));
+                taint(item);
                 continue;
               }
               if (mountedRef.current) setErrored(true);
@@ -504,6 +571,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             // rebuilds in the same FK order every round, so the poison item was always first and
             // nothing behind it could ever be sent again.
             refusedThisRound.set(item.id, reasonOf(err));
+            taint(item);
             continue;
           } else {
             // A 5xx, or something we do not recognise. Transient by assumption — give up the

@@ -261,6 +261,44 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(at('/livestock/animals')).toBeLessThan(at('/livestock/moves'));
   });
 
+  it('⭐ holds the disposal back when the dose it is judged against is refused this round', async () => {
+    // §2f SEV-2. Ordering evidence before the act only helps if the act waits for evidence that
+    // DID NOT LAND. The dip is refused (409) and set aside — and the old flush then walked straight
+    // on to the tally, which the server accepted, because the withholding it should have been
+    // judged against was never received. Forty head to the abattoir inside a withdrawal, with the
+    // one guard that exists to stop it answering 201. The tally must be held, not overtake the dose.
+    cachedSession();
+    seedDoseThenDisposal();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/dips') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    // The dose is what needs the farmer; the tally is not refused, just still waiting.
+    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+
+    const paths = postedPaths(fetchMock);
+    // The dose was attempted and refused; the tally was HELD behind it and never posted this round.
+    expect(paths.some((p) => p.endsWith('/livestock/dips'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/livestock/mob-tallies'))).toBe(false);
+
+    // Nothing discarded: the tally is still on the device and absent from the sent-log, so the next
+    // reconnect sends it once the dose lands or the farmer clears the refusal.
+    expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(TALLY_ID);
+    expect(sent).not.toContain(DIP_ID);
+  });
+
   it('does not re-send after a cold start — the sent-log makes a re-flush a no-op', async () => {
     cachedSession();
     seedCaptures();

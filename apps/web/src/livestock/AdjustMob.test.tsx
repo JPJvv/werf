@@ -464,6 +464,39 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(storedTallies().some((t) => t['count'] === 5 && t['delta'] === -5)).toBe(true);
   });
 
+  it('⭐ keeps a SECOND tally on the same mob on the same day, with its own id', async () => {
+    // SEV-1 (§2f). The capture id was memoised on `[selectedId, day]`, and `reset()` clears
+    // neither — it re-sets `day` to the value it already had. So a second save on the same mob on
+    // the same day REUSED the first id: the store appended it, but the flush's `sentLog.has` skips
+    // a duplicate id forever, so a 40-head food-chain disposal captured second existed on one phone
+    // and reached no one. The same reused id also poisoned the as-at fold (`id < captureId`), which
+    // dropped the first tally from the second's baseline — the banner said 260 while the truth was
+    // 257. Both captures say "saved"; both must be distinct records the flush can send.
+    cachedSession();
+    seedFlock();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^died$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '3');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+
+    // The second capture is judged against the flock AFTER the first death: 297 → 257, not 300 → 260.
+    expect(screen.getByText('257')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    const saved = storedTallies();
+    expect(saved).toHaveLength(2);
+    // Two distinct ids, or the flush sends one and silently drops the other.
+    expect(new Set(saved.map((t) => t['id'])).size).toBe(2);
+  });
+
   it('does not offer a group that is managed as individual animals', async () => {
     // head_count is null: its number comes from counting the animal rows, and a tally here would
     // start a second count of the same sheep.

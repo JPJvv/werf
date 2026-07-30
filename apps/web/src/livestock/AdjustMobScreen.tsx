@@ -125,7 +125,6 @@ export function AdjustMobScreen() {
   const selected = counted.find((m) => m.id === selectedId) ?? null;
 
   const typed = parseCount(count);
-  const captureId = useMemo(() => uuidv7(), [selectedId, day]);
 
   /**
    * ⭐ The count AS AT THE DAY BEING DESCRIBED, not today's.
@@ -140,16 +139,17 @@ export function AdjustMobScreen() {
    * recover. The server was fixed for exactly this; the screen has to agree, or the capture never
    * reaches the server that would accept it.
    *
-   * Cut on the same `(occurredAt, id)` total order the projection runs in — ties are ordinary here,
-   * since every tally on a day shares one instant.
+   * The capture in progress will be written with a fresh UUIDv7 (see `save`), which is time-ordered
+   * and generated now, so it sorts AFTER every tally already on its day. The baseline is therefore
+   * every tally up to and including that day — `occurredAt <= at` — which is exactly what the
+   * `(occurredAt, id)` cut computed when the capture's id was the day's maximum. Ties on the day are
+   * ordinary (every tally shares one instant) and all belong in the baseline, since none can sort
+   * after a capture whose id was minted last.
    */
   const currentHead = useMemo(() => {
     if (selected === null) return null;
     const at = `${day}T12:00:00.000Z`;
-    const before = tallies.filter(
-      (t) =>
-        t.mobId === selected.id && (t.occurredAt < at || (t.occurredAt === at && t.id < captureId)),
-    );
+    const before = tallies.filter((t) => t.mobId === selected.id && t.occurredAt <= at);
     const stored = storedMobs.find((m) => m.id === selected.id);
     const baseline =
       stored === undefined
@@ -158,7 +158,7 @@ export function AdjustMobScreen() {
           ? stored.headCount
           : stored.initialHeadCount;
     return projectHeadCount(baseline, before);
-  }, [selected, storedMobs, tallies, day, captureId]);
+  }, [selected, storedMobs, tallies, day]);
   const isRecount = reason === 'recount';
   const trade = reason === 'sale' || reason === 'purchase';
 
@@ -214,6 +214,11 @@ export function AdjustMobScreen() {
 
   const save = () => {
     if (!selected || reason === null || typed === null || !canSave) return;
+    // ⭐ Minted HERE, at save time, not memoised across renders. A memo keyed on `[selectedId, day]`
+    // survived `reset()` — which clears neither and re-sets `day` to the value it already held — so
+    // a second tally on the same mob on the same day reused the first id, the flush skipped it as a
+    // duplicate forever, and the capture reached no one. Every capture gets its own id.
+    const id = uuidv7();
     const price = priceRands.trim() === '' ? undefined : toCents(priceRands);
     const buyer = counterparty.trim() === '' ? undefined : counterparty.trim();
 
@@ -228,8 +233,7 @@ export function AdjustMobScreen() {
     // left the translated line as a fallback that fired only when the throw was not an Error.
     try {
       recordTally({
-        // The id the as-at fold above cut on, so what was validated is what is written.
-        id: captureId,
+        id,
         farmId: activeFarm.id,
         mobId: selected.id,
         // Midday on the farm's day, exactly as the missing report does it: the farmer gave a DAY,

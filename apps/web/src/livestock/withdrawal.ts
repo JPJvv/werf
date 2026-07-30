@@ -143,12 +143,25 @@ export function meatWithdrawalForMob(
   animals: readonly StoredAnimal[] = [],
   moves: readonly StoredMove[] = [],
 ): WithdrawalStatus {
+  // Every individually-registered animal STANDING IN this mob on the disposal day, with the mob
+  // history that says which doses reached it. A tally takes head out without naming which, so any
+  // one of them may be on the truck — and each carries whatever `reachedAnimal` carries, which is
+  // exactly the per-member question the server asks: this is `meatWithdrawalFor` run from the mob
+  // side rather than a second, narrower rule.
+  const members = animals
+    .map((animal) => ({ animal, wasIn: mobMembership(animal, moves) }))
+    .filter((m) => inMobOn(m.wasIn, mobId, disposalOn));
+
   const reaches = (event: StoredHealthEvent): boolean => {
+    // The COUNTED portion of the mob — head with no `animals` rows — is reached by the mob's own
+    // doses. This is the only half that ever fires for a pure head-count flock.
     if ((event.mobId ?? null) === mobId) return true;
-    if (event.animalId === null) return false;
-    const animal = animals.find((a) => a.id === event.animalId);
-    // An individually-dosed animal counts only if it is standing in this mob on the disposal day.
-    return animal !== undefined && inMobOn(mobMembership(animal, moves), mobId, disposalOn);
+    // Any individually-registered member the dose reached: its own treatment, OR a mob dose given
+    // to ANOTHER mob while it was standing in that mob and since walked in here. The old guard was
+    // blind to that second case — it returned false for every `animal_id = NULL` dose whose mob was
+    // not this one, so a dipped ox walked into the sale mob CLEAR on the device while the server,
+    // reconstructing per member, refused it days after the truck had left.
+    return members.some((m) => reachedAnimal(event, m.animal, m.wasIn));
   };
   return latestClearAcross(events.filter(reaches), disposalOn, products);
 }

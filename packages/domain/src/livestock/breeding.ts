@@ -105,14 +105,18 @@ export interface PregnancyDiagnosisInput extends BreedingBase {
 
 export function recordPregnancyDiagnosis(input: PregnancyDiagnosisInput): schemas.NewEvent {
   const payload: Record<string, unknown> = { method: input.method, result: input.result };
-  // A due date only exists for a positive diagnosis with a known service date and gestation; on an
-  // open/uncertain result there is nothing to project, and projecting one would be a false claim.
-  if (
-    input.result === 'pregnant' &&
-    input.matingDate !== undefined &&
-    input.gestationDays !== undefined
-  ) {
-    payload.dueDate = projectDueDate(input.matingDate, input.gestationDays);
+  // A service date is a fact about a POSITIVE diagnosis; on an open/uncertain result there is
+  // nothing it could lead to, so it is dropped rather than stored as noise.
+  if (input.result === 'pregnant' && input.matingDate !== undefined) {
+    // ⭐ Store the INPUT, not only the output. A species with no gestation figure has a real
+    // service date and a positive result; keeping them is what lets the fact survive when the
+    // projection cannot be made — and for every other species it gives the next report the number
+    // the due date was derived from rather than forcing it to re-derive one that may have moved.
+    payload.matingDate = input.matingDate;
+    if (input.gestationDays !== undefined) {
+      payload.gestationDays = input.gestationDays;
+      payload.dueDate = projectDueDate(input.matingDate, input.gestationDays);
+    }
   }
   return buildBreedingEvent(input, 'pregnancy_test', schemas.pregnancyTestPayloadSchema, payload);
 }

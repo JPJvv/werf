@@ -137,10 +137,20 @@ export type MatingPayload = z.infer<typeof matingPayloadSchema>;
  * gestation period is INJECTED reference data (not a magic number in code); the domain capture
  * computes and stores `dueDate` here so a report never re-derives it from a gestation that may have
  * been corrected later. A due date on an `open`/`uncertain` result is a contradiction and is absent.
+ *
+ * ⭐ The INPUTS to that arithmetic are stored alongside the output: `matingDate` (the service date)
+ * and `gestationDays` (the figure used). A value used to compute a stored date and then thrown away
+ * is one the next guard or report cannot check — the same defect `administeredOn` was added to the
+ * health payload to close. It also means a species with no gestation figure keeps the honest fact
+ * it CAN record — the service date and a positive result — without the projection it cannot.
  */
 export const pregnancyTestPayloadSchema = z.object({
   method: z.enum(['palpation', 'ultrasound', 'blood', 'visual']),
   result: z.enum(['pregnant', 'open', 'uncertain']),
+  /** The service date the due date was projected from. Stored only for a positive diagnosis. */
+  matingDate: dateSchema.optional(),
+  /** The injected species gestation used, in whole days. Present only when a due date was projected. */
+  gestationDays: z.number().int().positive().optional(),
   dueDate: dateSchema.optional(),
 });
 export type PregnancyTestPayload = z.infer<typeof pregnancyTestPayloadSchema>;

@@ -713,25 +713,26 @@ export class LivestockService {
    * ⭐ It is computed AT CAPTURE and frozen onto the event. Correcting a gestation figure later
    * must never silently move a date a farmer has already written on a calendar.
    *
-   * A species with no gestation row REFUSES rather than quietly dropping the due date. Dropping it
-   * would produce exactly the defect this phase has already found twice — a field that is null in
-   * every record because nothing ever set it — and it would be silent at the only moment anyone
-   * could notice. The refusal is a 4xx, which the outbox sets aside and reports (FR-009) instead
-   * of jamming the queue behind it.
+   * ⛔ A species with no gestation row RECORDS THE DIAGNOSIS and refuses only the PROJECTION. The
+   * earlier version threw a 4xx for the whole request — but the client sends `matingDate` for every
+   * positive test, so the game/poultry path was a capture the flush could never land: the outbox
+   * set it aside forever (FR-009) while the screen said the test was saved. Refusing a real
+   * observation to protect a due date that was never available is the worse trade. What is refused
+   * is the fabrication of a figure, which is still refused: `gestationDaysFor` never guesses.
+   *
+   * The absence is not silent. The stored event keeps `matingDate` and a positive result, and the
+   * caller is handed a `warning` naming the species so the reason "no calving date" travels with
+   * the record rather than being inferred from a missing field later.
    */
   async recordPregnancyTest(userId: string, input: schemas.RecordPregnancyTestRequest) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
       const { enterpriseId, species } = await animalFacts(tx, input.farmId, input.animalId);
 
-      // Only a positive result with a known service date has a due date to project. On an open or
-      // uncertain result there is nothing to compute and no gestation figure is needed — so a
-      // farmer testing a game animal can still record the result, which is a real fact, and simply
-      // gets no projection.
+      // Only a positive result with a known service date could project a due date. `null` from the
+      // lookup means the species has no figure — the diagnosis is still recorded, without one.
       const projecting = input.result === 'pregnant' && input.matingDate !== undefined;
-      const gestationDays = projecting
-        ? await gestationDaysFor(tx, species, input.animalId)
-        : undefined;
+      const gestationDays = projecting ? await gestationDaysFor(tx, species) : undefined;
 
       const event = recordPregnancyDiagnosis({
         id: input.id,
@@ -743,10 +744,19 @@ export class LivestockService {
         enterpriseId,
         createdBy: userId,
         ...(input.matingDate === undefined ? {} : { matingDate: input.matingDate }),
-        ...(gestationDays === undefined ? {} : { gestationDays }),
+        ...(gestationDays == null ? {} : { gestationDays }),
       });
 
-      return insertEvent(tx, event);
+      const stored = await insertEvent(tx, event);
+      if (projecting && gestationDays === null) {
+        return {
+          ...stored,
+          warning:
+            `No gestation period is recorded for ${species}, so no calving date could be ` +
+            `projected. The diagnosis has been saved.`,
+        };
+      }
+      return stored;
     });
   }
 
@@ -1179,19 +1189,21 @@ async function animalFacts(
  * and `game` has none because a springbok and a kudu are a hundred days apart — for both, refusing
  * is the correct answer rather than a gap.
  */
-async function gestationDaysFor(tx: CaptureTx, species: string, animalId: string): Promise<number> {
+/**
+ * The gestation figure for a species, or `null` when none is recorded.
+ *
+ * ⭐ `null` is not "guess a nearby species" — that would be the fabricated-regulated-number defect,
+ * and it stays forbidden. It means "no due date can be projected", which the caller records as an
+ * honest absence rather than throwing away the diagnosis that came with it. A `poultry` bird does
+ * not gestate and a `game` doe spans a hundred days between a springbok and a kudu, so there is no
+ * one figure to record and pretending otherwise is worse than saying so.
+ */
+async function gestationDaysFor(tx: CaptureTx, species: string): Promise<number | null> {
   const [row] = await tx
     .select({ gestationDays: speciesGestation.gestationDays })
     .from(speciesGestation)
     .where(eq(speciesGestation.species, species));
-  if (!row) {
-    throw new ValidationError(
-      `No gestation period is recorded for ${species}, so a due date cannot be projected ` +
-        `for animal ${animalId}. Record the diagnosis without a service date, or add the figure ` +
-        `to the species gestation reference data.`,
-    );
-  }
-  return row.gestationDays;
+  return row?.gestationDays ?? null;
 }
 
 type VetProduct = typeof veterinaryProducts.$inferSelect;

@@ -3121,34 +3121,40 @@ describe('weight capture (FR-140)', () => {
       expect(test.payload).not.toHaveProperty('dueDate');
     });
 
-    it('REFUSES to project for a species with no gestation row, rather than inventing one', async () => {
+    it('⭐ records the diagnosis and WARNS for a species with no gestation row, on the body the screen sends', async () => {
       // ⛔ `game` has no row on purpose: a springbok and a kudu are a hundred days apart, so any
-      // single figure would be wrong for most of the animals it was read for. A loud refusal is a
-      // five-minute fix; a quiet fabrication is a season of wrong calving dates nobody distrusts.
-      // The refusal is a 4xx, which the outbox sets aside and reports (FR-009) rather than jamming
-      // the queue behind it.
+      // single figure would be wrong for most of the animals it was read for. The projection is
+      // refused; the FACT is not. The earlier version threw a 4xx for the whole request — but the
+      // screen sends `matingDate` for every positive test, so that path was a capture the outbox
+      // set aside FOREVER while the screen said it was saved. This is the body the client actually
+      // produces (matingDate present), and it must land, keep the service date, project no due
+      // date, and hand back a warning naming why. Refusing the fabrication of a figure is not the
+      // same as refusing the observation.
       const a = await tenant('Alpha');
       const doe = await aFemaleOf(a.farmId, 'game');
 
-      await expect(
-        service.recordPregnancyTest(
-          a.userId,
-          schemas.recordPregnancyTestRequestSchema.parse({
-            id: randomUUID(),
-            farmId: a.farmId,
-            animalId: doe,
-            occurredAt: '2026-03-20T09:00:00.000Z',
-            method: 'visual',
-            result: 'pregnant',
-            matingDate: '2026-01-05',
-          }),
-        ),
-      ).rejects.toThrow(ValidationError);
+      const test = await service.recordPregnancyTest(
+        a.userId,
+        schemas.recordPregnancyTestRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          animalId: doe,
+          occurredAt: '2026-03-20T09:00:00.000Z',
+          method: 'visual',
+          result: 'pregnant',
+          matingDate: '2026-01-05',
+        }),
+      );
+
+      expect(test.payload).toMatchObject({ result: 'pregnant', matingDate: '2026-01-05' });
+      expect(test.payload).not.toHaveProperty('dueDate');
+      // The reason travels WITH the record, not inferred from a missing field later.
+      expect('warning' in test && test.warning).toMatch(/no gestation period/i);
     });
 
     it('still records the diagnosis for that species when no date is being projected', async () => {
-      // The refusal above is about the PROJECTION and never about the fact. A positive test on a
-      // game animal is a real observation, and losing it to protect a date is the worse trade.
+      // The bound from the other side: no service date at all, so nothing to project and no warning
+      // — a positive test on a game animal is a real observation and stands on its own.
       const a = await tenant('Alpha');
       const doe = await aFemaleOf(a.farmId, 'game');
 
@@ -3165,6 +3171,8 @@ describe('weight capture (FR-140)', () => {
       );
 
       expect(test.payload).toMatchObject({ result: 'pregnant' });
+      expect(test.payload).not.toHaveProperty('dueDate');
+      expect('warning' in test).toBe(false);
     });
 
     it('projects a SHEEP due date off the sheep figure, not the cattle one', async () => {

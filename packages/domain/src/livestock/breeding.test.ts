@@ -85,11 +85,33 @@ describe('recordPregnancyDiagnosis (FR-121)', () => {
       gestationDays: 283,
     });
     expect(event.type).toBe('pregnancy_test');
+    // The INPUTS are stored alongside the output, so a later report reads the figure the date was
+    // derived from rather than re-deriving one that may since have moved.
     expect(event.payload).toEqual({
       method: 'ultrasound',
       result: 'pregnant',
+      matingDate: '2026-07-15',
+      gestationDays: 283,
       dueDate: '2027-04-24', // computed AT CAPTURE, stored on the event
     });
+  });
+
+  it('keeps the service date but projects no due date when no gestation figure is supplied', () => {
+    // The species-with-no-gestation-row case at the domain layer: game and poultry have a real
+    // service date and a positive result, and losing that fact to protect a projection that was
+    // never available is the worse trade. `matingDate` is kept; `dueDate`/`gestationDays` are not.
+    const event = recordPregnancyDiagnosis({
+      ...base(),
+      method: 'visual',
+      result: 'pregnant',
+      matingDate: '2026-07-15',
+    });
+    expect(event.payload).toEqual({
+      method: 'visual',
+      result: 'pregnant',
+      matingDate: '2026-07-15',
+    });
+    expect(event.payload).not.toHaveProperty('dueDate');
   });
 
   it('records a positive diagnosis with no due date when the service date is unknown', () => {

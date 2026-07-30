@@ -95,6 +95,62 @@ describe('meatWithdrawalForMob — agreeing with the server', () => {
     expect(status.blocked).toBe(false);
   });
 
+  it('⭐ resolves two same-day moves by (occurredAt, id), matching the server, not array order', () => {
+    // §2f MED. Day-grained moves tie on the instant by construction. The server orders
+    // (occurredAt, id); the client sorted on occurredAt alone, so a stable sort left the
+    // last-move-wins outcome to capture-store append order. Ox X is walked twice on ONE day — the
+    // move with the LARGER id is the later one, so X ends where THAT move points. The array below is
+    // deliberately in the OPPOSITE order, which is what the old sort would have honoured.
+    const MOB_B = '0190f3a0-0000-7000-8000-00000000b010';
+    const MOB_C = '0190f3a0-0000-7000-8000-00000000b011';
+    const x = schemas.newAnimalSchema.parse({
+      id: '0190f3a0-0000-7000-8000-00000000a020',
+      farmId: FARM,
+      species: 'cattle',
+      sex: 'male',
+      mobId: null,
+    });
+    const toB: StoredMove = {
+      id: '0190f3a0-0000-7000-8000-00000000c001', // smaller id → earlier
+      farmId: FARM,
+      animalId: x.id,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+      toMobId: MOB_B,
+      batchId: null,
+    };
+    const toC: StoredMove = {
+      id: '0190f3a0-0000-7000-8000-00000000c002', // larger id → LATER, so X's true final mob is C
+      farmId: FARM,
+      animalId: x.id,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+      toMobId: MOB_C,
+      batchId: null,
+    };
+    const doseOnX: StoredHealthEvent = {
+      id: '0190f3a0-0000-7000-8000-00000000f010',
+      farmId: FARM,
+      animalId: x.id,
+      mobId: null,
+      kind: 'treatment',
+      occurredAt: '2026-07-24T06:00:00.000Z',
+      administeredOn: '2026-07-24',
+      productId: PRODUCT,
+      batchId: null,
+    };
+    const arrayOppositeToIdOrder = [toC, toB];
+
+    // X's true final mob is C, so mob B holds no member and is clear...
+    expect(
+      meatWithdrawalForMob(MOB_B, '2026-07-25', [doseOnX], [tickaway], [x], arrayOppositeToIdOrder)
+        .blocked,
+    ).toBe(false);
+    // ...while mob C holds X, individually dosed and still inside its withdrawal.
+    expect(
+      meatWithdrawalForMob(MOB_C, '2026-07-25', [doseOnX], [tickaway], [x], arrayOppositeToIdOrder)
+        .blocked,
+    ).toBe(true);
+  });
+
   it('does not block the dip camp for a dose given AFTER the ox left it', () => {
     // The other direction of the same reconstruction: membership is by day, so an animal that has
     // walked out is not held by a dose the mob received after it went, and one that never received

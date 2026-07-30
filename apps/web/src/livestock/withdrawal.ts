@@ -59,7 +59,22 @@ interface MobInterval {
 function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): readonly MobInterval[] {
   const mine = moves
     .filter((m) => m.animalId === animal.id && m.toMobId !== undefined)
-    .sort((a, b) => (a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0));
+    // ⭐ (occurredAt, id), the same TOTAL order the server runs. Day-grained moves tie on the
+    // instant by construction, so ordering on `occurredAt` alone left the last-move-wins outcome to
+    // capture-store append order on one side and the query plan on the other — a silent
+    // disagreement about which mob an animal ended in. The id is a client UUIDv7, identical on both
+    // sides and time-ordered; compared by BYTE, never `localeCompare`, exactly as `mob-tally.ts`.
+    .sort((a, b) =>
+      a.occurredAt < b.occurredAt
+        ? -1
+        : a.occurredAt > b.occurredAt
+          ? 1
+          : a.id < b.id
+            ? -1
+            : a.id > b.id
+              ? 1
+              : 0,
+    );
 
   const intervals: MobInterval[] = [];
   let openMob = animal.mobId ?? null;

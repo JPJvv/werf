@@ -3,16 +3,24 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-07-28 (eighth session — AUDIT ONLY, no feature work) · **Branch:**
-`phase-2/livestock` @ `65616c4`, PUSHED (code is unchanged since `7917645`; the three commits after
-it are docs and tooling only — `ad34446` the audit, `c158c35` the Docker hook + agent context,
-`65616c4` the agent-trigger policy and this file's closing list)
+**Last updated:** 2026-07-30 (ninth session — CLOSING session, ten of eleven §2f findings fixed) ·
+**Branch:** `phase-2/livestock` @ `74aa1d4` (this file's own commit will move HEAD past it — re-read
+with `git log`), **NOT yet pushed at time of writing** (ten fix commits sit ahead of
+`origin/phase-2/livestock`; push them with this file). `pnpm verify` green LOCALLY: **79** files /
+**816** tests, bundle **139.16 KB** gz.
 
-> ✅ **The eighth session opened by reconciling both claims and BOTH held** — working tree clean,
-> and `git rev-parse HEAD` = the SHA this file names = the SHA PR #3 points at. First time the SHA
-> half has been true on read. Keep checking anyway; it has been wrong twice — and note this header
-> had to be corrected once more at the END of this session, after three docs commits moved HEAD
-> underneath it. **Updating this file is itself a change that makes this file stale.**
+> ✅ **The ninth session opened by reconciling both claims. Tree was clean; the SHA half was STALE
+> as usual** — the header said `65616c4` while HEAD was `b95eb09` (the last session's own three docs
+> commits had moved HEAD out from under it, exactly as line 15 warned). Reconciled and worked on.
+> Keep checking; this file's SHA is wrong more often than right on read.
+
+> ⭐ **THE FIFTH REVIEW PASS IS OWED AND HAS NOT RUN.** Ten of the eleven §2f findings are fixed this
+> session (§2g), each with a test watched to fail against the old code first. But the author of a fix
+> cannot close the finding — four passes running have each found real defects inside the previous
+> pass's fixes, and there is no evidence pass five is different. **These ten fixes are UNREVIEWED.**
+> Agents are owner-triggered: item 2 in §5 is a REQUEST to JP, not a task done. This branch touches
+> regulated code (FR-131 withdrawal, breeding, animal disposal) and is **NOT merge-ready** until JP
+> asks for the pass and its findings are closed (`CLAUDE.md` § "Compliance gate").
 
 > ⚠️ **The commit pointers in this file were STALE when the seventh session opened** — §1's header
 > said `e5792d3` and its tree diagram said `395b658`, while HEAD was `b3f4878`. The working-tree
@@ -22,15 +30,15 @@ it are docs and tooling only — `ad34446` the audit, `c158c35` the Docker hook 
 > bundle until the fifth session. Fixed — see §4 A7. If you see e2e fail and then pass on a re-run,
 > that is not a flake and it is not this bug either; read A7 before assuming.
 
-> ⛔ **THE FOURTH REVIEW PASS RAN (2026-07-28) AND THE VERDICT IS STILL NOT APPROVABLE.** Seven
-> findings over `7c2acd9..HEAD`, including a **NEW SEV-1** and three SEV-2s. `compliance-checker`
-> did not withdraw its verdict and `reviewer` returned NOT APPROVABLE independently. **Nothing in
-> §2f is fixed** — the eighth session was an audit and deliberately wrote no feature code. §2f.
+> ⛔ **THE FOURTH REVIEW PASS RAN (2026-07-28) AND RETURNED NOT APPROVABLE** — eleven findings over
+> `7c2acd9..HEAD` (§2f). **Ten are now fixed (§2g, 2026-07-30); one remains** — the `withinWithdrawal`
+> reader (§2f SEV-3 #6), deliberately deferred to the §2.3c slice it shares a surface with. The
+> verdict CANNOT be lifted by these fixes: only a fresh (fifth) pass JP asks for can retire it.
 >
-> ⭐ **The pattern is now measured FOUR passes running, and it has not weakened once:**
-> pass two found 12 defects; pass three found 8 more inside those 12 fixes; pass four found 7 more,
-> and THREE OF THE FOUR most severe are inside pass three's fixes. The author of a fix cannot close
-> the finding that produced it. Do not assume pass five finds nothing.
+> ⭐ **The pattern is measured FOUR passes running and has not weakened once:** pass two found 12
+> defects; pass three found 8 more inside those 12 fixes; pass four found 7 more (11 once fully
+> enumerated), three of the four most severe inside pass three's fixes. **This session wrote ten more
+> fixes. Do not assume pass five finds nothing — assume it finds defects in THESE.**
 
 > ⛔ **The third review pass RAN (2026-07-27) and the verdict was STILL NOT APPROVABLE** — on a NEW
 > SEV-1 in the code written to close the previous SEV-1s. That finding and seven others are fixed in
@@ -44,12 +52,13 @@ it are docs and tooling only — `ad34446` the audit, `c158c35` the Docker hook 
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. B1 is CLOSED — breeding is no longer half-built.** `pnpm verify` green **on CI**: **78** files / **806** tests, bundle **138.72 KB** gz. CI green on both lanes at HEAD (run `30374965420`, 2026-07-28). ⛔ **The FOURTH agent pass ran 2026-07-28 and returned NOT APPROVABLE — a new SEV-1 and three SEV-2s, none of them fixed (§2f).** ⚠️ `pnpm test:e2e` is **NOT** green — 25/27, exit 1, cold (§4 A9). ⚠️ `pnpm verify` cannot run at all without Docker: 272 of the 806 tests are the testcontainers tier. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. Ten of eleven §2f findings fixed this session (§2g).** `pnpm verify` green LOCALLY: **79** files / **816** tests, bundle **139.16 KB** gz (was 78/806). ⛔ **UNREVIEWED — the fifth agent pass is owed and only JP can trigger it (§2.1f, §5 item 2). One §2f finding remains: the `withinWithdrawal` reader, deferred to the §2.3c slice.** ⚠️ CI has NOT yet run on these ten commits — they are unpushed at time of writing. ⚠️ `pnpm test:e2e` still expected 25/27 cold (§4 A9) — now captures a DOM snapshot on failure so the next red run is diagnosable. ⚠️ `pnpm verify` needs Docker for the testcontainers tier. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
-**Working tree is clean as at this commit. No stashes.** Verified with `git status` at the start of
-the sixth session (it reconciled — the first time this line has been true when read) and again here.
+**Working tree is clean as at this commit, EXCEPT this file itself, which is being edited and will be
+committed with the ten fixes. No stashes.** Verified with `git status` at the start of the ninth
+session (tree reconciled; the SHA pointer did not — see the header).
 
 > ⚠️ **That sentence was FALSE for the whole of the fourth session and nobody noticed until a review
 > caught it.** Sixteen modified files and two new ones — a half-built B1 breeding slice — sat
@@ -58,15 +67,17 @@ the sixth session (it reconciled — the first time this line has been true when
 
 ```
 main                   9452ebc   (Phase 0 + 1)
-phase-2/livestock      (HEAD)    PUSHED. Draft PR #3 open, DO NOT MERGE.
+phase-2/livestock      (HEAD)    Draft PR #3 open, DO NOT MERGE. Ten fix commits ahead
+                                 of origin at time of writing — PUSH with this file.
                                  ⭐ Re-read the SHA with `git log` rather than trusting
-                                 this diagram — it has been wrong twice.
-phase-2/breeding       80a9fc3   ✅ SPENT. Rebased onto this branch and SQUASH-MERGED
-                                 into it as one finished slice. Its own WIP commit said
-                                 "do not merge as it stands", and it never was. Nothing
-                                 on it is still wanted — DELETE IT (local and origin).
-docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330,
-                                 so it is now well behind this branch
+                                 this diagram — it has been wrong every session but one.
+phase-2/breeding       —         ✅ DELETED 2026-07-30 (local AND origin). Was spent
+                                 (squash-merged into this branch). Gone; do not recreate.
+docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330, well
+                                 behind this branch. NOTE: ADR-0009/0010 were cherry-
+                                 picked onto THIS branch (§4 A11), so if you cherry-pick
+                                 the scope branch after the merge, those two ADR files
+                                 already exist here — expect them to conflict or skip.
 ```
 
 ---
@@ -100,13 +111,13 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    "already cleared" list**, because such a list goes stale the way this repo's comments do and
    would suppress the finding that matters. It is a map, not a filter.
 
-1f. **⛔ NEW AND NOW THE LIVE ONE — §2f's seven findings. Nothing is fixed.**
-   The fourth pass ran and produced a NEW SEV-1 plus three SEV-2s, and the eighth session was an
-   audit that deliberately wrote no feature code, so every one of them is open. The SEV-1 loses a
-   farmer's capture silently and the device and server end up disagreeing about head count; two of
-   the SEV-2s put meat inside a withholding on a truck. **This is the next session's work and it is
-   not optional.** Order and reasoning in §5.
-   → _Answer:_
+1f. ~~**§2f's findings.**~~ ◐ **TEN OF ELEVEN FIXED 2026-07-30 (§2g), UNREVIEWED.** The SEV-1, all
+   four SEV-2s, all three SEV-3s that were buildable, both MEDs and both LOWs are closed, each with a
+   test watched to fail first. **The one left — SEV-3 #6, `withinWithdrawal` read by nothing — is
+   deferred to the §2.3c slice it shares a surface with, on purpose (not missed).** ⛔ **NOW THE LIVE
+   ONE is the FIFTH agent pass over these ten fixes — §5 item 1, and only JP can ask for it.** The
+   branch is regulated code and is NOT merge-ready until that pass runs and its findings close.
+   → _Answer (say the word and it runs):_
 
 1e. ~~**The FOURTH pass.**~~ ✅ **RAN 2026-07-28 (eighth session)**, all three agents over
    `7c2acd9..HEAD`, output read directly. ⛔ **Verdict: still NOT APPROVABLE**, and `reviewer`
@@ -394,6 +405,55 @@ residue-traceback register; B1's client route is end to end and not half-built; 
 
 ---
 
+## 2g. Ten of §2f's eleven findings fixed (2026-07-30, ninth session) — UNREVIEWED
+
+**A CLOSING session.** No new features started. Every fix has a test that was **watched to fail
+against the old code first**, and the claim of that discipline was itself checked (§2c's correction).
+The gate ran green after the set: `pnpm verify` 79 files / 816 tests, bundle 139.16 KB gz.
+
+⛔ **These ten fixes are UNREVIEWED and this branch is NOT merge-ready.** Agents are owner-triggered;
+the fifth pass (§5 item 2) is a REQUEST to JP. This is regulated code (FR-131, breeding, disposal).
+
+| Commit | §2f | What |
+|---|---|---|
+| `e614f37` | SEV-1 | **Tally capture id minted at save, not in a `useMemo`.** `reset()` re-set `day` to the value it held and never cleared `selectedId`, so a second tally on the same mob/day reused the first id — flush skipped it forever, and the as-at fold's `id < captureId` dropped the first from the second's baseline. Cut is now `occurredAt <= at` |
+| `2d34066` | SEV-2 | **Client group guard reads a dose carried IN from another mob.** `reaches()` returned false for every `animal_id = NULL` dose not on this mob; now mirrors the server per member via `reachedAnimal`. Mirrors `livestock.integration.test.ts:2326` |
+| `5f7a6ce` | SEV-2 + MED | **A figureless-species pregnancy test records instead of 400-ing.** `gestationDaysFor` returns `null`, not throw; the diagnosis is kept with `matingDate` and a `warning`; **`matingDate`/`gestationDays` now stored on the payload** (the MED). Test uses the body the screen actually sends |
+| `1a8b059` | SEV-2 | **A refused dose/move holds back the disposal it is evidence for.** Evidence declares `provides`, disposals declare `guardedBy` (incl. the animal's current mob); a disposal tainted this round is HELD (pending, not refused) |
+| `af7e4ad` | SEV-3 | **A death can be back-dated.** The "What day?" input now renders for `died`, so the server can flag `withinWithdrawal` from the true day |
+| `8849a46` | SEV-3 | **Cold gestation cache says "syncing", not "no such figure".** `useGestationDays` returns a discriminated `GestationLookup`; new copy mirrors `health.noProducts`. Game/poultry still read "no figure" |
+| `b67c28a` | MED | **Client mob membership ordered by `(occurredAt, id)`** — byte compare, like `mob-tally.ts` — so day-grained moves cannot resolve to a different mob than the server |
+| `74aa1d4` | 2×LOW | **Bull window enforced server-side** (`matingPayloadSchema` refine + request refine), and **the dueDate-strip test can now fail** (asserts `'dueDate' in parsed` is false at the schema) |
+
+Also done (cheap, unblocked): `513da32` cherry-picked **ADR-0009/0010** onto this branch (§4 A11);
+`phase-2/breeding` **deleted** local + origin; `40ea435` gave the e2e lane a **DOM snapshot +
+screenshot on failure** (§4 A9 — `retain-on-failure`, since retries stay 0).
+
+**The one §2f finding NOT fixed — SEV-3 #6, `withinWithdrawal` read by nothing.** Deliberately
+deferred, not missed. Its only honest reader is a residue/treatment compliance surface — the
+"treatment register" or "needs your attention" screen §2.3c names — and §5 already couples #6 with
+the §2.3c slice for exactly this reason. Cramming it into the stock-theft evidence pack would be the
+half-build the repo forbids. **Build #6 and §2.3c together as one deliberate slice, and run the
+compliance pass on it.** See §5 item 6.
+
+**Rules that came out of this session:**
+
+- **A memo dependency array is a claim about renders, not about saves.** `reset()` restoring a value
+  to what it already was left the deps unchanged, so the "new" id was the old one. Identity is minted
+  at the write, never memoised.
+- **A subject-graph belongs in the flush, not just the guard.** The server refuses a disposal without
+  evidence; the client must not SEND one whose evidence it just watched get refused. `provides` /
+  `guardedBy` is that graph, and "held" (pending) is the right state — not "refused", which would
+  blame the farmer for a capture the server never rejected.
+- **Two absences are two facts.** An empty cache ("not synced") and a populated cache with no row
+  ("no such figure") owe the farmer different sentences. Merging them told a cattle farmer cattle
+  have no carrying period.
+- **Defer over half-build, and say which.** #6's reader is a real slice with a client route, coupled
+  to §2.3c. Naming it as deferred (with the reason) is a decision; a reader crammed into the wrong
+  document would be the defect.
+
+---
+
 ## 3. The review-agent pass (2026-07-26, second session)
 
 `reviewer`, `sync-auditor` and `compliance-checker` were run over the whole branch **as it stood at
@@ -617,8 +677,8 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | A6 | ✅ **THREE passes now run.** 2026-07-26 over `a6c8eff..HEAD` (twelve findings, §3b, all closed in §2c) and 2026-07-27 over `5c769b4..HEAD` (eight findings, §2d, all closed). ⛔ **Still NOT APPROVABLE, and a FOURTH pass is owed over `7c2acd9..HEAD` — §2.1e.** The empirical case for it: pass three found eight defects inside pass two's twelve fixes. Original note: Pass done 2026-07-26; **the work it produced is now done too — all twelve findings closed in code 2026-07-27, §2c.** ⛔ **But a THIRD pass over `5c769b4..HEAD` is owed and is the last thing gating the PR — §2.1d.** `compliance-checker` said NOT APPROVABLE and only `compliance-checker` can withdraw it |
 | A7 | ✅ **FIXED 2026-07-26 — the e2e lane could report green against code that no longer existed.** `vite preview` serves `dist`, and `turbo.json`'s `build` task declared no `outputs`, so turbo cached only LOGS: a cache hit printed "FULL TURBO" and wrote no files, leaving whatever bundle was already on disk. Proven rather than theorised — a screen's heading was replaced with a literal and the suite stayed 25-green, then kept FAILING for five consecutive runs after the source was restored, because the broken bundle was never replaced either way. Two changes: `outputs: ["dist/**"]` in `turbo.json`, and `pnpm test:e2e` now builds first (turbo-cached, so free when nothing changed). Verified in both directions — breaking a heading now fails 2 tests, restoring it returns 25 green. **This is why the earlier "2 failed then clean on a re-run" was never a flake; do not re-diagnose it as one.** |
 | A10 | ⛔ **NEW 2026-07-28 — `pnpm verify` CANNOT BE RUN on a machine with no Docker, and it fails LOUDLY rather than skipping.** 13 test files die on `Could not find a working container runtime strategy`; **272 of the 806 tests — the entire testcontainers integration tier — never execute**, and the gate exits 1. Locally the real figure was 534/806 passing. This is an environment condition, not a defect. ✅ **RESOLVED THE SAME DAY, two ways.** (1) With Docker started, `pnpm verify` was re-run and exits **0 — 78 files / 806 tests, all passing, 157s**, so the 806 figure is now confirmed LOCALLY as well as on CI. (2) A `SessionStart` hook (`.claude/hooks/ensure-docker.sh`, wired in `.claude/settings.json`) now checks the runtime at session start, launches Docker Desktop if it is down, waits up to 60s, and **never blocks** — worst case it prints a warning saying the integration tier cannot run, which beats thirteen confusing failures later. Silent and instant when Docker is already up |
-| A11 | ⛔ **NEW 2026-07-28 — `ADR-0009` and `ADR-0010` DO NOT EXIST on this branch.** They exist only on `docs/phase-3-6-scope`. This branch cites them three times: `STATUS.md` §2.6, `STATUS.md` §3 (the worker-tracking note), and `phase-checklists.md:867` (a Phase 3 line resting on "ADR-0010 refused tracking"). **If Phase 2 merges before the scope branch is cherry-picked, `main` carries three references to decision records a reader cannot open** — and one of them is the justification for a refusal, which is the kind of decision that most needs its record. Either cherry-pick the two ADRs ahead of the merge or soften the references |
-| A9 | ◐ **NARROWED 2026-07-28, AND A9'S OWN RECORDED SUSPICION IS RULED OUT.** Reproduced on a cold local run: **25 passed / 2 failed, exit 1, 53.9s** — the same two light-theme tests. Two things are now FACT that were not: (1) the failure is `element(s) not found`, and **BOTH** the passkey button and the "use an authenticator app instead" fallback are absent — so it is not one button, the entire choice UI is missing; (2) `passkeysAvailable()` (`apps/web/src/auth/passkeys.ts:42`) is a **synchronous** DOM check (`typeof window.PublicKeyCredential === 'function'`) consumed as `useState(passkeysAvailable)` — it has **no timing dependence whatsoever**, so **A9's recorded "async can-this-device-do-it probe" hypothesis is dead.** That leaves the screen either not mounting or mounting without a session, which points at the async session seed racing the route guard — `a11y.spec.ts:73` already comments that "the seed arrives asynchronously". ⛔ **That is a NARROWED CANDIDATE, NOT A DIAGNOSIS** — no page snapshot was captured to confirm what did render. Next step is cheap and specific: capture `page.content()` or a screenshot on failure. Original note follows. ◐ **THE FAILING TESTS NOW HAVE NAMES (2026-07-28), which is what A8 and A9 both asked for.** A full `pnpm test:e2e` reported **25 passed, exit 1** again — the same signature — and this time the names were captured before anything else: `a11y.spec.ts:50` *the second-factor choice has no accessibility violations in the **light** theme* and `a11y.spec.ts:64` *second-factor enrolment …* **in the light theme**. Both timed out on `getByRole('button', { name: /use this phone as the key/i })` — the PASSKEY button, which §2b's own rule puts behind an async "can this device do it" probe. **Evidence, not a diagnosis:** the failing run was COLD and took 53.2s; an immediate second full run was 27-green in 21.7s, and the two tests alone pass in 5.5s. So it is load/cold-start dependent and the 5s `expect` timeout inside a 30s test is the prime suspect, not a code fault. ⛔ **Do not close this on that reasoning — it has not been proven.** What IS now settled: it is not random, it is these two tests, and it is the light theme (which runs first). Original note follows. ⚠️ **IT IS THE SAME MISTAKE A8 RECORDS.** One `pnpm test:e2e` run on 2026-07-27 reported **25 passed with exit code 1** — so two failed — and **the failing test names were discarded**, because the command piped the run through `tail -4` while its exit code gated a commit. Three consecutive runs since are 27-green, and `pnpm verify` is green, so this is *probably* a build-cache race between a `prettier --write` and the `turbo build` that `test:e2e` runs first. **That is a guess and it is recorded as one.** ⚠️ **Never pipe a test run through `tail`/`grep` when its result decides whether to commit** — capture the failure first, exactly as A8 says and exactly as was not done here |
+| A11 | ✅ **FIXED 2026-07-30 (`513da32`).** Both ADRs cherry-picked from `docs/phase-3-6-scope` onto this branch — they reference only ADR-0001/0005/0007, all already here, so nothing new dangles. The three citations (`STATUS.md` §2.6, §3, `phase-checklists.md`) now resolve. ⚠️ Consequence for the post-merge cherry-pick of the scope branch (§2.2): those two ADR files now exist on BOTH branches and will conflict/skip — drop them from that cherry-pick |
+| A9 | ◐ **STILL OPEN, but now DIAGNOSABLE. 2026-07-30 (`40ea435`): the e2e config captures a DOM snapshot + screenshot ON FAILURE** (`trace: 'retain-on-failure'` + `screenshot: 'only-on-failure'`; retries stay 0). The root cause of the "no evidence" problem was that `trace: 'on-first-retry'` never fired against `retries: 0`. Next red run leaves a snapshot to read instead of another hypothesis. The candidate below (async session seed racing the route guard) is still unconfirmed — confirm it from the captured snapshot. Original note follows. ◐ **NARROWED 2026-07-28, AND A9'S OWN RECORDED SUSPICION IS RULED OUT.** Reproduced on a cold local run: **25 passed / 2 failed, exit 1, 53.9s** — the same two light-theme tests. Two things are now FACT that were not: (1) the failure is `element(s) not found`, and **BOTH** the passkey button and the "use an authenticator app instead" fallback are absent — so it is not one button, the entire choice UI is missing; (2) `passkeysAvailable()` (`apps/web/src/auth/passkeys.ts:42`) is a **synchronous** DOM check (`typeof window.PublicKeyCredential === 'function'`) consumed as `useState(passkeysAvailable)` — it has **no timing dependence whatsoever**, so **A9's recorded "async can-this-device-do-it probe" hypothesis is dead.** That leaves the screen either not mounting or mounting without a session, which points at the async session seed racing the route guard — `a11y.spec.ts:73` already comments that "the seed arrives asynchronously". ⛔ **That is a NARROWED CANDIDATE, NOT A DIAGNOSIS** — no page snapshot was captured to confirm what did render. Next step is cheap and specific: capture `page.content()` or a screenshot on failure. Original note follows. ◐ **THE FAILING TESTS NOW HAVE NAMES (2026-07-28), which is what A8 and A9 both asked for.** A full `pnpm test:e2e` reported **25 passed, exit 1** again — the same signature — and this time the names were captured before anything else: `a11y.spec.ts:50` *the second-factor choice has no accessibility violations in the **light** theme* and `a11y.spec.ts:64` *second-factor enrolment …* **in the light theme**. Both timed out on `getByRole('button', { name: /use this phone as the key/i })` — the PASSKEY button, which §2b's own rule puts behind an async "can this device do it" probe. **Evidence, not a diagnosis:** the failing run was COLD and took 53.2s; an immediate second full run was 27-green in 21.7s, and the two tests alone pass in 5.5s. So it is load/cold-start dependent and the 5s `expect` timeout inside a 30s test is the prime suspect, not a code fault. ⛔ **Do not close this on that reasoning — it has not been proven.** What IS now settled: it is not random, it is these two tests, and it is the light theme (which runs first). Original note follows. ⚠️ **IT IS THE SAME MISTAKE A8 RECORDS.** One `pnpm test:e2e` run on 2026-07-27 reported **25 passed with exit code 1** — so two failed — and **the failing test names were discarded**, because the command piped the run through `tail -4` while its exit code gated a commit. Three consecutive runs since are 27-green, and `pnpm verify` is green, so this is *probably* a build-cache race between a `prettier --write` and the `turbo build` that `test:e2e` runs first. **That is a guess and it is recorded as one.** ⚠️ **Never pipe a test run through `tail`/`grep` when its result decides whether to commit** — capture the failure first, exactly as A8 says and exactly as was not done here |
 | A8 | ⚠️ **STILL OPEN, but there is now a live candidate.** §3b finding 11's `toISOString().slice(0,10)` in test assertions was fixed in `511cf3c`, and the two-hour SAST/UTC divergence was DEMONSTRATED rather than assumed — it fits the shape exactly (one run in nine, no reproduction). **That is a candidate, not a diagnosis:** the failing test name was never captured, so this cannot be closed on it. If the suite reds again, capture the test name FIRST. Original note follows. ⚠️ **ONE unexplained unit-suite failure, cause unknown — do not dismiss it.** A single `pnpm verify` run reported `1 failed | 76 passed` and the next EIGHT runs were clean (4 full-suite, 4 targeted). Which test it was is unknown, because the log was discarded before the failure detail was read. **What HAS been ruled out:** the flake recorded in memory as "`confirmTotpEnrolment` reds when a code straddles a 30s boundary" cannot be it — `TOTP_DRIFT_STEPS = 1`, so `verifyTotp` accepts ±1 step and a boundary crossing is tolerated by design. That recorded explanation is simply wrong and has been corrected. If this recurs, capture the failing test name FIRST; a one-in-nine failure in a suite the PR gate depends on is worth a real diagnosis, not a re-run. |
 | A5 | ✅ **FIXED 2026-07-26 (fifth session).** `startWerfTestDatabase()` now memoises ONE container per worker process instead of one per suite (`packages/db/src/testing.ts`), so at most `maxWorkers` (4) exist at once rather than ten. `stop()` on the shared handle is a no-op — the first suite to finish must not pull the database out from under the three behind it in the same worker — and teardown happens on worker exit, with Ryuk reaping anything that outlives a crash. `bootWerfTestDatabase()` is the escape hatch for a suite that genuinely needs a private one. Verified: 77 files / 750 tests still green. Done before CI ever ran the suite, which was the point |
 
@@ -651,110 +711,80 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 ## 5. How to resume
 
 ```
-1. RUN `git status` AND RECONCILE AGAINST §1. First, before reading anything
-   else and before planning. §1 asserted "Working tree is clean. No stashes."
-   through an entire session in which sixteen modified files and a half-built
-   breeding slice sat underneath it. It has reconciled on the last two readings;
-   keep checking anyway.
-   Also RECONCILE THE SHAs, not just the tree — §1's pointers were stale for a
-   whole session while its "working tree is clean" line was true. Two claims,
-   and only one was being checked.
-   `phase-2/breeding` is SPENT (squash-merged) and should be deleted.
+1. RUN `git status` AND RECONCILE AGAINST §1 — tree AND SHA. The tree has
+   reconciled for several sessions; the SHA pointer in §1 is wrong most reads
+   (this file's own commit moves HEAD past the SHA it names). Check both.
+   `phase-2/breeding` is DELETED — do not expect or recreate it.
+
+1a. FIRST, IF NOT ALREADY DONE: `git push`. The ninth session's ten fix commits
+   plus this file were unpushed at write time. CI has NOT run on them. Push, then
+   watch both lanes on PR #3.
 
 1b. START DOCKER DESKTOP before running the gate (§4 A10). Without it
-   `pnpm verify` exits 1 on 13 files that have nothing to do with your work,
-   and 272 of the 806 tests silently never run.
+   `pnpm verify` exits 1 on the testcontainers tier (~282 of 816 tests).
 
-2. Then read STATUS.md, CLAUDE.md, and docs/04-delivery/phase-checklists.md.
-   Answer §2 with me before planning. §2.1f is the live one.
+2. Then read STATUS.md, CLAUDE.md, docs/04-delivery/phase-checklists.md, and
+   §2g (what the ninth session did). §2.1f is the live decision.
 
-⛔ PHASE 2'S EXIT GATE DOES NOT READ TRUE. THREE clauses of five are unmet now,
-not two: the agents clause, CI-green-on-`main` (unmeetable before merge), and
-`pnpm test:e2e`, which was DEMOTED on 2026-07-28 after a cold run failed 2/27.
+⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE. Unmet: the agents clause (the
+FIFTH pass is owed and unrun — item 1), CI-green-on-`main` (unmeetable before
+merge), and `pnpm test:e2e` (still expected 25/27 cold — but now it captures a
+snapshot on failure, §4 A9, so the next red run can finally be diagnosed).
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  NEXT SESSION IS A CLOSING SESSION. Nothing new gets started until the    ║
-║  list below is empty or explicitly deferred BY JP, in writing, here.      ║
-║  Eight sessions have each opened more than they closed; this one does     ║
-║  the opposite. Work the list top to bottom.                              ║
+║  STILL A CLOSING PHASE. The ninth session fixed ten of §2f's eleven and    ║
+║  did the cheap items; it did NOT start B7 or any new feature. Keep that    ║
+║  discipline. Nothing new until the list below is empty or deferred BY JP.  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. §2f's seven findings — NONE fixed          §2f        mine, now
-  2. A fifth agent pass after those fixes       §2f        ⛔ JP MUST ASK
-  3. ADR-0009/0010 missing on this branch       §4 A11     mine, cheap
-  4. `phase-2/breeding` still on local+origin   §1         mine, cheap
-  5. A9 — capture a page snapshot on failure    §4 A9      mine, one line
-  6. §2.3c cross-device race — ANSWERED,        §2.3c      mine, a slice
-     NOT BUILT (shares a surface with §2f's
-     `withinWithdrawal` finding — build together)
-  7. §2.3b transfer reason / purchase clearing  §2.3b      ⛔ JP DECIDES
-  8. §2.1c defect-class hook — yes or no        §2.1c      ⛔ JP DECIDES
-  9. §2.4 labour-law review booked?             §2.4       ⛔ JP, 5 sessions
- 10. §2.5 Gazette figures re-verified?          §2.5       ⛔ JP, 5 sessions
- 11. §2.6 SAFEX licence conversations           §2.6       ⛔ JP DECIDES
- 12. §2.7 phone-only invitations                §2.7       ⛔ JP DECIDES
- 13. §2.8 object storage (blocks FR-108)        §2.8       ⛔ JP DECIDES
+  1. FIFTH agent pass over the ten fixes        §2g        ⛔ JP MUST ASK
+  2. §2f #6 withinWithdrawal reader — BUILD      §2f/§2.3c  mine, a slice
+     WITH §2.3c (they share the surface)          (regulated → then item 1)
+  3. §2.3b transfer reason / purchase clearing  §2.3b      ⛔ JP DECIDES
+  4. §2.1c defect-class hook — yes or no        §2.1c      ⛔ JP DECIDES
+  5. §2.4 labour-law review booked?             §2.4       ⛔ JP, 6 sessions
+  6. §2.5 Gazette figures re-verified?          §2.5       ⛔ JP, 6 sessions
+  7. §2.6 SAFEX licence conversations           §2.6       ⛔ JP DECIDES
+  8. §2.7 phone-only invitations                §2.7       ⛔ JP DECIDES
+  9. §2.8 object storage (blocks FR-108)        §2.8       ⛔ JP DECIDES
 
-⛔ AGENTS ARE OWNER-TRIGGERED NOW. `compliance-checker` — and `reviewer` and
-`sync-auditor` with it — are NEVER spawned unprompted (set 2026-07-28, see
-CLAUDE.md § "Compliance gate on regulated code"). Regulated work can still be
-written and committed; it just cannot be called merge-ready until JP asks for
-the pass. SAY OUT LOUD when a slice reaches that line, so the decision is JP's
-and never made by silence. Item 2 above is therefore a REQUEST, not a task.
+  ✅ CLOSED THIS SESSION: §2f ×10 (§2g) · ADR-0009/0010 (§4 A11) ·
+     phase-2/breeding deleted · A9 snapshot-on-failure.
 
-START WITH ITEM 1 — FIXING §2f, IN THIS ORDER. The order is by what a farmer
-loses, not by severity label:
+⛔ AGENTS ARE OWNER-TRIGGERED. `compliance-checker`/`reviewer`/`sync-auditor`
+are NEVER spawned unprompted (CLAUDE.md § "Compliance gate"). The ten fixes are
+regulated code and UNREVIEWED — the branch is not merge-ready until JP asks for
+the fifth pass and its findings are closed. Item 1 is a REQUEST, not a task.
 
-  1. SEV-1 `AdjustMobScreen.tsx:128` — the memoised capture id. Generate the id
-     inside `save()`. This one SILENTLY LOSES A CAPTURE and leaves the device
-     and the server disagreeing about head count, with no error anywhere.
-     Test: two saves, same mob, same day → two distinct ids, two POSTs.
-  2. SEV-2 `withdrawal.ts:146-153` — the client group guard must run the same
-     per-member reconstruction the server runs, so a dose carried in from
-     another mob blocks AT CAPTURE. Mirror `livestock.integration.test.ts:2326`.
-  3. SEV-2 the breeding refusal — fix it on the SERVER: record the diagnosis
-     with `matingDate` and no `dueDate` plus a warning, rather than 400-ing it
-     into permanent set-aside. Pin BOTH tests to the same contract; today they
-     pass on either side of a seam that is broken through the middle.
-  4. SEV-2 `Outbox.tsx:494-507` — a refused move/health item must suppress the
-     disposals for that subject in the same round.
-  5. Then the three SEV-3s: the back-datable death (which is what makes the
-     `withinWithdrawal` flag work at all), giving that flag a reader and a test,
-     and splitting the cold-cache gestation copy from the no-figure copy.
-  6. MED: the `(occurredAt, id)` tiebreaker in `withdrawal.ts:62`, and storing
-     `matingDate`/`gestationDays` on the pregnancy payload.
+NEXT SESSION, IN ORDER:
 
-SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
-code, then keep it. And check the CLAIM as well as the code — §2c said "each
-fix verified in both directions" and that was false for two of them.
+  A. ASK JP FOR THE FIFTH PASS (item 1) over `b95eb09..HEAD` (the ten fixes).
+     Four passes running have each found real defects in the previous pass's
+     fixes; assume the fifth finds defects in THESE ten. Read its output
+     directly — do not accept a summary, and do not let the green gate stand
+     in for it. Do NOT spawn it; request it and say why.
 
-THEN ASK JP FOR A FIFTH PASS (item 2). Four passes have now each found real
-defects in the previous pass's fixes; there is no evidence this has bottomed
-out. Do not spawn it — request it, and say why.
+  B. BUILD §2f #6 + §2.3c AS ONE SLICE (item 2). #6 (`withinWithdrawal` read by
+     nothing) and §2.3c (retroactive compliance flag on a stored disposal when a
+     later-arriving dose proves it was inside a withholding) share ONE surface:
+     a residue/treatment compliance reader — "treatment register" and/or the
+     "needs your attention" screen. Build the flag's reader and the retroactive
+     flag together, with the client route (do NOT half-build a server-only
+     capability). This is regulated code → SAY SO and it waits on a compliance
+     pass before it is called merge-ready.
 
-Items 3, 4 and 5 are cheap and unblocked — do them alongside item 1 rather
-than saving them:
-  - §4 A11: cherry-pick ADR-0009/0010 ahead of the merge, or this branch
-    merges into `main` carrying three references to ADRs that do not exist.
-  - Delete `phase-2/breeding`, local AND origin. Spent, still in both places.
-  - §4 A9: capture a page snapshot on e2e failure. One line, and it would
-    likely end a question that has been open for four sessions.
+  SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
+  code, then keep it — and check the CLAIM as well as the code.
 
-Item 6 (§2.3c) is the only NEW build worth starting in a closing session, and
-only because it shares a surface with a §2f finding.
+⛔ DO NOT START B7's GPS boundary walk or any other new feature until 1–2 are
+closed. It is the largest named remainder and it will still be there.
 
-⛔ DO NOT START B7's GPS boundary walk, or any other new feature, until 1–6
-are closed. It is the largest named remainder in the phase and it will still
-be there. Adding to the pile is what the last eight sessions did.
+Phase 1 has NO open gaps. Phase 3's checklist EXISTS, but §2.4 (labour-law
+review) and §2.5 (Gazette figures) gate its first line — both open six sessions.
+DO NOT seed regulatory_rates from the July 2026 table.
 
-Phase 1 has NO open gaps. Phase 3's checklist EXISTS, so /loop has something to
-consume — but §2.4 (labour-law review booked) and §2.5 (Gazette figures
-re-verified) gate its very first line, and both have been open for four
-sessions. DO NOT seed regulatory_rates from the July 2026 table.
-
-Also open and cheap: §2.1c (the defect-class hook — yes or no). Note it would
-currently be silent, since the tree has no `toISOString().slice(0,10)` left.
-That is an argument for installing it now rather than after a fourth relapse.
+§2.1c (defect-class hook) is still open and cheap — note it would be silent now,
+since the tree has no `toISOString().slice(0,10)` left. Install-now argument.
 ```

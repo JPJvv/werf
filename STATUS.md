@@ -3,24 +3,26 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-07-30 (ninth session — CLOSING session, ten of eleven §2f findings fixed) ·
-**Branch:** `phase-2/livestock` @ `74aa1d4` (this file's own commit will move HEAD past it — re-read
-with `git log`), **NOT yet pushed at time of writing** (ten fix commits sit ahead of
-`origin/phase-2/livestock`; push them with this file). `pnpm verify` green LOCALLY: **79** files /
-**816** tests, bundle **139.16 KB** gz.
+**Last updated:** 2026-07-30 (ninth session — CLOSING: ten §2f findings fixed, FIFTH pass RUN and its
+findings fixed, JP's compliance/decisions actioned) · **Branch:** `phase-2/livestock` (this file's own
+commit moves HEAD — re-read with `git log`), pushed to origin through `beb3dc9`; the two fifth-pass
+fix commits + this file are ahead until the next push. `pnpm verify` green LOCALLY: **79** files /
+**821** tests, bundle **139.25 KB** gz. See §6 for the compliance operating model JP set this session.
 
-> ✅ **The ninth session opened by reconciling both claims. Tree was clean; the SHA half was STALE
-> as usual** — the header said `65616c4` while HEAD was `b95eb09` (the last session's own three docs
-> commits had moved HEAD out from under it, exactly as line 15 warned). Reconciled and worked on.
-> Keep checking; this file's SHA is wrong more often than right on read.
+> ✅ **The ninth session opened by reconciling both claims. Tree clean; the SHA half was STALE as
+> usual** (header said `65616c4`, HEAD was `b95eb09`). Reconciled. Keep checking.
 
-> ⭐ **THE FIFTH REVIEW PASS IS OWED AND HAS NOT RUN.** Ten of the eleven §2f findings are fixed this
-> session (§2g), each with a test watched to fail against the old code first. But the author of a fix
-> cannot close the finding — four passes running have each found real defects inside the previous
-> pass's fixes, and there is no evidence pass five is different. **These ten fixes are UNREVIEWED.**
-> Agents are owner-triggered: item 2 in §5 is a REQUEST to JP, not a task done. This branch touches
-> regulated code (FR-131 withdrawal, breeding, animal disposal) and is **NOT merge-ready** until JP
-> asks for the pass and its findings are closed (`CLAUDE.md` § "Compliance gate").
+> ✅ **THE FIFTH REVIEW PASS RAN (2026-07-30, JP-triggered) and its findings are FIXED (§2h).** All
+> three agents over `b95eb09..HEAD`, output read directly. **All three returned NOT APPROVABLE** and
+> the pattern held a fifth time: two findings, one raised by ALL THREE agents independently (the
+> outbox held-set was narrower than the guard it backstops), one a regression this session's own
+> back-dating fix introduced (a death saveable with an empty day → stranded capture). Both fixed,
+> tests watched to fail first (`4978bad`, `e874b79`).
+>
+> ⛔ **STILL NOT MERGE-READY, and this is the point of the new cadence (§6): the SIXTH review is not
+> run now — it is the BATCHED per-phase pass, at Phase 2 close / before the PR is marked ready.** Five
+> passes have each found a defect in the previous pass's fixes; a fix author still cannot self-clear.
+> One §2f finding (#6, the `withinWithdrawal` reader) remains, deferred to the §2.3c slice.
 
 > ⚠️ **The commit pointers in this file were STALE when the seventh session opened** — §1's header
 > said `e5792d3` and its tree diagram said `395b658`, while HEAD was `b3f4878`. The working-tree
@@ -52,7 +54,7 @@ with `git log`), **NOT yet pushed at time of writing** (ten fix commits sit ahea
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. Ten of eleven §2f findings fixed this session (§2g).** `pnpm verify` green LOCALLY: **79** files / **816** tests, bundle **139.16 KB** gz (was 78/806). ⛔ **UNREVIEWED — the fifth agent pass is owed and only JP can trigger it (§2.1f, §5 item 2). One §2f finding remains: the `withinWithdrawal` reader, deferred to the §2.3c slice.** ⚠️ CI has NOT yet run on these ten commits — they are unpushed at time of writing. ⚠️ `pnpm test:e2e` still expected 25/27 cold (§4 A9) — now captures a DOM snapshot on failure so the next red run is diagnosable. ⚠️ `pnpm verify` needs Docker for the testcontainers tier. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. Ten of eleven §2f findings fixed (§2g); the FIFTH pass ran and its two findings are fixed (§2h).** `pnpm verify` green LOCALLY: **79** files / **821** tests, bundle **139.25 KB** gz (was 78/806). ⛔ **Not merge-ready: under the new cadence (§6) the batched per-phase review runs at Phase 2 close / before the PR is marked ready. One §2f finding remains: the `withinWithdrawal` reader, deferred to the §2.3c slice.** ⚠️ CI runs on push (pushed through `beb3dc9`; two fix commits + this file follow). ⚠️ `pnpm test:e2e` still 25/27 cold (§4 A9) — now snapshots on failure. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
@@ -111,13 +113,11 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    "already cleared" list**, because such a list goes stale the way this repo's comments do and
    would suppress the finding that matters. It is a map, not a filter.
 
-1f. ~~**§2f's findings.**~~ ◐ **TEN OF ELEVEN FIXED 2026-07-30 (§2g), UNREVIEWED.** The SEV-1, all
-   four SEV-2s, all three SEV-3s that were buildable, both MEDs and both LOWs are closed, each with a
-   test watched to fail first. **The one left — SEV-3 #6, `withinWithdrawal` read by nothing — is
-   deferred to the §2.3c slice it shares a surface with, on purpose (not missed).** ⛔ **NOW THE LIVE
-   ONE is the FIFTH agent pass over these ten fixes — §5 item 1, and only JP can ask for it.** The
-   branch is regulated code and is NOT merge-ready until that pass runs and its findings close.
-   → _Answer (say the word and it runs):_
+1f. ~~**§2f's findings.**~~ ✅ **TEN OF ELEVEN FIXED (§2g); the FIFTH pass RAN 2026-07-30 and its two
+   findings are FIXED (§2h).** The one §2f finding left — SEV-3 #6, `withinWithdrawal` read by
+   nothing — is deferred to the §2.3c slice it shares a surface with (§5 item 1). Review is now
+   BATCHED per-phase under §6, so the next pass is at Phase 2 close, not now. **The live JP decision
+   is §2.3b** (below).
 
 1e. ~~**The FOURTH pass.**~~ ✅ **RAN 2026-07-28 (eighth session)**, all three agents over
    `7c2acd9..HEAD`, output read directly. ⛔ **Verdict: still NOT APPROVABLE**, and `reviewer`
@@ -454,6 +454,41 @@ compliance pass on it.** See §5 item 6.
 
 ---
 
+## 2h. The FIFTH review-agent pass (2026-07-30, ninth session) — two findings, BOTH FIXED
+
+JP-triggered (decision recorded in §6). All three agents over `b95eb09..HEAD` (the ten §2g fixes),
+run in parallel, output read directly. **All three returned NOT APPROVABLE.** The pattern held a
+fifth consecutive time: every pass finds a real defect inside the previous pass's fixes.
+
+| Finding | Raised by | What | Fix |
+|---|---|---|---|
+| **A** ⭐⭐⭐ | **all three, independently** | **The outbox held-set was narrower than the withdrawal guard it backstops.** A disposal was held only by the animal's CURRENT mob (or `[tally.mobId]`), but the guard — and the at-capture guard widened in `2d34066` THIS session — reads doses on every mob a member/animal has stood in. So the carried-in class reappeared one layer over: dip the dip camp (refused, healable 4xx), move the ox into the sale mob, tally/sell it → not held → 201 → residue to the abattoir once the dose heals next round | `4978bad` — `animalDisposalSubjects`/`mobDisposalSubjects` exported from `withdrawal.ts` and reused by the flush, so the two client mechanisms compute ONE subject set and cannot drift again |
+| **B** | reviewer | **A regression THIS session's back-dating fix introduced.** `af7e4ad` rendered the day input for `died` and it is clearable, but `canSave` for a death checked only the cause. A cleared date → `new Date('T12:...')` = Invalid Date → `occurredAt: null` → the death stranded in the outbox forever (400 on `timestampSchema`), losing the record the day was added for | `e874b79` — the `died` branch now requires `disposalDay !== ''`, like the slaughter branch already did |
+
+⭐ **Finding A is the one to trust most by this repo's own rule** — two-plus agents finding the same
+defect independently. It is also the sharpest lesson of the session: the SEV-2 carried-in fix
+(`2d34066`) and this backstop fix touched the SAME food-safety boundary in two files, and leaving one
+narrower than the other is how they silently disagree. They now share `withdrawal.ts`'s subject
+computation — the root-cause fix, not just the symptom.
+
+**Verified sound by this pass (named, so the batched sixth pass knows what was covered):** SEV-1 tally
+id; the client group guard mirrors the server end to end; the breeding seam is actually crossed
+(client sends `matingDate`, server records + warns, integration test uses the real body); membership
+ordering; the gestation cold-cache split; the bull-window refine; the dueDate strip; no hardcoded or
+fabricated regulated number; `dueDate`/`gestationDays` never cross the wire; back-dating a slaughter
+cannot evade the block (server judges the true day); money integer cents; POPIA clean.
+
+**Non-blocking follow-ups the pass named (NOT fixed — for a later session):**
+- `RecordPregnancyScreen.tsx:105` sorts matings with `localeCompare` — but it is a UI PREFILL, not a
+  cross-device regulated projection, and was not touched this session. The recurring `localeCompare`
+  pattern; worth a follow-up, not a blocker.
+- `RecordLossScreen.pick()` does not reset `disposalDay` when switching animals — preview-only,
+  cosmetic (save uses the live field).
+- `LocalSpeciesGestation` `notSynced` is a whole-cache heuristic — sound here because the reference
+  cache does an ATOMIC `replace` (all-or-nothing, never partial), so empty = never synced. Left as is.
+
+---
+
 ## 3. The review-agent pass (2026-07-26, second session)
 
 `reviewer`, `sync-auditor` and `compliance-checker` were run over the whole branch **as it stood at
@@ -723,57 +758,60 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 1b. START DOCKER DESKTOP before running the gate (§4 A10). Without it
    `pnpm verify` exits 1 on the testcontainers tier (~282 of 816 tests).
 
-2. Then read STATUS.md, CLAUDE.md, docs/04-delivery/phase-checklists.md, and
-   §2g (what the ninth session did). §2.1f is the live decision.
+2. Then read STATUS.md, CLAUDE.md, docs/04-delivery/phase-checklists.md, §6
+   (the compliance operating model JP set), §2g (the ten fixes) and §2h (the
+   fifth pass). §2.3b is now the live JP decision.
 
-⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE. Unmet: the agents clause (the
-FIFTH pass is owed and unrun — item 1), CI-green-on-`main` (unmeetable before
-merge), and `pnpm test:e2e` (still expected 25/27 cold — but now it captures a
-snapshot on failure, §4 A9, so the next red run can finally be diagnosed).
+⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE, but the reason narrowed. The
+fifth pass RAN and its findings are fixed (§2h). Under the new cadence (§6) the
+next review is the BATCHED per-phase pass, run at Phase 2 close / before the PR
+is marked ready — not per session. Still unmet: that batched pass; CI-green-on-
+`main` (unmeetable before merge); `pnpm test:e2e` (25/27 cold, now snapshots on
+failure, §4 A9).
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  STILL A CLOSING PHASE. The ninth session fixed ten of §2f's eleven and    ║
-║  did the cheap items; it did NOT start B7 or any new feature. Keep that    ║
+║  STILL A CLOSING PHASE. The ninth session fixed ten of §2f's eleven, ran   ║
+║  the fifth pass and fixed its two findings, and actioned JP's compliance   ║
+║  model + decisions. It did NOT start B7 or any new feature. Keep that       ║
 ║  discipline. Nothing new until the list below is empty or deferred BY JP.  ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. FIFTH agent pass over the ten fixes        §2g        ⛔ JP MUST ASK
-  2. §2f #6 withinWithdrawal reader — BUILD      §2f/§2.3c  mine, a slice
-     WITH §2.3c (they share the surface)          (regulated → then item 1)
-  3. §2.3b transfer reason / purchase clearing  §2.3b      ⛔ JP DECIDES
-  4. §2.1c defect-class hook — yes or no        §2.1c      ⛔ JP DECIDES
-  5. §2.4 labour-law review booked?             §2.4       ⛔ JP, 6 sessions
-  6. §2.5 Gazette figures re-verified?          §2.5       ⛔ JP, 6 sessions
-  7. §2.6 SAFEX licence conversations           §2.6       ⛔ JP DECIDES
-  8. §2.7 phone-only invitations                §2.7       ⛔ JP DECIDES
-  9. §2.8 object storage (blocks FR-108)        §2.8       ⛔ JP DECIDES
+  1. §2f #6 withinWithdrawal reader — BUILD      §2f/§2.3c  mine, a slice
+     WITH §2.3c (they share the surface)          (regulated → batched review)
+  2. §2.3b transfer reason / purchase clearing  §2.3b      ⛔ JP DECIDES (live)
+  3. §2.4 labour-law review booked?             §2.4       ⛔ JP — NO LONGER
+     (under §6 this gates Phase 3 DEPLOY, not its first line — book in parallel)
+  4. §2.5 Gazette figures re-verified?          §2.5       ⛔ per §6: batched,
+     (compliance-register.md tracks status; verify before Phase 3 DEPLOY)
+  5. §2.6 SAFEX licence conversations           §2.6       ⛔ JP DECIDES
+  6. §2.7 phone-only invitations                §2.7       ⛔ JP DECIDES
 
-  ✅ CLOSED THIS SESSION: §2f ×10 (§2g) · ADR-0009/0010 (§4 A11) ·
-     phase-2/breeding deleted · A9 snapshot-on-failure.
+  ✅ CLOSED/ACTIONED THIS SESSION: §2f ×10 (§2g) + fifth pass ×2 (§2h) ·
+     ADR-0009/0010 (§4 A11) · phase-2/breeding deleted · A9 snapshot ·
+     §2.1c defect-class hook INSTALLED (`e8c8155`) · §2.8 object storage →
+     deferred to a Phase-3 infra slice (JP) · compliance operating model set (§6).
 
-⛔ AGENTS ARE OWNER-TRIGGERED. `compliance-checker`/`reviewer`/`sync-auditor`
-are NEVER spawned unprompted (CLAUDE.md § "Compliance gate"). The ten fixes are
-regulated code and UNREVIEWED — the branch is not merge-ready until JP asks for
-the fifth pass and its findings are closed. Item 1 is a REQUEST, not a task.
+⛔ AGENTS ARE OWNER-TRIGGERED. Under the new cadence (§6) the review pass is
+BATCHED — one per phase, and before any deploy — not per session or per slice.
+Regulated work is written and committed freely; it is not merge-ready until the
+batched pass has run and its findings close. SAY SO when a slice reaches that line.
 
 NEXT SESSION, IN ORDER:
 
-  A. ASK JP FOR THE FIFTH PASS (item 1) over `b95eb09..HEAD` (the ten fixes).
-     Four passes running have each found real defects in the previous pass's
-     fixes; assume the fifth finds defects in THESE ten. Read its output
-     directly — do not accept a summary, and do not let the green gate stand
-     in for it. Do NOT spawn it; request it and say why.
-
-  B. BUILD §2f #6 + §2.3c AS ONE SLICE (item 2). #6 (`withinWithdrawal` read by
+  A. BUILD §2f #6 + §2.3c AS ONE SLICE (item 1). #6 (`withinWithdrawal` read by
      nothing) and §2.3c (retroactive compliance flag on a stored disposal when a
      later-arriving dose proves it was inside a withholding) share ONE surface:
      a residue/treatment compliance reader — "treatment register" and/or the
-     "needs your attention" screen. Build the flag's reader and the retroactive
-     flag together, with the client route (do NOT half-build a server-only
-     capability). This is regulated code → SAY SO and it waits on a compliance
-     pass before it is called merge-ready.
+     "needs your attention" screen. Build the reader AND the retroactive flag
+     together, WITH the client route (do NOT half-build a server-only capability).
+     Regulated → it waits on the batched review before merge-ready.
+
+  B. ANSWER §2.3b WITH JP (item 2) before it is built — it is a modelling
+     decision (a `transfer` tally reason mob→mob carrying the withholding across;
+     whether a purchase records a DECLARED seller withdrawal or "unknown history").
+     My recommendation is on record in the session hand-off.
 
   SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
   code, then keep it — and check the CLAIM as well as the code.
@@ -781,10 +819,61 @@ NEXT SESSION, IN ORDER:
 ⛔ DO NOT START B7's GPS boundary walk or any other new feature until 1–2 are
 closed. It is the largest named remainder and it will still be there.
 
-Phase 1 has NO open gaps. Phase 3's checklist EXISTS, but §2.4 (labour-law
-review) and §2.5 (Gazette figures) gate its first line — both open six sessions.
-DO NOT seed regulatory_rates from the July 2026 table.
-
-§2.1c (defect-class hook) is still open and cheap — note it would be silent now,
-since the tree has no `toISOString().slice(0,10)` left. Install-now argument.
+Phase 1 has NO open gaps. **Phase 3 is NOW UNBLOCKED to BUILD under §6** — the
+mechanism (date-versioned `regulatory_rates`, lookup by `occurred_at`, the
+`PayrollRules` seam) is built with placeholder figures; §2.4/§2.5 gate the DEPLOY,
+not the first line. The FIRST Phase 3 slice is the production seed-GATE that
+refuses unverified rows (§6), plus one `compliance-checker` pass on the first
+payroll slice. DO NOT seed regulatory_rates from the July 2026 table into a
+production path; placeholders in dev/test only.
 ```
+
+---
+
+## 6. Compliance operating model (set 2026-07-30 by JP)
+
+**The problem.** Reading the Government Gazette for wage/UIF/threshold figures every session is heavy
+on tokens, and those figures change on KNOWN dates (minimum wage 1 March; threshold 1 May), not
+daily. **The decision:** build the compliance *mechanism* now with placeholder figures, verify the
+*figures* in batches, and let a gate stop an unverified figure ever reaching production.
+
+Three things get called "compliance" and cost differently:
+
+1. **The mechanism** — date-versioned `regulatory_rates`, lookup by `occurred_at`, jurisdiction from
+   the farm, the `PayrollRules` seam, "never hardcode a regulated number." This is CODE. It needs no
+   Gazette to build or test. **Build it now.**
+2. **The figures** — the actual numbers. This is DATA in `regulatory_rates` / reference tables. It
+   changes on known dates. **Verify in batches, tracked in
+   [`docs/00-business/compliance-register.md`](docs/00-business/compliance-register.md).**
+3. **The rules** — overtime against the right day's rate, a period spanning 1 March using both,
+   "net below floor → reject." `pnpm verify` cannot catch these. **One owner-triggered
+   `compliance-checker` pass on the first payroll slice, then batched per phase.**
+
+**What this changes:**
+
+- **Review cadence (was: fifth pass, per §5).** The fifth pass ran and is closed (§2h). From here,
+  `reviewer`/`sync-auditor`/`compliance-checker` run **BATCHED — one pass per phase and before any
+  deploy**, not per session or per slice. Still owner-triggered; still read the output directly.
+- **§2.4 / §2.5 no longer gate Phase 3's first LINE — they gate its DEPLOY.** Build Phase 3 against
+  placeholder figures now; book the labour-law review in parallel; verify the Gazette figures in one
+  batch before deploy. The `compliance-register.md` is the standing status ledger.
+- **A production seed-GATE (a Phase-3-opening slice) refuses `PLACEHOLDER`/unverified
+  `regulatory_rates` rows;** dev/test seed allows them. Until that gate exists, "do not deploy
+  unverified" is enforced by review, not code. This makes deferral SAFE — an unverified figure
+  physically cannot reach a real payslip.
+- **Verification is trigger-based:** when a figure's `next_review` passes, before a phase deploy, or
+  every ~4 sessions as a backstop. Not every session.
+
+**Decisions JP made this session (2026-07-30), for the record:**
+
+| # | Decision |
+|---|---|
+| Compliance model | ✅ Adopt: register + placeholders + production deploy-gate (above). |
+| Review cadence | ✅ Fifth pass now (done, §2h), then batched per-phase / pre-deploy. |
+| §2.1c defect-class hook | ✅ Install both patterns, warn-only. Done — `e8c8155`, `.claude/hooks/defect-classes.sh`. |
+| §2.8 object storage (FR-108 photos) | ✅ Defer to a dedicated Phase-3 infrastructure slice; photos stay unbuilt until then (the evidence pack already says "photo not attached", so nothing lies). |
+
+**Still open for JP (not decided this session):** §2.3b (transfer reason / purchase clearing — a
+modelling decision, the live one), §2.6 (SAFEX licence — my note: start the conversation in Phase 4
+per ADR-0009, defer now), §2.7 (phone-only invitations — my note: "handed over in person" is the
+honest answer; no new channel, SMS stays ruled out).

@@ -338,7 +338,13 @@ export function RecordLossScreen() {
                 </div>
               )}
 
-              {intoFoodChain && (
+              {/* ⭐ Asked for a DEATH too, not only a sale or slaughter. A death is judged on the
+                  day it happened — an animal that died inside a withholding, written up after the
+                  clear date, is flagged only if the true day reaches the server. Stamping today
+                  loses that fact silently, and there was no way in the product to record the real
+                  day. The GROUP path (AdjustMobScreen) has always asked when; the individual path
+                  did not. `missing` keeps its own last-seen day below. */}
+              {(outcome === 'died' || intoFoodChain) && (
                 <div className="mb-4 flex flex-col">
                   <label htmlFor="disposalDay" className="mb-1 text-label uppercase text-soil-700">
                     {t('loss.disposalDay')}

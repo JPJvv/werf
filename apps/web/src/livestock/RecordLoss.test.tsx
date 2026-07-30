@@ -425,6 +425,35 @@ describe('recording a loss', () => {
     });
   });
 
+  it('⭐ lets a DEATH be back-dated to the day it happened, not stamped today', async () => {
+    // The day input was rendered only for a sale or slaughter, so a `died` outcome always stamped
+    // today. A death INSIDE a withholding, written up after the clear date, then reached the server
+    // dated wrong — carrying no `withinWithdrawal` flag — and there was no way in the product to
+    // record the true day. The group path (AdjustMobScreen) has always asked when; this one did not.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Died' }));
+
+    // The day is now ASKED for a death too, and defaults to today.
+    const day = screen.getByLabelText(/what day/i) as HTMLInputElement;
+    expect(day.value).toBe(farmToday());
+
+    await user.clear(day);
+    await user.type(day, '2026-07-18');
+    await user.type(screen.getByLabelText(/cause/i), 'Bloat');
+    await user.click(screen.getByRole('button', { name: /record death/i }));
+
+    // Stamped midday on the day the farmer gave, so the instant cannot slide across a zone.
+    expect(storedEvents().find((e) => e['type'] === 'death')?.['occurredAt']).toBe(
+      '2026-07-18T12:00:00.000Z',
+    );
+  });
+
   it('⭐ records a DEATH inside a withholding — and says so rather than saying nothing', async () => {
     // A death is never refused: refusing to record a fact is the worse failure. But "Died" sits one
     // tap from the blocked "Slaughtered", so silence here teaches the workaround — stopped on one

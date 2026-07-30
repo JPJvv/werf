@@ -35,7 +35,16 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:4173',
-    trace: 'on-first-retry',
+    /**
+     * ⭐ Capture what actually rendered when a test FAILS. A9 has been open four sessions because
+     * the two light-theme axe failures left no evidence to read — `on-first-retry` never fired,
+     * since retries are deliberately 0 above, so every red run was diagnosed by guesswork. That is
+     * the mistake A8 names: never let a failure decide anything without capturing it first.
+     * `retain-on-failure` records every test and keeps the trace (a full DOM snapshot) only for the
+     * ones that fail; the screenshot names the missing second-factor choice UI at a glance.
+     */
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

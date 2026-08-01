@@ -21,6 +21,7 @@ import { WeaningSessionScreen } from './livestock/WeaningSessionScreen';
 import { RecordHealthScreen } from './livestock/RecordHealthScreen';
 import { RecordLossScreen } from './livestock/RecordLossScreen';
 import { TheftIncidentsScreen } from './livestock/TheftIncidentsScreen';
+import { AttentionScreen } from './livestock/AttentionScreen';
 import { ReportTheftScreen } from './livestock/ReportTheftScreen';
 import { LandScreen } from './land/LandScreen';
 import { AddLandUnitScreen } from './land/AddLandUnitScreen';
@@ -86,6 +87,10 @@ export function App() {
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
                 {/* Reached from the sync strip when the server has refused something (FR-009). */}
                 <Route path="not-sent" element={<NotSentScreen />} />
+                {/* The residue register (FR-131). Farm-level, not livestock-level: it answers for
+                    everything that left the herd, and it is reached from home rather than from a
+                    tile — the grid's tile set is fixed and generated from the enterprise types. */}
+                <Route path="attention" element={<AttentionScreen />} />
                 <Route path="settings" element={<SettingsLayout />}>
                   <Route index element={<Navigate to="appearance" replace />} />
                   <Route path="appearance" element={<AppearanceSettings />} />

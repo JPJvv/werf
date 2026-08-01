@@ -703,6 +703,34 @@ const en = {
   'rain.saved': 'saved — your work is saved',
   'rain.season': 'this season',
   'rain.back': 'Back to home',
+  // The residue register (FR-131) — COMPLIANCE-GATED. Copy rules apply hardest here: what
+  // happened, why, what now, and never a reprimand. Every line on this screen describes something
+  // the farmer already did, and most of it they could not have known at the time.
+  'residue.link': 'Needs your attention',
+  'residue.title': 'Needs your attention',
+  'residue.intro':
+    'Head that left the herd while it was still inside a meat withdrawal. Nothing here is a refusal — it is the record, so you can answer for it if you are ever asked.',
+  'residue.empty': 'Nothing needs your attention. No head has left inside a withdrawal.',
+  'residue.foodChain': 'Meat from this must not go into the food chain.',
+  'residue.notFoodChain': 'This did not go into the food chain.',
+  'residue.clearFrom': 'The withdrawal ran to',
+  'residue.clearUnknown': 'The withdrawal period is no longer on record.',
+  'residue.head': 'head',
+  'residue.animal': 'One animal',
+  'residue.group': 'Group',
+  // The distinction the whole register turns on, and it is written for the farmer rather than for
+  // an auditor: one of these the app told them about, the other nothing could have caught.
+  'residue.lateDiscovery':
+    'This was only found later, when a treatment recorded on another phone reached us. Nothing on your phone could have known at the time.',
+  'residue.knownAtCapture': 'You were told about this when you recorded it.',
+  'residue.notSentYet': 'Saved on this phone. Not sent yet.',
+  'residue.offline':
+    'This list was last updated when you had signal. Newer entries may be missing.',
+  'residue.back': 'Back to home',
+  'residue.type.sale': 'Sold',
+  'residue.type.death': 'Died',
+  'residue.type.slaughter': 'Slaughtered',
+  'residue.type.theft': 'Stolen',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -1287,6 +1315,29 @@ const af: Record<TranslationKey, string> = {
   'rain.saved': 'gestoor — jou werk is gestoor',
   'rain.season': 'hierdie seisoen',
   'rain.back': 'Terug na tuis',
+  'residue.link': 'Kort jou aandag',
+  'residue.title': 'Kort jou aandag',
+  'residue.intro':
+    'Diere wat die kudde verlaat het terwyl hulle nog binne ’n vleisonttrekkingstydperk was. Niks hier is ’n weiering nie — dit is die rekord, sodat jy kan antwoord as daar ooit gevra word.',
+  'residue.empty': 'Niks kort jou aandag nie. Geen diere het binne ’n onttrekking uitgegaan nie.',
+  'residue.foodChain': 'Vleis hiervan mag nie in die voedselketting ingaan nie.',
+  'residue.notFoodChain': 'Dit het nie in die voedselketting ingegaan nie.',
+  'residue.clearFrom': 'Die onttrekking het geloop tot',
+  'residue.clearUnknown': 'Die onttrekkingstydperk is nie meer op rekord nie.',
+  'residue.head': 'stuks',
+  'residue.animal': 'Een dier',
+  'residue.group': 'Groep',
+  'residue.lateDiscovery':
+    'Dit is eers later opgetel, toe ’n behandeling wat op ’n ander foon aangeteken is, ons bereik het. Niks op jou foon kon dit destyds geweet het nie.',
+  'residue.knownAtCapture': 'Jy is hiervan vertel toe jy dit aangeteken het.',
+  'residue.notSentYet': 'Op hierdie foon gestoor. Nog nie gestuur nie.',
+  'residue.offline':
+    'Hierdie lys is laas bygewerk toe jy sein gehad het. Nuwer inskrywings kan ontbreek.',
+  'residue.back': 'Terug na tuis',
+  'residue.type.sale': 'Verkoop',
+  'residue.type.death': 'Gevrek',
+  'residue.type.slaughter': 'Geslag',
+  'residue.type.theft': 'Gesteel',
 };
 
 export const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

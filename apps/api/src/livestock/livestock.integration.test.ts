@@ -2575,6 +2575,383 @@ describe('weight capture (FR-140)', () => {
 
       expect(sold.type).toBe('sale');
     });
+
+    it('⭐ does not judge a disposal against a dose given AFTER it', async () => {
+      // Sell on the 1st, remember it on the 20th, and the flock dipped on the 10th made the record
+      // unsaveable: the guard took the latest clear date on the animal regardless of when the dose
+      // was drawn, so a sale five days before a needle went in was refused as residue. Safe in the
+      // one direction that matters — an animal that left the herd before the dose cannot be
+      // carrying it — and it is the same "refuse an honest back-dated capture" class the as-at fold
+      // has already been fixed for twice.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct(); // meat 28d
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      const sold = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-15T06:00:00.000Z' }),
+      );
+
+      expect(sold.type).toBe('sale');
+    });
+
+    it('still blocks a disposal on the SAME day as the dose', async () => {
+      // The other end of the boundary, and it is inclusive on purpose: dipped and sold on one day
+      // is a real residue question, and a food-safety boundary fails toward blocking.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct();
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      await expect(
+        service.recordSale(
+          a.userId,
+          saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-20T14:00:00.000Z' }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
+  // ── The residue register (FR-131) — COMPLIANCE-GATED ──────────────────────────────────
+  describe('residue register (FR-131)', () => {
+    it('⭐ flags a disposal a LATER-ARRIVING dose proves was inside a withholding', async () => {
+      // The cross-device race, which no send-ordering can close. Device A records Monday's dip.
+      // Device B has never seen it and tallies forty head to the abattoir on Tuesday. Both captures
+      // are honest and offline; the server sees them in ARRIVAL order and the disposal legitimately
+      // lands first, passes the guard, and is stored clean. Refusing the dose days later would only
+      // lose the record of a dip that happened, so the disposal is kept and surfaced here instead.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const productId = await aVetProduct({ species: ['sheep'] }); // meat 28d
+
+      // Arrives FIRST, and passes: nothing on the farm withholds anything yet.
+      const tally = await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-08-16T06:00:00.000Z',
+          reason: 'slaughter',
+          count: 40,
+        }),
+      );
+      expect(tally.payload).not.toMatchObject({ withinWithdrawal: true });
+
+      // The other phone reconnects. Dipped on the 10th → clear from 2026-09-07.
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId,
+          productId,
+          method: 'plunge',
+          occurredAt: '2026-08-10T06:00:00.000Z',
+          administeredOn: '2026-08-10',
+        }),
+      );
+
+      const register = await service.residueRegister(a.userId, a.farmId);
+
+      expect(register).toHaveLength(1);
+      expect(register[0]).toMatchObject({
+        eventId: tally.id,
+        eventType: 'tally',
+        reason: 'slaughter',
+        mobId,
+        occurredOn: '2026-08-16',
+        intoFoodChain: true,
+        clearFrom: '2026-09-07',
+        withinWithdrawal: true,
+        // ⭐ The point of the pair. Nothing could have caught this at capture, and saying so is
+        // what separates "the product warned them and they proceeded" from "no device could know".
+        knownAtCapture: false,
+      });
+    });
+
+    it('⭐ surfaces the withinWithdrawal flag stamped on a death, which nothing read before', async () => {
+      // A blocked "Slaughtered" sits one tap from an unblocked "Died". The death is recorded — a
+      // fact must never be refused — and the circumstance was stamped onto the payload by a path
+      // with no reader anywhere: no screen, no report, no test. This is that reader.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct();
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+      const death = await service.recordDeath(
+        a.userId,
+        deathBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-25T06:00:00.000Z' }),
+      );
+      expect(death.payload).toMatchObject({ withinWithdrawal: true });
+
+      const register = await service.residueRegister(a.userId, a.farmId);
+
+      expect(register).toHaveLength(1);
+      expect(register[0]).toMatchObject({
+        eventId: death.id,
+        eventType: 'death',
+        animalId,
+        occurredOn: '2026-07-25',
+        // A death puts nothing into the food chain. It is on the register for the record, and the
+        // row says which it is rather than the register quietly conflating the two.
+        intoFoodChain: false,
+        clearFrom: '2026-08-17',
+        withinWithdrawal: true,
+        knownAtCapture: true,
+      });
+    });
+
+    it('⭐ does not flag a disposal that happened BEFORE the dose', async () => {
+      // The bound the whole register rests on. Head that left on the 15th cannot be carrying a dose
+      // drawn on the 20th, and a register full of impossible entries is worse than no register: the
+      // one line that matters gets read past.
+      //
+      // ⭐ The disposal sits BETWEEN two doses on purpose. A sale before every dose on the farm is
+      // already outside the dosed span and never reaches the derivation, so a test shaped that way
+      // passes with the bound removed and proves nothing. Here the span covers the sale and only
+      // the per-dose day comparison can exclude it — an earlier, long-cleared treatment on the same
+      // animal is exactly the ordinary history that makes this the real case.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const longAgo = await aVetProduct({ name: 'Short-hold (test)', meatWithdrawalDays: 2 });
+      const productId = await aVetProduct(); // meat 28d
+
+      // Cleared 2026-06-03, and it is what puts 2026-07-15 inside the farm's dosed span.
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId: longAgo,
+          occurredAt: '2026-06-01T06:00:00.000Z',
+          administeredOn: '2026-06-01',
+        }),
+      );
+      await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-15T06:00:00.000Z' }),
+      );
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      expect(await service.residueRegister(a.userId, a.farmId)).toEqual([]);
+    });
+
+    it('leaves a disposal on or after the clear date off the register', async () => {
+      // The guard permitted it, and the register must agree with the guard rather than second-guess
+      // it — one computation, or the two drift and the register starts contradicting the refusal it
+      // exists to explain.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct();
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+      await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-17T06:00:00.000Z' }),
+      );
+
+      expect(await service.residueRegister(a.userId, a.farmId)).toEqual([]);
+    });
+
+    it('flags a SALE the guard could not have refused, and never claims it was known', async () => {
+      // A sale inside a withholding is refused at capture, so a flagged one is by construction a
+      // late discovery. There is no `withinWithdrawal` on the trade payload to read and there must
+      // not be one — claiming a sale was flagged at capture would assert the guard fired when it
+      // provably did not.
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct();
+
+      const sale = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-25T06:00:00.000Z' }),
+      );
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      const register = await service.residueRegister(a.userId, a.farmId);
+      expect(register).toHaveLength(1);
+      expect(register[0]).toMatchObject({
+        eventId: sale.id,
+        eventType: 'sale',
+        intoFoodChain: true,
+        withinWithdrawal: true,
+        knownAtCapture: false,
+      });
+    });
+
+    it('ignores tally reasons that put head IN — a purchase is not a disposal', async () => {
+      // `recount`, `birth` and `purchase` do not take head out, so no residue question arises for
+      // them. The reasons come from TALLY_DECREASES rather than a list restated in the service, so
+      // a reason added later cannot quietly miss this.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const productId = await aVetProduct({ species: ['sheep'] });
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId,
+          productId,
+          method: 'plunge',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-07-25T06:00:00.000Z',
+          reason: 'purchase',
+          count: 12,
+          counterparty: 'Buyer',
+        }),
+      );
+
+      expect(await service.residueRegister(a.userId, a.farmId)).toEqual([]);
+    });
+
+    it('flags a THEFT tally as a record, not as a food-chain event', async () => {
+      // Theft reduces head identically and is never refused. It belongs on the register because a
+      // residue traceback asks where treated head went, and "we do not know" is an answer that has
+      // to be visible rather than absent.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const productId = await aVetProduct({ species: ['sheep'] });
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId,
+          productId,
+          method: 'plunge',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-07-25T06:00:00.000Z',
+          reason: 'theft',
+          count: 6,
+        }),
+      );
+
+      const register = await service.residueRegister(a.userId, a.farmId);
+      expect(register).toHaveLength(1);
+      expect(register[0]).toMatchObject({
+        eventType: 'tally',
+        reason: 'theft',
+        intoFoodChain: false,
+        withinWithdrawal: true,
+        knownAtCapture: true,
+      });
+    });
+
+    it('is empty on a farm that has never recorded a dose', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      await service.recordSale(a.userId, saleBody({ farmId: a.farmId, animalId }));
+
+      expect(await service.residueRegister(a.userId, a.farmId)).toEqual([]);
+    });
+
+    it('never shows another farm its neighbour’s disposals', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const animalId = await anAnimal(a.farmId);
+      const productId = await aVetProduct();
+
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({
+          farmId: a.farmId,
+          animalId,
+          productId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+      await service.recordDeath(
+        a.userId,
+        deathBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-25T06:00:00.000Z' }),
+      );
+
+      expect(await service.residueRegister(a.userId, a.farmId)).toHaveLength(1);
+      // Bravo's own register is empty, and Alpha's farm is not readable at all: through the
+      // RLS-bound connection it is invisible, which reads as "not found" — the same answer as a
+      // farm that does not exist.
+      expect(await service.residueRegister(b.userId, b.farmId)).toEqual([]);
+      await expect(service.residueRegister(b.userId, a.farmId)).rejects.toThrow(NotFoundError);
+    });
   });
 
   // ── Stock-theft incident + evidence pack (FR-603/605) — COMPLIANCE-GATED ───────────────

@@ -8,27 +8,9 @@
 
 import type { StoredVetProduct } from './LocalVetProducts';
 import type { StoredSpeciesGestation } from './LocalSpeciesGestation';
-import { AuthApiError, NetworkUnavailableError } from '../auth/api';
-
-const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? '/api';
-
-/** Fetch a reference list, with the one error taxonomy every inbound read here shares. */
-async function readReference<T>(path: string, accessToken: string, whatFailed: string): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-  } catch {
-    throw new NetworkUnavailableError();
-  }
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => ({}));
-    const { code, message } = payload as { code?: string; message?: string };
-    throw new AuthApiError(code ?? 'UNKNOWN', message ?? whatFailed, response.status);
-  }
-  return (await response.json()) as T;
-}
+// The transport and the one error taxonomy every inbound read shares — the same file the outbound
+// half lives in, so the two cannot come to disagree about what a 401 or a dropped socket means.
+import { readFromApi as readReference } from '../sync/captureApi';
 
 export const referenceApi = {
   async listVeterinaryProducts(farmId: string, accessToken: string): Promise<StoredVetProduct[]> {

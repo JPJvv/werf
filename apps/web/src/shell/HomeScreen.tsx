@@ -4,6 +4,8 @@ import { useAuth } from '../auth/AuthProvider';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { HomeGrid } from '../home/HomeGrid';
 import { useHerdSummary, useWithholdingCount } from '../livestock/herd';
+import { useResidueRegister } from '../livestock/LocalResidueRegister';
+import { useLocalResidueFlags } from '../livestock/residue';
 import { useLandUnits } from '../land/LocalLand';
 import { useSeasonRainfall } from '../rainfall/LocalRainfall';
 import { FirstRunGuide } from './FirstRunGuide';
@@ -29,6 +31,18 @@ export function HomeScreen() {
   const withholding = useWithholdingCount();
   const camps = useLandUnits();
   const seasonRain = useSeasonRainfall();
+  // FR-131. The register is deliberately not a tile: the grid is generated from the farm's
+  // enterprise types and its order is fixed, and this belongs to no enterprise — everything that
+  // left the herd is in scope. It is counted across BOTH sources for the same reason the screen
+  // renders both: the server knows about the other phone's dip, and only this device knows about
+  // the capture it made twenty minutes ago in a dead zone. Deduplicated on the event id, because a
+  // row present in both is one thing that happened, not two.
+  const server = useResidueRegister();
+  const localFlags = useLocalResidueFlags();
+  const needsAttention = new Set([
+    ...server.map((f) => f.eventId),
+    ...localFlags.map((f) => f.eventId),
+  ]).size;
 
   // A signed-in user with no farm is not a state the product can reach: registration
   // creates a business and its first farm in one transaction, and Phase 1 cannot delete a
@@ -72,6 +86,20 @@ export function HomeScreen() {
           </span>
         )}
       </p>
+
+      {/* Shown ONLY when there is something on it. A permanent link reading "Needs your attention"
+          next to a zero teaches people it never means anything, and then the one week it does mean
+          something they walk past it. Absent is the honest state for an empty register. */}
+      {needsAttention > 0 && (
+        <p className="px-4 pb-2">
+          <Link to="/attention" className="text-body text-dam-700">
+            {t('residue.link')}
+          </Link>
+          <span className="ml-3 text-body text-soil-700">
+            <span className="font-data tabular-nums text-soil-900">{needsAttention}</span>
+          </span>
+        </p>
+      )}
       <FirstRunGuide enterpriseTypes={enterpriseTypes} />
     </>
   );

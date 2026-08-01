@@ -355,3 +355,80 @@ export const recordMobTallyRequestSchema = z.object({
   notes: z.string().min(1).nullable().default(null),
 });
 export type RecordMobTallyRequest = z.infer<typeof recordMobTallyRequestSchema>;
+
+/**
+ * One entry on the residue register (FR-131) — COMPLIANCE-GATED. A disposal that took head out of
+ * the herd while something standing in it was still inside an active MEAT withholding.
+ *
+ * ⭐ This is a READ contract, and it is the answer to two separate holes that turn out to be one
+ * surface.
+ *
+ * The first is that `withinWithdrawal` was being STAMPED on death and tally payloads and read by
+ * nothing: a farmer who was stopped on "Slaughtered", tapped "Died" instead and carried on had that
+ * circumstance recorded in a column an auditor would have needed hand-written SQL to find.
+ *
+ * The second is the cross-device race, which no ordering can close. Device A records Monday's dip.
+ * Device B, which has never seen it, tallies forty head to the abattoir on Tuesday. Both captures
+ * are honest, both are offline, and neither device can know about the other. The server sees them in
+ * arrival order and the disposal may legitimately arrive FIRST, pass the guard, and be stored clean.
+ * A refusal days later would be the wrong answer — the truck has gone; refusing the record only
+ * loses it — so the disposal is kept and the circumstance is surfaced here instead.
+ *
+ * ⭐ `knownAtCapture` and `withinWithdrawal` are two different facts and are deliberately not
+ * collapsed. `withinWithdrawal` is what is true NOW, re-derived from the whole log; `knownAtCapture`
+ * is whether the server could already say so when the disposal was written. The pair is what
+ * distinguishes "the product told the farmer and they proceeded" from "nobody could have known" —
+ * and the second is the one that says a guard was structurally unable to fire, which is the finding
+ * an auditor and a residue traceback both actually want.
+ */
+export const residueFlagSchema = z.object({
+  /** The stored disposal event this concerns. */
+  eventId: uuidSchema,
+  /** `sale`, `death` or `tally` — the three ways head leaves in Phase 2. */
+  eventType: z.enum(['sale', 'death', 'tally']),
+  /** The individual it happened to, or null for a group-only tally. */
+  animalId: uuidSchema.nullable(),
+  /** The mob it happened to, or null for an individual disposal. */
+  mobId: uuidSchema.nullable(),
+  /** Why the head left, for a tally. Absent on an individual sale or death. */
+  reason: tallyReasonSchema.optional(),
+  occurredAt: timestampSchema,
+  /** The FARM-LOCAL day the disposal happened. Every withdrawal comparison is made on this. */
+  occurredOn: dateSchema,
+  /**
+   * True when the head went into the FOOD CHAIN — a sale, a slaughter. A death or a theft reduces
+   * the count identically and is on the register for the record, but it is not a residue event and
+   * must never be refused; conflating the two is how a guard teaches people to work around it.
+   */
+  intoFoodChain: z.boolean(),
+  /**
+   * The day the subject clears its withholding, as the server now knows it. Null when the stored
+   * event carries the flag but no dose now backs it — a dose soft-deleted as a correction since.
+   * The row stays on the register: a stamped circumstance that has stopped being derivable is
+   * itself a fact, and dropping it silently would erase an audit trail rather than explain it.
+   */
+  clearFrom: dateSchema.nullable(),
+  /** True when the disposal day falls inside that withholding — re-derived, not read off the row. */
+  withinWithdrawal: z.boolean(),
+  /**
+   * True when the stored event already carried the flag, i.e. the server could see the dose when
+   * the disposal was written. False means a later-arriving dose proved this after the fact — the
+   * cross-device case, and the one nothing in the product could have caught at capture.
+   */
+  knownAtCapture: z.boolean(),
+});
+export type ResidueFlag = z.infer<typeof residueFlagSchema>;
+
+/**
+ * ⭐ The same contract as it exists ON THE WIRE and in a device's cache — `occurredAt` an ISO
+ * string, not a `Date`.
+ *
+ * `timestampSchema` parses a string INTO a Date, so `ResidueFlag` describes the shape only after a
+ * parse. A client that fetched this list and typed it as `ResidueFlag` would be holding strings and
+ * calling Date methods on them, and the crash would arrive on a COLD START — the register survives
+ * in `localStorage`, JSON has no Date, and the round-trip hands back exactly what it was given.
+ * That is the same reason every capture store in this app keeps `occurredAt` as a string.
+ *
+ * Derived with `z.input` rather than hand-written, so it cannot drift from the schema it mirrors.
+ */
+export type ResidueFlagJson = z.input<typeof residueFlagSchema>;

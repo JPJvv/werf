@@ -21,7 +21,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, gt, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
@@ -36,7 +36,9 @@ import {
   veterinaryProducts,
   type AppDb,
 } from '@werf/db';
-import { ConflictError, NotFoundError, ValidationError, type schemas } from '@werf/core';
+// `schemas` is imported as a VALUE, not just a type: the register below reads `TALLY_DECREASES`
+// from it rather than restating which reasons take head out, so the two cannot drift apart.
+import { ConflictError, NotFoundError, ValidationError, schemas } from '@werf/core';
 import {
   assembleEvidencePack,
   isWithinWithdrawal,
@@ -566,6 +568,8 @@ export class LivestockService {
       // "Died" is one tap from the blocked "Slaughtered", so saying nothing here would teach the
       // workaround: stopped on one button, the farmer taps the next, and the residue leaves with
       // nothing anywhere showing it was ever in question. The fact is kept; so is the context.
+      const deathJurisdiction = await farmJurisdiction(tx, input.farmId);
+      const deathDay = farmLocalDay(input.occurredAt, deathJurisdiction);
       const withinWithdrawal =
         input.slaughtered !== true &&
         isWithinWithdrawal(
@@ -573,9 +577,10 @@ export class LivestockService {
             tx,
             input.farmId,
             input.animalId,
-            await farmJurisdiction(tx, input.farmId),
+            deathJurisdiction,
+            deathDay,
           ),
-          farmLocalDay(input.occurredAt, await farmJurisdiction(tx, input.farmId)),
+          deathDay,
         );
 
       const base = {
@@ -1145,6 +1150,221 @@ export class LivestockService {
       });
     });
   }
+
+  /**
+   * The residue register (FR-131) — COMPLIANCE-GATED. Every disposal on this farm that took head
+   * out while something standing in it was still inside an active MEAT withholding.
+   *
+   * ⭐ This is the reader `withinWithdrawal` never had. The flag was being stamped on death and
+   * tally payloads by the two paths above and read by nothing at all — no screen, no report, no
+   * test — so the circumstance a farmer was warned about at the crush was recorded in a column an
+   * auditor would have needed hand-written SQL to reach. A field written and never read is the
+   * "null in every record because nothing ever asked" defect wearing the other hat.
+   *
+   * ⭐ AND IT IS RE-DERIVED FROM THE WHOLE LOG, never read off the stored flag. That is what closes
+   * the cross-device race, which no send-ordering can: device A records Monday's dip, device B —
+   * which has never seen it — tallies forty head to the abattoir on Tuesday. Both captures are
+   * honest and offline; the server sees them in ARRIVAL order and the disposal may legitimately
+   * land first, pass the guard, and be stored clean. Stamping the disposal when the dose later
+   * arrives is the shape this repo has already ruled out for head counts and for the same reason:
+   * it steps a stored value on arrival, so it depends on the order things turn up in and is wrong
+   * whenever a dose is corrected, soft-deleted, or lands after the register was last read. Folding
+   * the log answers the question from scratch every time and cannot drift.
+   *
+   * ⭐ It runs the SAME `latestMeatClearForAnimal` / `latestMeatClearForMob` the guards run. §2h's
+   * sharpest lesson was two mechanisms judging one food-safety boundary through two computations,
+   * one of them narrower; there is exactly one here, so the register cannot quietly disagree with
+   * the refusal it explains.
+   *
+   * A death or a theft is on the register and is NOT a refusal, and the distinction is carried on
+   * the row rather than by omitting it. Refusing to record a death would refuse a FACT, which is
+   * worse than recording it and is how a guard teaches people to work around it — a blocked
+   * "Slaughtered" sits one tap from an unblocked "Died". `intoFoodChain` is what separates the
+   * residue question from the record.
+   */
+  async residueRegister(userId: string, farmId: string): Promise<schemas.ResidueFlag[]> {
+    return this.app.asUser(userId, async (tx) => {
+      // Membership and the law this farm runs under, in one lookup. A farm the caller cannot see is
+      // invisible through the RLS-bound connection and reads as "not found" — the same answer as
+      // one that does not exist.
+      const jurisdiction = await farmJurisdiction(tx, farmId);
+
+      // ⭐ The span of days ANY dose on this farm can reach. A disposal outside it cannot be inside
+      // any withholding, so the per-subject derivation — which reconstructs mob membership — never
+      // runs for it. A farm that has never recorded a dose with a meat withdrawal costs one query
+      // and returns an empty register, which is the ordinary state of most farms most of the time.
+      const dosed = await dosedSpan(tx, farmId, jurisdiction);
+      if (dosed === null) return [];
+
+      const rows = await tx
+        .select({
+          id: events.id,
+          type: events.type,
+          animalId: events.animalId,
+          mobId: events.mobId,
+          occurredAt: events.occurredAt,
+          payload: events.payload,
+        })
+        .from(events)
+        .where(
+          and(
+            eq(events.farmId, farmId),
+            inArray(events.type, ['sale', 'death', 'tally']),
+            isNull(events.deletedAt),
+          ),
+        )
+        // Newest first: a farmer opening this screen is dealing with what just happened, and an
+        // auditor reads backwards from the consignment in front of them. A TOTAL order, `(occurred_at,
+        // id)` reversed, because day-grained captures tie on the instant by construction.
+        .orderBy(desc(events.occurredAt), desc(events.id));
+
+      // The clear date depends only on the subject and the day, so it is worth remembering: a
+      // dosing run produces many disposals out of one mob on one day, and each would otherwise
+      // rebuild the same membership intervals.
+      const clearCache = new Map<string, string | undefined>();
+      const clearFor = async (
+        subject: { animalId: string | null; mobId: string | null },
+        day: string,
+        occurredAt: Date,
+      ): Promise<string | undefined> => {
+        const key = `${subject.animalId ?? ''}|${subject.mobId ?? ''}|${day}`;
+        if (clearCache.has(key)) return clearCache.get(key);
+        const clear =
+          subject.animalId !== null
+            ? await latestMeatClearForAnimal(tx, farmId, subject.animalId, jurisdiction, day)
+            : subject.mobId !== null
+              ? await latestMeatClearForMob(tx, farmId, subject.mobId, occurredAt)
+              : undefined;
+        clearCache.set(key, clear);
+        return clear;
+      };
+
+      const register: schemas.ResidueFlag[] = [];
+      for (const row of rows) {
+        const disposal = disposalOf(row);
+        if (disposal === null) continue;
+
+        const occurredOn = farmLocalDay(row.occurredAt, jurisdiction);
+        // Outside the span no dose can reach it. Cheap, and it is a bound rather than a guess: it
+        // is derived from the farm's own dosing history, not from a window invented in code.
+        const reachable = occurredOn >= dosed.from && occurredOn <= dosed.to;
+
+        const clearFrom = reachable
+          ? ((await clearFor(row, occurredOn, row.occurredAt)) ?? null)
+          : null;
+        const withinWithdrawal = isWithinWithdrawal(clearFrom ?? undefined, occurredOn);
+
+        // ⭐ Both halves. The derived answer is the live one and catches the late-arriving dose; the
+        // stored flag is kept because a flag that has stopped being derivable — its dose corrected
+        // away since — is still something that was written into an audit trail, and dropping it
+        // silently would erase the record instead of explaining it.
+        if (!withinWithdrawal && !disposal.knownAtCapture) continue;
+
+        register.push({
+          eventId: row.id,
+          eventType: disposal.eventType,
+          animalId: row.animalId,
+          mobId: row.mobId,
+          ...(disposal.reason === undefined ? {} : { reason: disposal.reason }),
+          occurredAt: row.occurredAt,
+          occurredOn,
+          intoFoodChain: disposal.intoFoodChain,
+          clearFrom,
+          withinWithdrawal,
+          knownAtCapture: disposal.knownAtCapture,
+        });
+      }
+      return register;
+    });
+  }
+}
+
+/**
+ * What kind of disposal a stored event is, or `null` when it is not one.
+ *
+ * A `purchase`, a `birth` and a `recount` are tally reasons that do not take head out of the herd,
+ * so no residue question arises for them — and a `recount` inside a withholding is noise on a
+ * register whose whole value is that every line on it is worth reading. `TALLY_DECREASES` is read
+ * from the schema rather than restated here, so a reason added later cannot quietly miss this.
+ */
+function disposalOf(row: { type: string; payload: unknown }): {
+  readonly eventType: 'sale' | 'death' | 'tally';
+  readonly reason?: schemas.TallyReason;
+  readonly intoFoodChain: boolean;
+  readonly knownAtCapture: boolean;
+} | null {
+  const payload = row.payload as {
+    reason?: schemas.TallyReason;
+    slaughtered?: unknown;
+    withinWithdrawal?: unknown;
+  };
+  const knownAtCapture = payload.withinWithdrawal === true;
+
+  switch (row.type) {
+    case 'sale':
+      // A sale is refused at capture inside a withholding, so a flagged one is ALWAYS a late
+      // discovery — there is no `withinWithdrawal` on the trade payload to read and there should
+      // not be. That is the shape of the cross-device race, and it is why this register exists.
+      return { eventType: 'sale', intoFoodChain: true, knownAtCapture: false };
+    case 'death':
+      return {
+        eventType: 'death',
+        // A slaughter puts meat into the food chain; a death does not, and must never be refused.
+        intoFoodChain: payload.slaughtered === true,
+        knownAtCapture,
+      };
+    case 'tally': {
+      const reason = payload.reason;
+      if (reason === undefined) return null;
+      if (!(schemas.TALLY_DECREASES as readonly string[]).includes(reason)) return null;
+      return {
+        eventType: 'tally',
+        reason,
+        intoFoodChain: reason === 'sale' || reason === 'slaughter',
+        knownAtCapture,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The span of farm-local days any meat withholding on this farm covers — the earliest dose day and
+ * the latest clear date across every health event that carries one. `null` when nothing on the farm
+ * withholds meat at all.
+ *
+ * This is a NARROWING, not a rule: a disposal outside the span provably cannot sit inside any
+ * withholding, so skipping it changes no answer. It is derived from the farm's own dosing history
+ * rather than being a "last 90 days" window typed into code, which would be a regulated number in
+ * disguise and would silently drop the disposal an auditor came looking for.
+ */
+async function dosedSpan(
+  tx: CaptureTx,
+  farmId: string,
+  jurisdiction: string,
+): Promise<{ readonly from: string; readonly to: string } | null> {
+  const rows = await tx
+    .select({ payload: events.payload, occurredAt: events.occurredAt })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        inArray(events.type, ['treatment', 'vaccination', 'dip']),
+        isNull(events.deletedAt),
+      ),
+    );
+
+  let from: string | undefined;
+  let to: string | undefined;
+  for (const row of rows) {
+    const clear = (row.payload as { meatWithholdUntil?: unknown }).meatWithholdUntil;
+    if (typeof clear !== 'string') continue;
+    const day = doseDayOf(row, jurisdiction);
+    if (from === undefined || day < from) from = day;
+    if (to === undefined || clear > to) to = clear;
+  }
+  return from === undefined || to === undefined ? null : { from, to };
 }
 
 /**
@@ -1342,8 +1562,15 @@ async function assertClearOfMeatWithdrawal(
   occurredAt: Date,
 ): Promise<void> {
   const jurisdiction = await farmJurisdiction(tx, farmId);
-  const latestClear = await latestMeatClearForAnimal(tx, farmId, animalId, jurisdiction);
   const saleDay = farmLocalDay(occurredAt, jurisdiction);
+  const latestClear = await latestMeatClearForAnimal(
+    tx,
+    farmId,
+    animalId,
+    jurisdiction,
+    // The day being judged bounds the doses that can judge it. See `latestMeatClearForAnimal`.
+    saleDay,
+  );
   if (isWithinWithdrawal(latestClear, saleDay)) {
     throw new ValidationError(
       `This animal is within its meat withdrawal period until ${latestClear}; it cannot be sold for slaughter before then`,
@@ -1408,14 +1635,21 @@ async function latestMeatClearForMob(
   const jurisdiction = await farmJurisdiction(tx, farmId);
   const day = farmLocalDay(occurredAt, jurisdiction);
 
-  // Route 1: doses given to the MOB — the plunge dip, the mob vaccination.
-  let latestClear = await latestMeatClear(tx, farmId, eq(events.mobId, mobId));
+  // Route 1: doses given to the MOB — the plunge dip, the mob vaccination. Bounded by the disposal
+  // day for the same reason the individual route is: head that left on the 1st cannot be carrying a
+  // dose drawn on the 10th, and measuring it against one refuses an honest back-dated capture.
+  let latestClear = await latestMeatClear(
+    tx,
+    farmId,
+    eq(events.mobId, mobId),
+    (row) => doseDayOf(row, jurisdiction) <= day,
+  );
 
   // Route 2: doses that reached an animal STANDING IN this mob on the day. Its own treatments, and
   // any mob dose from a flock it was in at the time — an animal dipped in the dip camp and since
   // walked into this one carries its withholding with it.
   for (const memberId of await mobMembersOn(tx, farmId, mobId, day, jurisdiction)) {
-    const clear = await latestMeatClearForAnimal(tx, farmId, memberId, jurisdiction);
+    const clear = await latestMeatClearForAnimal(tx, farmId, memberId, jurisdiction, day);
     if (clear !== undefined && (latestClear === undefined || clear > latestClear)) {
       latestClear = clear;
     }
@@ -1506,6 +1740,20 @@ async function latestMeatClearForAnimal(
   farmId: string,
   animalId: string,
   jurisdiction: string,
+  /**
+   * ⭐ The day being judged. A dose given AFTER it cannot withhold it, and until this parameter
+   * existed nothing said so: the query took the latest clear date on the animal regardless of when
+   * the dose was given, so a disposal on the 1st was measured against a dip on the 10th.
+   *
+   * The visible cost was a refusal of an honest back-dated capture — sell five head on the 1st,
+   * remember it on the 20th, and the flock dipped on the 10th makes the record unsaveable — which
+   * is the same class this repo has already closed twice for the as-at fold. It is safe in the
+   * direction that matters: an animal that left the herd five days before a dose was drawn cannot
+   * be carrying that residue, so nothing is released early. The comparison is INCLUSIVE, because
+   * dipped-and-sold on one day is a real residue question and a food-safety boundary fails toward
+   * blocking.
+   */
+  onOrBefore: string,
 ): Promise<string | undefined> {
   const wasIn = await mobMembership(tx, farmId, animalId, jurisdiction);
 
@@ -1518,10 +1766,11 @@ async function latestMeatClearForAnimal(
       : or(eq(events.animalId, animalId), inArray(events.mobId, mobIds));
 
   return latestMeatClear(tx, farmId, subjectFilter, (row) => {
+    const doseDay = doseDayOf(row, jurisdiction);
+    if (doseDay > onOrBefore) return false;
     // An animal-subject event is the animal's own dose and always counts. A mob-subject event
     // counts only if the animal was in that mob on the DAY it was given.
     if (row.mobId === null) return true;
-    const doseDay = doseDayOf(row, jurisdiction);
     return wasIn.some(
       (m) =>
         m.mobId === row.mobId && doseDay >= m.fromDay && (m.toDay === null || doseDay <= m.toDay),

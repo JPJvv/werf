@@ -15,6 +15,7 @@ import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
 import { LocalMovesProvider } from '../livestock/LocalMoves';
 import { LocalHealthProvider } from '../livestock/LocalHealth';
 import { LocalVetProductsProvider } from '../livestock/LocalVetProducts';
+import { LocalResidueRegisterProvider } from '../livestock/LocalResidueRegister';
 import { LocalBreedingProvider } from '../livestock/LocalBreeding';
 import { LocalSpeciesGestationProvider } from '../livestock/LocalSpeciesGestation';
 import { LocalTheftProvider } from '../livestock/LocalTheft';
@@ -50,6 +51,10 @@ const CAPTURE_STORES = [
   LocalMovesProvider,
   LocalHealthProvider,
   LocalVetProductsProvider,
+  // Not a capture store — an INBOUND cache, like the product register beside it. It is here rather
+  // than around the one screen that reads it because the home link carries its count, and a count
+  // that only appears once you have opened the screen is a count nobody sees.
+  LocalResidueRegisterProvider,
   LocalBreedingProvider,
   LocalSpeciesGestationProvider,
   LocalTheftProvider,

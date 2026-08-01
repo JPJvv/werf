@@ -1,15 +1,18 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   StreamableFile,
 } from '@nestjs/common';
 import { schemas } from '@werf/core';
+import { z } from 'zod';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { AuthContext } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -22,6 +25,9 @@ import {
   type CapturedTheftIncident,
 } from './livestock.service';
 import { renderEvidencePackPdf } from './evidence-pack.pdf';
+
+/** The farm whose register is being read. RLS decides whether the caller may see it. */
+const residueRegisterQuerySchema = z.object({ farmId: schemas.uuidSchema });
 
 // No @UseGuards: AuthGuard is registered globally, so every route here is guarded by default.
 @Controller('livestock')
@@ -282,6 +288,27 @@ export class LivestockController {
     body: schemas.NewTheftIncident,
   ): Promise<CapturedTheftIncident> {
     return this.livestock.createTheftIncident(auth.userId, body);
+  }
+
+  /**
+   * The residue register (FR-131) — COMPLIANCE-GATED. Every disposal that took head out of the herd
+   * while it was inside a meat withholding, re-derived from the whole log rather than read off a
+   * stored flag.
+   *
+   * ⭐ A read, and it has to be one. The device can already answer this for its OWN captures — the
+   * at-capture guard does exactly that, offline, which is the only version of the rule that reaches
+   * the person who can still act on it. What a device cannot answer is what a SECOND phone recorded
+   * in a dead zone it has never heard of, and that is precisely the case that gets past the guard:
+   * one phone records the dip, the other tallies to the abattoir. Only the server has both. The
+   * client caches the result so the register still opens with no signal.
+   */
+  @Get('residue-register')
+  async residueRegister(
+    @CurrentUser() auth: AuthContext,
+    @Query(new ZodValidationPipe(residueRegisterQuerySchema))
+    query: z.infer<typeof residueRegisterQuerySchema>,
+  ): Promise<schemas.ResidueFlag[]> {
+    return this.livestock.residueRegister(auth.userId, query.farmId);
   }
 
   /**

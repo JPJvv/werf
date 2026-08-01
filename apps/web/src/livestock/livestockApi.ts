@@ -7,7 +7,7 @@
  */
 
 import type { schemas } from '@werf/core';
-import { postCapture as post } from '../sync/captureApi';
+import { postCapture as post, readFromApi } from '../sync/captureApi';
 import type { StoredWeight } from './LocalWeights';
 import type {
   StoredBirth,
@@ -38,6 +38,20 @@ const HEALTH_ENDPOINTS: Record<StoredHealthEvent['kind'], string> = {
 };
 
 export const livestockApi = {
+  /**
+   * The residue register (FR-131) — the ONE inbound read in this client, and the only livestock
+   * question the device cannot answer for itself. Every guard here runs locally because a rule the
+   * server alone can apply arrives after the truck has left; this one is different in kind, because
+   * it is about a capture made on ANOTHER phone that this one has never seen. The cache provider
+   * calls it opportunistically, never a capture path.
+   */
+  listResidueRegister: (farmId: string, token: string): Promise<schemas.ResidueFlagJson[]> =>
+    readFromApi<schemas.ResidueFlagJson[]>(
+      `/livestock/residue-register?farmId=${encodeURIComponent(farmId)}`,
+      token,
+      'Could not read the residue register',
+    ),
+
   createAnimal: (animal: schemas.NewAnimal, token: string): Promise<void> =>
     post('/livestock/animals', animal, token),
 

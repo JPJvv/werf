@@ -84,9 +84,21 @@ test('captures with the network off, survives a reload, and sends when the signa
   expect(stored.weights).toHaveLength(1);
 
   // ── The signal comes back. ──
+  // ⭐ POSTs only. `sent` means "captures that went up", and every assertion below reads it that
+  // way — the send ORDER, and that a second open re-sends nothing. This folder is no longer
+  // write-only: the residue register (FR-131) is an inbound GET that a cache provider fires on
+  // every mount with a signal, and matching the whole `/livestock/` namespace swept it in. It broke
+  // the final assertion first, which is the one that would look most alarming and mean least: a GET
+  // is not a re-send of anything. Filtering by method keeps what the test is actually about.
   const sent: string[] = [];
   await context.route('**/api/livestock/**', async (route) => {
-    sent.push(new URL(route.request().url()).pathname);
+    const request = route.request();
+    if (request.method() !== 'POST') {
+      // An empty register is a valid answer and keeps the provider quiet; it must NOT be recorded.
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return;
+    }
+    sent.push(new URL(request.url()).pathname);
     await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
   });
   await context.setOffline(false);

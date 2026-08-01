@@ -49,6 +49,21 @@ export interface StoredTally {
   readonly countedHead?: number;
   readonly counterparty?: string;
   readonly priceCents?: number;
+  /** The other group in a mob-to-mob move (§2.3b). Present on `transfer_in` / `transfer_out` only. */
+  readonly counterpartMobId?: string;
+  /**
+   * ⭐ The withholding transferred head carry with them — a PREVIEW, like every regulated date this
+   * device shows. It is stored so the device's own guard can see it: a counted flock has no
+   * `animals` rows, so head that walks in from a dipped camp leaves nothing else for the guard to
+   * read, and forty dipped sheep would be clear on this phone the moment they came through the gate.
+   *
+   * ⛔ It is NOT sent. The server computes its own from the source mob's log at the moment the
+   * transfer lands, exactly as it computes a treatment's clear date — a device with a stale product
+   * register must never be able to shorten a withholding by being the one that did the arithmetic.
+   */
+  readonly carriedWithholdUntil?: string;
+  /** The withdrawal the seller declared for bought-in head. Absent = unknown history, never guessed. */
+  readonly declaredWithdrawalUntil?: string;
 }
 
 /** What a screen hands the recorder. The capture instant is a real Date at this boundary. */
@@ -63,6 +78,9 @@ export interface TallyCapture {
   readonly currentHead: number | null;
   readonly counterparty?: string;
   readonly priceCents?: number;
+  readonly counterpartMobId?: string;
+  readonly carriedWithholdUntil?: string;
+  readonly declaredWithdrawalUntil?: string;
 }
 
 export type TallyStore = CaptureStore<StoredTally>;
@@ -124,6 +142,11 @@ export function useRecordTally(): (capture: TallyCapture) => void {
         currentHead: c.currentHead,
         counterparty: c.counterparty,
         priceCents: c.priceCents,
+        // Validated through the domain like everything else — the schema refuses a transfer with no
+        // counterpart, and a declared withdrawal on anything but a purchase.
+        counterpartMobId: c.counterpartMobId,
+        carriedWithholdUntil: c.carriedWithholdUntil,
+        declaredWithdrawalUntil: c.declaredWithdrawalUntil,
       });
       const payload = event.payload as { delta?: number; countedHead?: number };
 
@@ -138,6 +161,13 @@ export function useRecordTally(): (capture: TallyCapture) => void {
         ...(payload.countedHead === undefined ? {} : { countedHead: payload.countedHead }),
         ...(c.counterparty === undefined ? {} : { counterparty: c.counterparty }),
         ...(c.priceCents === undefined ? {} : { priceCents: c.priceCents }),
+        ...(c.counterpartMobId === undefined ? {} : { counterpartMobId: c.counterpartMobId }),
+        ...(c.carriedWithholdUntil === undefined
+          ? {}
+          : { carriedWithholdUntil: c.carriedWithholdUntil }),
+        ...(c.declaredWithdrawalUntil === undefined
+          ? {}
+          : { declaredWithdrawalUntil: c.declaredWithdrawalUntil }),
       });
     },
     [store],

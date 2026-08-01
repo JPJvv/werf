@@ -157,6 +157,16 @@ export function meatWithdrawalForMob(
   products: readonly StoredVetProduct[],
   animals: readonly StoredAnimal[] = [],
   moves: readonly StoredMove[] = [],
+  /**
+   * ⭐ The tally log, for withholdings that ARRIVED WITH head rather than being given to it (§2.3b).
+   *
+   * Both routes above ask "was something standing here dosed". Neither can see head that walked in
+   * already withheld — and for a counted flock nothing else can either, because there are no
+   * `animals` rows to carry the fact. A `transfer_in` out of a dipped camp, or a purchase whose
+   * seller declared a withdrawal, would otherwise be clear the moment it arrived. That is exactly
+   * the laundering the sale-out/purchase-in workaround performed, one gate along.
+   */
+  tallies: readonly ArrivedHead[] = [],
 ): WithdrawalStatus {
   // Every individually-registered animal STANDING IN this mob on the disposal day, with the mob
   // history that says which doses reached it. A tally takes head out without naming which, so any
@@ -178,7 +188,55 @@ export function meatWithdrawalForMob(
     // reconstructing per member, refused it days after the truck had left.
     return members.some((m) => reachedAnimal(event, m.animal, m.wasIn));
   };
-  return latestClearAcross(events.filter(reaches), disposalOn, products);
+  const dosed = latestClearAcross(events.filter(reaches), disposalOn, products);
+  const arrived = latestArrivedWithhold(mobId, disposalOn, tallies);
+  if (arrived === null) return dosed;
+
+  const clearFrom =
+    dosed.clearFrom === null || arrived > dosed.clearFrom ? arrived : dosed.clearFrom;
+  return { clearFrom, blocked: isWithinWithdrawal(clearFrom, disposalOn) };
+}
+
+/** A tally that may have brought a withholding into a mob with it. The device's own log, verbatim. */
+export interface ArrivedHead {
+  readonly mobId: string;
+  /** ISO instant. Compared as a farm-local DAY, like every other boundary in this file. */
+  readonly occurredAt: string;
+  readonly reason: string;
+  /** Carried out of the source mob on a transfer. A preview; the server stores its own. */
+  readonly carriedWithholdUntil?: string | undefined;
+  /** What the seller said about bought-in head. Absent = unknown history, never guessed. */
+  readonly declaredWithdrawalUntil?: string | undefined;
+}
+
+/**
+ * The latest withholding carried INTO a mob by head arriving on or before `disposalOn`.
+ *
+ * ⛔ An UNDECLARED purchase contributes nothing, and that is the decision rather than the gap it
+ * looks like. "Unknown history" is the honest answer for an animal whose treatment nobody here
+ * witnessed: inventing a period would be a fabricated regulated number, and assuming clear would be
+ * the laundering this exists to stop. It is simply not evidence in either direction.
+ *
+ * Only the halves that bring head IN are read. A `transfer_out` carries the same date deliberately —
+ * so a later reader can see what left under a withholding — but reading it here would withhold the
+ * mob the residue departed FROM.
+ */
+function latestArrivedWithhold(
+  mobId: string,
+  disposalOn: string,
+  tallies: readonly ArrivedHead[],
+): string | null {
+  let latest: string | null = null;
+  for (const tally of tallies) {
+    if (tally.mobId !== mobId) continue;
+    if (tally.reason !== 'transfer_in' && tally.reason !== 'purchase') continue;
+    // Head that arrives after the day being judged cannot withhold what left before it.
+    if (farmDay(new Date(tally.occurredAt)) > disposalOn) continue;
+    for (const candidate of [tally.carriedWithholdUntil, tally.declaredWithdrawalUntil]) {
+      if (candidate !== undefined && (latest === null || candidate > latest)) latest = candidate;
+    }
+  }
+  return latest;
 }
 
 /**

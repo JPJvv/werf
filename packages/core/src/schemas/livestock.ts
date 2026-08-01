@@ -349,6 +349,25 @@ export const recordMobTallyRequestSchema = z.object({
   counterparty: z.string().min(1).optional(),
   /** Money as integer cents, never a float. The price of the whole lot, not per head. */
   priceCents: moneySchema.nonnegative().optional(),
+  /**
+   * The other group in a mob-to-mob move. Required on `transfer_in` / `transfer_out` and refused
+   * on every other reason. Checked to be on THIS farm server-side, like every client-settable
+   * reference — a transfer naming a neighbour's mob would carry a withholding across a boundary
+   * that does not exist.
+   */
+  counterpartMobId: uuidSchema.optional(),
+  /**
+   * ⭐ The withdrawal the SELLER declared, on a `purchase` only, and it is the farmer's to send —
+   * unlike every other regulated date in this product, which the server computes.
+   *
+   * That asymmetry is the point rather than an oversight. A treatment's clear date is derived from
+   * a registered product and a treatment day the server can see; this one is a thing a seller SAID
+   * about an animal nobody here watched being dosed. There is no reference row to resolve it from,
+   * so the only honest options are to record what was said or to record nothing. Absent means
+   * UNKNOWN HISTORY, and unknown is a legitimate answer for bought-in stock — inventing a period
+   * would be the fabricated-regulated-number defect with extra steps.
+   */
+  declaredWithdrawalUntil: dateSchema.optional(),
   /** Herd attribution (FR-113). Derived from the mob server-side; this is the fallback. */
   enterpriseId: uuidSchema.nullable().default(null),
   locationGeojson: geoJsonStringSchema.nullable().default(null),

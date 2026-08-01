@@ -79,6 +79,21 @@ export const livestockApi = {
         count: tally.count,
         ...(tally.counterparty === undefined ? {} : { counterparty: tally.counterparty }),
         ...(tally.priceCents === undefined ? {} : { priceCents: tally.priceCents }),
+        ...(tally.counterpartMobId === undefined
+          ? {}
+          : { counterpartMobId: tally.counterpartMobId }),
+        // ⭐ `carriedWithholdUntil` is DELIBERATELY not sent. The device computed one as a preview
+        // so its own guard could see the arriving withholding, but a withdrawal period is a
+        // regulated number and the server resolves its own from the source mob's log — a phone with
+        // a stale product register must never be able to shorten a withholding by being the one
+        // that did the arithmetic. Same contract as a treatment's clear date (ADR-0005).
+        //
+        // The seller's declaration IS sent, and the asymmetry is the point: there is no register to
+        // resolve it from. It is a thing a person said, and the only honest options are to record
+        // what was said or to record nothing.
+        ...(tally.declaredWithdrawalUntil === undefined
+          ? {}
+          : { declaredWithdrawalUntil: tally.declaredWithdrawalUntil }),
       },
       token,
     ),

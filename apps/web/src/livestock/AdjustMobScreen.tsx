@@ -47,15 +47,31 @@ const REASONS = [
   'purchase',
   'theft',
   'slaughter',
+  'transfer_out',
   'recount',
 ] as const satisfies readonly schemas.TallyReason[];
 
 /**
- * Every reason must appear on the screen. `satisfies` above proves each entry IS a reason; it does
- * not prove the list is complete, so a reason added to the schema could silently never be offered —
- * a capture the product accepts and gives the farmer no way to make. This makes that a type error.
+ * ⭐ `transfer_in` is DERIVED, never offered, and this is the one deliberate omission.
+ *
+ * A farmer performs ONE action — "forty of these went to that camp" — and the log holds the two
+ * facts it consists of, because a tally event has one subject mob and one delta so the same reason
+ * cannot mean minus here and plus there. Offering both halves would make the farmer record a move
+ * twice and leave the two able to disagree; `save` writes the counterpart itself.
  */
-type UnofferedReason = Exclude<schemas.TallyReason, (typeof REASONS)[number]>;
+const _DERIVED_REASONS = ['transfer_in'] as const satisfies readonly schemas.TallyReason[];
+
+/**
+ * Every reason must be reachable. `satisfies` above proves each entry IS a reason; it does not
+ * prove the list is complete, so a reason added to the schema could silently never be offered — a
+ * capture the product accepts and gives the farmer no way to make. This makes that a type error,
+ * and a new reason must be either OFFERED or explicitly named as derived. Being forgotten is not
+ * one of the options.
+ */
+type UnofferedReason = Exclude<
+  schemas.TallyReason,
+  (typeof REASONS)[number] | (typeof _DERIVED_REASONS)[number]
+>;
 const _everyReasonIsOffered: UnofferedReason extends never ? true : never = true;
 void _everyReasonIsOffered;
 
@@ -113,6 +129,14 @@ export function AdjustMobScreen() {
   const [day, setDay] = useState(farmToday);
   const [counterparty, setCounterparty] = useState('');
   const [priceRands, setPriceRands] = useState('');
+  /** The group the head are going to, on a transfer. */
+  const [destinationId, setDestinationId] = useState<string | null>(null);
+  /**
+   * What the seller said the withdrawal runs to, on a purchase. Blank is the DEFAULT and it means
+   * "unknown history" — the honest answer for stock nobody here watched being dosed. It is never
+   * prefilled and never guessed.
+   */
+  const [declaredUntil, setDeclaredUntil] = useState('');
   const [lastSaved, setLastSaved] = useState<{ name: string; head: number } | null>(null);
   const [refused, setRefused] = useState<{ detail: string | null } | null>(null);
 
@@ -146,19 +170,25 @@ export function AdjustMobScreen() {
    * ordinary (every tally shares one instant) and all belong in the baseline, since none can sort
    * after a capture whose id was minted last.
    */
-  const currentHead = useMemo(() => {
-    if (selected === null) return null;
+  //
+  // Extracted rather than inlined because the transfer writes a second tally against the
+  // DESTINATION mob, and that half needs the same as-at count computed the same way. Two copies of
+  // this fold is how the two halves of one move come to disagree about a number.
+  const headAsAt = useMemo(() => {
     const at = `${day}T12:00:00.000Z`;
-    const before = tallies.filter((t) => t.mobId === selected.id && t.occurredAt <= at);
-    const stored = storedMobs.find((m) => m.id === selected.id);
-    const baseline =
-      stored === undefined
-        ? null
-        : stored.initialHeadCount === undefined
-          ? stored.headCount
-          : stored.initialHeadCount;
-    return projectHeadCount(baseline, before);
-  }, [selected, storedMobs, tallies, day]);
+    return (mobId: string): number | null => {
+      const before = tallies.filter((t) => t.mobId === mobId && t.occurredAt <= at);
+      const stored = storedMobs.find((m) => m.id === mobId);
+      const baseline =
+        stored === undefined
+          ? null
+          : stored.initialHeadCount === undefined
+            ? stored.headCount
+            : stored.initialHeadCount;
+      return projectHeadCount(baseline, before);
+    };
+  }, [storedMobs, tallies, day]);
+  const currentHead = selected === null ? null : headAsAt(selected.id);
   const isRecount = reason === 'recount';
   const trade = reason === 'sale' || reason === 'purchase';
 
@@ -184,15 +214,26 @@ export function AdjustMobScreen() {
   // The individual sale path has been guarded at capture since the health slice, for reasons its
   // own header states. This is the path where the exposure is worse: a flock run by head count is
   // the smallholder's, and the farm least likely to have a second system catching the mistake.
+  //
+  // ⭐ A TRANSFER is NOT here, deliberately (§2.3b). Splitting a dipped flock between two of your
+  // own camps puts nothing into the food chain — it is the ordinary husbandry that the sale-out /
+  // purchase-in workaround was being used to express, and refusing it is what taught the workaround.
+  // What it must do instead is carry the withholding across, which `carriedWithholdUntil` below does.
   const intoFoodChain = reason === 'sale' || reason === 'slaughter';
   const withdrawal =
     selected === null
       ? null
-      : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves);
+      : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves, tallies);
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
   // The reasons that are recorded rather than refused still say so — same rule as the death path.
   const noteWithdrawal =
     !intoFoodChain && reason !== null && withdrawal !== null && withdrawal.blocked;
+
+  const isTransfer = reason === 'transfer_out';
+  // Every counted group EXCEPT this one. A group cannot be transferred into itself: that is not a
+  // move, it is a typo that would fold the flock's own withholding back onto it forever.
+  const destinations = counted.filter((m) => m.id !== selected?.id);
+  const destination = destinations.find((m) => m.id === destinationId) ?? null;
 
   const canSave =
     selected !== null &&
@@ -202,6 +243,9 @@ export function AdjustMobScreen() {
     !changesNothing &&
     !withheld &&
     day !== '' &&
+    // A transfer with no destination is half a move, and the half that would be written is the one
+    // that takes head OUT of the source — losing forty sheep into nothing.
+    (!isTransfer || destination !== null) &&
     priceIsValid(priceRands);
 
   const reset = () => {
@@ -209,6 +253,8 @@ export function AdjustMobScreen() {
     setCount('');
     setCounterparty('');
     setPriceRands('');
+    setDestinationId(null);
+    setDeclaredUntil('');
     setDay(farmToday());
   };
 
@@ -231,6 +277,18 @@ export function AdjustMobScreen() {
     // Domain errors are raised in English by design (they are thrown from a package with no
     // locale), so preferring `error.message` put raw English in front of an Afrikaans farmer and
     // left the translated line as a fallback that fired only when the throw was not an Error.
+    // ⭐ The withholding the head carry with them, resolved from the SOURCE mob at the moment of the
+    // move and written onto BOTH halves. It is a PREVIEW — the server computes and stores its own
+    // from its whole log, exactly as it does a treatment's clear date (ADR-0005), and this one is
+    // never sent. But without it on the device the local guard is blind: a counted flock has no
+    // `animals` rows, so head walking in from a dipped camp leaves nothing else to read, and this
+    // phone would clear forty dipped sheep for the abattoir the moment they came through the gate.
+    const carried =
+      isTransfer && withdrawal !== null && withdrawal.clearFrom !== null
+        ? withdrawal.clearFrom
+        : undefined;
+    const declared = declaredUntil.trim() === '' ? undefined : declaredUntil;
+
     try {
       recordTally({
         id,
@@ -247,7 +305,30 @@ export function AdjustMobScreen() {
         currentHead,
         ...(buyer === undefined ? {} : { counterparty: buyer }),
         ...(price === undefined ? {} : { priceCents: price }),
+        ...(destination === null ? {} : { counterpartMobId: destination.id }),
+        ...(carried === undefined ? {} : { carriedWithholdUntil: carried }),
+        ...(declared === undefined ? {} : { declaredWithdrawalUntil: declared }),
       });
+
+      // ⭐ The other half of the same action. One move, two facts, and the second is the one that
+      // stops the laundering: without a `transfer_in` on the destination carrying the source's
+      // withholding, forty dipped sheep are clear the moment they change camp.
+      //
+      // Its own UUIDv7, because it is its own event — sharing the source's id would make the flush
+      // treat the second as a duplicate of the first and send only one of them.
+      if (destination !== null) {
+        recordTally({
+          id: uuidv7(),
+          farmId: activeFarm.id,
+          mobId: destination.id,
+          occurredAt: new Date(`${day}T12:00:00.000Z`),
+          reason: 'transfer_in',
+          count: typed,
+          currentHead: headAsAt(destination.id),
+          counterpartMobId: selected.id,
+          ...(carried === undefined ? {} : { carriedWithholdUntil: carried }),
+        });
+      }
     } catch (error) {
       setRefused({ detail: error instanceof Error ? error.message : null });
       return;
@@ -437,6 +518,66 @@ export function AdjustMobScreen() {
                       className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
                     />
                   </div>
+
+                  {/* Where the head are going. A select rather than a second list of big buttons:
+                      the source is already picked above, and two identical-looking group lists on
+                      one screen is how a farmer moves the wrong flock. */}
+                  {isTransfer && (
+                    <div className="mb-4 flex flex-col">
+                      <label
+                        htmlFor="destination"
+                        className="mb-1 text-label uppercase text-soil-700"
+                      >
+                        {t('tally.destination')}
+                      </label>
+                      <select
+                        id="destination"
+                        name="destination"
+                        value={destinationId ?? ''}
+                        onChange={(e) =>
+                          setDestinationId(e.target.value === '' ? null : e.target.value)
+                        }
+                        className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+                      >
+                        <option value="">{t('tally.destinationPick')}</option>
+                        {destinations.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      {/* ⭐ Said plainly, because it is the whole reason this reason exists. A
+                          farmer who thinks a withholding is escaped by changing camps will do it. */}
+                      {withdrawal?.clearFrom !== null && withdrawal?.blocked === true && (
+                        <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                          {t('tally.transferCarries')}{' '}
+                          <span className="font-data tabular-nums">{withdrawal.clearFrom}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ⭐ Optional, blank by default, and blank MEANS something: unknown history. The
+                      one regulated date in this product the farmer supplies, because there is no
+                      register to resolve a seller's word from — see the schema. Never prefilled. */}
+                  {reason === 'purchase' && (
+                    <div className="mb-4 flex flex-col">
+                      <label htmlFor="declared" className="mb-1 text-label uppercase text-soil-700">
+                        {t('tally.declaredWithdrawal')}
+                      </label>
+                      <input
+                        id="declared"
+                        name="declared"
+                        type="date"
+                        value={declaredUntil}
+                        onChange={(e) => setDeclaredUntil(e.target.value)}
+                        className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+                      />
+                      <p className="mt-1 text-body text-soil-700">
+                        {t('tally.declaredWithdrawalHint')}
+                      </p>
+                    </div>
+                  )}
 
                   {trade && (
                     <>

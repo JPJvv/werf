@@ -266,11 +266,29 @@ export type RainfallPayload = z.infer<typeof rainfallPayloadSchema>;
  * (FR-603), which is its own record with its own evidence — recording one here does not file the
  * other, and the screen says so.
  */
-export const TALLY_INCREASES = ['birth', 'purchase'] as const;
-export const TALLY_DECREASES = ['death', 'sale', 'theft', 'slaughter'] as const;
+/**
+ * ⭐ `transfer_in` / `transfer_out` are ONE action captured as TWO events, and the split is forced
+ * by the sign rule rather than chosen.
+ *
+ * Splitting a dipped flock had to be expressed as a sale out and a purchase in, which trips the
+ * food-chain guard on the way out — nothing was sold — and LAUNDERS the withholding on the way in,
+ * because head arriving by `purchase` is unconditionally clear. Both halves are wrong, and the
+ * second is the dangerous one.
+ *
+ * A single `transfer` reason cannot work here. A tally event has ONE subject mob and one delta, so
+ * the same reason would have to mean "minus" on the source and "plus" on the destination — and the
+ * sign is derived from the reason precisely so it is never the farmer's to type. Two reasons keep
+ * that invariant intact and cost nothing: the capture screen writes both, tied by the envelope's
+ * `batch_id`, so a farmer performs one action and the log holds the two facts it consists of.
+ */
+export const TALLY_INCREASES = ['birth', 'purchase', 'transfer_in'] as const;
+export const TALLY_DECREASES = ['death', 'sale', 'theft', 'slaughter', 'transfer_out'] as const;
 export const TALLY_REASONS = [...TALLY_INCREASES, ...TALLY_DECREASES, 'recount'] as const;
 export const tallyReasonSchema = z.enum(TALLY_REASONS);
 export type TallyReason = z.infer<typeof tallyReasonSchema>;
+
+/** The two halves of a mob-to-mob move. Neither is a disposal; neither goes near the food chain. */
+export const TALLY_TRANSFERS: readonly TallyReason[] = ['transfer_in', 'transfer_out'];
 
 /**
  * A change to a mob's head count (FR-102).
@@ -300,8 +318,60 @@ export const tallyPayloadSchema = z
     priceCents: moneySchema.nonnegative().optional(),
     /** True when the mob was inside an active meat withholding on the day of this tally. */
     withinWithdrawal: z.boolean().optional(),
+    /** The OTHER mob in a mob-to-mob move. Required on both halves, absent on every other reason. */
+    counterpartMobId: uuidSchema.optional(),
+    /**
+     * ⭐ The meat withholding the transferred head CARRY WITH THEM, computed server-side from the
+     * SOURCE mob at the moment of the move and frozen onto both halves (ADR-0005, exactly as a
+     * treatment's clear date is).
+     *
+     * This is what stops the laundering. A counted flock has no `animals` rows, so head moved out of
+     * a dipped mob by tally leaves no per-head record anywhere — the destination's guard reads the
+     * destination's doses and finds nothing, and forty dipped sheep become clear by walking through
+     * a gate. Carrying the date on the event is the only place the fact can live when there are no
+     * individual animals to hang it on.
+     *
+     * Absent means the source was carrying nothing, which is the ordinary case.
+     */
+    carriedWithholdUntil: dateSchema.optional(),
+    /**
+     * ⭐ The withdrawal the SELLER declared for bought-in head (a `purchase`), and it is optional on
+     * purpose. Absent means UNKNOWN HISTORY — which is the honest answer for an animal whose
+     * treatment nobody here witnessed.
+     *
+     * Inventing a period for stock we never saw dosed would be the same class of defect as
+     * hardcoding a regulated number: a figure that looks authoritative and is made up. So an
+     * undeclared purchase withholds nothing and claims nothing, and a declared one is recorded as
+     * what it is — the seller's word, frozen at the moment of the deal.
+     */
+    declaredWithdrawalUntil: dateSchema.optional(),
   })
   .superRefine((payload, ctx) => {
+    const isTransfer = (TALLY_TRANSFERS as readonly string[]).includes(payload.reason);
+    if (isTransfer && payload.counterpartMobId === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['counterpartMobId'],
+        message: 'A transfer must name the other group',
+      });
+    }
+    if (!isTransfer && payload.counterpartMobId !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['counterpartMobId'],
+        message: 'Only a transfer names another group',
+      });
+    }
+    // A declared seller withdrawal is a fact about an ACQUISITION. On any other reason it would be
+    // a number with nothing behind it, which is the defect the field exists to avoid.
+    if (payload.declaredWithdrawalUntil !== undefined && payload.reason !== 'purchase') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['declaredWithdrawalUntil'],
+        message: 'Only a purchase can record a withdrawal declared by the seller',
+      });
+    }
+
     const isRecount = payload.reason === 'recount';
     if (isRecount) {
       if (payload.countedHead === undefined) {

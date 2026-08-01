@@ -491,7 +491,20 @@ const en = {
   'tally.reason.purchase': 'Bought',
   'tally.reason.theft': 'Stolen',
   'tally.reason.slaughter': 'Slaughtered',
+  // §2.3b. Named for what the farmer did, not for the event: they moved animals between their own
+  // groups. `transfer_in` is never offered — the app writes the other half itself.
+  'tally.reason.transfer_out': 'Moved to another group',
+  'tally.reason.transfer_in': 'Came from another group',
   'tally.reason.recount': 'Counted them',
+  'tally.destination': 'Which group did they go to',
+  'tally.destinationPick': 'Choose a group',
+  // The sentence this whole reason exists for. A farmer who believes a withholding is escaped by
+  // changing camps will change camps.
+  'tally.transferCarries':
+    'These animals are still inside a meat withdrawal, and it moves with them. The group they join cannot go for slaughter or sale before',
+  'tally.declaredWithdrawal': 'Withdrawal the seller declared (optional)',
+  'tally.declaredWithdrawalHint':
+    'Leave this blank if you do not know. Blank is recorded as unknown history — which is the honest answer for animals you did not treat yourself.',
   'tally.count': 'How many',
   'tally.countRecount': 'How many are there',
   'tally.day': 'What day',
@@ -1141,7 +1154,16 @@ const af: Record<TranslationKey, string> = {
   'tally.reason.purchase': 'Gekoop',
   'tally.reason.theft': 'Gesteel',
   'tally.reason.slaughter': 'Geslag',
+  'tally.reason.transfer_out': 'Na ’n ander groep geskuif',
+  'tally.reason.transfer_in': 'Van ’n ander groep gekom',
   'tally.reason.recount': 'Getel',
+  'tally.destination': 'Na watter groep het hulle gegaan',
+  'tally.destinationPick': 'Kies ’n groep',
+  'tally.transferCarries':
+    'Hierdie diere is nog binne ’n vleisonttrekkingstydperk, en dit skuif saam met hulle. Die groep waarby hulle aansluit kan nie vir slag of verkoop gaan voor nie',
+  'tally.declaredWithdrawal': 'Onttrekking wat die verkoper verklaar het (opsioneel)',
+  'tally.declaredWithdrawalHint':
+    'Los dit oop as jy nie weet nie. Oop word aangeteken as onbekende geskiedenis — wat die eerlike antwoord is vir diere wat jy nie self behandel het nie.',
   'tally.count': 'Hoeveel',
   'tally.countRecount': 'Hoeveel is daar',
   'tally.day': 'Watter dag',

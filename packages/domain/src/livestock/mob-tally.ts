@@ -64,6 +64,16 @@ export interface MobTallyInput {
   readonly priceCents?: number | undefined;
   /** The mob was inside an active meat withholding on the day. Recorded, never refused. */
   readonly withinWithdrawal?: boolean | undefined;
+  /** The other mob in a mob-to-mob move. Required on `transfer_in` / `transfer_out`. */
+  readonly counterpartMobId?: string | undefined;
+  /**
+   * The withholding the transferred head carry with them, resolved from the SOURCE mob by the
+   * caller. Injected rather than computed here: it is a regulated date read from the event log,
+   * which this package has no I/O to reach.
+   */
+  readonly carriedWithholdUntil?: string | undefined;
+  /** The withdrawal the seller declared for bought-in head. Absent = unknown history, never guessed. */
+  readonly declaredWithdrawalUntil?: string | undefined;
   /** The herd this event files under (FR-113) — resolved from the mob by the caller. */
   readonly enterpriseId?: string | null | undefined;
   readonly notes?: string | null | undefined;
@@ -118,6 +128,21 @@ export function recordMobTally(input: MobTallyInput): MobTallyCapture {
   if (input.counterparty !== undefined) payload.counterparty = input.counterparty;
   if (input.priceCents !== undefined) payload.priceCents = input.priceCents;
   if (input.withinWithdrawal) payload.withinWithdrawal = true;
+  if (input.counterpartMobId !== undefined) payload.counterpartMobId = input.counterpartMobId;
+  // Stored on BOTH halves of the move, not just the destination. The source's copy is what lets a
+  // later reader see that the head which left was under a withholding at the time — a value used
+  // for a decision and then discarded is one the next guard cannot check.
+  if (input.carriedWithholdUntil !== undefined) {
+    payload.carriedWithholdUntil = input.carriedWithholdUntil;
+  }
+  if (input.declaredWithdrawalUntil !== undefined) {
+    payload.declaredWithdrawalUntil = input.declaredWithdrawalUntil;
+  }
+  // A group cannot be transferred into itself: it is not a move, it is a typo that would double the
+  // flock's own withholding back onto it and read as a real event forever.
+  if (input.counterpartMobId !== undefined && input.counterpartMobId === input.mobId) {
+    throw new ValidationError('A group cannot be transferred into itself');
+  }
 
   // Re-checked against the payload schema so the two rules — this function's and the schema's —
   // cannot drift apart, exactly as every other capture in this package does it.

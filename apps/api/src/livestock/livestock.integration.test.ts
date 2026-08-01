@@ -2633,6 +2633,251 @@ describe('weight capture (FR-140)', () => {
     });
   });
 
+  // ── Transfers and bought-in stock (§2.3b, FR-102/131) — COMPLIANCE-GATED ──────────────
+  describe('mob-to-mob transfer and declared purchase withdrawal (FR-131)', () => {
+    /** A second counted mob, so a transfer has somewhere to go. */
+    async function anotherMob(farmId: string, name: string): Promise<string> {
+      const [row] = await elevated.db
+        .insert(mobs)
+        .values({ farmId, name, species: 'sheep', headCount: 0, initialHeadCount: 0 })
+        .returning();
+      return row!.id;
+    }
+
+    const tally = (over: Partial<ZodInput<typeof schemas.recordMobTallyRequestSchema>>) =>
+      schemas.recordMobTallyRequestSchema.parse({
+        id: randomUUID(),
+        occurredAt: '2026-07-25T06:00:00.000Z',
+        count: 40,
+        ...over,
+      });
+
+    it('⭐ carries a withholding ACROSS a transfer, so it cannot be laundered by changing camps', async () => {
+      // The hole §2.3b names. With no transfer reason, splitting a dipped flock had to be expressed
+      // as a sale out and a purchase in — which trips the food-chain guard on the way out (nothing
+      // was sold) and LAUNDERS the withholding on the way in, because head arriving by purchase is
+      // unconditionally clear. A counted flock has no `animals` rows, so there is nothing else
+      // anywhere for the destination's guard to read.
+      const a = await tenant('Alpha');
+      const dipped = await aMob(a.farmId);
+      const clean = await anotherMob(a.farmId, 'Flock B');
+      const productId = await aVetProduct({ species: ['sheep'] }); // meat 28d
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: dipped,
+          productId,
+          method: 'plunge',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      // The move itself is NOT refused: nothing goes into the food chain by changing camps, and
+      // refusing it is exactly what taught the sale-out/purchase-in workaround.
+      const out = await service.recordMobTally(
+        a.userId,
+        tally({ farmId: a.farmId, mobId: dipped, reason: 'transfer_out', counterpartMobId: clean }),
+      );
+      expect(out.payload).toMatchObject({
+        reason: 'transfer_out',
+        counterpartMobId: clean,
+        // Stored on the source half too, so a later reader can see what left under a withholding.
+        carriedWithholdUntil: '2026-08-17',
+      });
+
+      const into = await service.recordMobTally(
+        a.userId,
+        tally({ farmId: a.farmId, mobId: clean, reason: 'transfer_in', counterpartMobId: dipped }),
+      );
+      expect(into.payload).toMatchObject({ carriedWithholdUntil: '2026-08-17' });
+
+      // ⭐ And the destination is now withheld, which it was not and could not have been before.
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          tally({
+            farmId: a.farmId,
+            mobId: clean,
+            reason: 'slaughter',
+            count: 10,
+            occurredAt: '2026-08-16T06:00:00.000Z',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+
+      // …and free again the day the withholding runs out, so the guard is not refusing everything.
+      const after = await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId: clean,
+          reason: 'slaughter',
+          count: 10,
+          occurredAt: '2026-08-17T06:00:00.000Z',
+        }),
+      );
+      expect(after.type).toBe('tally');
+    });
+
+    it('carries nothing across when the source was never under a withholding', async () => {
+      // The other direction. A guard that withholds head which was never dosed costs a farmer a
+      // sale for no reason, which is how a guard teaches people to distrust it.
+      const a = await tenant('Alpha');
+      const source = await aMob(a.farmId);
+      const destination = await anotherMob(a.farmId, 'Flock B');
+
+      const out = await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId: source,
+          reason: 'transfer_out',
+          counterpartMobId: destination,
+        }),
+      );
+      expect(out.payload).not.toHaveProperty('carriedWithholdUntil');
+
+      await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId: destination,
+          reason: 'transfer_in',
+          counterpartMobId: source,
+        }),
+      );
+      // ⭐ A DAY LATER, and that is not cosmetic. These fixtures share one instant, so the as-at cut
+      // falls through to the id — and `randomUUID()` is a v4, which is random rather than
+      // time-ordered like the client UUIDv7 the ordering is designed around. Same-instant fixtures
+      // therefore decide "did the 40 arrive before the 10 left" by coin flip, and this test failed
+      // roughly half the time until it was dated. The tie-break itself is sound; the fixture was
+      // asserting against the one property real ids have and these do not.
+      const sold = await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId: destination,
+          reason: 'slaughter',
+          count: 10,
+          occurredAt: '2026-07-26T06:00:00.000Z',
+        }),
+      );
+      expect(sold.type).toBe('tally');
+    });
+
+    it('⭐ withholds bought-in head when the seller DECLARED a withdrawal', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId,
+          reason: 'purchase',
+          counterparty: 'Bethlehem sale yard',
+          declaredWithdrawalUntil: '2026-08-10',
+        }),
+      );
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          tally({
+            farmId: a.farmId,
+            mobId,
+            reason: 'slaughter',
+            count: 10,
+            occurredAt: '2026-08-09T06:00:00.000Z',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('⛔ claims nothing for an UNDECLARED purchase — unknown history is not a withdrawal', async () => {
+      // Absent means unknown, and unknown is the honest answer for stock nobody here watched being
+      // dosed. Inventing a period would be a fabricated regulated number; assuming clear would be
+      // the laundering. It is simply not evidence in either direction, so the sale goes through and
+      // the record says only what was actually known.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      const bought = await service.recordMobTally(
+        a.userId,
+        tally({ farmId: a.farmId, mobId, reason: 'purchase', counterparty: 'Bethlehem sale yard' }),
+      );
+      expect(bought.payload).not.toHaveProperty('declaredWithdrawalUntil');
+
+      // Dated a day later, for the same reason the transfer test is: these fixtures share an
+      // instant and `randomUUID()` breaks the tie randomly.
+      const sold = await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId,
+          reason: 'slaughter',
+          count: 10,
+          occurredAt: '2026-07-26T06:00:00.000Z',
+        }),
+      );
+      expect(sold.type).toBe('tally');
+    });
+
+    it('refuses a transfer that names another farm’s group', async () => {
+      // A transfer carries a regulated date from one mob to another. Across a tenancy boundary it
+      // would carry it out of a farm the caller cannot see — the class `assertOwnedReferences`
+      // exists for, and the sharpest kind because the value is a compliance one.
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const mine = await aMob(a.farmId);
+      const theirs = await aMob(b.farmId);
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          tally({
+            farmId: a.farmId,
+            mobId: mine,
+            reason: 'transfer_out',
+            counterpartMobId: theirs,
+          }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('refuses a declared withdrawal on anything but a purchase', async () => {
+      // A seller's declaration is a fact about an ACQUISITION. Anywhere else it is a regulated date
+      // with nothing behind it, which is the defect the field exists to avoid.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      expect(() =>
+        tally({
+          farmId: a.farmId,
+          mobId,
+          reason: 'death',
+          declaredWithdrawalUntil: '2026-08-10',
+        }),
+      ).not.toThrow(); // the REQUEST shape allows it; the payload rule is where it is refused
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          tally({
+            farmId: a.farmId,
+            mobId,
+            reason: 'death',
+            declaredWithdrawalUntil: '2026-08-10',
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+  });
+
   // ── The residue register (FR-131) — COMPLIANCE-GATED ──────────────────────────────────
   describe('residue register (FR-131)', () => {
     it('⭐ flags a disposal a LATER-ARRIVING dose proves was inside a withholding', async () => {

@@ -314,6 +314,37 @@ export class LivestockService {
         await assertMobClearOfMeatWithdrawal(tx, input.farmId, input.mobId, input.occurredAt);
       }
 
+      // ⭐ A TRANSFER is not a disposal and must not be guarded like one (§2.3b). Splitting a
+      // dipped flock between two of your own camps puts nothing into the food chain — it is the
+      // ordinary husbandry the sale-out/purchase-in workaround was being used to express, and
+      // refusing it is what taught the workaround in the first place.
+      //
+      // What it MUST do instead is carry the withholding across, and that is the whole difficulty:
+      // a counted flock has no `animals` rows, so head that walks out of a dipped mob leaves no
+      // per-head record for the destination's guard to find. Forty dipped sheep would become clear
+      // by passing through a gate. The source mob's clear date is resolved HERE and frozen onto the
+      // event (ADR-0005, the same discipline as a treatment's), because the event is the only place
+      // the fact can live when there are no individual animals to hang it on.
+      let carriedWithholdUntil: string | undefined;
+      if (input.counterpartMobId !== undefined) {
+        // Both halves must be on this farm. A transfer naming a neighbour's mob would carry a
+        // withholding across a tenancy boundary — and read as a real event forever.
+        // Checked as an ordinary `mobId` — the question is the same one ("is this mob on this
+        // farm?") and reusing the existing check means there is no second key for the reference
+        // guard to be taught about and then forgotten. The SUBJECT mob is already proved above.
+        await assertOwnedReferences(tx, input.farmId, { mobId: input.counterpartMobId });
+        // The SOURCE is where the residue is: on the way out it is this mob, on the way in it is
+        // the one the head came from. Reading the destination on a `transfer_in` would ask the
+        // wrong mob and carry nothing, which is the laundering hole left open.
+        const sourceMobId = input.reason === 'transfer_out' ? input.mobId : input.counterpartMobId;
+        carriedWithholdUntil = await latestMeatClearForMob(
+          tx,
+          input.farmId,
+          sourceMobId,
+          input.occurredAt,
+        );
+      }
+
       // The reasons that are NOT refused still record the circumstance, for the same reason the
       // individual death path does: a blocked `slaughter` is one tap from an unblocked `death`.
       const mobWithinWithdrawal =
@@ -337,6 +368,16 @@ export class LivestockService {
         counterparty: input.counterparty,
         priceCents: input.priceCents,
         ...(mobWithinWithdrawal ? { withinWithdrawal: true } : {}),
+        ...(input.counterpartMobId === undefined
+          ? {}
+          : { counterpartMobId: input.counterpartMobId }),
+        ...(carriedWithholdUntil === undefined ? {} : { carriedWithholdUntil }),
+        // ⭐ Taken from the body, which nothing else regulated in this file does. There is no
+        // reference row to resolve a seller's word from — see the schema. It is recorded as what
+        // was said, or not at all.
+        ...(input.declaredWithdrawalUntil === undefined
+          ? {}
+          : { declaredWithdrawalUntil: input.declaredWithdrawalUntil }),
         // FR-113: filed under the mob's own herd, derived here rather than trusted from the body.
         enterpriseId: mob.enterpriseId ?? input.enterpriseId,
         locationGeojson: input.locationGeojson,
@@ -1655,7 +1696,74 @@ async function latestMeatClearForMob(
     }
   }
 
+  // ⭐ Route 3: withholdings that arrived WITH head rather than being given to it (§2.3b).
+  //
+  // The two routes above are both "was something here dosed". Neither can see head that walked in
+  // already withheld, and for a counted flock nothing else can either — there are no `animals` rows
+  // to carry the fact, so a `transfer_in` from a dipped camp, or a purchase whose seller declared a
+  // withdrawal, would otherwise be clear the moment it arrived. That is precisely the laundering
+  // the sale-out/purchase-in workaround performed, and closing it is the reason `transfer_in`
+  // exists at all.
+  const arrived = await latestArrivedWithhold(tx, farmId, mobId, day, jurisdiction);
+  if (arrived !== undefined && (latestClear === undefined || arrived > latestClear)) {
+    latestClear = arrived;
+  }
+
   return latestClear;
+}
+
+/**
+ * The latest withholding carried INTO a mob by head arriving on or before `day` — a `transfer_in`
+ * whose source was under one, or a `purchase` whose seller declared one.
+ *
+ * Bounded by the day for the same reason every other route is: head that arrives next week cannot
+ * withhold a consignment that left today, and judging one against the other would refuse an honest
+ * back-dated capture.
+ *
+ * ⛔ An undeclared purchase contributes NOTHING, and that is the decision rather than a gap. The
+ * honest answer for an animal whose treatment nobody here witnessed is "unknown history"; inventing
+ * a period would be a fabricated regulated number, and assuming clear would be the laundering this
+ * exists to stop. So it neither withholds nor claims — it simply is not evidence either way.
+ */
+async function latestArrivedWithhold(
+  tx: CaptureTx,
+  farmId: string,
+  mobId: string,
+  day: string,
+  jurisdiction: string,
+): Promise<string | undefined> {
+  const rows = await tx
+    .select({ payload: events.payload, occurredAt: events.occurredAt })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        eq(events.mobId, mobId),
+        eq(events.type, 'tally'),
+        isNull(events.deletedAt),
+      ),
+    );
+
+  let latest: string | undefined;
+  for (const row of rows) {
+    const payload = row.payload as {
+      reason?: string;
+      carriedWithholdUntil?: unknown;
+      declaredWithdrawalUntil?: unknown;
+    };
+    // Only the halves that bring head IN. A `transfer_out` carries the same date — deliberately, so
+    // a later reader can see what left under a withholding — but reading it here would withhold the
+    // mob the head departed FROM for a residue that departed with it.
+    if (payload.reason !== 'transfer_in' && payload.reason !== 'purchase') continue;
+    // Head that arrives AFTER the day being judged cannot withhold what left before it.
+    if (farmLocalDay(row.occurredAt, jurisdiction) > day) continue;
+    for (const candidate of [payload.carriedWithholdUntil, payload.declaredWithdrawalUntil]) {
+      if (typeof candidate === 'string' && (latest === undefined || candidate > latest)) {
+        latest = candidate;
+      }
+    }
+  }
+  return latest;
 }
 
 /**

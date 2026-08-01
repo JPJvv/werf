@@ -20,6 +20,7 @@ const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
 const MOBS_KEY = `werf-mobs:${FARM_ID}`;
 const TALLIES_KEY = `werf-tallies:${FARM_ID}`;
 const MOB_ID = '0190f3a0-0000-7000-8000-00000000b001';
+const OTHER_MOB_ID = '0190f3a0-0000-7000-8000-00000000b002';
 const HEALTH_KEY = `werf-health:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
 const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
@@ -78,6 +79,33 @@ function seedFlock(headCount: number | null = 300): void {
         landUnitId: null,
         enterpriseId: FLOCK.id,
         headCount,
+      },
+    ]),
+  );
+}
+
+/** Two counted flocks, so a transfer has somewhere to go. Flock B starts empty, as a new camp does. */
+function seedTwoFlocks(): void {
+  window.localStorage.setItem(
+    MOBS_KEY,
+    JSON.stringify([
+      {
+        id: MOB_ID,
+        farmId: FARM_ID,
+        name: 'Flock A',
+        species: 'sheep',
+        landUnitId: null,
+        enterpriseId: FLOCK.id,
+        headCount: 300,
+      },
+      {
+        id: OTHER_MOB_ID,
+        farmId: FARM_ID,
+        name: 'Flock B',
+        species: 'sheep',
+        landUnitId: null,
+        enterpriseId: FLOCK.id,
+        headCount: 0,
       },
     ]),
   );
@@ -495,6 +523,97 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(saved).toHaveLength(2);
     // Two distinct ids, or the flush sends one and silently drops the other.
     expect(new Set(saved.map((t) => t['id'])).size).toBe(2);
+  });
+
+  it('⭐ writes BOTH halves of a transfer, carrying the withholding to the group they join', async () => {
+    // §2.3b. With no transfer reason, splitting a dipped flock had to be expressed as a sale out
+    // and a purchase in — which trips the food-chain guard on the way out (nothing was sold) and
+    // LAUNDERS the withholding on the way in, because head arriving by purchase is unconditionally
+    // clear. A counted flock has no animal rows, so there is nothing else anywhere to carry it.
+    cachedSession();
+    seedTwoFlocks();
+    seedDip();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /moved to another group/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+    await user.selectOptions(screen.getByLabelText(/which group did they go to/i), OTHER_MOB_ID);
+
+    // Said out loud, because a farmer who believes a withholding is escaped by changing camps will
+    // change camps. The move is NOT refused — nothing goes into the food chain — but it says so.
+    expect(screen.getByText(/it moves with them/i)).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    const saved = storedTallies();
+    expect(saved).toHaveLength(2);
+    // Distinct ids, or the flush treats the second as a duplicate of the first and sends one.
+    expect(new Set(saved.map((t) => t['id'])).size).toBe(2);
+
+    const out = saved.find((t) => t['reason'] === 'transfer_out');
+    const into = saved.find((t) => t['reason'] === 'transfer_in');
+    expect(out).toMatchObject({ mobId: MOB_ID, counterpartMobId: OTHER_MOB_ID, delta: -40 });
+    // ⭐ The half that closes the hole. Without it the destination is clear the moment the head
+    // walk through the gate, on this device as well as on the server.
+    expect(into).toMatchObject({ mobId: OTHER_MOB_ID, counterpartMobId: MOB_ID, delta: 40 });
+    expect(typeof into?.['carriedWithholdUntil']).toBe('string');
+  });
+
+  it('⭐ refuses to send the joined group for slaughter while the carried withholding runs', async () => {
+    // The device's own guard, not the server's. The point of carrying the date locally is that the
+    // refusal reaches the person who can still act on it — a server-only rule arrives on Friday.
+    cachedSession();
+    seedTwoFlocks();
+    seedDip();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    const { unmount } = render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /moved to another group/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+    await user.selectOptions(screen.getByLabelText(/which group did they go to/i), OTHER_MOB_ID);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    unmount();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock b/i }));
+    await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '10');
+
+    expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it('records a purchase with no declared withdrawal as unknown history, never a guess', async () => {
+    // Absent is the DEFAULT and it means something. Inventing a period for an animal whose
+    // treatment nobody here witnessed is the fabricated-regulated-number defect with extra steps.
+    cachedSession();
+    seedFlock();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^bought$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '12');
+
+    // The field is offered and the blank is explained, rather than the app quietly deciding.
+    expect(screen.getByLabelText(/withdrawal the seller declared/i)).toBeTruthy();
+    expect(screen.getByText(/recorded as unknown history/i)).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    const saved = storedTallies();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).not.toHaveProperty('declaredWithdrawalUntil');
   });
 
   it('does not offer a group that is managed as individual animals', async () => {

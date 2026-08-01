@@ -5,8 +5,9 @@
 
 **Last updated:** 2026-08-01 (eleventh session — BUILD: both open build loops closed, §2j) ·
 **Branch:** `phase-2/livestock` (this file's own commit moves HEAD — re-read with `git log`),
-**pushed to origin through `2e35e94`.** `pnpm verify` green LOCALLY: **80** files / **847** tests,
-bundle **142.09 KB** gz. See §6 for the compliance operating model JP set.
+**pushed to origin through `490b5bb`.** `pnpm verify` green LOCALLY: **80** files / **847** tests,
+bundle **142.09 KB** gz. `pnpm test:e2e` **27/27**. **BOTH CI LANES GREEN at `490b5bb`** (run
+`30693389012`, checked with `gh run view`). See §6 for the compliance operating model JP set.
 
 > ✅ **THE ELEVENTH SESSION CLOSED §5's ITEMS 1 AND 2 — the last two BUILD loops on the list.**
 > `58fed1d` the residue register (§2f #6 + §2.3c as one slice, as §5 prescribed); `2e35e94` the
@@ -571,6 +572,23 @@ for §4 A8, which is still unexplained.
 ⛔ **Both slices are REGULATED and UNREVIEWED. Saying so out loud is the obligation §6 sets**: they
 touch FR-131, disposal, and residue traceback. Under the batched cadence the pass runs at Phase 2
 close, not per slice — so this is not a request to run it now, it is the record that it is owed.
+
+**⭐ AND THE LANE THAT CAUGHT THE ONE REAL DEFECT WAS CI, NOT THE GATE.** `pnpm verify` was green
+through both slices and stayed green — it does not run e2e. The push turned the e2e lane red on a
+deterministic assertion: `offline-capture.spec.ts` routes `**/api/livestock/**` and counts every
+match as a capture that "went up", and the residue register is the FIRST INBOUND read that folder
+has ever had, fired by a cache provider on every mount with a signal. So a GET was recorded as a
+re-send and the "a second open sends nothing" assertion failed. Fixed in `490b5bb` — POSTs only,
+which is what `sent` always meant.
+
+⛔ **This is NOT §4 A9 and must not be filed as it.** A9 is two light-theme a11y tests timing out on
+a cold run; this was a different spec failing an assertion every time. **Both CI lanes are green at
+`490b5bb`** (run `30693389012`), verified with `gh run view` rather than inferred.
+
+**The rule out of it:** *a green local gate is not a green branch when the gate does not run every
+lane.* `pnpm verify` omits e2e by design, so any change touching the network shape of a screen — a
+new fetch, a new provider, a new route pattern — can only be proved by pushing. Push and watch,
+rather than reading `verify` as the whole answer.
 
 ---
 

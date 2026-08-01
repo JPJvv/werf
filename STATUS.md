@@ -3,11 +3,16 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-07-30 (ninth session — CLOSING: ten §2f findings fixed, FIFTH pass RUN and its
-findings fixed, JP's compliance/decisions actioned) · **Branch:** `phase-2/livestock` (this file's own
-commit moves HEAD — re-read with `git log`), pushed to origin through `beb3dc9`; the two fifth-pass
-fix commits + this file are ahead until the next push. `pnpm verify` green LOCALLY: **79** files /
-**821** tests, bundle **139.25 KB** gz. See §6 for the compliance operating model JP set this session.
+**Last updated:** 2026-08-01 (eleventh session — BUILD: both open build loops closed, §2j) ·
+**Branch:** `phase-2/livestock` (this file's own commit moves HEAD — re-read with `git log`),
+**pushed to origin through `2e35e94`.** `pnpm verify` green LOCALLY: **80** files / **847** tests,
+bundle **142.09 KB** gz. See §6 for the compliance operating model JP set.
+
+> ✅ **THE ELEVENTH SESSION CLOSED §5's ITEMS 1 AND 2 — the last two BUILD loops on the list.**
+> `58fed1d` the residue register (§2f #6 + §2.3c as one slice, as §5 prescribed); `2e35e94` the
+> transfer reason + declared purchase withdrawal (§2.3b). Both regulated, both with client routes,
+> both UNREVIEWED. See §2j. **No agents were run** (instructed, and §6's cadence says the pass is
+> batched at Phase 2 close anyway).
 
 > ✅ **The ninth session opened by reconciling both claims. Tree clean; the SHA half was STALE as
 > usual** (header said `65616c4`, HEAD was `b95eb09`). Reconciled. Keep checking.
@@ -54,13 +59,24 @@ fix commits + this file are ahead until the next push. `pnpm verify` green LOCAL
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. Ten of eleven §2f findings fixed (§2g); the FIFTH pass ran and its two findings are fixed (§2h).** `pnpm verify` green LOCALLY: **79** files / **821** tests, bundle **139.25 KB** gz (was 78/806). ⛔ **Not merge-ready: under the new cadence (§6) the batched per-phase review runs at Phase 2 close / before the PR is marked ready. One §2f finding remains: the `withinWithdrawal` reader, deferred to the §2.3c slice.** ⚠️ CI runs on push (pushed through `beb3dc9`; two fix commits + this file follow). ⚠️ `pnpm test:e2e` still 25/27 cold (§4 A9) — now snapshots on failure. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged, but the BUILD list is now empty (§2j).** All §2f findings closed — #6, the last one, went in with §2.3c as one slice (`58fed1d`), and §2.3b followed (`2e35e94`). `pnpm verify` green LOCALLY: **80** files / **847** tests, bundle **142.09 KB** gz (was 79/821). ⛔ **Not merge-ready, and only ONE thing now gates it: the BATCHED per-phase review (§6), which is JP's to trigger. §2j's two slices are regulated and UNREVIEWED.** ⚠️ CI runs on push (pushed through `2e35e94`; this file follows). ⚠️ `pnpm test:e2e` still 25/27 cold (§4 A9) — now snapshots on failure. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
-**Working tree is clean as at this commit, EXCEPT this file itself, which is being edited and will be
-committed with the ten fixes. No stashes.** Verified with `git status` at the start of the ninth
-session (tree reconciled; the SHA pointer did not — see the header).
+**Working tree is NOT clean, and it is the SAME set as the tenth session left.** Reconciled at the
+start and the end of the eleventh session (2026-08-01) and unchanged: six modified and two untracked
+files, all of them tooling config from §2i, none of them phase-2 domain code, all deliberately left
+uncommitted for JP to review. **This session staged its files by name rather than `git add -A`, so
+none of them was swept into a phase-2 commit by accident.**
+
+```
+ M .claude/hooks/defect-classes.sh    M .gitignore
+ M .claude/hooks/verify-gate.sh       M CLAUDE.md
+ M .claude/settings.json              M STATUS.md
+?? .claude/hooks/format-edited.sh    ?? .claude/settings.json.doctor-backup
+```
+
+No stashes. Verified with `git status` at both the start and the end of the tenth session.
 
 > ⚠️ **That sentence was FALSE for the whole of the fourth session and nobody noticed until a review
 > caught it.** Sixteen modified files and two new ones — a half-built B1 breeding slice — sat
@@ -497,6 +513,118 @@ cannot evade the block (server judges the true day); money integer cents; POPIA 
 
 ---
 
+## 2j. Both open BUILD loops closed (2026-08-01, eleventh session) — UNREVIEWED
+
+**A BUILD session, and the first in a while that is not a closing one.** §5's items 1 and 2 were the
+only loops left that a session could close; both are done, each with a client route, each with every
+assertion watched to fail against the old code first. `pnpm verify` green after each: **80 files /
+847 tests** (was 79/821), bundle **142.09 KB** gz. **No agents run** — instructed, and §6 puts the
+pass at Phase 2 close regardless.
+
+| Commit | Loop | What |
+|---|---|---|
+| `58fed1d` | §5 item 1 (§2f #6 + §2.3c) | **The residue register.** `withinWithdrawal` now has a reader — a "Needs your attention" screen at `/attention`, reached from home only when there is something on it. And the cross-device race is closed the way JP decided (FLAG, NEVER REFUSE) |
+| `2e35e94` | §5 item 2 (§2.3b) | **`transfer_out` / `transfer_in` carry a withholding across, and a purchase may record a DECLARED seller withdrawal** (optional; blank = unknown history, never invented) |
+
+**The decisions inside these that are worth not re-litigating:**
+
+- ⭐ **The retroactive flag is DERIVED on read, not stamped on arrival — and this is a deliberate
+  departure from the mechanism §2.3c sketched.** JP decided the BEHAVIOUR (flag, never refuse) and
+  sketched "write a flag onto the stored disposal event". Stamping when the dose arrives is the exact
+  shape CLAUDE.md's promoted rule already forbids for head counts: it steps a stored value on
+  arrival, so it depends on the order captures land in, and it goes stale the moment a dose is
+  corrected or soft-deleted. Re-deriving from the whole log answers from scratch every time. It also
+  keeps the log append-only. **The behaviour JP asked for is delivered; the mechanism is the one the
+  repo's own general rule prescribes. Flagged here so it is JP's to overrule.**
+- ⭐ **The register runs the SAME `latestMeatClearForAnimal` / `latestMeatClearForMob` the guards
+  run.** §2h finding A was two client mechanisms judging one food-safety boundary through two
+  computations, one narrower. There is one here, so the register cannot contradict the refusal it
+  exists to explain — that lesson applied up front rather than after a review found the drift.
+- ⭐ **A disposal was being judged against doses given AFTER it.** Found while building the register,
+  which cannot be correct without the fix: sell five head on the 1st, remember on the 20th, and a dip
+  on the 10th made the record unsaveable. Head that left before the needle cannot carry that residue.
+  INCLUSIVE at the same-day boundary, because dipped-and-sold on one day is a real residue question.
+- ⭐ **`transfer` had to become TWO reasons.** A tally has one subject mob and one delta, so a single
+  reason would mean minus here and plus there — and the sign is derived from the reason precisely so
+  it is never the farmer's to type. The farmer still performs one action; the screen writes both
+  halves. `transfer_in` is never offered, and the completeness check now forces a new reason to be
+  either OFFERED or explicitly named as DERIVED.
+- **`ResidueFlagJson` vs `ResidueFlag`.** `timestampSchema` parses a string INTO a Date, so the
+  parsed type describes the shape only after a parse. A cache typed as the parsed shape compiles and
+  crashes on a COLD START, because JSON has no Date and localStorage returns what it was given. Every
+  capture store in this app keeps instants as strings for the same reason.
+- **`knownAtCapture` and `withinWithdrawal` stay uncollapsed.** The pair separates "the product
+  warned them and they proceeded" from "no device could have known", and the second is the one that
+  says a guard was structurally unable to fire.
+- **An undeclared purchase claims NOTHING.** Not clear, not withheld. Inventing a period is the
+  fabricated-regulated-number defect; assuming clear is the laundering. It is not evidence either way,
+  and the screen says so rather than letting the app decide quietly.
+
+**⚠️ A test flake worth carrying forward, because it will recur.** One new integration test failed
+about half the time until it was dated. The fixtures in `livestock.integration.test.ts` share a
+single `occurredAt`, so the as-at cut falls through to the id — and `randomUUID()` is a **v4**,
+random rather than time-ordered like the client **UUIDv7** the whole `(occurredAt, id)` ordering is
+built around. The tie-break is sound; the fixture was leaning on a property real ids have and test
+ids do not. **Any same-instant fixture in that file has this hazard.** It is also a live candidate
+for §4 A8, which is still unexplained.
+
+⛔ **Both slices are REGULATED and UNREVIEWED. Saying so out loud is the obligation §6 sets**: they
+touch FR-131, disposal, and residue traceback. Under the batched cadence the pass runs at Phase 2
+close, not per slice — so this is not a request to run it now, it is the record that it is owed.
+
+---
+
+## 2i. Two live defects in OUR OWN TOOLING (2026-07-31, tenth session) — found by `/doctor`, fixed, UNCOMMITTED
+
+No phase work this session. A harness health-check read 46 session transcripts (2026-07-05 → 07-31,
+44,365 lines) and the timing data exposed two defects in `.claude/` that no test could ever have
+caught, because `pnpm verify` does not check whether the hooks themselves do what they claim.
+
+| # | What was wrong | Evidence | Fix |
+|---|---|---|---|
+| **A** ⭐⭐ | **The migration-immutability guard was SILENTLY NOT RUNNING.** `guard-migrations.sh` was configured with a repo-relative path, so it failed with `No such file or directory` on every Edit/Write issued while the cwd was not the repo root — e.g. the `packages/db` migration renames. It is a non-blocking hook, so those edits proceeded **unguarded**. The rule it enforces ("NEVER edit an applied migration") is one this repo calls non-negotiable | **71 failures** in the window (52 Edit + 19 Write), every one silent | All four hook paths now resolve via `${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}`. Verified blocking correctly from a subdirectory |
+| **B** | **The PostToolUse formatter never once formatted the edited file.** It read `$CLAUDE_FILE_PATH`, which the harness does not set — tool input arrives as JSON on stdin, which is exactly how the sibling `guard-migrations.sh` reads it. So `prettier --write ""` fell back to **the whole repo** (~300 files) after every single edit, and `eslint --fix ""` errored out, meaning **autofix has never run** | 1,884 runs, 4.75s median — matching a measured whole-repo prettier run (4.66s) almost exactly | New `.claude/hooks/format-edited.sh`: parses stdin, guards on extension, single file, direct binary. **4.75s → 0.64s measured** |
+
+⭐ **Finding A is the one that mattered.** A guard that fails open and says nothing is worse than no
+guard, because the branch protection it represents was assumed to be holding for ten sessions.
+**Audited: all 20 migrations are clean** — every one written in a single commit and never modified
+after, no uncommitted changes. The one rename (`0004_known_dreadnoughts` → `0004_membership_acceptance`)
+happened while the file was still untracked, which the guard explicitly permits. **Nothing slipped
+through**, but that was luck, not the guard.
+
+**Finding B has a side effect worth knowing:** every edit reformatted the entire repo, so any
+unrelated formatting churn that appeared in a diff during phases 1–2 came from this, not from a
+stray edit.
+
+**Also changed:**
+- `verify-gate.sh` (Stop hook) now fingerprints the working tree (HEAD + tracked diff + untracked
+  contents) and skips only when it is byte-identical to a state that ALREADY passed. Only passes are
+  cached; a failure clears it. Same guarantee, **2m52s → 0.417s** on a turn that changed nothing. It
+  was costing 81s median (p90 155s, worst 218s) × 84 runs to re-prove known results.
+- `Read(./.env.*)` in `.claude/settings.json` was blocking `.env.example` — a checked-in template
+  with no secrets, and the cause of 5 of the month's 11 permission denials. Replaced with the
+  enumerated real variants, mirroring `.gitignore`'s `.env` / `.env.*` / `!.env.example`.
+  ⚠️ **Trade-off: a novel name like `.env.whatever` is no longer denied by pattern.** Deny rules have
+  no negation operator, so this is enumeration or nothing.
+- `CLAUDE.md`: the `pnpm` commands block removed (all ten are `package.json` scripts, and the list had
+  already gone stale — it was missing `db:up`/`db:down`), plus two bullets that `.claude/rules/frontend.md`
+  already carries. ~186 fewer tokens resident in every session.
+- `defect-classes.sh`: the comment asserting the harness sets `CLAUDE_FILE_PATH` — the claim that
+  finding B's hook trusted — corrected. That hook itself was always fine; it has a stdin fallback.
+
+⛔ **ALL OF THE ABOVE IS UNCOMMITTED, by JP's decision this session** — it is tooling config, and
+landing it inside the phase-2 PR's history was not wanted. `pnpm verify` was run cold against these
+changes and passed (79 files / 821 tests). **Review with `git diff` and decide where it lands.**
+Two backup files were deliberately left in place for reversibility and are still there:
+`.claude/settings.json.doctor-backup` (untracked, will show in `git status`) and
+`~/.claude/settings.json.doctor-backup`.
+
+**Not done, offered and declined this session:** pruning the 186 accumulated `permissions.allow`
+entries in `.claude/settings.local.json`; re-enabling background auto-updates (`autoUpdates: false`,
+currently on 2.1.220 which IS latest).
+
+---
+
 ## 3. The review-agent pass (2026-07-26, second session)
 
 `reviewer`, `sync-auditor` and `compliance-checker` were run over the whole branch **as it stood at
@@ -759,8 +887,8 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
    (this file's own commit moves HEAD past the SHA it names). Check both.
    `phase-2/breeding` is DELETED — do not expect or recreate it.
 
-1a. FIRST, IF NOT ALREADY DONE: `git push`. The ninth session's ten fix commits
-   plus this file were unpushed at write time. CI has NOT run on them. Push, then
+1a. `git push` — the eleventh session's two slices ARE pushed (`2e35e94`); only
+   this file follows. CI had not yet run on either at write time. Push, then
    watch both lanes on PR #3.
 
 1b. START DOCKER DESKTOP before running the gate (§4 A10). Without it
@@ -778,28 +906,35 @@ is marked ready — not per session. Still unmet: that batched pass; CI-green-on
 failure, §4 A9).
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  STILL A CLOSING PHASE. The ninth session fixed ten of §2f's eleven, ran   ║
-║  the fifth pass and fixed its two findings, and actioned JP's compliance   ║
-║  model + decisions. It did NOT start B7 or any new feature. Keep that       ║
-║  discipline. Nothing new until the list below is empty or deferred BY JP.  ║
+║  ⭐ THE BUILD LIST IS NOW EMPTY. The eleventh session closed items 1 and 2 ║
+║  (§2j) — the last two loops a session could close on its own. What is     ║
+║  left is ONE batched review pass (JP-triggered) and two external          ║
+║  bookings. B7's GPS boundary walk is unblocked and is now the largest     ║
+║  named remainder.                                                        ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. §2f #6 withinWithdrawal reader — BUILD      §2f/§2.3c  a slice
-     WITH §2.3c (they share the surface)          (regulated → batched review)
-  2. §2.3b transfer reason + declared purchase   §2.3b      a slice (DECIDED §6;
-     withdrawal — BUILD (was a decision, now done)          build it)
-  3. §2.4 labour-law review — BOOK (external)    §2.4       gates Phase 3 DEPLOY,
+  1. THE BATCHED PHASE-2 REVIEW PASS — the last  §6         ⭐ JP's call.
+     thing gating merge-ready. Covers everything            Ask for it when
+     since `b95eb09`, incl. §2j's two regulated             Phase 2 is to close
+     slices, which are UNREVIEWED
+  2. §2.4 labour-law review — BOOK (external)    §2.4       gates Phase 3 DEPLOY,
      not its first line (§6); book in parallel while Phase 3 is built
-  4. §2.5 Gazette figures — VERIFY IN A BATCH     §2.5       per §6; tracked in
+  3. §2.5 Gazette figures — VERIFY IN A BATCH     §2.5       per §6; tracked in
      compliance-register.md; before Phase 3 DEPLOY, not now
 
-  ✅ ALL JP DECISIONS CLOSED. Remaining loops are BUILD or EXTERNAL bookings.
-  ✅ CLOSED/ACTIONED THIS SESSION: §2f ×10 (§2g) + fifth pass ×2 (§2h) ·
-     ADR-0009/0010 (§4 A11) · phase-2/breeding deleted · A9 snapshot ·
-     §2.1c hook INSTALLED (`e8c8155`) · §2.8 storage → Phase-3 infra slice ·
-     compliance model set (§6) · §2.3b / §2.6 / §2.7 all decided (§6).
+  ✅ ALL JP DECISIONS CLOSED. ✅ ALL BUILD LOOPS CLOSED (§2j).
+  ✅ CLOSED THIS SESSION: §2f #6 + §2.3c as ONE slice (`58fed1d`) ·
+     §2.3b transfer + declared purchase withdrawal (`2e35e94`).
+     Both PUSHED; CI had run on neither at write time — watch PR #3.
+
+  ⭐ ONE THING FOR JP THAT IS NOT A LOOP, recorded in §2j: the §2.3c flag is
+  DERIVED on read rather than STAMPED on arrival as your note sketched. The
+  BEHAVIOUR you decided (flag, never refuse) is delivered; the MECHANISM is the
+  one CLAUDE.md's own promoted rule prescribes, because stamping on arrival is
+  order-dependent and goes stale the moment a dose is corrected. Yours to
+  overrule — say the word and it becomes a stamp.
 
 ⛔ AGENTS ARE OWNER-TRIGGERED. Under the new cadence (§6) the review pass is
 BATCHED — one per phase, and before any deploy — not per session or per slice.
@@ -808,25 +943,24 @@ batched pass has run and its findings close. SAY SO when a slice reaches that li
 
 NEXT SESSION, IN ORDER:
 
-  A. BUILD §2f #6 + §2.3c AS ONE SLICE (item 1). #6 (`withinWithdrawal` read by
-     nothing) and §2.3c (retroactive compliance flag on a stored disposal when a
-     later-arriving dose proves it was inside a withholding) share ONE surface:
-     a residue/treatment compliance reader — "treatment register" and/or the
-     "needs your attention" screen. Build the reader AND the retroactive flag
-     together, WITH the client route (do NOT half-build a server-only capability).
-     Regulated → it waits on the batched review before merge-ready.
+  A. RECONCILE `git status` AND THE SHAs against §1, as always.
 
-  B. BUILD §2.3b (item 2) — now DECIDED (§6): a `transfer` tally reason (mob→mob,
-     same farm, withholding carried ACROSS, no food-chain guard trip) plus an
-     OPTIONAL declared seller withdrawal on a purchase (default "unknown history";
-     never invent one — that is the hardcoded-regulated-number defect). A schema
-     migration + guard + tests slice. Regulated → batched review before merge.
+  B. EITHER close Phase 2 — ask for the batched pass (loop 1), read its output
+     directly, fix what it finds, then mark PR #3 ready — OR build B7's GPS
+     boundary walk (§4 B7), which is now the largest named remainder and is no
+     longer blocked by anything.
+     ⭐ B7 is NOT regulated, so it adds nothing the batched pass must cover.
+     Doing it BEFORE the pass is therefore cheaper than doing it after, which
+     would owe a second one.
+
+  ⭐ EXPECT THE PASS TO FIND DEFECTS IN §2j's TWO SLICES. Five passes running
+  have each found a real defect inside the previous pass's fixes, and these are
+  ~1,700 lines of regulated code written by one author with no review at all.
+  A green gate is not evidence against that; `pnpm verify` cannot tell you a
+  withdrawal was carried to the wrong mob.
 
   SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
   code, then keep it — and check the CLAIM as well as the code.
-
-⛔ DO NOT START B7's GPS boundary walk or any other new feature until 1–2 are
-closed. It is the largest named remainder and it will still be there.
 
 Phase 1 has NO open gaps. **Phase 3 is NOW UNBLOCKED to BUILD under §6** — the
 mechanism (date-versioned `regulatory_rates`, lookup by `occurred_at`, the

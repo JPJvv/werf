@@ -12,7 +12,7 @@
  * nothing at all leaves the device while offline.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
@@ -414,6 +414,134 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(paths.some((p) => p.endsWith('/livestock/mob-tallies'))).toBe(false);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(TALLY_ID);
+  });
+
+  it('⭐ holds a slaughter when the TRANSFER that withholds its flock was refused', async () => {
+    // The same defect one route along. §2.3b made a tally EVIDENCE as well as an act: head arriving
+    // by `transfer_in` carries a withholding onto the mob it joins, and for a counted flock — no
+    // `animals` rows, nothing else to attach a dose to — it is the only thing that can. The transfer
+    // declared no `provides`, so a refused one tainted nothing and the slaughter behind it posted to
+    // a server that had never heard of the arrival. 201, and dipped meat on the truck.
+    const SOURCE = '0190f3a0-0000-7000-8000-0000000000b3';
+    const TRANSFER_ID = '0190f3a0-0000-7000-8000-0000000000a9';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SOURCE,
+          farmId: FARM_ID,
+          name: 'Dip camp',
+          species: 'sheep',
+          headCount: 200,
+          initialHeadCount: 200,
+        },
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Sale flock',
+          species: 'sheep',
+          headCount: 40,
+          initialHeadCount: 40,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        // Captured Monday: forty head walk in from the dipped camp, carrying its withholding.
+        {
+          id: TRANSFER_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'transfer_in',
+          count: 40,
+          delta: 40,
+          counterpartMobId: SOURCE,
+          carriedWithholdUntil: '2026-08-17',
+        },
+        // Captured Tuesday: ten of them to the abattoir.
+        {
+          id: TALLY_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'slaughter',
+          count: 10,
+          delta: -10,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      // Both halves go to the same endpoint, so the refusal is chosen on the record, not the path.
+      const body = typeof init?.body === 'string' ? init.body : '';
+      const refused = body.includes('transfer_in');
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'the source group is short' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(TALLY_ID);
+    expect(sent).not.toContain(TRANSFER_ID);
+    // And the capture is KEPT, never dropped: a 4xx sets it aside for a later round.
+    expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+  });
+
+  it('⭐ keeps every capture when the session cannot be refreshed — invariant 5', async () => {
+    // `offline-sync.md` §5 calls this "a two-line mistake that destroys a month of a farmer's work"
+    // and says it gets its own test. It did not have one: the behaviour was correct and held by
+    // review alone, which is the state a refactor quietly ends. The token has expired while the
+    // phone was in a dead zone and the refresh ALSO fails — an expired refresh token, a revoked
+    // session, a server that has forgotten this device. Nothing may be dropped: the queue is the
+    // farmer's work and the only copy of it.
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: TALLY_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'death',
+          count: 3,
+          delta: -3,
+        },
+      ]),
+    );
+    const before = window.localStorage.getItem(`werf-tallies:${FARM_ID}`);
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const unauthorised = {
+        ok: false,
+        status: 401,
+        json: async () => ({ code: 'UNAUTHORIZED', message: 'token expired' }),
+      } as unknown as Response;
+      // Both the capture and the refresh behind it are refused.
+      return String(input).includes('/auth/refresh') ? unauthorised : unauthorised;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText(/not sent|to send|sending/i);
+
+    // The capture store is byte-identical, nothing joined the sent-log, and the session was not
+    // cleared out from under the queue.
+    await waitFor(() => {
+      expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toBe(before);
+    });
+    expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '').not.toContain(TALLY_ID);
+    expect(window.localStorage.getItem('werf-session')).toBeTruthy();
   });
 
   it('does not re-send after a cold start — the sent-log makes a re-flush a no-op', async () => {

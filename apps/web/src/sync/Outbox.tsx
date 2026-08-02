@@ -41,7 +41,7 @@ import { useBoundaryWalks, useLandUnits } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useAnimals } from '../livestock/LocalHerd';
 import { useMobs } from '../livestock/LocalMobs';
-import { useTallies } from '../livestock/LocalTallies';
+import { useTallies, type StoredTally } from '../livestock/LocalTallies';
 import { useAnimalLabels, useIdentifiers } from '../livestock/LocalIdentifiers';
 import { useWeights } from '../livestock/LocalWeights';
 import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
@@ -184,6 +184,20 @@ export interface RefusedCapture {
   readonly code: string;
   readonly status: number;
 }
+
+/**
+ * A tally that brings head IN carrying a withholding with it — the third source of one (§2.3b),
+ * after a dose given here and a dose given to an animal elsewhere in its history.
+ *
+ * An UNDECLARED purchase is deliberately not one. It claims nothing in either direction: inventing a
+ * period would be a fabricated regulated number and assuming clear would be the laundering the
+ * declaration exists to stop. It is not evidence, so it holds nothing back.
+ */
+const arrivesWithheld = (tally: StoredTally): boolean =>
+  tally.reason === 'transfer_in' ||
+  (tally.reason === 'purchase' && tally.declaredWithdrawalUntil !== undefined);
+
+const isNotArrival = (tally: StoredTally): boolean => !arrivesWithheld(tally);
 
 /** Injectable so tests can back the sent-log with in-memory storage instead of localStorage. */
 export type SentLogFactory = (key: string) => SentLog;
@@ -377,11 +391,23 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // the mobs where the FK graph alone would put it — a `sale`/`slaughter` tally is judged against
     // the withholding, so it must not overtake the dose that creates one. It is named by the mob it
     // adjusts: "three off Flock A" is a sentence a farmer recognises; the uuid is not.
-    for (const tally of tallies) {
+    //
+    // ⭐ ARRIVALS GO BEFORE DISPOSALS, and for the same reason doses go before tallies. Since §2.3b a
+    // tally is not only an act: head arriving by `transfer_in`, or by a purchase whose seller
+    // declared a withdrawal, IS the withholding on the mob it joins — for a counted flock it is the
+    // only thing that can be, because there are no `animals` rows for a dose to attach to. Left in
+    // capture order, a slaughter captured on Tuesday could overtake the transfer captured on Monday
+    // that withholds it, and the server cannot refuse what it has not received.
+    for (const tally of [...tallies.filter(arrivesWithheld), ...tallies.filter(isNotArrival)]) {
       if (!sent.has(tally.id)) {
         // Only a sale or slaughter tally is judged against a withholding; a death or recount takes
         // head out without putting meat into the food chain, so it is not held for evidence.
         const intoFoodChain = tally.reason === 'sale' || tally.reason === 'slaughter';
+        // Declaring nothing here meant a refused transfer tainted no subject, so the slaughter
+        // behind it was sent and the server — which had never received the arrival — returned 201.
+        // That is the fifth pass's own finding, one route along, reintroduced by the commit after
+        // its fix.
+        const arrives = arrivesWithheld(tally);
         items.push({
           id: tally.id,
           kind: 'tally',
@@ -392,6 +418,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // individual dose on a member, or a dose carried in from a mob a member has left, must
           // hold this tally exactly as `meatWithdrawalForMob` refuses it at capture. Shadowing the
           // guard with a narrower set was the gap the fifth pass found in all three agents.
+          ...(arrives ? { provides: [tally.mobId] } : {}),
           ...(intoFoodChain
             ? {
                 guardedBy: mobDisposalSubjects(

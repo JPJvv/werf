@@ -19,7 +19,12 @@
     ],
     "deny": [
       "Read(./.env)",
-      "Read(./.env.*)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Read(./.env.development)",
+      "Read(./.env.production)",
+      "Read(./.env.staging)",
+      "Read(./.env.test)",
       "Read(./infra/secrets/**)",
       "Bash(rm -rf *)",
       "Bash(git push --force*)",
@@ -32,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/ensure-docker.sh",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}/.claude/hooks/ensure-docker.sh\"",
             "timeout": 75,
             "statusMessage": "Checking the container runtime…"
           }
@@ -42,7 +47,12 @@
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
-        "hooks": [{ "type": "command", "command": ".claude/hooks/guard-migrations.sh" }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}/.claude/hooks/guard-migrations.sh\""
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -51,18 +61,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm exec prettier --write \"$CLAUDE_FILE_PATH\" 2>/dev/null; pnpm exec eslint --fix \"$CLAUDE_FILE_PATH\" 2>&1 | head -30"
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}/.claude/hooks/format-edited.sh\""
           },
           {
             "type": "command",
-            "command": ".claude/hooks/defect-classes.sh"
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}/.claude/hooks/defect-classes.sh\""
           }
         ]
       }
     ],
     "Stop": [
       {
-        "hooks": [{ "type": "command", "command": ".claude/hooks/verify-gate.sh" }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}/.claude/hooks/verify-gate.sh\""
+          }
+        ]
       }
     ]
   }

@@ -15,13 +15,14 @@
 
 set -uo pipefail
 
-# The harness sets CLAUDE_FILE_PATH for Edit|Write hooks (same as the sibling
-# prettier/eslint hook). Fall back to parsing the PostToolUse JSON on stdin.
+# Claude Code passes tool input as JSON on stdin. CLAUDE_FILE_PATH is NOT set by
+# the harness — an earlier comment here claimed it was, and the sibling
+# prettier/eslint hook trusted that claim and silently formatted the whole repo
+# on every edit for 1,884 runs. Stdin is the source of truth; the env var is kept
+# only as a fallback in case a future harness version does set it.
 input="$(cat 2>/dev/null || true)"
-file="${CLAUDE_FILE_PATH:-}"
-if [ -z "$file" ]; then
-  file="$(printf '%s' "$input" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
-fi
+file="$(printf '%s' "$input" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+[ -z "$file" ] && file="${CLAUDE_FILE_PATH:-}"
 
 [ -z "$file" ] && exit 0
 [ -f "$file" ] || exit 0

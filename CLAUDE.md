@@ -9,18 +9,7 @@ Offline-first PWA for South African farm management. Monorepo, TypeScript everyw
 
 ## Commands
 
-```bash
-pnpm dev              # all apps, watch mode
-pnpm build            # turbo build, all packages
-pnpm test             # vitest unit + integration
-pnpm test:e2e         # playwright
-pnpm lint             # eslint + prettier check
-pnpm typecheck        # tsc --noEmit across workspaces
-pnpm db:migrate       # drizzle-kit migrate against local postgres
-pnpm db:generate      # generate migration from schema diff
-pnpm db:seed          # seed dev data (3 farms: livestock, crop, mixed)
-pnpm verify           # THE GATE: lint + typecheck + test + build. Must exit 0.
-```
+Scripts live in the root `package.json` — read it rather than trusting a copy here.
 
 `pnpm verify` is the definition of done for any change. Run it before saying a task is complete.
 
@@ -43,8 +32,6 @@ React PWA → local SQLite (via PowerSync web SDK, OPFS) → PowerSync service �
 - Named exports. No default exports except React route components.
 - Zod schemas in `@werf/core/schemas` are the single source of truth for validation. Derive TS types with `z.infer`; never hand-write a type that duplicates a schema.
 - Server: NestJS modules, constructor injection, no service locator.
-- Client: TanStack Query for server state, PowerSync watched queries for local state, `useState`/`useReducer` for UI state. No global store.
-- Tailwind core utilities only, tokens from `@werf/ui`. No arbitrary values (`w-[137px]`) — add a token instead.
 - **No theme conditionals in components.** `theme === 'dark' ? a : b` means the token system failed — fix the token. Tokens are stable across themes (`--soil-900` is always "the ink"); only their values change under `[data-theme]`.
 - Errors: throw typed errors from `@werf/core/errors`. Never `throw new Error("string")` in domain code.
 

@@ -3,15 +3,22 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-08-02 (twelfth session — BUILD: B7 closed, the GPS boundary walk, §2k) ·
-**Branch:** `phase-2/livestock` (this file's own commit moves HEAD — re-read with `git log`),
-**pushed to origin through `f6d4c0e`.** `pnpm verify` green LOCALLY: **83** files / **909** tests,
-bundle **145.82 KB** gz. `pnpm test:e2e` **27/27 COLD** (see §4 A9 — it did not reproduce this
-session). **BOTH CI LANES GREEN at `f6d4c0e`** (run `30751526361`: `E2E · axe (both themes)` 1m46s,
-`Lint · Typecheck · Test · Build` 4m13s — verified with `gh run view`, not inferred).
+**Last updated:** 2026-08-02 (THIRTEENTH session — ⭐ THE BATCHED SIXTH REVIEW PASS RAN, §2l) ·
+**Branch:** `phase-2/livestock` (this file's own commit moves HEAD — re-read with `git log`).
+`pnpm verify` green LOCALLY: **83** files / **922** tests (was 909), bundle **146.04 KB** gz.
+`pnpm test:e2e` **25/27** — the two failures are §4 A9 exactly (`a11y.spec.ts:50` and `:64`, light
+theme, second factor), on screens this session never touched. ⭐ **A9 REPRODUCED AND LEFT EVIDENCE
+FOR THE FIRST TIME — read §4 A9 before theorising about it again.**
 See §6 for the compliance operating model JP set.
 
-> ✅ **THE TWELFTH SESSION CLOSED §4 B7 — walking a camp boundary by GPS (`f6d4c0e`).** It was the
+> ⭐ **THE THIRTEENTH SESSION RAN THE BATCHED PASS JP TRIGGERED, AND ALL THREE AGENTS RETURNED NOT
+> APPROVABLE FOR THE SIXTH CONSECUTIVE TIME.** Fourteen findings over `beb3dc9..HEAD`, including the
+> fifth pass's own two fix commits. **Every SEV-1, SEV-2 and MED is now FIXED** (`eb97045`,
+> `6ae9dfa`, `03ddf4e`, `122f9b0`, `b326321`) — see §2l for the findings and §2m for what is left.
+> ⛔ **THE FIXES ARE THEMSELVES UNREVIEWED. Six passes running have each found a real defect inside
+> the previous pass's fixes; this session's fixes are where the SEVENTH pass should look first.**
+
+> ✅ **The TWELFTH session closed §4 B7 — walking a camp boundary by GPS (`f6d4c0e`).** It was the
 > largest named remainder and the only build work left that a session could do on its own. **NOT
 > regulated**, which is why it was done BEFORE the batched pass rather than after: doing it after
 > would have owed a second one. See §2k. **No agents were run** (instructed).
@@ -67,23 +74,21 @@ See §6 for the compliance operating model JP set.
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. The BUILD list is empty again — B7, the last named remainder, closed this session (§2k).** All §2f findings closed; §2j's two regulated slices in; `f6d4c0e` the GPS boundary walk. `pnpm verify` green LOCALLY: **83** files / **909** tests, bundle **145.82 KB** gz (was 80/847). ⛔ **Not merge-ready, and only ONE thing now gates it: the BATCHED per-phase review (§6), which is JP's to trigger. §2j's two slices are regulated and UNREVIEWED; §2k is NOT regulated but is also unreviewed.** ✅ **BOTH CI LANES GREEN at `f6d4c0e`** (run `30751526361`); this file follows. ⚠️ `pnpm test:e2e` was **27/27 on a cold run** this session — A9 did not reproduce, which is evidence and not a fix. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. The BUILD list has ONE item on it again — §2m #1, the unlinked transfer halves.** ⭐ **THE BATCHED SIXTH REVIEW PASS RAN (JP-triggered) and all three agents returned NOT APPROVABLE; every SEV-1/SEV-2/MED is FIXED (§2l).** `pnpm verify` green LOCALLY: **83** files / **922** tests, bundle **146.04 KB** gz (was 83/909). ⛔ **Not merge-ready. The fixes are UNREVIEWED, and six passes running have each found a defect inside the previous pass's fixes — a SEVENTH pass over this session's fixes is the honest next gate, and it is JP's call.** ⚠️ `pnpm test:e2e` **25/27**, both failures are §4 A9 exactly, on screens untouched this session — and A9 finally LEFT EVIDENCE. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
-**Working tree is NOT clean, and it is the SAME set as the tenth session left.** Reconciled at the
-start and the end of the twelfth session (2026-08-02) and unchanged: five modified and two untracked
-files, all of them tooling config from §2i, none of them phase-2 domain code, all deliberately left
-uncommitted for JP to review. (STATUS.md itself is the sixth line below and is committed each
-session, so it shows as modified only mid-session.) **This session again staged its files by name
-rather than `git add -A`, so none of them was swept into a phase-2 commit by accident.**
+**Working tree is CLEAN as of the thirteenth session.** The tooling changes that had sat
+uncommitted since the tenth session are committed (`5a8db20`), and `.claude/settings.json.doctor-backup`
+is deleted — git is the reversibility mechanism now that the change is in history. They could NOT go
+on a branch off `main`: `main` has neither `defect-classes.sh` nor `ensure-docker.sh`, both commits on
+THIS branch, so the doctor fixes are edits on top of this branch's own tooling and a separate branch
+would have to be stacked here and merge in the same PR anyway. **That reverses the tenth session's
+"leave them uncommitted" decision, deliberately and with the reason recorded; say so if it was wrong.**
 
-```
- M .claude/hooks/defect-classes.sh    M .gitignore
- M .claude/hooks/verify-gate.sh       M CLAUDE.md
- M .claude/settings.json              M STATUS.md
-?? .claude/hooks/format-edited.sh    ?? .claude/settings.json.doctor-backup
-```
+⚠️ **Still run `git status` first and reconcile it against this paragraph.** It asserted a clean tree
+through an entire session once while eighteen files sat uncommitted, and that is why this is the first
+instruction in §5.
 
 No stashes. Verified with `git status` at both the start and the end of the tenth session.
 
@@ -600,6 +605,85 @@ rather than reading `verify` as the whole answer.
 
 ---
 
+## 2l. The SIXTH review pass — the BATCHED one (2026-08-02, thirteenth session) — ALL FIXED
+
+**JP TRIGGERED IT.** All three agents over `beb3dc9..HEAD`, run in parallel, output read directly.
+The range deliberately STARTS at `4978bad` so it includes the fifth pass's own two fix commits —
+excluding them would have skipped the highest-probability defect site in the whole range, which is
+this repo's most reliable measured fact.
+
+**`compliance-checker`: NOT APPROVABLE. `sync-auditor`: NOT APPROVABLE. `reviewer`: NOT APPROVABLE.**
+Sixth consecutive pass, and the pattern did not weaken.
+
+⭐ **ONE ROOT CAUSE UNDER MOST OF IT, and it is the lesson worth carrying into Phase 3:**
+`2e35e94` introduced a THIRD way a withholding can exist — arriving WITH the head rather than being
+given to it — and **every reader written for the two-source world was left standing.** Not one of
+them was wrong when it was written. The commit that widened the world did not go back for them.
+
+| Sev | Found by | What was wrong | Fix |
+|---|---|---|---|
+| **SEV-1** | `sync-auditor` | **A carried withholding was FROZEN at arrival, so a late dose laundered a counted flock.** Computed from the source mob's log as it stands when the transfer LANDS — stepping a stored value on arrival, the exact shape this repo ruled out for head counts and boundaries, applied to residue. Dip A on the 20th offline; another phone moves 40 head A→B on the 22nd having never seen the dip; B is clear FOREVER. A counted flock has no `animals` rows, so no other route catches it, and the register missed it too by running the same read | `eb97045` — the stored date is a FLOOR, never a ceiling; the source is asked again live, with a `visited` set for the A→B→A cycle |
+| **SEV-1** | `compliance-checker` | **`dosedSpan` scanned only health events**, so a farm whose only withholding was bought or transferred in got an EMPTY register — on the farm least likely to have a second system catching the mistake | `eb97045` — `withholdingSpan`, reading every source the per-subject derivation reads |
+| **SEV-2** ⭐⭐⭐ | **all three** | **`residue.ts` passed six of seven arguments to `meatWithdrawalForMob`**, so the screen that exists to explain a refusal judged by a narrower rule than the one that refused — the exact defect its own header claims is closed | `eb97045` — argument passed, and the parameter is REQUIRED so omission cannot compile |
+| **SEV-2** ⭐⭐ | `sync-auditor` + `compliance-checker` | **`transfer_out` joined `TALLY_DECREASES`**, widening the constant underneath a reader asking the wrong question of it. A camp-to-camp move was filed as a disposal and rendered "Died" / "Gevrek" | `eb97045` — `TALLY_TRANSFERS` subtracted on both sides; the default label arm is a neutral "Left the herd" |
+| **SEV-2** ⭐⭐ | `sync-auditor` + `compliance-checker` | **A refused `transfer_in` held nothing back.** A tally CREATES evidence now and declared no `provides`, so the slaughter behind it posted to a server that had never heard of the arrival. The fifth pass's own finding, one route along | `6ae9dfa` — `provides` on arrivals, and arrivals ordered ahead of disposals |
+| **SEV-2** | `reviewer` | **An hour of walking discarded in silence.** `selectedId` snapshotted `?camp=` once; the farm switcher sits in the shell header on every screen and does not navigate, so Save stayed ENABLED and returned with no error. `?camp=A`→`?camp=B` filed the walk against A — and a boundary RESETS, so that overwrites A's correct fence | `03ddf4e` — reconciled every render against `units`; Save disabled when there is no camp |
+| **MED** | `reviewer` | **`/attention` — the newest REGULATED screen — had zero axe coverage** in either theme or state, masked by a heading collision with `/not-sent` that the checklist line named while claiming both | `122f9b0` — in both sweeps; the populated seed carries a flagged death |
+| **MED** | `reviewer` | **The tie-break test asserted array order, not the tie-break.** Delete the id comparison and it stayed green | `03ddf4e` — loser seeded first; verified it now reds when the tie-break is deleted |
+| **MED** | `reviewer` | **Two FR-131 checklist remainders closed by this branch were still marked open**, in the document the exit gate is measured against. Fourth occurrence of that class | `b326321` |
+| **MED** | `sync-auditor` | **`tallyPayloadSchema` claimed the two transfer halves are "tied by the envelope's `batch_id`"** — always written `null`. False the day it was written | `b326321` — claim removed, the real cost recorded as a KNOWN GAP (§2m #1) |
+| **MED** | `sync-auditor` | **Invariant 5 (a 401 must never discard captures) had no test**, though `offline-sync.md` §5 says it gets one. The behaviour was correct | `6ae9dfa` — a regression pin, recorded as such rather than claimed as a fix |
+| LOW → **two bugs** | `reviewer` | **`d1 === 0` on a computed float** in `segmentsCross`. Chasing it found the half the review missed: the STRICT-SIGN branch reads the same ~2e-17 dust as a real sign flip, so it could refuse a fence that never crossed anything | `03ddf4e` — one `sideOf` with a noise floor, for both branches |
+| LOW | `reviewer` | The area header said planar degrees are "a 13% under-read" — wrong in direction AND number. They over-read east–west by 1/cos(φ), ~14% | `03ddf4e` |
+| LOW | `reviewer` | A test comment inverted against its own fixture | `03ddf4e` |
+
+**Rules that came out of this pass:**
+
+- **Widening a shared constant is a change to every reader of it.** `TALLY_DECREASES` gained one
+  member and three readers silently began answering a different question. Adding to a shared enum is
+  not an additive change: grep every use and ask what question each was really asking of it.
+- **A default arm that picks a NOUN will eventually pick the wrong one.** `default: 'died'` told a
+  farmer that forty head had died when they had walked through a gate.
+- **An optional parameter is a silent narrowing waiting to happen.** `tallies = []` let a new caller
+  compile against the old contract and answer a narrower question than the guard it mirrors.
+- **A snapshot of a route parameter is a bug the moment anything else can change the world.** The farm
+  switcher does not navigate, so no remount ever corrected it.
+- **`=== 0` on a computed float is wrong in BOTH directions**, and the second is the one that is easy
+  to miss: it fails to catch what you meant to catch, AND strict sign comparisons elsewhere read the
+  same dust as signal. Third `=== 0` defect in this module's short life.
+- **A round-number fixture can make a broken implementation look correct.** With 0.7/0.25 the old
+  collinear code returned the right answer by accident, through dust in a different branch. The test
+  only became directional at 0.7000001/0.2500001 — established by enumerating 2401 disagreeing cases
+  rather than by argument.
+- **Two screens with near-identical headings will eventually be confused in a checklist**, and the
+  one that loses is the one nobody audits.
+
+---
+
+## 2m. What this session did NOT fix, deliberately
+
+Named so the next session does not re-derive them. None is a SEV.
+
+1. ⭐ **The two halves of a transfer are not linked (MED, `sync-auditor`).** `recordMobTally` writes
+   `batchId: null`. They are two queue items with two ids, so a refused `transfer_out` — the as-at
+   fold finding the source short — does not hold back the `transfer_in`, and the destination gains
+   head that never left anywhere. **This is a BUILD SLICE and it is the top of the next session's
+   list:** a shared batch id on the wire (schema + service + domain + client) and a flush that holds
+   the second half when the first is refused, through the `provides`/`guardedBy` mechanism that
+   already exists. The false comment is gone; the gap is now stated in the schema itself.
+2. `herd.ts:65` `positionByAnimal` still orders by `localeCompare` on `occurredAt` alone — outside
+   the review range, and the sibling of a projection corrected inside it.
+3. `LandScreen` says "fence not walked yet" for a camp with a TYPED `boundaryGeojson`, collapsing
+   three states into two — the "two absences are two facts" rule again.
+4. `DraftStore` is last-write-wins across tabs (no `storage` listener). Consistent with
+   `capture-store.ts`, so not new; a walk is a single-tab act in practice.
+5. `AttentionScreen` keeps "Saved on this phone. Not sent yet." on a row the server legitimately
+   omits. Fails toward blocking, so not a safety issue, but it is a false statement on a compliance
+   screen.
+6. The a11y comment for `/land/walk` says "the two tinted warning panels"; the act renders one.
+
+---
+
 ## 2k. B7 closed — a fence can be walked (2026-08-02, twelfth session) — UNREVIEWED
 
 **A BUILD session.** One commit, `f6d4c0e`, closing **§4 B7** — the largest named Phase 2 remainder
@@ -972,7 +1056,7 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | A7 | ✅ **FIXED 2026-07-26 — the e2e lane could report green against code that no longer existed.** `vite preview` serves `dist`, and `turbo.json`'s `build` task declared no `outputs`, so turbo cached only LOGS: a cache hit printed "FULL TURBO" and wrote no files, leaving whatever bundle was already on disk. Proven rather than theorised — a screen's heading was replaced with a literal and the suite stayed 25-green, then kept FAILING for five consecutive runs after the source was restored, because the broken bundle was never replaced either way. Two changes: `outputs: ["dist/**"]` in `turbo.json`, and `pnpm test:e2e` now builds first (turbo-cached, so free when nothing changed). Verified in both directions — breaking a heading now fails 2 tests, restoring it returns 25 green. **This is why the earlier "2 failed then clean on a re-run" was never a flake; do not re-diagnose it as one.** |
 | A10 | ⛔ **NEW 2026-07-28 — `pnpm verify` CANNOT BE RUN on a machine with no Docker, and it fails LOUDLY rather than skipping.** 13 test files die on `Could not find a working container runtime strategy`; **272 of the 806 tests — the entire testcontainers integration tier — never execute**, and the gate exits 1. Locally the real figure was 534/806 passing. This is an environment condition, not a defect. ✅ **RESOLVED THE SAME DAY, two ways.** (1) With Docker started, `pnpm verify` was re-run and exits **0 — 78 files / 806 tests, all passing, 157s**, so the 806 figure is now confirmed LOCALLY as well as on CI. (2) A `SessionStart` hook (`.claude/hooks/ensure-docker.sh`, wired in `.claude/settings.json`) now checks the runtime at session start, launches Docker Desktop if it is down, waits up to 60s, and **never blocks** — worst case it prints a warning saying the integration tier cannot run, which beats thirteen confusing failures later. Silent and instant when Docker is already up |
 | A11 | ✅ **FIXED 2026-07-30 (`513da32`).** Both ADRs cherry-picked from `docs/phase-3-6-scope` onto this branch — they reference only ADR-0001/0005/0007, all already here, so nothing new dangles. The three citations (`STATUS.md` §2.6, §3, `phase-checklists.md`) now resolve. ⚠️ Consequence for the post-merge cherry-pick of the scope branch (§2.2): those two ADR files now exist on BOTH branches and will conflict/skip — drop them from that cherry-pick |
-| A9 | ◐ **STILL OPEN. 2026-08-02: a COLD `pnpm test:e2e` ran 27/27 GREEN, and CI's e2e lane was green too — with two NEW audits added to it (`/land/walk`, empty and populated, both themes). ⛔ Do NOT read that as a fix: nothing was done to A9, the snapshot-on-failure instrumentation `40ea435` added never fired because nothing failed, and a load-dependent failure that does not reproduce once has not been diagnosed. It is one more data point that the failure is load/cold-start dependent rather than deterministic. Original note follows.** ◐ **NOW DIAGNOSABLE. 2026-07-30 (`40ea435`): the e2e config captures a DOM snapshot + screenshot ON FAILURE** (`trace: 'retain-on-failure'` + `screenshot: 'only-on-failure'`; retries stay 0). The root cause of the "no evidence" problem was that `trace: 'on-first-retry'` never fired against `retries: 0`. Next red run leaves a snapshot to read instead of another hypothesis. The candidate below (async session seed racing the route guard) is still unconfirmed — confirm it from the captured snapshot. Original note follows. ◐ **NARROWED 2026-07-28, AND A9'S OWN RECORDED SUSPICION IS RULED OUT.** Reproduced on a cold local run: **25 passed / 2 failed, exit 1, 53.9s** — the same two light-theme tests. Two things are now FACT that were not: (1) the failure is `element(s) not found`, and **BOTH** the passkey button and the "use an authenticator app instead" fallback are absent — so it is not one button, the entire choice UI is missing; (2) `passkeysAvailable()` (`apps/web/src/auth/passkeys.ts:42`) is a **synchronous** DOM check (`typeof window.PublicKeyCredential === 'function'`) consumed as `useState(passkeysAvailable)` — it has **no timing dependence whatsoever**, so **A9's recorded "async can-this-device-do-it probe" hypothesis is dead.** That leaves the screen either not mounting or mounting without a session, which points at the async session seed racing the route guard — `a11y.spec.ts:73` already comments that "the seed arrives asynchronously". ⛔ **That is a NARROWED CANDIDATE, NOT A DIAGNOSIS** — no page snapshot was captured to confirm what did render. Next step is cheap and specific: capture `page.content()` or a screenshot on failure. Original note follows. ◐ **THE FAILING TESTS NOW HAVE NAMES (2026-07-28), which is what A8 and A9 both asked for.** A full `pnpm test:e2e` reported **25 passed, exit 1** again — the same signature — and this time the names were captured before anything else: `a11y.spec.ts:50` *the second-factor choice has no accessibility violations in the **light** theme* and `a11y.spec.ts:64` *second-factor enrolment …* **in the light theme**. Both timed out on `getByRole('button', { name: /use this phone as the key/i })` — the PASSKEY button, which §2b's own rule puts behind an async "can this device do it" probe. **Evidence, not a diagnosis:** the failing run was COLD and took 53.2s; an immediate second full run was 27-green in 21.7s, and the two tests alone pass in 5.5s. So it is load/cold-start dependent and the 5s `expect` timeout inside a 30s test is the prime suspect, not a code fault. ⛔ **Do not close this on that reasoning — it has not been proven.** What IS now settled: it is not random, it is these two tests, and it is the light theme (which runs first). Original note follows. ⚠️ **IT IS THE SAME MISTAKE A8 RECORDS.** One `pnpm test:e2e` run on 2026-07-27 reported **25 passed with exit code 1** — so two failed — and **the failing test names were discarded**, because the command piped the run through `tail -4` while its exit code gated a commit. Three consecutive runs since are 27-green, and `pnpm verify` is green, so this is *probably* a build-cache race between a `prettier --write` and the `turbo build` that `test:e2e` runs first. **That is a guess and it is recorded as one.** ⚠️ **Never pipe a test run through `tail`/`grep` when its result decides whether to commit** — capture the failure first, exactly as A8 says and exactly as was not done here |
+| A9 | ⭐ **STILL OPEN, BUT IT FINALLY LEFT EVIDENCE (2026-08-02, thirteenth session) — READ THIS BEFORE THEORISING ABOUT A9 AGAIN.** It reproduced (25/27, `a11y.spec.ts:50` and `:64`, light theme, second factor — the same two, again), and this is the FIRST reproduction since `40ea435` added failure instrumentation, so the screenshot and trace actually fired. **The captured screenshot is COMPLETELY BLANK** — the light theme's background colour and nothing else on the page. That is a much stronger fact than anything A9 has had, and it kills the standing hypothesis: this is NOT a missing button, and it is NOT the route guard redirecting (a redirect renders the sign-in screen; a guard failure renders something). The page background proves `index.html`'s pre-paint theme script RAN and `data-theme` was set — which is also why the sibling `toHaveAttribute('data-theme', theme)` assertion has always passed. So the HTML shell loaded and the React tree rendered NOTHING. ⛔ **That is evidence, not a diagnosis, and it must not be written up as one.** No top-level `return null` was found in `App`/`AuthProvider` to explain it. The leading unconfirmed candidate is now the PWA service worker (`sw.js`, workbox precache) serving a partial or stale precache on a COLD run under load, which would fit "load/cold-start dependent" better than anything proposed so far — but the trace zip has not been opened. **Next step, and it is cheap: `pnpm exec playwright show-trace` on the captured trace, and check for a console error or a failed chunk request.** The artefacts live under `test-results/` (git-ignored) and are overwritten by the next run, so read them before re-running. Original note follows. ◐ **2026-08-02 (twelfth session): a COLD `pnpm test:e2e` ran 27/27 GREEN, and CI's e2e lane was green too — with two NEW audits added to it (`/land/walk`, empty and populated, both themes). ⛔ Do NOT read that as a fix: nothing was done to A9, the snapshot-on-failure instrumentation `40ea435` added never fired because nothing failed, and a load-dependent failure that does not reproduce once has not been diagnosed. It is one more data point that the failure is load/cold-start dependent rather than deterministic. Original note follows.** ◐ **NOW DIAGNOSABLE. 2026-07-30 (`40ea435`): the e2e config captures a DOM snapshot + screenshot ON FAILURE** (`trace: 'retain-on-failure'` + `screenshot: 'only-on-failure'`; retries stay 0). The root cause of the "no evidence" problem was that `trace: 'on-first-retry'` never fired against `retries: 0`. Next red run leaves a snapshot to read instead of another hypothesis. The candidate below (async session seed racing the route guard) is still unconfirmed — confirm it from the captured snapshot. Original note follows. ◐ **NARROWED 2026-07-28, AND A9'S OWN RECORDED SUSPICION IS RULED OUT.** Reproduced on a cold local run: **25 passed / 2 failed, exit 1, 53.9s** — the same two light-theme tests. Two things are now FACT that were not: (1) the failure is `element(s) not found`, and **BOTH** the passkey button and the "use an authenticator app instead" fallback are absent — so it is not one button, the entire choice UI is missing; (2) `passkeysAvailable()` (`apps/web/src/auth/passkeys.ts:42`) is a **synchronous** DOM check (`typeof window.PublicKeyCredential === 'function'`) consumed as `useState(passkeysAvailable)` — it has **no timing dependence whatsoever**, so **A9's recorded "async can-this-device-do-it probe" hypothesis is dead.** That leaves the screen either not mounting or mounting without a session, which points at the async session seed racing the route guard — `a11y.spec.ts:73` already comments that "the seed arrives asynchronously". ⛔ **That is a NARROWED CANDIDATE, NOT A DIAGNOSIS** — no page snapshot was captured to confirm what did render. Next step is cheap and specific: capture `page.content()` or a screenshot on failure. Original note follows. ◐ **THE FAILING TESTS NOW HAVE NAMES (2026-07-28), which is what A8 and A9 both asked for.** A full `pnpm test:e2e` reported **25 passed, exit 1** again — the same signature — and this time the names were captured before anything else: `a11y.spec.ts:50` *the second-factor choice has no accessibility violations in the **light** theme* and `a11y.spec.ts:64` *second-factor enrolment …* **in the light theme**. Both timed out on `getByRole('button', { name: /use this phone as the key/i })` — the PASSKEY button, which §2b's own rule puts behind an async "can this device do it" probe. **Evidence, not a diagnosis:** the failing run was COLD and took 53.2s; an immediate second full run was 27-green in 21.7s, and the two tests alone pass in 5.5s. So it is load/cold-start dependent and the 5s `expect` timeout inside a 30s test is the prime suspect, not a code fault. ⛔ **Do not close this on that reasoning — it has not been proven.** What IS now settled: it is not random, it is these two tests, and it is the light theme (which runs first). Original note follows. ⚠️ **IT IS THE SAME MISTAKE A8 RECORDS.** One `pnpm test:e2e` run on 2026-07-27 reported **25 passed with exit code 1** — so two failed — and **the failing test names were discarded**, because the command piped the run through `tail -4` while its exit code gated a commit. Three consecutive runs since are 27-green, and `pnpm verify` is green, so this is *probably* a build-cache race between a `prettier --write` and the `turbo build` that `test:e2e` runs first. **That is a guess and it is recorded as one.** ⚠️ **Never pipe a test run through `tail`/`grep` when its result decides whether to commit** — capture the failure first, exactly as A8 says and exactly as was not done here |
 | A8 | ⚠️ **STILL OPEN, but there is now a live candidate.** §3b finding 11's `toISOString().slice(0,10)` in test assertions was fixed in `511cf3c`, and the two-hour SAST/UTC divergence was DEMONSTRATED rather than assumed — it fits the shape exactly (one run in nine, no reproduction). **That is a candidate, not a diagnosis:** the failing test name was never captured, so this cannot be closed on it. If the suite reds again, capture the test name FIRST. Original note follows. ⚠️ **ONE unexplained unit-suite failure, cause unknown — do not dismiss it.** A single `pnpm verify` run reported `1 failed | 76 passed` and the next EIGHT runs were clean (4 full-suite, 4 targeted). Which test it was is unknown, because the log was discarded before the failure detail was read. **What HAS been ruled out:** the flake recorded in memory as "`confirmTotpEnrolment` reds when a code straddles a 30s boundary" cannot be it — `TOTP_DRIFT_STEPS = 1`, so `verifyTotp` accepts ±1 step and a boundary crossing is tolerated by design. That recorded explanation is simply wrong and has been corrected. If this recurs, capture the failing test name FIRST; a one-in-nine failure in a suite the PR gate depends on is worth a real diagnosis, not a re-run. |
 | A5 | ✅ **FIXED 2026-07-26 (fifth session).** `startWerfTestDatabase()` now memoises ONE container per worker process instead of one per suite (`packages/db/src/testing.ts`), so at most `maxWorkers` (4) exist at once rather than ten. `stop()` on the shared handle is a no-op — the first suite to finish must not pull the database out from under the three behind it in the same worker — and teardown happens on worker exit, with Ryuk reaping anything that outlives a crash. `bootWerfTestDatabase()` is the escape hatch for a suite that genuinely needs a private one. Verified: 77 files / 750 tests still green. Done before CI ever ran the suite, which was the point |
 
@@ -1005,109 +1089,86 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 ## 5. How to resume
 
 ```
-1. RUN `git status` AND RECONCILE AGAINST §1 — tree AND SHA. The tree has
-   reconciled for several sessions; the SHA pointer in §1 is wrong most reads
-   (this file's own commit moves HEAD past the SHA it names). Check both.
-   `phase-2/breeding` is DELETED — do not expect or recreate it.
-
-1a. `git push` — the twelfth session's slice IS pushed (`f6d4c0e`) and BOTH CI
-   LANES ARE GREEN on it (run 30751526361, checked with `gh run view`). Only
-   this file follows, so CI will run once more on a docs-only commit.
+1. RUN `git status` AND RECONCILE AGAINST §1 — tree AND SHA. §1 now claims the
+   tree is CLEAN (the tooling landed in `5a8db20`). Verify it; this file has
+   asserted a clean tree through a whole session while 18 files sat uncommitted.
+   The SHA in §1's header is wrong most reads, because this file's own commit
+   moves HEAD past it. `phase-2/breeding` is DELETED — do not recreate it.
 
 1b. START DOCKER DESKTOP before running the gate (§4 A10). Without it
-   `pnpm verify` exits 1 on the testcontainers tier (~282 of 816 tests).
+   `pnpm verify` exits 1 on the testcontainers tier.
 
-2. Then read STATUS.md, CLAUDE.md, docs/04-delivery/phase-checklists.md, §6
-   (the compliance operating model JP set), §2g (the ten fixes) and §2h (the
-   fifth pass). §2.3b is now the live JP decision.
+2. Then read §2l (the sixth pass and its fixes), §2m (what was deliberately NOT
+   fixed), §6 (the compliance operating model), CLAUDE.md and
+   docs/04-delivery/phase-checklists.md.
 
-⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE, but the reason narrowed. The
-fifth pass RAN and its findings are fixed (§2h). Under the new cadence (§6) the
-next review is the BATCHED per-phase pass, run at Phase 2 close / before the PR
-is marked ready — not per session. Still unmet: that batched pass; CI-green-on-
-`main` (unmeetable before merge); `pnpm test:e2e` (25/27 cold, now snapshots on
-failure, §4 A9).
+⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE. What changed is WHICH clause
+fails. The batched pass has now RUN and its findings are closed — so the clause
+that fails is no longer "no pass has run", it is "the fixes for that pass are
+themselves unreviewed", plus e2e (§4 A9) and CI-green-on-`main` (unmeetable
+before merge).
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  ⭐ THE BUILD LIST IS EMPTY AGAIN, AND THIS TIME THERE IS NO NAMED         ║
-║  REMAINDER BEHIND IT. The twelfth session closed B7, the last one (§2k).  ║
-║  What is left before Phase 2 can close is ONE batched review pass         ║
-║  (JP-triggered) and two external bookings. Every remaining Phase 2 gap    ║
-║  (B2 photos, B4 vaccination schedule, B5 marking window) is blocked on    ║
-║  something that DOES NOT EXIST — object storage, or dated reference data  ║
-║  — not on a session's time. See §4.                                      ║
+║  ⭐ THE SIXTH PASS RAN AND ALL THREE AGENTS SAID NOT APPROVABLE. Every    ║
+║  SEV-1, SEV-2 and MED it found is FIXED (§2l), each assertion watched to  ║
+║  fail against the old code first. ⛔ BUT THE FIXES ARE UNREVIEWED, and    ║
+║  this repo has now measured SIX PASSES RUNNING in which each pass found   ║
+║  a real defect inside the previous pass's fixes. Do not read "all fixed"  ║
+║  as "clean". Read it as "the next pass has somewhere obvious to look".    ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. THE BATCHED PHASE-2 REVIEW PASS — now the   §6         ⭐ JP's call, and it
-     ONLY thing gating merge-ready. Covers                  is now the ONLY
-     everything since `b95eb09`, incl. §2j's                thing on the
-     two REGULATED slices and §2k's                         critical path
-     non-regulated one, all UNREVIEWED
-  2. §2.4 labour-law review — BOOK (external)    §2.4       gates Phase 3 DEPLOY,
-     not its first line (§6); book in parallel while Phase 3 is built
-  3. §2.5 Gazette figures — VERIFY IN A BATCH     §2.5       per §6; tracked in
-     compliance-register.md; before Phase 3 DEPLOY, not now
+  1. A SEVENTH pass over THIS session's fixes    §2l        ⭐ JP's call. The
+     (`beb3dc9..HEAD`, or `c986fa2..HEAD` for               empirical case is
+     the fixes alone). It is the only thing                 six for six
+     between here and merge-ready
+  2. §2m #1 — LINK THE TWO TRANSFER HALVES.      §2m        a session can do it;
+     A build slice, and the only BUILD work                 it is REGULATED, so
+     currently unblocked in Phase 2                         it enlarges what the
+                                                            seventh pass covers
+  3. §2.4 labour-law review — BOOK (external)    §2.4       gates Phase 3 DEPLOY
+  4. §2.5 Gazette figures — VERIFY IN A BATCH    §2.5       gates Phase 3 DEPLOY
 
-  ✅ ALL JP DECISIONS CLOSED. ✅ ALL BUILD LOOPS CLOSED (§2j, §2k).
-  ✅ CLOSED THIS SESSION: §4 B7, the GPS boundary walk (`f6d4c0e`) — the last
-     named Phase 2 remainder. PUSHED; CI was RUNNING at write time.
-
-  ⭐ ONE THING FOR JP THAT IS NOT A LOOP, recorded in §2j: the §2.3c flag is
-  DERIVED on read rather than STAMPED on arrival as your note sketched. The
-  BEHAVIOUR you decided (flag, never refuse) is delivered; the MECHANISM is the
-  one CLAUDE.md's own promoted rule prescribes, because stamping on arrival is
-  order-dependent and goes stale the moment a dose is corrected. Yours to
-  overrule — say the word and it becomes a stamp.
-
-⛔ AGENTS ARE OWNER-TRIGGERED. Under the new cadence (§6) the review pass is
-BATCHED — one per phase, and before any deploy — not per session or per slice.
-Regulated work is written and committed freely; it is not merge-ready until the
-batched pass has run and its findings close. SAY SO when a slice reaches that line.
+  ✅ ALL JP DECISIONS CLOSED. ✅ The tooling from §2i is committed (`5a8db20`)
+     and the working tree is clean.
 
 NEXT SESSION, IN ORDER:
 
   A. RECONCILE `git status` AND THE SHAs against §1, as always.
 
-  B. ⭐ THE FORK IS GONE — there is no unblocked Phase 2 build work left. The
-     honest options are, in order:
-       (i)  CLOSE PHASE 2: ask for the batched pass (loop 1), read its output
-            DIRECTLY (not a summary), fix what it finds, mark PR #3 ready.
-            This is the whole critical path now.
-       (ii) START PHASE 3 (unblocked to BUILD under §6) with its opening slice,
-            the production seed-GATE that refuses unverified `regulatory_rates`.
-            ⚠️ This is REGULATED, so it enlarges what the pass must cover and
-            owes a `compliance-checker` run of its own on the first payroll
-            slice. Doing it BEFORE the Phase 2 pass is the expensive order.
-       (iii) A non-regulated cleanup: §2h's three named non-blocking follow-ups
-            (`RecordPregnancyScreen`'s `localeCompare` prefill, `pick()` not
-            resetting `disposalDay`) and §4 G4's stale docs.
-     ⭐ Nothing else is available: B2 needs object storage (§2.8, deferred to a
-     Phase-3 infra slice), B4 needs a vaccination programme schedule, B5 needs
-     dated reference data `regulatory_rates` does not carry. Building any of
-     them means inventing the thing they are blocked on, which is the defect
-     class the repo forbids.
+  B. The honest options, in order:
+       (i)  ASK FOR THE SEVENTH PASS over this session's fixes, read its output
+            DIRECTLY (not a summary), fix what it finds. This is the critical
+            path and nothing else shortens it.
+       (ii) BUILD §2m #1, the transfer batch link. It is fully specified there,
+            it is the only unblocked Phase 2 build work, and doing it BEFORE the
+            seventh pass costs one pass rather than two — the same reasoning
+            that put B7 before the sixth pass, and it held.
+       (iii) OPEN THE A9 TRACE (§4 A9). It is cheap, it is the first real
+            evidence A9 has ever produced, and the artefacts are overwritten by
+            the next e2e run. A blank page with the theme applied is a fact
+            worth spending twenty minutes on.
+       (iv) The non-regulated leftovers in §2m #2–#6, and §4 G4's stale docs.
 
-  ⭐ EXPECT THE PASS TO FIND DEFECTS IN §2j's AND §2k's SLICES. Five passes
-  running have each found a real defect inside the previous pass's fixes, and
-  this is now ~4,300 lines written by one author with no review at all. A green
-  gate is not evidence against that; `pnpm verify` cannot tell you a withdrawal
-  was carried to the wrong mob, and it cannot tell you a camp boundary was
-  re-derived to the wrong walk. Note that §2k found TWO defects in its own new
-  code within the session — the float-equality area test and a schema confusion
-  that had already been recorded once in §2j.
+  ⭐ EXPECT THE SEVENTH PASS TO FIND DEFECTS IN THIS SESSION'S FIXES. That is
+  not pessimism, it is the measured base rate here: six for six. The fixes
+  touched the food-safety boundary in four files and added a RECURSION to a
+  guard that runs on every disposal — new shapes, on the sharpest surface in
+  the phase.
 
   SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
-  code, then keep it — and check the CLAIM as well as the code.
+  code, then keep it — and check the CLAIM as well as the code. This session
+  reverted each fix in turn to prove its test was directional, and one test
+  (the collinear diagonal) turned out NOT to be until its fixture was changed:
+  the old code had been returning the right answer by accident.
 
-Phase 1 has NO open gaps. **Phase 3 is NOW UNBLOCKED to BUILD under §6** — the
-mechanism (date-versioned `regulatory_rates`, lookup by `occurred_at`, the
-`PayrollRules` seam) is built with placeholder figures; §2.4/§2.5 gate the DEPLOY,
-not the first line. The FIRST Phase 3 slice is the production seed-GATE that
-refuses unverified rows (§6), plus one `compliance-checker` pass on the first
-payroll slice. DO NOT seed regulatory_rates from the July 2026 table into a
-production path; placeholders in dev/test only.
+Phase 1 has NO open gaps. **Phase 3 is UNBLOCKED to BUILD under §6** — the
+mechanism is built with placeholder figures; §2.4/§2.5 gate the DEPLOY, not the
+first line. The FIRST Phase 3 slice is the production seed-GATE that refuses
+unverified rows (§6), plus one `compliance-checker` pass on the first payroll
+slice. DO NOT seed regulatory_rates from the July 2026 table into a production
+path; placeholders in dev/test only.
 ```
 
 ---

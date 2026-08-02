@@ -189,6 +189,22 @@ export function populatedStores(): Record<string, unknown> {
         method: 'plunge',
       },
     ],
+    // A disposal out of the dipped flock, so the residue register at `/attention` has a row on it
+    // and is audited with its CONTENT rather than its one-sentence empty state (FR-131). A `death`
+    // is used rather than a slaughter because a death is never refused — it is recorded and flagged,
+    // which is exactly the row this screen exists to show — and because it renders the "did NOT go
+    // into the food chain" panel, a tinted block carrying a meaning that a contrast rule must see.
+    [`werf-tallies:${FARM_ID}`]: [
+      {
+        id: '0190f3a0-0000-7000-8000-0000000000e1',
+        farmId: FARM_ID,
+        mobId: FIXTURE.mobId,
+        occurredAt: new Date().toISOString(),
+        reason: 'death',
+        count: 3,
+        delta: -3,
+      },
+    ],
   };
 }
 

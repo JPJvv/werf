@@ -201,6 +201,12 @@ const CAPTURE_SCREENS = [
   // accessibility failure. The seed has nothing refused, so this audits the empty state; the
   // populated state's markup is the same list the other screens use.
   { path: '/not-sent', heading: /what needs your attention/i },
+  // ⛔ NOT the same screen as `/not-sent` above, and the near-identical heading is exactly why this
+  // was missed: `/not-sent` lists captures the SERVER refused, `/attention` is the residue register
+  // (FR-131) — the newest regulated screen in the phase, and it had no axe coverage in either theme
+  // or either state while the checklist claimed the sweep covered it. Its POPULATED state is audited
+  // below, because a register with nothing on it is one sentence.
+  { path: '/attention', heading: /^needs your attention$/i },
 ] as const;
 
 /**
@@ -289,6 +295,16 @@ const POPULATED_SCREENS = [
         await page.getByRole('button', { name: /mark this corner/i }).click();
       }
       await expect(page.getByText(/may be out by about/i)).toBeVisible();
+    },
+  },
+  {
+    // The residue register with a row on it (FR-131). The seed puts a death inside an active
+    // withholding on the device, so this audits the flagged-disposal list and the tinted food-chain
+    // panel — the part that carries a compliance meaning — rather than the empty state.
+    path: '/attention',
+    heading: /^needs your attention$/i,
+    act: async (page: Page) => {
+      await expect(page.getByText(/did not go into the food chain/i)).toBeVisible();
     },
   },
   {

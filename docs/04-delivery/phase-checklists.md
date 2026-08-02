@@ -480,14 +480,18 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
   read both — so the device previewed CLEAR and the flush refused.
   ✅ The flush now sends doses and moves BEFORE any disposal (`16fbb6a`). A point-in-time guard
   cannot refuse a dose that has not arrived yet.
-  ⛔ **REMAINDER, named 2026-07-27 — a CROSS-DEVICE race is still open and cannot be closed by
-  ordering.** Device A records the dip; device B, which has not seen it, tallies to the abattoir.
-  Both are honest captures and neither device can know. Ordering fixes the single-device case only.
-  The answer is a retroactive compliance flag on the disposal rather than a refusal, and it is a
-  slice of its own. See STATUS.md §2.3c.
-  ⛔ **REMAINDER — head arriving by `purchase` is unconditionally clear**, and with no `transfer`
-  reason in the group model, splitting a dipped flock has to be expressed as sale-out + purchase-in.
-  That is a modelling decision, not a defect, and it is STATUS.md §2.3b for the repo owner.
+  ✅ **The CROSS-DEVICE race is closed (`58fed1d`), the way JP decided: FLAG, NEVER REFUSE.** Device
+  A records the dip; device B, which has not seen it, tallies to the abattoir. Both captures are
+  honest and no ordering can help, because only the server ever sees both. The disposal is recorded
+  and a retroactive compliance flag is DERIVED on read — not stamped on arrival, which would be
+  order-dependent — and surfaced on the residue register at `/attention`. See STATUS.md §2j.
+  ✅ **Head arriving by `purchase` is no longer unconditionally clear (`2e35e94`).** The group model
+  has `transfer_out`/`transfer_in`, which carry the withholding across without tripping the
+  food-chain guard, and a purchase may record an OPTIONAL declared seller withdrawal — blank means
+  "unknown history", which is never invented. See STATUS.md §2.3b.
+  ✅ **A carried withholding is a FLOOR, not a ceiling (sixth pass).** The date frozen on the
+  transfer is re-derived against the source mob at read time, so a dose that lands after the
+  transfer still reaches the flock it walked into.
 ◐ 📶 Record a vaccination against a programme; show which animals are due/overdue (FR-132) — the
   CAPTURE is done (the health screen records a vaccination against a programme, commit d32451a). The
   DUE/OVERDUE read model is still ◐ and is named honestly: it needs a vaccination PROGRAMME SCHEDULE
@@ -689,9 +693,14 @@ Quality gates
   668 tests, 124.82 KB gz. **The live figures are in the "Where the gate stands" paragraph below
   and nowhere else** — this line kept a stale second copy that disagreed with it by 26 lines'
   distance, which is why it now says where to look instead of restating a number.)
-  The stock-theft list and capture, and the "what needs your attention" screen, are in the
-  both-theme axe sweep alongside the other capture screens (`CAPTURE_SCREENS` holds 19 entries as
-  at 2026-07-28; the count is deliberately not restated here for the same reason as above)
+  The stock-theft list and capture, `/not-sent` (the captures the SERVER refused) and `/attention`
+  (the residue register, FR-131) are all in the both-theme axe sweep alongside the other capture
+  screens. ⛔ Those last two are DIFFERENT SCREENS with near-identical headings — "what needs your
+  attention" and "Needs your attention" — and this line named only the first while claiming both,
+  which is how `/attention` reached a review with no axe coverage at all in either theme or either
+  state. `/attention` and `/land/walk` are in the POPULATED sweep too, since each renders one
+  sentence when empty. (The entry counts are deliberately not restated here, for the same reason as
+  above.)
 ```
 
 **Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe, including the new

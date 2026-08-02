@@ -9,6 +9,9 @@
 `pnpm test:e2e` **25/27** — the two failures are §4 A9 exactly (`a11y.spec.ts:50` and `:64`, light
 theme, second factor), on screens this session never touched. ⭐ **A9 REPRODUCED AND LEFT EVIDENCE
 FOR THE FIRST TIME — read §4 A9 before theorising about it again.**
+**BOTH CI LANES GREEN at 74053c2** (run 30756408748: Lint/Typecheck/Test/Build and E2E/axe both
+success — verified with gh run view, not inferred). The e2e lane now audits /attention in both
+themes and both states, and CI still does NOT reproduce A9.
 See §6 for the compliance operating model JP set.
 
 > ⭐ **THE THIRTEENTH SESSION RAN THE BATCHED PASS JP TRIGGERED, AND ALL THREE AGENTS RETURNED NOT

@@ -1230,12 +1230,13 @@ export class LivestockService {
       // one that does not exist.
       const jurisdiction = await farmJurisdiction(tx, farmId);
 
-      // ⭐ The span of days ANY dose on this farm can reach. A disposal outside it cannot be inside
-      // any withholding, so the per-subject derivation — which reconstructs mob membership — never
-      // runs for it. A farm that has never recorded a dose with a meat withdrawal costs one query
-      // and returns an empty register, which is the ordinary state of most farms most of the time.
-      const dosed = await dosedSpan(tx, farmId, jurisdiction);
-      if (dosed === null) return [];
+      // ⭐ The span of days ANY withholding on this farm can reach — given here by a dose, or
+      // carried in on head that arrived already withheld. A disposal outside it cannot be inside any
+      // withholding, so the per-subject derivation — which reconstructs mob membership — never runs
+      // for it. A farm with no withholding of either kind costs two queries and returns an empty
+      // register, which is the ordinary state of most farms most of the time.
+      const withheld = await withholdingSpan(tx, farmId, jurisdiction);
+      if (withheld === null) return [];
 
       const rows = await tx
         .select({
@@ -1286,9 +1287,10 @@ export class LivestockService {
         if (disposal === null) continue;
 
         const occurredOn = farmLocalDay(row.occurredAt, jurisdiction);
-        // Outside the span no dose can reach it. Cheap, and it is a bound rather than a guess: it
-        // is derived from the farm's own dosing history, not from a window invented in code.
-        const reachable = occurredOn >= dosed.from && occurredOn <= dosed.to;
+        // Outside the span no withholding can reach it — given or carried in. Cheap, and it is a
+        // bound rather than a guess: derived from the farm's own history, not from a window
+        // invented in code.
+        const reachable = occurredOn >= withheld.from && occurredOn <= withheld.to;
 
         const clearFrom = reachable
           ? ((await clearFor(row, occurredOn, row.occurredAt)) ?? null)
@@ -1327,6 +1329,14 @@ export class LivestockService {
  * so no residue question arises for them — and a `recount` inside a withholding is noise on a
  * register whose whole value is that every line on it is worth reading. `TALLY_DECREASES` is read
  * from the schema rather than restated here, so a reason added later cannot quietly miss this.
+ *
+ * ⛔ And reading the constant was NOT sufficient, which is the sharper half of the lesson. A reason
+ * added later did not miss this — it was mis-classified BY it. `transfer_out` joined
+ * `TALLY_DECREASES` in §2.3b, widening the constant's meaning underneath a reader asking the wrong
+ * question of it: it decreases a MOB, while this register is about head leaving the HERD. Head that
+ * walks through a gate into another of your own camps has not been disposed of, and its withholding
+ * travels with it — that is the entire point of the reason existing. `TALLY_TRANSFERS` is the
+ * schema's own name for that distinction, so it is subtracted here rather than restated.
  */
 function disposalOf(row: { type: string; payload: unknown }): {
   readonly eventType: 'sale' | 'death' | 'tally';
@@ -1358,6 +1368,7 @@ function disposalOf(row: { type: string; payload: unknown }): {
       const reason = payload.reason;
       if (reason === undefined) return null;
       if (!(schemas.TALLY_DECREASES as readonly string[]).includes(reason)) return null;
+      if ((schemas.TALLY_TRANSFERS as readonly string[]).includes(reason)) return null;
       return {
         eventType: 'tally',
         reason,
@@ -1371,21 +1382,37 @@ function disposalOf(row: { type: string; payload: unknown }): {
 }
 
 /**
- * The span of farm-local days any meat withholding on this farm covers — the earliest dose day and
- * the latest clear date across every health event that carries one. `null` when nothing on the farm
- * withholds meat at all.
+ * The span of farm-local days any meat withholding on this farm covers — the earliest day a
+ * withholding starts and the latest day one runs to. `null` when nothing on the farm withholds meat
+ * at all.
  *
  * This is a NARROWING, not a rule: a disposal outside the span provably cannot sit inside any
- * withholding, so skipping it changes no answer. It is derived from the farm's own dosing history
- * rather than being a "last 90 days" window typed into code, which would be a regulated number in
- * disguise and would silently drop the disposal an auditor came looking for.
+ * withholding, so skipping it changes no answer. It is derived from the farm's own history rather
+ * than being a "last 90 days" window typed into code, which would be a regulated number in disguise
+ * and would silently drop the disposal an auditor came looking for.
+ *
+ * ⛔ A withholding has THREE sources, not one, and this function knew about one of them for exactly
+ * one commit. It originally read health events alone — true when written, false as soon as §2.3b
+ * let a withholding ARRIVE WITH head (`transfer_in` carrying one across, or a purchase whose seller
+ * declared one). Neither is a health event, so a farm that has never recorded a dose produced no
+ * span, took the `null` path, and got an EMPTY register — on the smallholder's farm, where bought-in
+ * head is the whole herd and the register is the only thing that can speak. The narrowing must be
+ * derived from every source the per-subject derivation reads, or it is not a narrowing, it is a
+ * silent filter.
  */
-async function dosedSpan(
+async function withholdingSpan(
   tx: CaptureTx,
   farmId: string,
   jurisdiction: string,
 ): Promise<{ readonly from: string; readonly to: string } | null> {
-  const rows = await tx
+  let from: string | undefined;
+  let to: string | undefined;
+  const widen = (start: string, clear: string): void => {
+    if (from === undefined || start < from) from = start;
+    if (to === undefined || clear > to) to = clear;
+  };
+
+  const doses = await tx
     .select({ payload: events.payload, occurredAt: events.occurredAt })
     .from(events)
     .where(
@@ -1395,16 +1422,32 @@ async function dosedSpan(
         isNull(events.deletedAt),
       ),
     );
-
-  let from: string | undefined;
-  let to: string | undefined;
-  for (const row of rows) {
+  for (const row of doses) {
     const clear = (row.payload as { meatWithholdUntil?: unknown }).meatWithholdUntil;
     if (typeof clear !== 'string') continue;
-    const day = doseDayOf(row, jurisdiction);
-    if (from === undefined || day < from) from = day;
-    if (to === undefined || clear > to) to = clear;
+    widen(doseDayOf(row, jurisdiction), clear);
   }
+
+  // Head that ARRIVED already withheld. It starts withholding the mob on the day it walks in, which
+  // is the same bound `latestArrivedWithhold` applies when it asks whether the arrival preceded the
+  // disposal — so the span and the per-subject rule cannot disagree about the edge.
+  const arrivals = await tx
+    .select({ payload: events.payload, occurredAt: events.occurredAt })
+    .from(events)
+    .where(and(eq(events.farmId, farmId), eq(events.type, 'tally'), isNull(events.deletedAt)));
+  for (const row of arrivals) {
+    const payload = row.payload as {
+      reason?: string;
+      carriedWithholdUntil?: unknown;
+      declaredWithdrawalUntil?: unknown;
+    };
+    if (payload.reason !== 'transfer_in' && payload.reason !== 'purchase') continue;
+    for (const candidate of [payload.carriedWithholdUntil, payload.declaredWithdrawalUntil]) {
+      if (typeof candidate !== 'string') continue;
+      widen(farmLocalDay(row.occurredAt, jurisdiction), candidate);
+    }
+  }
+
   return from === undefined || to === undefined ? null : { from, to };
 }
 
@@ -1666,15 +1709,23 @@ async function mobIsWithinMeatWithdrawal(
   );
 }
 
-/** The latest meat clear date reaching anything standing in this mob on the day. */
+/**
+ * The latest meat clear date reaching anything standing in this mob on the day.
+ *
+ * `visited` carries the mobs already on the current chain, so a transfer that eventually leads back
+ * here terminates instead of recursing forever. A→B→A is an ordinary thing for a farmer to do with
+ * two camps and a week between.
+ */
 async function latestMeatClearForMob(
   tx: CaptureTx,
   farmId: string,
   mobId: string,
   occurredAt: Date,
+  visited: ReadonlySet<string> = new Set(),
 ): Promise<string | undefined> {
   const jurisdiction = await farmJurisdiction(tx, farmId);
   const day = farmLocalDay(occurredAt, jurisdiction);
+  const seen = new Set(visited).add(mobId);
 
   // Route 1: doses given to the MOB — the plunge dip, the mob vaccination. Bounded by the disposal
   // day for the same reason the individual route is: head that left on the 1st cannot be carrying a
@@ -1704,7 +1755,7 @@ async function latestMeatClearForMob(
   // withdrawal, would otherwise be clear the moment it arrived. That is precisely the laundering
   // the sale-out/purchase-in workaround performed, and closing it is the reason `transfer_in`
   // exists at all.
-  const arrived = await latestArrivedWithhold(tx, farmId, mobId, day, jurisdiction);
+  const arrived = await latestArrivedWithhold(tx, farmId, mobId, day, jurisdiction, seen);
   if (arrived !== undefined && (latestClear === undefined || arrived > latestClear)) {
     latestClear = arrived;
   }
@@ -1731,6 +1782,7 @@ async function latestArrivedWithhold(
   mobId: string,
   day: string,
   jurisdiction: string,
+  visited: ReadonlySet<string>,
 ): Promise<string | undefined> {
   const rows = await tx
     .select({ payload: events.payload, occurredAt: events.occurredAt })
@@ -1750,6 +1802,7 @@ async function latestArrivedWithhold(
       reason?: string;
       carriedWithholdUntil?: unknown;
       declaredWithdrawalUntil?: unknown;
+      counterpartMobId?: unknown;
     };
     // Only the halves that bring head IN. A `transfer_out` carries the same date — deliberately, so
     // a later reader can see what left under a withholding — but reading it here would withhold the
@@ -1762,6 +1815,23 @@ async function latestArrivedWithhold(
         latest = candidate;
       }
     }
+
+    // ⛔ THE STORED DATE IS A FLOOR, NEVER A CEILING, and reading it alone was a food-safety hole.
+    //
+    // It is computed from the source mob's log AS IT STOOD WHEN THE TRANSFER LANDED — which is
+    // stepping a stored value on arrival, the exact shape this repo ruled out for head counts and
+    // for camp boundaries, applied here to residue. Arrival order is not `occurred_at` order: one
+    // phone can carry the dip and another the transfer, and whichever reconnects first decides what
+    // gets frozen. So the source mob is asked AGAIN, live, as at the day the head walked out — a
+    // dose that lands next week but was given before the gate opened still reaches this flock.
+    //
+    // A purchase has no counterpart on this farm to ask, so its declared date is all there is; that
+    // is the honest limit of "what the seller said", not a gap.
+    if (payload.reason !== 'transfer_in') continue;
+    const source = payload.counterpartMobId;
+    if (typeof source !== 'string' || visited.has(source)) continue;
+    const live = await latestMeatClearForMob(tx, farmId, source, row.occurredAt, visited);
+    if (live !== undefined && (latest === undefined || live > latest)) latest = live;
   }
   return latest;
 }

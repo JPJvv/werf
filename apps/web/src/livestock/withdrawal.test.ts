@@ -77,6 +77,7 @@ describe('meatWithdrawalForMob — agreeing with the server', () => {
       [tickaway],
       [ox],
       [movedIntoOxen],
+      [],
     );
     expect(status.blocked).toBe(true);
     expect(status.clearFrom).toBe('2026-08-17');
@@ -91,6 +92,7 @@ describe('meatWithdrawalForMob — agreeing with the server', () => {
       [tickaway],
       [ox],
       [movedIntoOxen],
+      [],
     );
     expect(status.blocked).toBe(false);
   });
@@ -141,13 +143,27 @@ describe('meatWithdrawalForMob — agreeing with the server', () => {
 
     // X's true final mob is C, so mob B holds no member and is clear...
     expect(
-      meatWithdrawalForMob(MOB_B, '2026-07-25', [doseOnX], [tickaway], [x], arrayOppositeToIdOrder)
-        .blocked,
+      meatWithdrawalForMob(
+        MOB_B,
+        '2026-07-25',
+        [doseOnX],
+        [tickaway],
+        [x],
+        arrayOppositeToIdOrder,
+        [],
+      ).blocked,
     ).toBe(false);
     // ...while mob C holds X, individually dosed and still inside its withdrawal.
     expect(
-      meatWithdrawalForMob(MOB_C, '2026-07-25', [doseOnX], [tickaway], [x], arrayOppositeToIdOrder)
-        .blocked,
+      meatWithdrawalForMob(
+        MOB_C,
+        '2026-07-25',
+        [doseOnX],
+        [tickaway],
+        [x],
+        arrayOppositeToIdOrder,
+        [],
+      ).blocked,
     ).toBe(true);
   });
 
@@ -171,8 +187,75 @@ describe('meatWithdrawalForMob — agreeing with the server', () => {
       [tickaway],
       [ox],
       [movedIntoOxen],
+      [],
     );
     expect(status.blocked).toBe(false);
+  });
+});
+
+describe('a carried withholding is a floor, not a ceiling', () => {
+  // The counted-flock path, and the one no other route can cover: no `animals` rows exist, so the
+  // only thing that can withhold the joined flock is the fact the head arrived withheld.
+  const transferredIn = {
+    mobId: OXEN,
+    occurredAt: '2026-07-22T12:00:00.000Z',
+    reason: 'transfer_in',
+    counterpartMobId: DIP_CAMP,
+    // Captured on a phone that had never seen the dip, so it carried NOTHING. This is the ordinary
+    // case, not a corrupted one: the other phone held the dip and had not reconnected yet.
+    carriedWithholdUntil: undefined,
+  };
+
+  it('⭐ blocks the joined flock when the dip on the SOURCE landed after the transfer', () => {
+    // The device must reach the same answer the server does. If it reads only the frozen preview,
+    // the capture screen says CLEAR, the farmer loads the truck, and the refusal arrives days later
+    // — which is the whole reason this guard runs on the device at all.
+    const status = meatWithdrawalForMob(
+      OXEN,
+      '2026-08-01',
+      [dipOnDipCamp],
+      [tickaway],
+      [],
+      [],
+      [transferredIn],
+    );
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBe('2026-08-17');
+  });
+
+  it('releases the joined flock once the source’s withholding has run out', () => {
+    // The bound in the other direction: a guard that never releases teaches the workaround.
+    const status = meatWithdrawalForMob(
+      OXEN,
+      '2026-08-17',
+      [dipOnDipCamp],
+      [tickaway],
+      [],
+      [],
+      [transferredIn],
+    );
+    expect(status.blocked).toBe(false);
+  });
+
+  it('terminates on an A → B → A transfer chain', () => {
+    // Two camps and a fortnight makes a cycle. A hang here is a frozen capture screen in a crush.
+    const backAgain = {
+      mobId: DIP_CAMP,
+      occurredAt: '2026-07-24T12:00:00.000Z',
+      reason: 'transfer_in',
+      counterpartMobId: OXEN,
+      carriedWithholdUntil: undefined,
+    };
+    const status = meatWithdrawalForMob(
+      DIP_CAMP,
+      '2026-08-01',
+      [dipOnDipCamp],
+      [tickaway],
+      [],
+      [],
+      [transferredIn, backAgain],
+    );
+    expect(status.blocked).toBe(true);
   });
 });
 

@@ -165,9 +165,38 @@ export function meatWithdrawalForMob(
    * `animals` rows to carry the fact. A `transfer_in` out of a dipped camp, or a purchase whose
    * seller declared a withdrawal, would otherwise be clear the moment it arrived. That is exactly
    * the laundering the sale-out/purchase-in workaround performed, one gate along.
+   *
+   * ⛔ REQUIRED, with no default, and that is deliberate. It defaulted to `[]` when it was added,
+   * and the residue register was written against the six-argument signature and kept compiling —
+   * so the screen that exists to explain a refusal quietly judged by a narrower rule than the one
+   * that refused. A caller with no arrivals must say `[]` out loud.
    */
-  tallies: readonly ArrivedHead[] = [],
+  tallies: readonly ArrivedHead[],
 ): WithdrawalStatus {
+  return mobWithdrawal(mobId, disposalOn, { events, products, animals, moves, tallies }, new Set());
+}
+
+/** Everything the mob rule reads, threaded through the transfer chain unchanged. */
+interface MobWithdrawalContext {
+  readonly events: readonly StoredHealthEvent[];
+  readonly products: readonly StoredVetProduct[];
+  readonly animals: readonly StoredAnimal[];
+  readonly moves: readonly StoredMove[];
+  readonly tallies: readonly ArrivedHead[];
+}
+
+/**
+ * The mob rule, with the chain of mobs already on the current path. Head can go A → B → A in a
+ * fortnight, so the walk has to terminate; `visited` is what makes it.
+ */
+function mobWithdrawal(
+  mobId: string,
+  disposalOn: string,
+  ctx: MobWithdrawalContext,
+  visited: ReadonlySet<string>,
+): WithdrawalStatus {
+  const { events, products, animals, moves } = ctx;
+  const seen = new Set(visited).add(mobId);
   // Every individually-registered animal STANDING IN this mob on the disposal day, with the mob
   // history that says which doses reached it. A tally takes head out without naming which, so any
   // one of them may be on the truck — and each carries whatever `reachedAnimal` carries, which is
@@ -189,7 +218,7 @@ export function meatWithdrawalForMob(
     return members.some((m) => reachedAnimal(event, m.animal, m.wasIn));
   };
   const dosed = latestClearAcross(events.filter(reaches), disposalOn, products);
-  const arrived = latestArrivedWithhold(mobId, disposalOn, tallies);
+  const arrived = latestArrivedWithhold(mobId, disposalOn, ctx, seen);
   if (arrived === null) return dosed;
 
   const clearFrom =
@@ -203,6 +232,11 @@ export interface ArrivedHead {
   /** ISO instant. Compared as a farm-local DAY, like every other boundary in this file. */
   readonly occurredAt: string;
   readonly reason: string;
+  /**
+   * The mob the head came FROM on a `transfer_in`. Read so the source can be asked again, live, as
+   * at the day the head left it — `carriedWithholdUntil` is a snapshot and can be stale by a dose.
+   */
+  readonly counterpartMobId?: string | undefined;
   /** Carried out of the source mob on a transfer. A preview; the server stores its own. */
   readonly carriedWithholdUntil?: string | undefined;
   /** What the seller said about bought-in head. Absent = unknown history, never guessed. */
@@ -224,17 +258,33 @@ export interface ArrivedHead {
 function latestArrivedWithhold(
   mobId: string,
   disposalOn: string,
-  tallies: readonly ArrivedHead[],
+  ctx: MobWithdrawalContext,
+  visited: ReadonlySet<string>,
 ): string | null {
   let latest: string | null = null;
-  for (const tally of tallies) {
+  for (const tally of ctx.tallies) {
     if (tally.mobId !== mobId) continue;
     if (tally.reason !== 'transfer_in' && tally.reason !== 'purchase') continue;
     // Head that arrives after the day being judged cannot withhold what left before it.
-    if (farmDay(new Date(tally.occurredAt)) > disposalOn) continue;
+    const arrivedOn = farmDay(new Date(tally.occurredAt));
+    if (arrivedOn > disposalOn) continue;
     for (const candidate of [tally.carriedWithholdUntil, tally.declaredWithdrawalUntil]) {
       if (candidate !== undefined && (latest === null || candidate > latest)) latest = candidate;
     }
+
+    // ⛔ THE CARRIED DATE IS A FLOOR, NEVER A CEILING. It is a PREVIEW computed when the transfer
+    // was captured, from a log that may not yet hold the dip: one phone records the dip, another
+    // walks the head through the gate, and whichever reconnects first decides what got frozen.
+    // Trusting it alone leaves the joined flock clear forever — so the source mob is asked again,
+    // as at the day the head left it. A back-dated dose that lands next week still reaches here.
+    //
+    // A purchase has no counterpart mob on this farm to ask, so the seller's declaration is all
+    // there is. That is the honest limit of what anyone here witnessed, not an omission.
+    if (tally.reason !== 'transfer_in') continue;
+    const source = tally.counterpartMobId;
+    if (source === undefined || visited.has(source)) continue;
+    const live = mobWithdrawal(source, arrivedOn, ctx, visited).clearFrom;
+    if (live !== null && (latest === null || live > latest)) latest = live;
   }
   return latest;
 }

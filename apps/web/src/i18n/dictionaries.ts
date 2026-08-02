@@ -790,6 +790,9 @@ const en = {
   'residue.type.death': 'Died',
   'residue.type.slaughter': 'Slaughtered',
   'residue.type.theft': 'Stolen',
+  // Anything that left the herd for a reason this screen has no noun for. Neutral on purpose: a
+  // fallback that guesses a noun eventually guesses 'Died' for a camp move.
+  'residue.type.left': 'Left the herd',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -1445,6 +1448,7 @@ const af: Record<TranslationKey, string> = {
   'residue.type.death': 'Gevrek',
   'residue.type.slaughter': 'Geslag',
   'residue.type.theft': 'Gesteel',
+  'residue.type.left': 'Uit die kudde',
 };
 
 export const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

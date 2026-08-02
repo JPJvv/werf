@@ -58,7 +58,11 @@ interface Row {
  * screen ends up rendering a key that has no copy behind it.
  */
 type WhatKey =
-  'residue.type.sale' | 'residue.type.death' | 'residue.type.slaughter' | 'residue.type.theft';
+  | 'residue.type.sale'
+  | 'residue.type.death'
+  | 'residue.type.slaughter'
+  | 'residue.type.theft'
+  | 'residue.type.left';
 
 function whatHappened(
   flag: Pick<StoredResidueFlag, 'eventType' | 'reason' | 'intoFoodChain'>,
@@ -69,6 +73,12 @@ function whatHappened(
   if (flag.eventType === 'death') {
     return flag.intoFoodChain ? 'residue.type.slaughter' : 'residue.type.death';
   }
+  // ⛔ Every reason that can reach here is NAMED, and the fallback is neutral rather than `death`.
+  // `transfer_out` joined `TALLY_DECREASES` after this switch was written and fell through a
+  // `default: 'residue.type.death'` — so ordinary camp moves were announced to the farmer as forty
+  // head having died. The register upstream no longer admits transfers, but the lesson is the arm
+  // itself: a default that picks a NOUN will eventually pick the wrong one. "Left the herd" is true
+  // of anything that can get here, including a reason nobody has written yet.
   switch (flag.reason) {
     case 'sale':
       return 'residue.type.sale';
@@ -76,8 +86,10 @@ function whatHappened(
       return 'residue.type.slaughter';
     case 'theft':
       return 'residue.type.theft';
-    default:
+    case 'death':
       return 'residue.type.death';
+    default:
+      return 'residue.type.left';
   }
 }
 

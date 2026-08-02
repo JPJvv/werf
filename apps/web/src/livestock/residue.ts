@@ -44,12 +44,21 @@ import { meatWithdrawalFor, meatWithdrawalForMob } from './withdrawal';
 export type LocalResidueFlag = Omit<schemas.ResidueFlagJson, 'knownAtCapture' | 'withinWithdrawal'>;
 
 /**
- * The reasons that take head OUT of a mob, and which of them put it into the food chain. Taken from
- * the schema's own constant so a reason added later cannot silently miss this screen — the register
- * exists precisely to show what nothing else was asking about.
+ * The reasons that take head OUT OF THE HERD, and which of them put it into the food chain. Taken
+ * from the schema's own constant so a reason added later cannot silently miss this screen — the
+ * register exists precisely to show what nothing else was asking about.
+ *
+ * ⛔ A TRANSFER is subtracted from `TALLY_DECREASES` rather than being caught by it, and reading the
+ * constant was not enough on its own. `transfer_out` JOINED `TALLY_DECREASES` after this file was
+ * written (§2.3b), which widened the constant's meaning underneath a reader that had asked it the
+ * wrong question: it decreases a MOB, and this register is about head leaving the HERD. Moving
+ * dipped head between two of your own camps is ordinary husbandry — the withholding travels with it
+ * — so filing it here would bury the lines that matter under camp moves, and, worse, would render
+ * as a death. `TALLY_TRANSFERS` exists for exactly this distinction.
  */
 const decreases = (reason: schemas.TallyReason): boolean =>
-  (schemas.TALLY_DECREASES as readonly string[]).includes(reason);
+  (schemas.TALLY_DECREASES as readonly string[]).includes(reason) &&
+  !(schemas.TALLY_TRANSFERS as readonly string[]).includes(reason);
 
 const intoFoodChain = (reason: schemas.TallyReason): boolean =>
   reason === 'sale' || reason === 'slaughter';
@@ -103,7 +112,20 @@ export function localResidueFlags(input: {
   for (const tally of tallies) {
     if (!decreases(tally.reason)) continue;
     const occurredOn = farmDay(new Date(tally.occurredAt));
-    const status = meatWithdrawalForMob(tally.mobId, occurredOn, health, products, animals, moves);
+    // ⭐ `tallies` is the seventh argument and it is not optional in spirit: it is the route that
+    // reads a withholding which ARRIVED WITH the head (§2.3b) rather than being given to it. Omit
+    // it and this screen answers a narrower question than the capture guard that refused the same
+    // disposal — which is the two-mechanisms-one-boundary defect the header above claims is closed.
+    // For a counted flock it is the ONLY route that can fire, because there are no `animals` rows.
+    const status = meatWithdrawalForMob(
+      tally.mobId,
+      occurredOn,
+      health,
+      products,
+      animals,
+      moves,
+      tallies,
+    );
     if (!status.blocked) continue;
 
     flags.push({

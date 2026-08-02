@@ -18,7 +18,7 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
-import { farmToday } from '../farmTime';
+import { farmDay, farmToday } from '../farmTime';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -28,6 +28,7 @@ const HEALTH_KEY = `werf-health:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
 const REGISTER_KEY = `werf-residue-register:${FARM_ID}`;
 const MOB_ID = '0190f3a0-0000-7000-8000-00000000b001';
+const MOB_B_ID = '0190f3a0-0000-7000-8000-00000000b002';
 const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
 const TALLY_ID = '0190f3a0-0000-7000-8000-00000000c001';
 
@@ -143,6 +144,74 @@ function seedTally(reason: string, count: number): void {
       },
     ]),
   );
+}
+
+/**
+ * Two counted flocks, so head can be moved between them. A transfer needs somewhere to go, and a
+ * flock with `headCount` and no `animals` rows is the shape the arrived-withholding route exists
+ * for — it is the only one that can carry the fact.
+ */
+function seedTwoFlocks(): void {
+  seedFlock();
+  const flocks = JSON.parse(window.localStorage.getItem(MOBS_KEY) ?? '[]') as unknown[];
+  window.localStorage.setItem(
+    MOBS_KEY,
+    JSON.stringify([
+      ...flocks,
+      {
+        id: MOB_B_ID,
+        farmId: FARM_ID,
+        name: 'Flock B',
+        species: 'sheep',
+        landUnitId: null,
+        enterpriseId: FLOCK.id,
+        headCount: 120,
+      },
+    ]),
+  );
+}
+
+/** A farm-local day `days` from today, for a clear date that is still running. */
+function farmDayIn(days: number): string {
+  return farmDay(new Date(Date.now() + days * 86_400_000));
+}
+
+/** Head arriving INTO Flock B, carrying whatever withholding came with it. */
+function arrived(
+  reason: 'transfer_in' | 'purchase',
+  count: number,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    id: '0190f3a0-0000-7000-8000-00000000c010',
+    farmId: FARM_ID,
+    mobId: MOB_B_ID,
+    occurredAt: new Date(Date.now() - 86_400_000).toISOString(),
+    reason,
+    count,
+    delta: count,
+    counterpartMobId: MOB_ID,
+    ...extra,
+  };
+}
+
+/** Head leaving a flock. `transfer_out` leaves Flock A; everything else leaves Flock B. */
+function disposal(reason: string, count: number): Record<string, unknown> {
+  const out = reason === 'transfer_out';
+  return {
+    id: TALLY_ID,
+    farmId: FARM_ID,
+    mobId: out ? MOB_ID : MOB_B_ID,
+    occurredAt: new Date().toISOString(),
+    reason,
+    count,
+    delta: -count,
+    ...(out ? { counterpartMobId: MOB_B_ID } : {}),
+  };
+}
+
+function seedTallies(rows: readonly Record<string, unknown>[]): void {
+  window.localStorage.setItem(TALLIES_KEY, JSON.stringify(rows));
 }
 
 /** The server's own answer, as the last refresh left it in the cache. */
@@ -271,5 +340,44 @@ describe('the residue register (FR-131)', () => {
     render(<App />);
 
     expect(await screen.findByRole('link', { name: /needs your attention/i })).toBeTruthy();
+  });
+
+  it('⭐ shows a disposal out of a flock whose withholding ARRIVED WITH THE HEAD', async () => {
+    // The third way a withholding can exist (§2.3b): not given to this flock, but carried in on
+    // head that walked through the gate. A counted flock has no `animals` rows, so nothing else on
+    // this device can carry the fact — which makes this the ONLY route that can fire, and it is the
+    // smallholder's flock. There is deliberately no health event anywhere in this fixture: if the
+    // register can only see withholdings it can trace to a dose, it is blind to bought-in and
+    // transferred-in residue entirely.
+    cachedSession();
+    seedTwoFlocks();
+    seedTallies([
+      arrived('transfer_in', 40, { carriedWithholdUntil: farmDayIn(20) }),
+      disposal('slaughter', 10),
+    ]);
+    window.history.pushState({}, '', '/attention');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /needs your attention/i })).toBeTruthy();
+    expect(screen.getByText(/slaughtered/i)).toBeTruthy();
+    expect(screen.getByText(/must not go into the food chain/i)).toBeTruthy();
+  });
+
+  it('⭐ never files a camp-to-camp transfer as a death', async () => {
+    // Moving dipped head between two of your own camps is ordinary husbandry — it is the very thing
+    // the sale-out/purchase-in workaround was being used to express, and the reason `transfer_out`
+    // exists. It takes head out of a MOB, not out of the herd, so no residue question arises: the
+    // withholding travels with it. Filing it here would fill the one screen whose value is that
+    // every line is worth reading — and, falling through the label switch, would tell a farmer that
+    // forty head DIED.
+    cachedSession();
+    seedTwoFlocks();
+    seedDip();
+    seedTallies([disposal('transfer_out', 40)]);
+    window.history.pushState({}, '', '/attention');
+    render(<App />);
+
+    expect(await screen.findByText(/nothing needs your attention/i)).toBeTruthy();
+    expect(screen.queryByText(/died/i)).toBeNull();
   });
 });

@@ -3118,6 +3118,236 @@ describe('weight capture (FR-140)', () => {
       expect(await service.residueRegister(a.userId, a.farmId)).toEqual([]);
     });
 
+    it('⭐ flags a disposal on a farm that has NEVER RECORDED A DOSE, because the withholding arrived with the head', async () => {
+      // The third way a withholding exists (§2.3b): bought or transferred in, never given here. A
+      // smallholder who has never dipped anything in Werf buys forty head whose seller declares a
+      // withdrawal. The register must be able to speak for that farm — and it is exactly the farm
+      // least likely to have a second system catching the mistake.
+      //
+      // The order is the cross-device race, not a contrivance: the son's phone tallies to slaughter
+      // with no knowledge of the purchase, so the guard has nothing to refuse and returns 201. The
+      // purchase lands afterwards and proves the disposal was inside a withholding.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+
+      await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-08-01T06:00:00.000Z',
+          reason: 'slaughter',
+          count: 10,
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          reason: 'purchase',
+          count: 40,
+          counterparty: 'Bethlehem sale yard',
+          declaredWithdrawalUntil: '2026-08-20',
+        }),
+      );
+
+      const register = await service.residueRegister(a.userId, a.farmId);
+      expect(register).toHaveLength(1);
+      expect(register[0]).toMatchObject({
+        eventType: 'tally',
+        reason: 'slaughter',
+        intoFoodChain: true,
+        withinWithdrawal: true,
+        // Nothing on that phone could have known — the purchase had not been recorded yet.
+        knownAtCapture: false,
+      });
+    });
+
+    it('⭐ refuses a slaughter out of a transferred flock when the dip lands AFTER the transfer', async () => {
+      // ⛔ The carried withholding must be a FLOOR, never a ceiling. It is computed from the source
+      // mob's log as it stands when the transfer LANDS — and arrival order is not `occurred_at`
+      // order, which is this repo's oldest rule. Two phones, both offline:
+      //
+      //   Phone A dips the source camp on 20 July (28-day withdrawal). No signal.
+      //   Phone B, which has never seen the dip, moves 40 head source → dest on the 22nd.
+      //   Phone B reconnects first: the server computes the carry with no dose on file, so nothing
+      //   is carried. Phone A reconnects later and the dip lands.
+      //
+      // If route 3 reads only the frozen value, the destination flock is CLEAR forever and 40 dipped
+      // sheep go to the abattoir 12 days inside a withholding. A counted flock has no `animals` rows,
+      // so no other route can catch it — this is the smallholder's path, and the register misses it
+      // too because it runs the same read.
+      const a = await tenant('Alpha');
+      const source = await aMob(a.farmId);
+      const dest = await aMob(a.farmId);
+      const productId = await aVetProduct({ species: ['sheep'] });
+
+      // The transfer lands FIRST, with no dose yet on file for the source.
+      await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId: source,
+          occurredAt: '2026-07-22T08:00:00.000Z',
+          reason: 'transfer_out',
+          count: 40,
+          counterpartMobId: dest,
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId: dest,
+          occurredAt: '2026-07-22T08:00:00.000Z',
+          reason: 'transfer_in',
+          count: 40,
+          counterpartMobId: source,
+        }),
+      );
+
+      // The other phone reconnects: the dip is back-dated to before the transfer.
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: source,
+          productId,
+          method: 'plunge',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      // 20 July + 28 days = 17 August. A slaughter on 1 August is twelve days inside it.
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: dest,
+            occurredAt: '2026-08-01T06:00:00.000Z',
+            reason: 'slaughter',
+            count: 10,
+          }),
+        ),
+      ).rejects.toThrow(/withdrawal/i);
+    });
+
+    it('terminates when head has moved A → B → A, and still finds the dip', async () => {
+      // Two camps and a fortnight is all it takes to make a cycle, so the live re-derivation above
+      // must not chase one forever. A farmer moving a flock out and back is ordinary; a request that
+      // never returns is not. The answer must still be right: the dip on A reaches head standing in
+      // A, whichever way round it travelled.
+      const a = await tenant('Alpha');
+      const one = await aMob(a.farmId);
+      const two = await aMob(a.farmId);
+      const productId = await aVetProduct({ species: ['sheep'] });
+
+      for (const [from, to, at] of [
+        [one, two, '2026-07-22T08:00:00.000Z'],
+        [two, one, '2026-07-24T08:00:00.000Z'],
+      ] as const) {
+        await service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: from,
+            occurredAt: at,
+            reason: 'transfer_out',
+            count: 40,
+            counterpartMobId: to,
+          }),
+        );
+        await service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: to,
+            occurredAt: at,
+            reason: 'transfer_in',
+            count: 40,
+            counterpartMobId: from,
+          }),
+        );
+      }
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: one,
+          productId,
+          method: 'plunge',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: one,
+            occurredAt: '2026-08-01T06:00:00.000Z',
+            reason: 'slaughter',
+            count: 10,
+          }),
+        ),
+      ).rejects.toThrow(/withdrawal/i);
+    }, 20_000);
+
+    it('⭐ does not file a camp-to-camp transfer as a disposal', async () => {
+      // `transfer_out` decreases a MOB; this register is about head leaving the HERD. Moving dipped
+      // head between two of your own camps carries the withholding across — that is the whole point
+      // of the reason existing — so filing it here would bury the lines that matter under ordinary
+      // husbandry, and the client would render it with the only noun its switch had left: "Died".
+      const a = await tenant('Alpha');
+      const from = await aMob(a.farmId);
+      const to = await aMob(a.farmId);
+      const productId = await aVetProduct({ species: ['sheep'] });
+
+      await service.recordDip(
+        a.userId,
+        dipBody({
+          farmId: a.farmId,
+          animalId: null,
+          mobId: from,
+          productId,
+          method: 'plunge',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+        }),
+      );
+      await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId: from,
+          occurredAt: '2026-07-25T06:00:00.000Z',
+          reason: 'transfer_out',
+          count: 40,
+          counterpartMobId: to,
+        }),
+      );
+
+      expect(await service.residueRegister(a.userId, a.farmId)).toEqual([]);
+    });
+
     it('flags a THEFT tally as a record, not as a food-chain event', async () => {
       // Theft reduces head identically and is never refused. It belongs on the register because a
       // residue traceback asks where treated head went, and "we do not know" is an answer that has

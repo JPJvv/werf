@@ -89,6 +89,7 @@ const en = {
   'notSent.empty': 'Everything has gone up. Nothing needs you.',
   'notSent.back': 'Back to home',
   'notSent.kind.landUnit': 'A camp or block',
+  'notSent.kind.boundaryWalk': 'A boundary you walked',
   'notSent.kind.mob': 'A group',
   'notSent.kind.animal': 'An animal',
   'notSent.kind.identifier': 'Tag number',
@@ -272,6 +273,51 @@ const en = {
   'land.headUnit': 'head',
   'land.capacity': 'Grazing capacity (LSU, optional)',
   'land.done': 'Done',
+  // Walking a boundary by GPS (FR-150). The copy says "walk" everywhere and never "map" or
+  // "survey": walking the fence is literally the action, and it is the one a farmer already does.
+  'land.walk.camp': 'Walk a camp’s fence',
+  'land.walk.block': 'Walk a block’s edge',
+  'land.walkFrom.camp': 'Walk this camp’s fence',
+  'land.walkFrom.block': 'Walk this block’s edge',
+  'land.walkWhich.camp': 'Which camp are you walking?',
+  'land.walkWhich.block': 'Which block are you walking?',
+  'land.walkNoLand.camp': 'Add a camp first — then you can walk its fence.',
+  'land.walkNoLand.block': 'Add a block first — then you can walk its edge.',
+  'land.walkSoFar.camp': 'Walked so far',
+  'land.walkSoFar.block': 'Walked so far',
+  'land.walkSave.camp': 'Save this camp’s boundary',
+  'land.walkSave.block': 'Save this block’s boundary',
+  'land.walkSaved.camp': 'boundary saved — your work is saved',
+  'land.walkSaved.block': 'boundary saved — your work is saved',
+  // States plainly that a new walk supersedes the old one. A recount of a shape: absolute, not a
+  // change to what was there. The old walk is kept in the record; it just stops being the boundary.
+  'land.walkReplaces.camp':
+    'This camp already has a boundary. Saving a new walk replaces it. The old one is kept in the record. Currently',
+  'land.walkReplaces.block':
+    'This block already has a boundary. Saving a new walk replaces it. The old one is kept in the record. Currently',
+  'land.cornersUnit': 'corners',
+  'land.walkMark': 'Mark this corner',
+  'land.walkMarking': 'Getting the GPS…',
+  'land.walkUndo': 'Undo last corner',
+  'land.walkDiscard': 'Start over',
+  'land.walkNeedMore': 'Walk to the next corner and mark it. Three corners make a boundary.',
+  // What happened, why, what now — and the "what now" is the whole sentence, because a farmer
+  // standing on a fence line cannot be told only that something is wrong.
+  'land.walkCrosses':
+    'This fence line crosses itself, so it is not one piece of ground. Undo the last corner and mark it again.',
+  'land.walkPoorFix':
+    'The GPS was not sure of itself at one of these corners, so the boundary may be out by about',
+  'land.walkOffline': 'This works with no signal. GPS does not need one.',
+  'land.gps.denied':
+    'This phone is not allowing the app to use its location. Turn location on for this app, then mark the corner again.',
+  'land.gps.unavailable':
+    'This phone could not get a GPS position here. Move into the open and try again.',
+  'land.gps.timeout': 'The GPS is still searching. Wait a few seconds in the open and try again.',
+  'land.gps.unsupported':
+    'This phone cannot give a GPS position, so a fence cannot be walked on it.',
+  // Two absences, two sentences: never walked, versus walked and this is how big it came out.
+  'land.walked': 'walked',
+  'land.notWalked': 'fence not walked yet',
   // Animals module (FR-101, FR-705). Captured offline; "head" is the count word a farmer uses.
   'animals.title': 'Animals',
   'animals.head': 'head',
@@ -803,6 +849,7 @@ const af: Record<TranslationKey, string> = {
   'notSent.empty': 'Alles is opgestuur. Niks benodig jou nie.',
   'notSent.back': 'Terug na tuis',
   'notSent.kind.landUnit': '’n Kamp of blok',
+  'notSent.kind.boundaryWalk': '’n Grens wat jy geloop het',
   'notSent.kind.mob': '’n Groep',
   'notSent.kind.animal': '’n Dier',
   'notSent.kind.identifier': 'Nommer',
@@ -959,6 +1006,44 @@ const af: Record<TranslationKey, string> = {
   'land.headUnit': 'stuks',
   'land.capacity': 'Weidingskapasiteit (GVE, opsioneel)',
   'land.done': 'Klaar',
+  'land.walk.camp': 'Loop ’n kamp se draad',
+  'land.walk.block': 'Loop ’n blok se rand',
+  'land.walkFrom.camp': 'Loop hierdie kamp se draad',
+  'land.walkFrom.block': 'Loop hierdie blok se rand',
+  'land.walkWhich.camp': 'Watter kamp loop jy?',
+  'land.walkWhich.block': 'Watter blok loop jy?',
+  'land.walkNoLand.camp': 'Voeg eers ’n kamp by — dan kan jy sy draad loop.',
+  'land.walkNoLand.block': 'Voeg eers ’n blok by — dan kan jy sy rand loop.',
+  'land.walkSoFar.camp': 'Tot dusver geloop',
+  'land.walkSoFar.block': 'Tot dusver geloop',
+  'land.walkSave.camp': 'Stoor hierdie kamp se grens',
+  'land.walkSave.block': 'Stoor hierdie blok se grens',
+  'land.walkSaved.camp': 'se grens gestoor — jou werk is gestoor',
+  'land.walkSaved.block': 'se grens gestoor — jou werk is gestoor',
+  'land.walkReplaces.camp':
+    'Hierdie kamp het reeds ’n grens. As jy ’n nuwe loop stoor, vervang dit die oue. Die oue bly in die rekord. Tans',
+  'land.walkReplaces.block':
+    'Hierdie blok het reeds ’n grens. As jy ’n nuwe loop stoor, vervang dit die oue. Die oue bly in die rekord. Tans',
+  'land.cornersUnit': 'hoeke',
+  'land.walkMark': 'Merk hierdie hoek',
+  'land.walkMarking': 'Kry die GPS…',
+  'land.walkUndo': 'Vee laaste hoek uit',
+  'land.walkDiscard': 'Begin oor',
+  'land.walkNeedMore': 'Loop na die volgende hoek en merk dit. Drie hoeke maak ’n grens.',
+  'land.walkCrosses':
+    'Hierdie draadlyn kruis oor homself, so dis nie een stuk grond nie. Vee die laaste hoek uit en merk dit weer.',
+  'land.walkPoorFix':
+    'Die GPS was nie seker van homself by een van hierdie hoeke nie, so die grens kan uit wees met omtrent',
+  'land.walkOffline': 'Dit werk sonder sein. GPS het nie een nodig nie.',
+  'land.gps.denied':
+    'Hierdie foon laat nie die program toe om sy ligging te gebruik nie. Skakel ligging vir hierdie program aan en merk die hoek weer.',
+  'land.gps.unavailable':
+    'Hierdie foon kon nie ’n GPS-posisie hier kry nie. Beweeg na die oopte en probeer weer.',
+  'land.gps.timeout': 'Die GPS soek nog. Wag ’n paar sekondes in die oopte en probeer weer.',
+  'land.gps.unsupported':
+    'Hierdie foon kan nie ’n GPS-posisie gee nie, so ’n draad kan nie daarmee geloop word nie.',
+  'land.walked': 'geloop',
+  'land.notWalked': 'draad nog nie geloop nie',
   'animals.title': 'Diere',
   'animals.head': 'stuks',
   'animals.allHerds': 'Alle troppe',

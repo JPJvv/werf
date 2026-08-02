@@ -19,10 +19,10 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { EnterpriseType } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
-import { termLabelKey, vocabularyFor } from '../i18n/terminology';
+import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
-import { useLandUnits } from './LocalLand';
+import { useCurrentBoundary, useLandUnits } from './LocalLand';
 import { landKey } from './AddLandUnitScreen';
 
 export function LandScreen() {
@@ -62,26 +62,31 @@ export function LandScreen() {
             return (
               <li
                 key={unit.id}
-                className="flex items-center justify-between rounded border border-soil-200 bg-sand-100 p-3"
+                className="flex flex-col gap-2 rounded border border-soil-200 bg-sand-100 p-3"
               >
-                <span className="font-data text-body tabular-nums text-soil-900">{unit.code}</span>
-                <span className="text-body text-soil-700">
-                  {unit.name ?? ''}
-                  {/* Hectares are a measurement: tabular figures, so a column of them lines up. */}
-                  {unit.hectares !== null ? (
-                    <span className="font-data tabular-nums">
-                      {unit.name ? ' · ' : ''}
-                      {unit.hectares} {t('land.hectaresUnit')}
-                    </span>
-                  ) : null}
-                  {/* The head count last, so the eye ends on it — it is what changes week to week
-                      while the code and the hectares do not. */}
-                  <span className="font-data tabular-nums text-soil-900">
-                    {unit.name || unit.hectares !== null ? ' · ' : ''}
-                    {head}
-                  </span>{' '}
-                  {t('land.headUnit')}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="font-data text-body tabular-nums text-soil-900">
+                    {unit.code}
+                  </span>
+                  <span className="text-body text-soil-700">
+                    {unit.name ?? ''}
+                    {/* Hectares are a measurement: tabular figures, so a column of them lines up. */}
+                    {unit.hectares !== null ? (
+                      <span className="font-data tabular-nums">
+                        {unit.name ? ' · ' : ''}
+                        {unit.hectares} {t('land.hectaresUnit')}
+                      </span>
+                    ) : null}
+                    {/* The head count last, so the eye ends on it — it is what changes week to week
+                        while the code and the hectares do not. */}
+                    <span className="font-data tabular-nums text-soil-900">
+                      {unit.name || unit.hectares !== null ? ' · ' : ''}
+                      {head}
+                    </span>{' '}
+                    {t('land.headUnit')}
+                  </span>
+                </div>
+                <BoundaryRow landUnitId={unit.id} term={term} />
               </li>
             );
           })}
@@ -92,5 +97,45 @@ export function LandScreen() {
         {t('home.back')}
       </Link>
     </section>
+  );
+}
+
+/**
+ * Whether this piece of ground has been walked, and the way in to walking it (FR-150).
+ *
+ * ⭐ Two absences are two facts. "Fence not walked yet" and "walked, 108.2 ha" are different
+ * sentences, and collapsing them into a blank would leave a farmer unable to tell a camp nobody has
+ * mapped from one whose walk failed to save. The same lesson the gestation cold-cache split had to
+ * learn, applied here from the start.
+ *
+ * The measured hectares are shown NEXT TO the declared ones above rather than replacing them,
+ * because they answer different questions: one is off a title deed, the other is where the fence
+ * actually runs. Neither is allowed to quietly overwrite the other.
+ */
+function BoundaryRow({ landUnitId, term }: { landUnitId: string; term: LandTerm }) {
+  const { t } = useTranslation();
+  const walked = useCurrentBoundary(landUnitId);
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-body text-soil-700">
+        {walked === undefined ? (
+          t('land.notWalked')
+        ) : (
+          <>
+            <span className="font-data tabular-nums text-soil-900">
+              {walked.areaHectares.toFixed(1)} {t('land.hectaresUnit')}
+            </span>{' '}
+            {t('land.walked')}
+          </>
+        )}
+      </span>
+      <Link
+        to={`/land/walk?camp=${landUnitId}`}
+        className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
+      >
+        {t(landKey(term, 'walkFrom'))}
+      </Link>
+    </div>
   );
 }

@@ -201,7 +201,7 @@ Land foundation (needed before animals have somewhere to live)
   enforcing the dual write; `boundary` in neverSyncColumns (SQLite has no PostGIS). Proven end
   to end against real PostGIS: RLS isolation, WITH CHECK write-guard, trigger derives+updates
   geojson through the app path. postgis extension enabled here (first geometry table) (FR-150)
-◐ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150) — the create
+☑ Define a camp: code, name, GPS boundary, hectares, carrying_capacity_lsu (FR-150) — the create
   ACTION is DONE (commit 961e2d7): `POST /land-units` + `GET`, and an offline capture screen at
   `/land/new` reached from the first-run guide's own link, which until now landed on a placeholder.
   ⭐ The DUAL-WRITE now runs client→server, which nothing enforced: the client authors GeoJSON (it
@@ -211,8 +211,22 @@ Land foundation (needed before animals have somewhere to live)
   ST_AsGeoJSON(boundary), not by asserting both are non-null. Terminology is not re-decided — the
   farm's vocabulary picks the word AND the `kind`, and a vineyard is asked nothing about grazing
   capacity. A duplicate code is refused on the device before it can jam the queue, and refused again
-  server-side with a message. Still ◐: WALKING a boundary (capturing the polygon by GPS) is its own
-  mapping feature — the API accepts and converts one, nothing yet produces one
+  server-side with a message.
+  ⭐ CLOSED: WALKING a boundary by GPS now exists (`/land/walk`, migration 0020, event type
+  `boundary_walk`). The line above read "the API accepts and converts one, nothing yet produces one"
+  for four sessions; a boundary could only be TYPED, which in practice meant no farm had one. The
+  walk marks a corner per tap, closes the ring itself, and refuses — ON THE DEVICE, standing at the
+  fence — too few corners, a line that crosses itself, and corners that enclose nothing. Area is
+  measured by spherical excess, not on a flat grid, which at −29° is a 14% over-read east–west.
+  ⭐ The boundary is an ABSOLUTE THAT RESETS, like a recount: `land_units.boundary` is the
+  denormalised current value of the walk log, RE-DERIVED after every arrival by `(occurred_at, id)`
+  — so two phones offline in the same week land on the walk that HAPPENED last, not the one that
+  arrived last, and the superseded walk is kept because it is a true fact about a fence. The same
+  cut runs on the device, so the two sides cannot disagree.
+  ⭐ The walk is durable from the FIRST corner (a `DraftStore` sibling in @werf/sync), because a
+  200 ha camp takes an hour and phones lock. The declared `hectares` is never overwritten by the
+  measured one: one is off a title deed, the other is where the fence runs, and they are shown side
+  by side
 ☑ @werf/core Zod schema for LandUnit (record + new shapes) — DONE, with the boundary crossing
   the wire as GeoJSON text, never PostGIS. Terminology now comes from the real terminology layer
   (`apps/web/src/i18n/terminology.ts`), which decides the TERM while the dictionaries hold the word

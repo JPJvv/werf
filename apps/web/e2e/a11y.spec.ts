@@ -175,6 +175,9 @@ const CAPTURE_SCREENS = [
   // wording here would be asserting the wrong farm's vocabulary.
   { path: '/land', heading: /blocks/i },
   { path: '/land/new', heading: /add a block/i },
+  // The empty state of the boundary walk — a farm with no ground yet is pointed at making some.
+  // Its POPULATED state is audited below, because that is where the controls are.
+  { path: '/land/walk', heading: /walk a block’s edge/i },
   { path: '/animals', heading: /animals/i },
   { path: '/animals/new', heading: /record an animal/i },
   { path: '/animals/loss', heading: /record a loss/i },
@@ -262,6 +265,30 @@ const POPULATED_SCREENS = [
       await page.getByLabel(/which female/i).selectOption({ index: 1 });
       await page.getByLabel(/when was she served/i).fill('2026-01-05');
       await expect(page.getByText(/due about/i)).toBeVisible();
+    },
+  },
+  {
+    // Walking a fence (FR-150). Everything worth auditing here is behind corners that only exist
+    // once a GPS has produced them: the running corner/hectare instrument, the two tinted warning
+    // panels, and the enabled Save. Without the walk below, the sweep audits a picker and a button.
+    path: '/land/walk',
+    heading: /walk a block’s edge/i,
+    act: async (page: Page) => {
+      const context = page.context();
+      await context.grantPermissions(['geolocation']);
+      // Three corners of a real box, marked one at a time — the phone has to MOVE between them,
+      // which is the whole shape of this capture and the reason one static fix will not do.
+      for (const [longitude, latitude] of [
+        [26.2, -29.0],
+        [26.21, -29.0],
+        [26.21, -28.99],
+      ] as const) {
+        // 45 m: deliberately poor, so the accuracy warning panel renders under the audit. It is a
+        // tinted panel with a left rule carrying a meaning (NFR-411), so a contrast rule must see it.
+        await context.setGeolocation({ longitude, latitude, accuracy: 45 });
+        await page.getByRole('button', { name: /mark this corner/i }).click();
+      }
+      await expect(page.getByText(/may be out by about/i)).toBeVisible();
     },
   },
   {

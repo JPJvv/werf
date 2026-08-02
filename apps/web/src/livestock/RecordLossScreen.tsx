@@ -30,7 +30,7 @@ import { useAnimals } from './LocalHerd';
 import { useMoves } from './LocalMoves';
 import { useRecordDeath, useRecordMissing, useRecordSale } from './LocalLifecycle';
 import { useAnimalLabels } from './LocalIdentifiers';
-import { currentPoint, type FixFailure } from './geolocation';
+import { currentPoint, type FixFailure } from '../geo/geolocation';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
 import { meatWithdrawalFor } from './withdrawal';

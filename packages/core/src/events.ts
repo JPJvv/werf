@@ -54,6 +54,14 @@ export const EVENT_TYPES = [
   // append, so the array must stay in the Postgres enum's order or a later schema diff sees a
   // change that is not one. Filing it beside `birth`/`death` would read better and be wrong.
   'tally',
+  // A camp or block's boundary as WALKED on the ground with a GPS (FR-150). Appended last for the
+  // same `ALTER TYPE … ADD VALUE` reason as the two above.
+  //
+  // It is an event rather than a column write because a boundary has a history: a fence moves, a
+  // camp is sub-divided, and a walk done in the rain with three satellites is superseded by a better
+  // one next month. `land_units.boundary` is the denormalised CURRENT value of this log — the same
+  // relationship `mobs.head_count` has to `tally`, and `animals.land_unit_id` has to `move`.
+  'boundary_walk',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -77,7 +85,15 @@ export function isEventType(value: string): value is EventType {
  * a deliberate statement that the fact is not about a herd; the FR-113 guard in @werf/domain reads
  * it, so a new event type is herd-scoped by default and must be named here to escape that.
  */
-export const FARM_SCOPED_EVENT_TYPES = ['rainfall'] as const satisfies readonly EventType[];
+export const FARM_SCOPED_EVENT_TYPES = [
+  'rainfall',
+  // A camp is ground, not a herd. The same camp carries cattle this winter and sheep next, and a
+  // mixed farm that filed its shape under one enterprise would hide it from the other — the exact
+  // filing mistake FR-113 exists to prevent, which is why the escape has to be named here rather
+  // than assumed. The walk names its `land_unit_id`; what it does not name is a herd, because it
+  // does not concern one.
+  'boundary_walk',
+] as const satisfies readonly EventType[];
 export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
 
 export function isFarmScopedEventType(type: EventType): type is FarmScopedEventType {

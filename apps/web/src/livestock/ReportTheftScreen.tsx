@@ -34,7 +34,7 @@ import { useLandUnits } from '../land/LocalLand';
 import { useEffectiveAnimals } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { useReportTheft } from './LocalTheft';
-import { currentPoint, type FixFailure } from './geolocation';
+import { currentPoint, type FixFailure } from '../geo/geolocation';
 import { speciesLabel } from './AnimalsScreen';
 
 /** A farm-local day (YYYY-MM-DD) as the midday instant of that day, so the zone cannot shift it. */

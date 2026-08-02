@@ -418,6 +418,40 @@ export const tallyPayloadSchema = z
   });
 export type TallyPayload = z.infer<typeof tallyPayloadSchema>;
 
+/**
+ * A boundary walked on the ground with a GPS (FR-150).
+ *
+ * ⭐ The RING and the CORNERS are both stored, and neither is a duplicate of the other. The ring is
+ * what the boundary IS; the corners are the evidence it rests on, and they carry the fix accuracy
+ * the ring cannot — a shape walked at 40 m accuracy under trees and one walked at 4 m in the open
+ * are the same polygon and are not the same claim. Keeping only the ring would be the defect
+ * `administeredOn` was added to the health payload to close: a value computed from inputs that were
+ * then thrown away is one no later reader can check.
+ *
+ * `areaHectares` is what the DEVICE measured from the ring, and it is deliberately not the same
+ * field as `land_units.hectares` — which is the farmer's own declared figure, often off a title
+ * deed. A walk that clipped a corner must never silently overwrite that. The two are shown side by
+ * side and the farmer decides; ADR-0005's preview/authoritative split, in a different domain.
+ */
+export const boundaryWalkPayloadSchema = z.object({
+  /** The closed ring as GeoJSON Polygon text. Crosses the wire as GeoJSON, never PostGIS. */
+  boundaryGeojson: geoJsonStringSchema,
+  /** The fixes the ring was built from, in walk order, each with the accuracy it was taken at. */
+  corners: z
+    .array(
+      z.object({
+        lon: z.number().gte(-180).lte(180),
+        lat: z.number().gte(-90).lte(90),
+        /** The radius the phone reported around this fix, in metres. */
+        accuracyM: z.number().nonnegative().finite(),
+      }),
+    )
+    .min(3),
+  /** The area the ring encloses as measured ON THE DEVICE, in hectares. */
+  areaHectares: z.number().nonnegative().finite(),
+});
+export type BoundaryWalkPayload = z.infer<typeof boundaryWalkPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -436,6 +470,7 @@ const CONCRETE_PAYLOADS = {
   dip: dipPayloadSchema,
   rainfall: rainfallPayloadSchema,
   tally: tallyPayloadSchema,
+  boundary_walk: boundaryWalkPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

@@ -37,7 +37,7 @@ import {
 import { createSentLog, type SentLog } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
-import { useLandUnits } from '../land/LocalLand';
+import { useBoundaryWalks, useLandUnits } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useAnimals } from '../livestock/LocalHerd';
 import { useMobs } from '../livestock/LocalMobs';
@@ -136,6 +136,7 @@ function replaceIfChanged(
  */
 export type CaptureKind =
   | 'landUnit'
+  | 'boundaryWalk'
   | 'mob'
   | 'tally'
   | 'animal'
@@ -223,6 +224,7 @@ export interface OutboxProviderProps {
 export function OutboxProvider({ children, factory = defaultSentLogFactory }: OutboxProviderProps) {
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
+  const boundaryWalks = useBoundaryWalks();
   const mobs = useMobs();
   const tallies = useTallies();
   const animals = useAnimals();
@@ -243,6 +245,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
 
   // The sent-log is farm-scoped by key, exactly like the stores it shadows: one farm's send-state
   // never counts against another's pending total.
+  // What each camp is CALLED, for the same reason `labels` exists: a refused boundary walk must be
+  // named by the code on the gate ("Camp 3") rather than by a uuid the farmer has never seen.
+  const landUnitCodes = useMemo(
+    () => new Map(landUnits.map((unit) => [unit.id, unit.code])),
+    [landUnits],
+  );
+
   const farmId = activeFarm?.id ?? 'none';
   const sentLog = useMemo(() => factory(`werf-sent:${farmId}`), [factory, farmId]);
   const sent = useSyncExternalStore(sentLog.subscribe, sentLog.all);
@@ -268,6 +277,23 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'landUnit',
           detail: unit.name,
           send: (token) => landApi.createLandUnit(unit, token),
+        });
+      }
+    }
+    // A boundary walk references the camp it is the shape of, so it follows the land units above.
+    //
+    // ⭐ NO SAFETY ORDERING APPLIES HERE, and that is asked explicitly rather than assumed, because
+    // §2d's rule is that "will this row insert" and "will the check have its evidence" are two
+    // different questions. Nothing in this pair creates evidence a server-side guard reads, and
+    // nothing judges it: a boundary is not a withholding, a disposal, or a head count. Where the
+    // walk lands relative to everything below it is a matter of foreign keys alone.
+    for (const walk of boundaryWalks) {
+      if (!sent.has(walk.id)) {
+        items.push({
+          id: walk.id,
+          kind: 'boundaryWalk',
+          detail: landUnitCodes.get(walk.landUnitId) ?? null,
+          send: (token) => landApi.recordBoundaryWalk(walk, token),
         });
       }
     }
@@ -461,6 +487,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     return items;
   }, [
     landUnits,
+    landUnitCodes,
+    boundaryWalks,
     mobs,
     tallies,
     animals,

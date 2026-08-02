@@ -285,6 +285,7 @@ export {
   type SessionStoreOptions,
 } from './session-store';
 export { createCaptureStore, type CaptureStore, type CaptureStoreOptions } from './capture-store';
+export { createDraftStore, type DraftStore, type DraftStoreOptions } from './draft-store';
 export { createSentLog, type SentLog, type SentLogOptions } from './sent-log';
 export {
   createReferenceCache,

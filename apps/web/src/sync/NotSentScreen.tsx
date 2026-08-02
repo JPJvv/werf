@@ -28,6 +28,7 @@ import { useRefusedCaptures, type CaptureKind, type RefusedCapture } from './Out
 /** What each kind of capture is called, in the farmer's words. */
 const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   landUnit: 'notSent.kind.landUnit',
+  boundaryWalk: 'notSent.kind.boundaryWalk',
   mob: 'notSent.kind.mob',
   tally: 'notSent.kind.tally',
   animal: 'notSent.kind.animal',

@@ -64,9 +64,31 @@ export function WalkBoundaryScreen() {
   );
 
   // Arrived from the land list with a camp already chosen, or falls back to the first one held.
+  //
+  // ⛔ RECONCILED AGAINST `units` ON EVERY RENDER, never snapshotted once. A one-shot initialiser
+  // read `?camp=` at mount and then drifted in two ways that both end with an hour of walking
+  // discarded without a word. The farm switcher sits in the shell header on EVERY screen and does
+  // not navigate, so switching farms mid-walk left the id pointing at the other farm's camp: the
+  // draft kept accumulating corners, the area rendered, the ring closed, Save stayed ENABLED, and
+  // `save()` hit `!selected` and returned silently. And `?camp=A` → `?camp=B` on the same route does
+  // not remount, so the walk was filed against A while the screen said B — a boundary is an absolute
+  // that RESETS, so that overwrites A's correct fence with B's.
   const requested = params.get('camp');
-  const [selectedId, setSelectedId] = useState<string>(() => requested ?? units[0]?.id ?? '');
-  const selected = units.find((unit) => unit.id === selectedId);
+  const [picked, setPicked] = useState<string | null>(null);
+  // A new `?camp=` is a fresh instruction and outranks an earlier in-screen pick. Adjusting state
+  // during render is the documented React pattern for exactly this, and it beats an effect: no
+  // frame is ever painted against the stale camp.
+  const [lastRequested, setLastRequested] = useState(requested);
+  if (requested !== lastRequested) {
+    setLastRequested(requested);
+    setPicked(null);
+  }
+  // The id is only ever one this device actually holds. Anything else — a bookmarked link, a camp
+  // soft-deleted since, another farm's — falls back to the first camp rather than to a phantom the
+  // draft store would happily key itself on.
+  const preferredId = picked ?? requested ?? '';
+  const selected = units.find((unit) => unit.id === preferredId) ?? units[0] ?? null;
+  const selectedId = selected?.id ?? '';
 
   const { corners, mark, dropLast, discard } = useWalkDraft(selectedId);
   const alreadyWalked = useCurrentBoundary(selectedId);
@@ -153,7 +175,7 @@ export function WalkBoundaryScreen() {
           id="camp"
           value={selectedId}
           onChange={(e) => {
-            setSelectedId(e.target.value);
+            setPicked(e.target.value);
             setJustSaved(null);
             setFixFailed(null);
           }}
@@ -257,7 +279,7 @@ export function WalkBoundaryScreen() {
       <button
         type="button"
         onClick={save}
-        disabled={!closed.ok}
+        disabled={!closed.ok || selected === null}
         className="min-h-touch-primary w-full rounded border-2 border-soil-900 bg-sand-100 px-4 font-ui text-body font-semibold text-soil-900 disabled:opacity-60"
       >
         {t(landKey(term, 'walkSave'))}

@@ -112,8 +112,11 @@ function normalise(fixes: readonly WalkFix[]): readonly WalkFix[] {
 
 /**
  * The area a ring encloses, in hectares, by spherical excess — the standard sum used for polygons on
- * a sphere. Planar arithmetic on degrees would be wrong by the cosine of the latitude, which at
- * −29° is a 13% under-read on every east–west measurement: enough to matter on a grazing figure.
+ * a sphere. Planar arithmetic on degrees would be wrong by the cosine of the latitude: treating a
+ * degree of longitude as a degree of latitude OVER-reads every east–west measurement by 1/cos(φ),
+ * which at −29° is about 14% — enough to matter on a grazing figure. (This comment said "a 13%
+ * under-read" and had the direction backwards as well as the number; `phase-checklists.md` said 14%
+ * over-read, and it was the one that was right.)
  *
  * Returns 0 for anything that encloses nothing, including fewer than three corners, so a screen can
  * call it on every tap without guarding first.
@@ -314,16 +317,46 @@ function within(a: WalkFix, b: WalkFix, c: WalkFix): boolean {
   );
 }
 
+/**
+ * How near zero a cross product has to be before three fixes count as being on ONE LINE.
+ *
+ * ⭐ The same lesson as `AREA_NOISE_FLOOR_HECTARES`, in the other predicate of this module, and it
+ * had to be learned twice. `=== 0` looks exact and is not: a point genuinely ON a diagonal produces
+ * ~2e-17 rather than 0, because the two products cancel to the last bits instead of to nothing. It
+ * DOES come out exactly 0 when the segment runs along a line of latitude or longitude, or when its
+ * rise equals its run — which is precisely the geometry a test writer reaches for, so the branch
+ * looked covered while it never fired for a real fence.
+ *
+ * The floor sits five orders above that noise and five below the smallest real signal: a fence
+ * deviating by one metre (~1e-5°) over a 3 km segment (~0.03°) gives ~3e-7. So nothing a person
+ * could walk is called collinear by it, and a fence doubled back along itself no longer slips past
+ * the on-device check into a refusal that arrives days later from PostGIS.
+ */
+const COLLINEAR_EPSILON = 1e-12;
+
+/**
+ * Which side of a line a fix falls on: -1, +1, or 0 for "on it".
+ *
+ * ⛔ The floor is applied HERE rather than only to the collinear branch, and that is the half of
+ * this that is easy to miss. Raw `> 0` / `< 0` comparisons read float dust as a real answer: three
+ * fixes on one line produce cross products of ~±2e-17 whose SIGNS are essentially random, so the
+ * strict-opposition test could report a proper crossing on a fence that never crossed anything —
+ * refusing a boundary a farmer had just walked correctly. Collapsing the dust to 0 fixes the false
+ * refusal and the missed doubling-back with one rule, which is the honest shape: both were the same
+ * mistake, that an exact comparison on a computed float means what it says.
+ */
+const sideOf = (value: number): number =>
+  Math.abs(value) < COLLINEAR_EPSILON ? 0 : value > 0 ? 1 : -1;
+
 /** Whether segments ab and cd cross, touching included — a fence that grazes another is still crossed. */
 function segmentsCross(a: WalkFix, b: WalkFix, c: WalkFix, d: WalkFix): boolean {
-  const d1 = cross(a, b, c);
-  const d2 = cross(a, b, d);
-  const d3 = cross(c, d, a);
-  const d4 = cross(c, d, b);
+  const d1 = sideOf(cross(a, b, c));
+  const d2 = sideOf(cross(a, b, d));
+  const d3 = sideOf(cross(c, d, a));
+  const d4 = sideOf(cross(c, d, b));
 
-  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
-    return true;
-  }
+  // A proper crossing: each segment has the other's endpoints strictly on opposite sides.
+  if (d1 * d2 < 0 && d3 * d4 < 0) return true;
   // Collinear overlap: a segment doubling back along one already walked.
   if (d1 === 0 && within(a, b, c)) return true;
   if (d2 === 0 && within(a, b, d)) return true;

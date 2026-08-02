@@ -181,6 +181,28 @@ describe('walking a boundary (FR-150)', () => {
     expect(Number(saved[0]!['areaHectares'])).toBeGreaterThan(107);
   });
 
+  it('⭐ saves against a REAL camp when the link names one this phone does not hold', async () => {
+    // An enabled Save that does nothing is the worst failure this product can have: an hour on the
+    // fence, a button that looks like every other Save, and silence. A one-shot read of `?camp=`
+    // let the id drift off `units` — a bookmarked link, a camp deleted since, or the farm switcher
+    // in the shell header, which changes the farm WITHOUT navigating. The screen must land on a camp
+    // it actually holds rather than accumulate corners against a phantom.
+    stubGps(BOX);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/land/walk?camp=0190f3a0-0000-7000-8000-00000000dead');
+    render(<App />);
+
+    await markCorners(user, 4);
+    const save = screen.getByRole('button', { name: /save this camp’s boundary/i });
+    expect(save.hasAttribute('disabled')).toBe(false);
+    await user.click(save);
+
+    // It saved, and it saved against the camp this device actually has.
+    const saved = storedWalks();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ farmId: FARM_ID, landUnitId: CAMP_ID });
+  });
+
   it('⭐ keeps a half-walked fence through a cold start — an hour of walking is not a screen timeout', async () => {
     stubGps(BOX);
     const user = userEvent.setup();
@@ -350,9 +372,10 @@ describe('walking a boundary (FR-150)', () => {
   });
 
   it('⭐ shows the walk that HAPPENED last, not the one captured last', async () => {
-    // Two phones, both offline. The 10 March walk was captured on this device SECOND, but it is the
-    // later fact — the same total order `(occurredAt, id)` the server folds on, run here so the two
-    // sides cannot disagree about which shape a camp currently has.
+    // Two phones, both offline. The 1 March walk was captured on this device SECOND — it is later in
+    // the array and would win a last-captured-wins fold — but 10 March is the later FACT and must be
+    // the shape shown. The same total order `(occurredAt, id)` the server folds on, run here so the
+    // two sides cannot disagree about which shape a camp currently has.
     window.localStorage.setItem(
       WALKS_KEY,
       JSON.stringify([
@@ -387,18 +410,13 @@ describe('walking a boundary (FR-150)', () => {
     // Day-grained capture makes ties ordinary rather than exotic. `...a2` is the later UUIDv7, and
     // it is the later id on the server too — the ids are the same values on both sides.
     const sameInstant = '2026-03-02T12:00:00.000Z';
+    // ⭐ The LOSER is seeded FIRST, and that is the whole test. Seeded the other way round, the
+    // incumbent-wins fold returns 325.4 from array order alone and the assertion stays green with
+    // the id comparison deleted — an assertion that cannot fail is not a test. The server's
+    // equivalent inserts its loser first for exactly this reason.
     window.localStorage.setItem(
       WALKS_KEY,
       JSON.stringify([
-        {
-          id: '0190f3a0-0000-7000-8000-0000000000a2',
-          farmId: FARM_ID,
-          landUnitId: CAMP_ID,
-          occurredAt: sameInstant,
-          corners: [],
-          boundaryGeojson: '{"type":"Polygon","coordinates":[[]]}',
-          areaHectares: 325.4,
-        },
         {
           id: '0190f3a0-0000-7000-8000-0000000000a1',
           farmId: FARM_ID,
@@ -407,6 +425,15 @@ describe('walking a boundary (FR-150)', () => {
           corners: [],
           boundaryGeojson: '{"type":"Polygon","coordinates":[[]]}',
           areaHectares: 108.1,
+        },
+        {
+          id: '0190f3a0-0000-7000-8000-0000000000a2',
+          farmId: FARM_ID,
+          landUnitId: CAMP_ID,
+          occurredAt: sameInstant,
+          corners: [],
+          boundaryGeojson: '{"type":"Polygon","coordinates":[[]]}',
+          areaHectares: 325.4,
         },
       ]),
     );

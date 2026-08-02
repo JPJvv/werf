@@ -188,6 +188,26 @@ describe('ringSelfIntersects (FR-150)', () => {
   it('says nothing about a walk that is not yet a ring, so a screen can ask while walking', () => {
     expect(ringSelfIntersects([at(26.2, -29.0), at(26.21, -29.0)])).toBe(false);
   });
+
+  it('⭐ catches a fence doubled back along a DIAGONAL it already walked', () => {
+    // ⛔ The diagonal is the whole point, and the asymmetry of it is the rest. On a segment running
+    // along a line of latitude or longitude — or on any diagonal whose rise equals its run — the
+    // cross product of a genuinely collinear point cancels to EXACTLY zero, so an `=== 0` collinear
+    // test appears to work. Give the segment an unequal rise and run, which is what a real fence has,
+    // and the same point yields ~2e-17: never equal to zero, so the branch never fires and the fence
+    // is accepted on the phone, then refused by PostGIS days later when nobody is near the corner.
+    //
+    // Segments AB and CD lie on ONE line and overlap: C and D are 70% and 25% of the way along AB.
+    const a = at(26.201234, -29.001234);
+    const b = at(26.237891, -28.986543);
+    const along = (f: number) => at(a.lon + f * (b.lon - a.lon), a.lat + f * (b.lat - a.lat));
+
+    // The fractions are exact rather than round on purpose: with 0.7 and 0.25 the OLD `=== 0` code
+    // happened to return true anyway, through float dust in the strict-sign branch reading ±2e-17 as
+    // a real crossing. These two make that accident not happen, so the assertion fails against the
+    // old implementation and passes against this one — which is the only version worth keeping.
+    expect(ringSelfIntersects([a, b, along(0.7000001), along(0.2500001)])).toBe(true);
+  });
 });
 
 describe('worstAccuracyM (FR-150)', () => {

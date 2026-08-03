@@ -86,7 +86,11 @@ export function LandScreen() {
                     {t('land.headUnit')}
                   </span>
                 </div>
-                <BoundaryRow landUnitId={unit.id} term={term} />
+                <BoundaryRow
+                  landUnitId={unit.id}
+                  term={term}
+                  hasTypedBoundary={unit.boundaryGeojson !== null}
+                />
               </li>
             );
           })}
@@ -103,16 +107,28 @@ export function LandScreen() {
 /**
  * Whether this piece of ground has been walked, and the way in to walking it (FR-150).
  *
- * ⭐ Two absences are two facts. "Fence not walked yet" and "walked, 108.2 ha" are different
- * sentences, and collapsing them into a blank would leave a farmer unable to tell a camp nobody has
- * mapped from one whose walk failed to save. The same lesson the gestation cold-cache split had to
- * learn, applied here from the start.
+ * ⭐ THREE states, not two, and the middle one is the one this row used to lose. A camp can have no
+ * boundary at all; it can have one that was TYPED when the camp was created; or it can have one that
+ * was walked. "Fence not walked yet" is true of the first two and tells a farmer nothing about which
+ * they are looking at — so a camp whose shape is already on file reads exactly like one nobody has
+ * ever mapped, and walking it looks equally necessary in both cases when it is not.
+ *
+ * This is the "two absences are two facts" rule that the gestation cold-cache split had to learn,
+ * one state further along: an absent WALK and an absent BOUNDARY are different absences.
  *
  * The measured hectares are shown NEXT TO the declared ones above rather than replacing them,
  * because they answer different questions: one is off a title deed, the other is where the fence
  * actually runs. Neither is allowed to quietly overwrite the other.
  */
-function BoundaryRow({ landUnitId, term }: { landUnitId: string; term: LandTerm }) {
+function BoundaryRow({
+  landUnitId,
+  term,
+  hasTypedBoundary,
+}: {
+  landUnitId: string;
+  term: LandTerm;
+  hasTypedBoundary: boolean;
+}) {
   const { t } = useTranslation();
   const walked = useCurrentBoundary(landUnitId);
 
@@ -120,7 +136,7 @@ function BoundaryRow({ landUnitId, term }: { landUnitId: string; term: LandTerm 
     <div className="flex items-center justify-between gap-2">
       <span className="text-body text-soil-700">
         {walked === undefined ? (
-          t('land.notWalked')
+          t(hasTypedBoundary ? 'land.boundaryTyped' : 'land.notWalked')
         ) : (
           <>
             <span className="font-data tabular-nums text-soil-900">

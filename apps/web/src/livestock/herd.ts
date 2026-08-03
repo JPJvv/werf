@@ -58,11 +58,22 @@ function mostFinalByAnimal(
  * A destination that is ABSENT leaves that dimension where it was, which is why this folds forward
  * through the moves in time order rather than reading only the latest one: "walked to Camp 4", then
  * "taken out of its mob" must end with both applied.
+ *
+ * ⭐ The order is TOTAL — `(occurredAt, id)`, byte-compared, never `occurredAt` alone and never
+ * `localeCompare`. Same rule as `projectHeadCount` and `mobMembership`, and for the same reason: a
+ * capture screen asks for the DAY and stamps every move on that day with one instant, so ties are
+ * ordinary BY CONSTRUCTION rather than rare. A sort with ties resolves to input order, which here is
+ * the capture-store append order and on the server is whatever the query plan returned — so two
+ * devices holding the same log could put the same animal in different camps. The id is a client
+ * UUIDv7: identical on both sides, and time-ordered, so it also breaks the tie in capture order.
+ * `localeCompare` is locale-sensitive by contract; it happens to agree for ISO timestamps and
+ * lowercase hex, but "happens to agree" is not what an invariant is made of.
  */
 function positionByAnimal(
   moves: readonly StoredMove[],
 ): ReadonlyMap<string, { landUnitId: string | null; mobId: string | null }> {
-  const ordered = [...moves].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  const ordered = [...moves].sort((a, b) => cmp(a.occurredAt, b.occurredAt) || cmp(a.id, b.id));
   const map = new Map<string, { landUnitId: string | null; mobId: string | null }>();
   for (const move of ordered) {
     const held = map.get(move.animalId);

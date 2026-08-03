@@ -30,6 +30,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useSyncStatus } from '../sync/useSyncStatus';
+import { useSentCaptures } from '../sync/Outbox';
 import { useResidueRegister, type StoredResidueFlag } from './LocalResidueRegister';
 import { useLocalResidueFlags, type LocalResidueFlag } from './residue';
 
@@ -45,10 +46,17 @@ interface Row {
   readonly clearFrom: string | null;
   /**
    * How this row is known. `late` is the cross-device discovery, `known` is the one the product
-   * warned about at capture, and `unsent` is this phone's own capture that the server has not seen.
-   * They owe the farmer three different sentences, so they are three states and not a boolean.
+   * warned about at capture, `unsent` is this phone's own capture that has not left the device, and
+   * `sent` is this phone's own capture that HAS. They owe the farmer four different sentences, so
+   * they are four states and not a boolean.
+   *
+   * ⭐ `sent` exists because the screen used to say "Saved on this phone. Not sent yet." on every
+   * locally-derived row, including ones the server had confirmed. The server legitimately omits a
+   * row it judges clear — it holds strictly more of the log than this phone — so a row can be both
+   * sent and absent from the register, and the screen was stating something false on a compliance
+   * surface. It is read from the sent-log, which is the only thing that actually knows.
    */
-  readonly known: 'late' | 'known' | 'unsent';
+  readonly known: 'late' | 'known' | 'unsent' | 'sent';
 }
 
 /**
@@ -98,6 +106,9 @@ export function AttentionScreen() {
   const { activeFarm } = useAuth();
   const server = useResidueRegister();
   const local = useLocalResidueFlags();
+  // The ids the server has CONFIRMED it stored. The one thing on the device that can tell a capture
+  // still sitting here from one the server has and chose not to flag.
+  const sent = useSentCaptures();
   const offline = useSyncStatus().status === 'offline';
 
   if (!activeFarm) return null;
@@ -116,7 +127,7 @@ export function AttentionScreen() {
       subject: flag.mobId === null ? 'animal' : 'group',
       intoFoodChain: flag.intoFoodChain,
       clearFrom: flag.clearFrom,
-      known: 'unsent',
+      known: sent.has(flag.eventId) ? 'sent' : 'unsent',
     });
   };
   for (const flag of local) addLocal(flag);
@@ -214,7 +225,9 @@ export function AttentionScreen() {
                     ? 'residue.lateDiscovery'
                     : row.known === 'known'
                       ? 'residue.knownAtCapture'
-                      : 'residue.notSentYet',
+                      : row.known === 'sent'
+                        ? 'residue.sentNotFlagged'
+                        : 'residue.notSentYet',
                 )}
               </p>
             </li>

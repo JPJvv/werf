@@ -315,9 +315,11 @@ const en = {
   'land.gps.timeout': 'The GPS is still searching. Wait a few seconds in the open and try again.',
   'land.gps.unsupported':
     'This phone cannot give a GPS position, so a fence cannot be walked on it.',
-  // Two absences, two sentences: never walked, versus walked and this is how big it came out.
+  // THREE states, three sentences: no shape at all, a shape that was typed in when the camp was
+  // created, and a fence somebody actually walked. The middle one used to read as the first.
   'land.walked': 'walked',
   'land.notWalked': 'fence not walked yet',
+  'land.boundaryTyped': 'shape on file, fence not walked',
   // Animals module (FR-101, FR-705). Captured offline; "head" is the count word a farmer uses.
   'animals.title': 'Animals',
   'animals.head': 'head',
@@ -783,6 +785,9 @@ const en = {
     'This was only found later, when a treatment recorded on another phone reached us. Nothing on your phone could have known at the time.',
   'residue.knownAtCapture': 'You were told about this when you recorded it.',
   'residue.notSentYet': 'Saved on this phone. Not sent yet.',
+  // Sent, but the register does not carry it — the server holds more of the log than this phone and
+  // may have judged it clear. Saying "not sent yet" here was simply false.
+  'residue.sentNotFlagged': 'Sent. This phone flagged it from the records it holds.',
   'residue.offline':
     'This list was last updated when you had signal. Newer entries may be missing.',
   'residue.back': 'Back to home',
@@ -1047,6 +1052,7 @@ const af: Record<TranslationKey, string> = {
     'Hierdie foon kan nie ’n GPS-posisie gee nie, so ’n draad kan nie daarmee geloop word nie.',
   'land.walked': 'geloop',
   'land.notWalked': 'draad nog nie geloop nie',
+  'land.boundaryTyped': 'vorm op lêer, draad nog nie geloop nie',
   'animals.title': 'Diere',
   'animals.head': 'stuks',
   'animals.allHerds': 'Alle troppe',
@@ -1441,6 +1447,7 @@ const af: Record<TranslationKey, string> = {
     'Dit is eers later opgetel, toe ’n behandeling wat op ’n ander foon aangeteken is, ons bereik het. Niks op jou foon kon dit destyds geweet het nie.',
   'residue.knownAtCapture': 'Jy is hiervan vertel toe jy dit aangeteken het.',
   'residue.notSentYet': 'Op hierdie foon gestoor. Nog nie gestuur nie.',
+  'residue.sentNotFlagged': 'Gestuur. Hierdie foon het dit gemerk uit die rekords wat dit hou.',
   'residue.offline':
     'Hierdie lys is laas bygewerk toe jy sein gehad het. Nuwer inskrywings kan ontbreek.',
   'residue.back': 'Terug na tuis',

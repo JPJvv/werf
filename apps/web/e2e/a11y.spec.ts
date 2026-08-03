@@ -275,8 +275,16 @@ const POPULATED_SCREENS = [
   },
   {
     // Walking a fence (FR-150). Everything worth auditing here is behind corners that only exist
-    // once a GPS has produced them: the running corner/hectare instrument, the two tinted warning
-    // panels, and the enabled Save. Without the walk below, the sweep audits a picker and a button.
+    // once a GPS has produced them: the running corner/hectare instrument, the ACCURACY warning
+    // panel, and the enabled Save. Without the walk below, the sweep audits a picker and a button.
+    //
+    // ⚠️ ONE tinted panel renders here, not two — this comment used to say two. The screen has FOUR
+    // (walk-replaces, self-crossing, poor fix, GPS failure) and a valid three-corner walk at 45 m
+    // shows exactly the poor-fix one: the replace warning is hidden once a corner exists, the fence
+    // does not cross itself, and the GPS did not fail. Auditing one is enough for the CONTRAST rule
+    // because all four carry identical tokens (`border-klei-700` / `bg-klei-100` / `text-soil-900`),
+    // and that — not "there are two of them" — is the reason this sweep is sufficient. Counting the
+    // widgets wrong is how a screen ends up with one nobody audits.
     path: '/land/walk',
     heading: /walk a block’s edge/i,
     act: async (page: Page) => {

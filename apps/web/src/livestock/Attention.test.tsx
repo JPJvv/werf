@@ -264,6 +264,27 @@ describe('the residue register (FR-131)', () => {
     expect(screen.getByText(/not sent yet/i)).toBeTruthy();
   });
 
+  it('⭐ stops saying "not sent yet" about a capture the server has confirmed', async () => {
+    // §2m #5. Every locally-derived row said "Saved on this phone. Not sent yet." — including ones
+    // the server had stored and simply not flagged, which it is entitled to do: it holds strictly
+    // more of the log than this phone and may have judged the disposal clear. A false sentence on a
+    // compliance screen is worse than a missing one, because an auditor reads it as a fact.
+    cachedSession();
+    seedFlock();
+    seedDip();
+    seedTally('slaughter', 40);
+    // The sent-log the outbox writes when the server confirms it stored a capture.
+    window.localStorage.setItem(`werf-sent:${FARM_ID}`, JSON.stringify([TALLY_ID]));
+    window.history.pushState({}, '', '/attention');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /needs your attention/i })).toBeTruthy();
+    // Still on the register — the device's own flag is a fact and the row does not disappear.
+    expect(screen.getByText(/must not go into the food chain/i)).toBeTruthy();
+    expect(screen.queryByText(/not sent yet/i)).toBeNull();
+    expect(screen.getByText(/this phone flagged it from the records it holds/i)).toBeTruthy();
+  });
+
   it('⭐ says plainly that a late discovery could not have been caught on this phone', async () => {
     // The cross-device race. Device A recorded the dip; this device tallied to the abattoir having
     // never seen it. The row must not read as an accusation — nothing here could have known.

@@ -325,6 +325,24 @@ describe('walking a boundary (FR-150)', () => {
     expect(screen.getByText(/fence not walked yet/i)).toBeTruthy();
   });
 
+  it('⭐ tells a TYPED boundary apart from no boundary at all — three states, not two', async () => {
+    // §2m #3. A camp whose shape was typed in when it was created read exactly like one nobody has
+    // ever mapped, because both fell through to "fence not walked yet". Two absences are two facts:
+    // an absent WALK and an absent BOUNDARY are different absences, and only one of them means the
+    // app knows nothing about where this ground is.
+    const units = JSON.parse(window.localStorage.getItem(LAND_KEY) ?? '[]') as Array<
+      Record<string, unknown>
+    >;
+    units[0]!['boundaryGeojson'] = '{"type":"Polygon","coordinates":[[]]}';
+    window.localStorage.setItem(LAND_KEY, JSON.stringify(units));
+    window.history.pushState({}, '', '/land');
+    render(<App />);
+
+    expect(screen.getByText(/shape on file, fence not walked/i)).toBeTruthy();
+    // And it must not ALSO claim there is nothing — the states are exclusive.
+    expect(screen.queryByText(/^fence not walked yet$/i)).toBeNull();
+  });
+
   it('shows the walked area on the land list, without touching the hectares the farmer declared', async () => {
     stubGps(BOX);
     const user = userEvent.setup();

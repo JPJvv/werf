@@ -560,6 +560,12 @@ describe('changing a group’s numbers (FR-102)', () => {
     // walk through the gate, on this device as well as on the server.
     expect(into).toMatchObject({ mobId: OTHER_MOB_ID, counterpartMobId: MOB_ID, delta: 40 });
     expect(typeof into?.['carriedWithholdUntil']).toBe('string');
+
+    // ⭐ ONE batch id across both halves — the only thing in the log that says these two captures
+    // are one move. Without it the outbox sends them as unrelated items, and an arrival can land
+    // when its departure was refused: the destination gains forty head no group ever lost.
+    expect(typeof out?.['batchId']).toBe('string');
+    expect(into?.['batchId']).toBe(out?.['batchId']);
   });
 
   it('⭐ refuses to send the joined group for slaughter while the carried withholding runs', async () => {

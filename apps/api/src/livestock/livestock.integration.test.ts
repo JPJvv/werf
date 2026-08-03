@@ -2644,13 +2644,22 @@ describe('weight capture (FR-140)', () => {
       return row!.id;
     }
 
-    const tally = (over: Partial<ZodInput<typeof schemas.recordMobTallyRequestSchema>>) =>
-      schemas.recordMobTallyRequestSchema.parse({
+    /**
+     * A tally body. A transfer half gets a batch id unless the case supplies one, because the
+     * capture refuses a half with no link — the two halves of a move are one action and each of
+     * these cases is written from ONE side, so the pairing is not what they are about. The link
+     * itself has its own tests below.
+     */
+    const tally = (over: Partial<ZodInput<typeof schemas.recordMobTallyRequestSchema>>) => {
+      const transfer = over.reason === 'transfer_out' || over.reason === 'transfer_in';
+      return schemas.recordMobTallyRequestSchema.parse({
         id: randomUUID(),
         occurredAt: '2026-07-25T06:00:00.000Z',
         count: 40,
+        ...(transfer ? { batchId: randomUUID() } : {}),
         ...over,
       });
+    };
 
     it('⭐ carries a withholding ACROSS a transfer, so it cannot be laundered by changing camps', async () => {
       // The hole §2.3b names. With no transfer reason, splitting a dipped flock had to be expressed
@@ -2721,6 +2730,68 @@ describe('weight capture (FR-140)', () => {
         }),
       );
       expect(after.type).toBe('tally');
+    });
+
+    it('⭐ stores ONE batch id on both halves, so the log holds a move rather than two coincidences', async () => {
+      // §2m #1. A tally has one subject mob and one delta, so a move is two events — and until this
+      // id linked them nothing in the stored log said they were the same act. An auditor tracing
+      // forty head out of a dipped camp found a departure and an arrival that merely happened to
+      // agree on a count and a day.
+      const a = await tenant('Alpha');
+      const source = await aMob(a.farmId);
+      const destination = await anotherMob(a.farmId, 'Flock B');
+      const batchId = randomUUID();
+
+      const out = await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId: source,
+          reason: 'transfer_out',
+          counterpartMobId: destination,
+          batchId,
+        }),
+      );
+      const into = await service.recordMobTally(
+        a.userId,
+        tally({
+          farmId: a.farmId,
+          mobId: destination,
+          reason: 'transfer_in',
+          counterpartMobId: source,
+          batchId,
+        }),
+      );
+
+      // On the ENVELOPE, not the payload: `batch_id` is the column that already groups one dosing
+      // run across many animals, and a move is the same kind of fact about two mobs.
+      expect(out.batchId).toBe(batchId);
+      expect(into.batchId).toBe(batchId);
+      expect(out.id).not.toBe(into.id);
+    });
+
+    it('⭐ refuses a transfer half that arrives with no link at all', async () => {
+      // The boundary, not only the device. A half with no batch id is a half that can land alone,
+      // and the arrival landing alone is the one that hurts: the destination gains head that no
+      // group ever lost, and no later capture repairs a count that was never wrong locally.
+      const a = await tenant('Alpha');
+      const source = await aMob(a.farmId);
+      const destination = await anotherMob(a.farmId, 'Flock B');
+
+      await expect(
+        service.recordMobTally(
+          a.userId,
+          schemas.recordMobTallyRequestSchema.parse({
+            id: randomUUID(),
+            farmId: a.farmId,
+            mobId: destination,
+            occurredAt: '2026-07-25T06:00:00.000Z',
+            reason: 'transfer_in',
+            count: 40,
+            counterpartMobId: source,
+          }),
+        ),
+      ).rejects.toThrow(ValidationError);
     });
 
     it('carries nothing across when the source was never under a withholding', async () => {
@@ -3186,7 +3257,9 @@ describe('weight capture (FR-140)', () => {
       const dest = await aMob(a.farmId);
       const productId = await aVetProduct({ species: ['sheep'] });
 
-      // The transfer lands FIRST, with no dose yet on file for the source.
+      // The transfer lands FIRST, with no dose yet on file for the source. Both halves share one
+      // batch id because they are one move — the capture refuses a half with no link.
+      const moveId = randomUUID();
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
@@ -3197,6 +3270,7 @@ describe('weight capture (FR-140)', () => {
           reason: 'transfer_out',
           count: 40,
           counterpartMobId: dest,
+          batchId: moveId,
         }),
       );
       await service.recordMobTally(
@@ -3209,6 +3283,7 @@ describe('weight capture (FR-140)', () => {
           reason: 'transfer_in',
           count: 40,
           counterpartMobId: source,
+          batchId: moveId,
         }),
       );
 
@@ -3256,6 +3331,8 @@ describe('weight capture (FR-140)', () => {
         [one, two, '2026-07-22T08:00:00.000Z'],
         [two, one, '2026-07-24T08:00:00.000Z'],
       ] as const) {
+        // One batch id per lap: each lap is its own move, and both of its halves carry it.
+        const lap = randomUUID();
         await service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
@@ -3266,6 +3343,7 @@ describe('weight capture (FR-140)', () => {
             reason: 'transfer_out',
             count: 40,
             counterpartMobId: to,
+            batchId: lap,
           }),
         );
         await service.recordMobTally(
@@ -3278,6 +3356,7 @@ describe('weight capture (FR-140)', () => {
             reason: 'transfer_in',
             count: 40,
             counterpartMobId: from,
+            batchId: lap,
           }),
         );
       }
@@ -3342,6 +3421,7 @@ describe('weight capture (FR-140)', () => {
           reason: 'transfer_out',
           count: 40,
           counterpartMobId: to,
+          batchId: randomUUID(),
         }),
       );
 

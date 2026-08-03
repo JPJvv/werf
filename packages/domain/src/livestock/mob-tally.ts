@@ -67,6 +67,22 @@ export interface MobTallyInput {
   /** The other mob in a mob-to-mob move. Required on `transfer_in` / `transfer_out`. */
   readonly counterpartMobId?: string | undefined;
   /**
+   * ⭐ Ties the two halves of ONE mob-to-mob move together (FR-102/FR-112). REQUIRED on a transfer
+   * half and refused on every other reason.
+   *
+   * The two halves are two events with two ids because a tally has one subject mob and one delta —
+   * the sign is derived from the reason so it is never the farmer's to type. Without something
+   * holding them together they are two unrelated captures, and the flush could land the `transfer_in`
+   * after the `transfer_out` was refused: the destination gains forty head that never left anywhere,
+   * and the source keeps head it no longer has. The shared id is what lets the outbox hold the second
+   * half back, and what lets a later reader see one action rather than two coincidences.
+   *
+   * It is REQUIRED rather than optional on purpose: an optional link is one a caller can forget, and
+   * this one was already forgotten once — `recordMobTally` wrote `batchId: null` for a year under a
+   * comment claiming the halves were "tied by the envelope's `batch_id`".
+   */
+  readonly batchId?: string | null | undefined;
+  /**
    * The withholding the transferred head carry with them, resolved from the SOURCE mob by the
    * caller. Injected rather than computed here: it is a regulated date read from the event log,
    * which this package has no I/O to reach.
@@ -82,6 +98,7 @@ export interface MobTallyInput {
 }
 
 const INCREASES: readonly string[] = schemas.TALLY_INCREASES;
+const TRANSFERS: readonly string[] = schemas.TALLY_TRANSFERS;
 
 /**
  * Build the tally event and the head count it projects to.
@@ -144,6 +161,19 @@ export function recordMobTally(input: MobTallyInput): MobTallyCapture {
     throw new ValidationError('A group cannot be transferred into itself');
   }
 
+  // ⭐ The link between the two halves, enforced here rather than trusted, because this function is
+  // the one place BOTH the device and the server build a tally — so the rule cannot hold on one side
+  // and not the other. A half with no batch id is a half that can arrive alone.
+  const isTransfer = TRANSFERS.includes(input.reason);
+  if (isTransfer && (input.batchId === undefined || input.batchId === null)) {
+    throw new ValidationError('Both halves of a group-to-group move must share one batch id');
+  }
+  // On any other reason it would be a claim that this capture is part of an action it is not part of.
+  // A tally is one fact about one mob; only a transfer is half of something bigger.
+  if (!isTransfer && input.batchId !== undefined && input.batchId !== null) {
+    throw new ValidationError('Only a group-to-group move is captured as two linked halves');
+  }
+
   // Re-checked against the payload schema so the two rules — this function's and the schema's —
   // cannot drift apart, exactly as every other capture in this package does it.
   if (!schemas.tallyPayloadSchema.safeParse(payload).success) {
@@ -164,7 +194,7 @@ export function recordMobTally(input: MobTallyInput): MobTallyCapture {
       mobId: input.mobId,
       landUnitId: null,
       employeeId: null,
-      batchId: null,
+      batchId: input.batchId ?? null,
       locationGeojson: input.locationGeojson ?? null,
       notes: input.notes ?? null,
       createdBy: input.createdBy ?? null,

@@ -368,6 +368,19 @@ export const recordMobTallyRequestSchema = z.object({
    * would be the fabricated-regulated-number defect with extra steps.
    */
   declaredWithdrawalUntil: dateSchema.optional(),
+  /**
+   * ⭐ Ties the two halves of one group-to-group move together. Required on `transfer_in` /
+   * `transfer_out` and refused on every other reason — but NOT by this schema, deliberately. The
+   * rule lives in `recordMobTally`, which is the one function both the device and the server build a
+   * tally through, so it cannot hold on one side and not the other. Stating it here as well would be
+   * the hand-written duplicate that drifts; the field is nullable at the wire and the capture refuses
+   * a null on a transfer.
+   *
+   * A tally has one subject mob and one delta, so a move must be written as two events. This is the
+   * only thing that says they are one action: without it a `transfer_in` can land after its
+   * `transfer_out` was refused, and the destination gains head that never left anywhere.
+   */
+  batchId: uuidSchema.nullable().default(null),
   /** Herd attribution (FR-113). Derived from the mob server-side; this is the fallback. */
   enterpriseId: uuidSchema.nullable().default(null),
   locationGeojson: geoJsonStringSchema.nullable().default(null),

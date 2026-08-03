@@ -52,6 +52,17 @@ export interface StoredTally {
   /** The other group in a mob-to-mob move (§2.3b). Present on `transfer_in` / `transfer_out` only. */
   readonly counterpartMobId?: string;
   /**
+   * ⭐ The id shared by BOTH halves of one group-to-group move. Present on `transfer_in` /
+   * `transfer_out` only, and unlike `carriedWithholdUntil` it IS sent — it is not a regulated
+   * arithmetic result the server must own, it is the fact that these two captures are one action,
+   * and only the device that performed the action knows it.
+   *
+   * The outbox reads it: the departure `provides` this subject and the arrival is `guardedBy` it, so
+   * an arrival whose departure was refused is HELD rather than landing on its own and giving the
+   * destination head that never left anywhere.
+   */
+  readonly batchId?: string;
+  /**
    * ⭐ The withholding transferred head carry with them — a PREVIEW, like every regulated date this
    * device shows. It is stored so the device's own guard can see it: a counted flock has no
    * `animals` rows, so head that walks in from a dipped camp leaves nothing else for the guard to
@@ -79,6 +90,7 @@ export interface TallyCapture {
   readonly counterparty?: string;
   readonly priceCents?: number;
   readonly counterpartMobId?: string;
+  readonly batchId?: string;
   readonly carriedWithholdUntil?: string;
   readonly declaredWithdrawalUntil?: string;
 }
@@ -145,6 +157,9 @@ export function useRecordTally(): (capture: TallyCapture) => void {
         // Validated through the domain like everything else — the schema refuses a transfer with no
         // counterpart, and a declared withdrawal on anything but a purchase.
         counterpartMobId: c.counterpartMobId,
+        // Validated here too: the domain refuses a transfer half with no batch id, so a screen that
+        // wrote only one half of a move cannot get the first one into the append-only log.
+        batchId: c.batchId,
         carriedWithholdUntil: c.carriedWithholdUntil,
         declaredWithdrawalUntil: c.declaredWithdrawalUntil,
       });
@@ -162,6 +177,7 @@ export function useRecordTally(): (capture: TallyCapture) => void {
         ...(c.counterparty === undefined ? {} : { counterparty: c.counterparty }),
         ...(c.priceCents === undefined ? {} : { priceCents: c.priceCents }),
         ...(c.counterpartMobId === undefined ? {} : { counterpartMobId: c.counterpartMobId }),
+        ...(c.batchId === undefined ? {} : { batchId: c.batchId }),
         ...(c.carriedWithholdUntil === undefined
           ? {}
           : { carriedWithholdUntil: c.carriedWithholdUntil }),

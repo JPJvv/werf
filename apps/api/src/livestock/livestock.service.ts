@@ -371,6 +371,12 @@ export class LivestockService {
         ...(input.counterpartMobId === undefined
           ? {}
           : { counterpartMobId: input.counterpartMobId }),
+        // ⭐ Taken from the body, like the id itself and for the same reason: the two halves of a
+        // move are captured on ONE device in one action, and the id that ties them has to be minted
+        // where that action happens. The server cannot invent it — the halves arrive as separate
+        // requests, possibly days apart, and there is nothing in the second to recognise the first
+        // by. `recordMobTally` refuses a transfer half that arrives without one.
+        batchId: input.batchId,
         ...(carriedWithholdUntil === undefined ? {} : { carriedWithholdUntil }),
         // ⭐ Taken from the body, which nothing else regulated in this file does. There is no
         // reference row to resolve a seller's word from — see the schema. It is recorded as what

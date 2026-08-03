@@ -288,6 +288,11 @@ export function AdjustMobScreen() {
         ? withdrawal.clearFrom
         : undefined;
     const declared = declaredUntil.trim() === '' ? undefined : declaredUntil;
+    // ⭐ One id for the whole action, minted once and put on BOTH halves. It is the only thing that
+    // says these two captures are one move: they are two events with two ids because a tally has one
+    // subject mob and one delta, and without the link the outbox could land the arrival after the
+    // departure was refused — the destination gaining forty head that never left anywhere.
+    const batchId = destination === null ? undefined : uuidv7();
 
     try {
       recordTally({
@@ -306,6 +311,7 @@ export function AdjustMobScreen() {
         ...(buyer === undefined ? {} : { counterparty: buyer }),
         ...(price === undefined ? {} : { priceCents: price }),
         ...(destination === null ? {} : { counterpartMobId: destination.id }),
+        ...(batchId === undefined ? {} : { batchId }),
         ...(carried === undefined ? {} : { carriedWithholdUntil: carried }),
         ...(declared === undefined ? {} : { declaredWithdrawalUntil: declared }),
       });
@@ -326,6 +332,9 @@ export function AdjustMobScreen() {
           count: typed,
           currentHead: headAsAt(destination.id),
           counterpartMobId: selected.id,
+          // The SAME batch id as the half above — that is the entire point of it. A fresh one here
+          // would be two links to nothing.
+          ...(batchId === undefined ? {} : { batchId }),
           ...(carried === undefined ? {} : { carriedWithholdUntil: carried }),
         });
       }

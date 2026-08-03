@@ -197,7 +197,20 @@ const arrivesWithheld = (tally: StoredTally): boolean =>
   tally.reason === 'transfer_in' ||
   (tally.reason === 'purchase' && tally.declaredWithdrawalUntil !== undefined);
 
-const isNotArrival = (tally: StoredTally): boolean => !arrivesWithheld(tally);
+/**
+ * Which of three passes a tally is sent in, and it is a total function rather than three filters so
+ * a reason added later cannot fall out of the queue entirely.
+ *
+ *   0. DEPARTURES — the `transfer_out` half of a move. It goes first so that when the source is
+ *      short and the server refuses it, the arrival behind it is held rather than landing alone and
+ *      giving the destination head that never left anywhere.
+ *   1. ARRIVALS — head coming IN carrying a withholding (`transfer_in`, or a purchase whose seller
+ *      declared one). For a counted flock this event IS the withholding, so it must not be overtaken
+ *      by the disposal it withholds.
+ *   2. Everything else, including every disposal.
+ */
+const tallyPass = (tally: StoredTally): number =>
+  tally.reason === 'transfer_out' ? 0 : arrivesWithheld(tally) ? 1 : 2;
 
 /** Injectable so tests can back the sent-log with in-memory storage instead of localStorage. */
 export type SentLogFactory = (key: string) => SentLog;
@@ -398,7 +411,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // only thing that can be, because there are no `animals` rows for a dose to attach to. Left in
     // capture order, a slaughter captured on Tuesday could overtake the transfer captured on Monday
     // that withholds it, and the server cannot refuse what it has not received.
-    for (const tally of [...tallies.filter(arrivesWithheld), ...tallies.filter(isNotArrival)]) {
+    //
+    // ⭐ And DEPARTURES go before arrivals, which is one pass more than that rule needed. The two
+    // halves of a move are two events, and the arrival must not land when the departure did not:
+    // that is the destination gaining head no group ever lost. `sort` is stable, so within a pass
+    // captures keep the order the farmer made them in.
+    for (const tally of [...tallies].sort((a, b) => tallyPass(a) - tallyPass(b))) {
       if (!sent.has(tally.id)) {
         // Only a sale or slaughter tally is judged against a withholding; a death or recount takes
         // head out without putting meat into the food chain, so it is not held for evidence.
@@ -408,6 +426,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // That is the fifth pass's own finding, one route along, reintroduced by the commit after
         // its fix.
         const arrives = arrivesWithheld(tally);
+        // ⭐ The two halves of a move, tied by the batch id the capture screen minted for the pair.
+        // The departure ESTABLISHES the move (it is the half that proves head left a group that had
+        // them), so it provides the subject; the arrival is judged against it. A purchase carries no
+        // batch id and is judged against nothing here — there is no other half to wait for.
+        const departs = tally.reason === 'transfer_out';
+        const link = tally.batchId;
         items.push({
           id: tally.id,
           kind: 'tally',
@@ -418,7 +442,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // individual dose on a member, or a dose carried in from a mob a member has left, must
           // hold this tally exactly as `meatWithdrawalForMob` refuses it at capture. Shadowing the
           // guard with a narrower set was the gap the fifth pass found in all three agents.
-          ...(arrives ? { provides: [tally.mobId] } : {}),
+          ...(arrives || (departs && link !== undefined)
+            ? { provides: [...(arrives ? [tally.mobId] : []), ...(departs && link ? [link] : [])] }
+            : {}),
+          // A tally is guarded by at most one of these two, never both: a disposal is never a
+          // transfer half (the reasons are disjoint), which is why one key can carry either.
           ...(intoFoodChain
             ? {
                 guardedBy: mobDisposalSubjects(
@@ -428,7 +456,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
                   moves,
                 ),
               }
-            : {}),
+            : tally.reason === 'transfer_in' && link !== undefined
+              ? { guardedBy: [link] }
+              : {}),
         });
       }
     }
@@ -582,7 +612,17 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // left pending so the next reconnect sends it once the dose or move lands — or once the
         // farmer resolves the refusal that stranded it. Marking it "needs attention" would blame
         // the farmer for a capture the server never actually rejected.
-        if (item.guardedBy?.some((subject) => taintedSubjects.has(subject))) continue;
+        //
+        // ⭐ A HELD ITEM TAINTS WHAT IT PROVIDES, because it did not land either. `taint` means "the
+        // server does not have this", and a refusal is only one way to get there. Until the transfer
+        // link existed no queue item had both `provides` and `guardedBy`, so this could not bite; a
+        // held `transfer_in` has both, and without this line the destination mob stayed clean and
+        // the slaughter behind it posted to a server that had never heard of the arrival — the
+        // sixth pass's own finding, one round deeper.
+        if (item.guardedBy?.some((subject) => taintedSubjects.has(subject))) {
+          taint(item);
+          continue;
+        }
         try {
           await item.send(token);
           sentLog.add(item.id);

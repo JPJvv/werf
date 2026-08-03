@@ -497,6 +497,115 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
   });
 
+  it('⭐ holds the arrival — and the slaughter behind it — when the DEPARTURE was refused', async () => {
+    // §2m #1. A move is two events because a tally has one subject mob and one delta, and until the
+    // batch id linked them they were two unrelated queue items. The source is short (another phone
+    // sold the flock while this one was in a dead zone), so the server refuses the `transfer_out` —
+    // and the `transfer_in` landed anyway. The destination gained forty head that no group ever
+    // lost, and the count on the tile was wrong on the server in a way no later capture repairs.
+    //
+    // The second half of this test is the sharper one: a HELD item must taint what it provides, or
+    // the slaughter behind the held arrival posts to a server that never heard of the arrival.
+    // ⚠️ Distinct from every id at the top of this file. `TALLY_ID` is `…c2` and `DIP_ID` is `…c1`,
+    // and seeding a second capture under one of those makes an assertion fire under the wrong name —
+    // which is what happened here while this test was being written, and it read as a defect in the
+    // flush rather than as a duplicate fixture id.
+    const SOURCE = '0190f3a0-0000-7000-8000-0000000000b4';
+    const BATCH = '0190f3a0-0000-7000-8000-0000000000ba';
+    const OUT_ID = '0190f3a0-0000-7000-8000-0000000000d7';
+    const IN_ID = '0190f3a0-0000-7000-8000-0000000000d8';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SOURCE,
+          farmId: FARM_ID,
+          name: 'Dip camp',
+          species: 'sheep',
+          headCount: 200,
+          initialHeadCount: 200,
+        },
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Sale flock',
+          species: 'sheep',
+          headCount: 40,
+          initialHeadCount: 40,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        // Deliberately stored in the order the SCREEN writes them, and deliberately with the arrival
+        // first in capture order for the slaughter — the queue's ordering is what is under test, not
+        // the order the device happened to append in.
+        {
+          id: IN_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'transfer_in',
+          count: 40,
+          delta: 40,
+          counterpartMobId: SOURCE,
+          batchId: BATCH,
+          carriedWithholdUntil: '2026-08-17',
+        },
+        {
+          id: OUT_ID,
+          farmId: FARM_ID,
+          mobId: SOURCE,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'transfer_out',
+          count: 40,
+          delta: -40,
+          counterpartMobId: MOB_ID,
+          batchId: BATCH,
+        },
+        {
+          id: TALLY_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'slaughter',
+          count: 10,
+          delta: -10,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      // Both halves go to the same endpoint, so the refusal is chosen on the record, not the path.
+      return body.includes('transfer_out')
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'the source group is short' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    // One REFUSAL — the departure. The other two are held, which is pending and not the farmer's
+    // problem to solve: nothing was rejected about them.
+    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(OUT_ID);
+    expect(sent).not.toContain(IN_ID);
+    expect(sent).not.toContain(TALLY_ID);
+    // Every capture kept. A 4xx sets the departure aside for a later round; the two behind it are
+    // simply still pending, and the next reconnect sends them once the source is repaired.
+    const stored = window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '';
+    expect(stored).toContain(OUT_ID);
+    expect(stored).toContain(IN_ID);
+    expect(stored).toContain(TALLY_ID);
+  });
+
   it('⭐ keeps every capture when the session cannot be refreshed — invariant 5', async () => {
     // `offline-sync.md` §5 calls this "a two-line mistake that destroys a month of a farmer's work"
     // and says it gets its own test. It did not have one: the behaviour was correct and held by

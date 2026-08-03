@@ -82,6 +82,12 @@ export const livestockApi = {
         ...(tally.counterpartMobId === undefined
           ? {}
           : { counterpartMobId: tally.counterpartMobId }),
+        // ⭐ This one IS sent, unlike `carriedWithholdUntil` below, and the distinction is worth
+        // holding onto: the batch id is not a regulated value the server could compute better — it
+        // is the fact that these two captures were one action, which only the device that performed
+        // it knows. The halves arrive as separate requests, possibly days apart, with nothing else
+        // in the second to recognise the first by.
+        ...(tally.batchId === undefined ? {} : { batchId: tally.batchId }),
         // ⭐ `carriedWithholdUntil` is DELIBERATELY not sent. The device computed one as a preview
         // so its own guard could see the arriving withholding, but a withdrawal period is a
         // regulated number and the server resolves its own from the source mob's log — a phone with

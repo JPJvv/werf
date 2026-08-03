@@ -281,14 +281,16 @@ export type RainfallPayload = z.infer<typeof rainfallPayloadSchema>;
  * that invariant intact: the capture screen writes both, so a farmer performs one action and the log
  * holds the two facts it consists of.
  *
- * ⛔ THE TWO HALVES ARE NOT YET LINKED, and this comment used to claim they were — it said they were
- * "tied by the envelope's `batch_id`", which `recordMobTally` has always written as `null`. A comment
- * that was false the day it was written, which is the class this repo keeps finding. What the absence
- * costs is real and is a KNOWN GAP, not a decision: the halves are two queue items with two ids, so a
- * refused `transfer_out` (the as-at fold finding the source short) does not hold back the
- * `transfer_in`, and the destination gains head that never left anywhere. Linking them — a shared
- * batch id on the wire, and a flush that holds the second half when the first is refused — is a
- * build slice of its own and is named in STATUS.md rather than half-done here.
+ * ⭐ The two halves ARE linked, by the envelope's `batch_id` — and it is worth recording that this
+ * comment CLAIMED that link for a year before it existed, while `recordMobTally` wrote `batchId:
+ * null`. What the absence cost was real: the halves were two queue items with two ids, so a refused
+ * `transfer_out` (the as-at fold finding the source short) did not hold back the `transfer_in`, and
+ * the destination gained head that never left anywhere.
+ *
+ * The link is now REQUIRED on both halves — `recordMobTally` throws without it, on the device and on
+ * the server both, because an optional link is one a caller forgets and this one was forgotten. The
+ * outbox reads it as the subject the second half is `guardedBy`, so the arrival is HELD, not refused,
+ * when the departure did not land.
  */
 export const TALLY_INCREASES = ['birth', 'purchase', 'transfer_in'] as const;
 export const TALLY_DECREASES = ['death', 'sale', 'theft', 'slaughter', 'transfer_out'] as const;

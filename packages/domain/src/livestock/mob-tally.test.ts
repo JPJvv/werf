@@ -155,6 +155,64 @@ describe('recordMobTally — what it refuses, and what it tells the farmer to do
   });
 });
 
+describe('recordMobTally — the two halves of a move are ONE action', () => {
+  const OTHER_MOB = '01900000-0000-7000-8000-0000000000b2';
+  const BATCH = '01900000-0000-7000-8000-0000000000ba';
+
+  const half = (over: Partial<MobTallyInput> = {}): MobTallyInput =>
+    input({
+      reason: 'transfer_out',
+      count: 40,
+      counterpartMobId: OTHER_MOB,
+      batchId: BATCH,
+      ...over,
+    });
+
+  it('⭐ carries the shared batch id onto the event, so the halves are one move and not two', () => {
+    // A tally has one subject mob and one delta, so a move has to be written as two events. This id
+    // is the only thing that says they are the same act — for the flush, which must not land the
+    // arrival when the departure was refused, and for anyone reading the log afterwards.
+    const out = recordMobTally(half());
+    const into = recordMobTally(
+      half({
+        id: '01900000-0000-7000-8000-0000000000e2',
+        reason: 'transfer_in',
+        mobId: OTHER_MOB,
+        counterpartMobId: MOB_ID,
+      }),
+    );
+
+    expect(out.event.batchId).toBe(BATCH);
+    expect(into.event.batchId).toBe(BATCH);
+    // Two events, two ids. Sharing an id would make the flush treat the second as a duplicate.
+    expect(out.event.id).not.toBe(into.event.id);
+  });
+
+  it('⭐ refuses a transfer half that arrives with no link, on either side of the wire', () => {
+    // The gap this closes: `recordMobTally` wrote `batchId: null` under a comment claiming the
+    // halves were tied by it. A half with no link is a half that can land alone — the destination
+    // gaining forty head that no group ever lost.
+    expect(() => recordMobTally(half({ batchId: undefined }))).toThrow(ValidationError);
+    expect(() => recordMobTally(half({ batchId: null }))).toThrow(/must share one batch id/);
+    expect(() => recordMobTally(half({ reason: 'transfer_in', batchId: undefined }))).toThrow(
+      /must share one batch id/,
+    );
+  });
+
+  it('refuses a batch id on a reason that is not half of anything', () => {
+    // A death is one fact about one mob. Claiming it belongs to a batch would say it is part of an
+    // action it is not part of, and a later reader following the link finds a move that never was.
+    expect(() =>
+      recordMobTally(input({ reason: 'death', batchId: BATCH, counterpartMobId: undefined })),
+    ).toThrow(/only a group-to-group move is captured as two linked halves/i);
+  });
+
+  it('leaves every other reason unlinked rather than inventing a batch of one', () => {
+    expect(recordMobTally(input({ reason: 'death' })).event.batchId).toBeNull();
+    expect(recordMobTally(input({ reason: 'purchase', count: 10 })).event.batchId).toBeNull();
+  });
+});
+
 describe('projectHeadCount (FR-102) — the fold two offline phones depend on', () => {
   const tally = (overrides: Partial<TallyRecord>): TallyRecord => ({
     id: EVENT_ID,

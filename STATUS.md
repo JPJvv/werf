@@ -3,23 +3,36 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-08-02 (THIRTEENTH session — ⭐ THE BATCHED SIXTH REVIEW PASS RAN, §2l) ·
+**Last updated:** 2026-08-03 (FOURTEENTH session — ⭐ THE PHASE 2 BUILD LIST IS EMPTY, AND A9 IS
+DIAGNOSED) ·
 **Branch:** `phase-2/livestock` (this file's own commit moves HEAD — re-read with `git log`).
-`pnpm verify` green LOCALLY: **83** files / **922** tests (was 909), bundle **146.04 KB** gz.
-`pnpm test:e2e` **25/27** — the two failures are §4 A9 exactly (`a11y.spec.ts:50` and `:64`, light
-theme, second factor), on screens this session never touched. ⭐ **A9 REPRODUCED AND LEFT EVIDENCE
-FOR THE FIRST TIME — read §4 A9 before theorising about it again.**
-**BOTH CI LANES GREEN at 74053c2** (run 30756408748: Lint/Typecheck/Test/Build and E2E/axe both
-success — verified with gh run view, not inferred). The e2e lane now audits /attention in both
-themes and both states, and CI still does NOT reproduce A9.
+`pnpm verify` green LOCALLY: **84** files / **934** tests (was 83/922), bundle **146.45 KB** gz.
+`pnpm test:e2e` **27/27 on two consecutive cold runs, 46s** — see §4 A9, and read the warning there
+before treating that as proof of anything.
+**BOTH CI LANES GREEN at 74053c2**; this session's four commits have NOT been through CI yet —
+push and watch (§2j's rule: `pnpm verify` does not run e2e, so a lane that touches the network
+shape of a screen can only be proved by pushing).
 See §6 for the compliance operating model JP set.
+
+> ⭐ **THE FOURTEENTH SESSION CLOSED THE LAST OF THE PHASE 2 BUILD LIST.** §2m #1 (the transfer
+> batch link, `d0dd571`) and the non-SEV leftovers §2m #2/#3/#5/#6 (`6abb6cf`). **There is now no
+> unblocked BUILD work left in Phase 2** — see §2n. **No agents were run** (not asked; the standing
+> rule is owner-triggered only).
+
+> ⭐ **AND §4 A9 IS DIAGNOSED AFTER SIX SESSIONS (`3ca3a2c`) — it was never an app defect.** The
+> trace `40ea435` captured shows both failing tests requesting the JS bundle 4 ms apart, both
+> stalling TEN SECONDS, one returning `net::ERR_CONNECTION_RESET`. The shell loaded (hence the theme
+> background and the passing `data-theme` assertion); the React bundle never arrived, so the tree
+> rendered nothing and every control was "not found". Contention on a single-process `vite preview`
+> serving two cold workers plus a 561 KiB service-worker precache. The lane is serialised.
 
 > ⭐ **THE THIRTEENTH SESSION RAN THE BATCHED PASS JP TRIGGERED, AND ALL THREE AGENTS RETURNED NOT
 > APPROVABLE FOR THE SIXTH CONSECUTIVE TIME.** Fourteen findings over `beb3dc9..HEAD`, including the
 > fifth pass's own two fix commits. **Every SEV-1, SEV-2 and MED is now FIXED** (`eb97045`,
 > `6ae9dfa`, `03ddf4e`, `122f9b0`, `b326321`) — see §2l for the findings and §2m for what is left.
-> ⛔ **THE FIXES ARE THEMSELVES UNREVIEWED. Six passes running have each found a real defect inside
-> the previous pass's fixes; this session's fixes are where the SEVENTH pass should look first.**
+> ⛔ **THE FIXES ARE THEMSELVES UNREVIEWED, and so is everything this session added. Six passes
+> running have each found a real defect inside the previous pass's fixes; the SEVENTH pass is now
+> the ONLY thing between this branch and merge-ready, and it is JP's call.**
 
 > ✅ **The TWELFTH session closed §4 B7 — walking a camp boundary by GPS (`f6d4c0e`).** It was the
 > largest named remainder and the only build work left that a session could do on its own. **NOT
@@ -77,11 +90,15 @@ See §6 for the compliance operating model JP set.
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. The BUILD list has ONE item on it again — §2m #1, the unlinked transfer halves.** ⭐ **THE BATCHED SIXTH REVIEW PASS RAN (JP-triggered) and all three agents returned NOT APPROVABLE; every SEV-1/SEV-2/MED is FIXED (§2l).** `pnpm verify` green LOCALLY: **83** files / **922** tests, bundle **146.04 KB** gz (was 83/909). ⛔ **Not merge-ready. The fixes are UNREVIEWED, and six passes running have each found a defect inside the previous pass's fixes — a SEVENTH pass over this session's fixes is the honest next gate, and it is JP's call.** ⚠️ `pnpm test:e2e` **25/27**, both failures are §4 A9 exactly, on screens untouched this session — and A9 finally LEFT EVIDENCE. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. ⭐ THE BUILD LIST IS EMPTY** — §2m #1 is built (`d0dd571`) and the non-SEV leftovers with it (`6abb6cf`); everything still named in §4 B2/B4/B5 is blocked on something that does not exist. See §2n. ⭐ **THE BATCHED SIXTH REVIEW PASS RAN (JP-triggered) and all three agents returned NOT APPROVABLE; every SEV-1/SEV-2/MED is FIXED (§2l).** `pnpm verify` green LOCALLY: **84** files / **934** tests, bundle **146.45 KB** gz. ⛔ **Not merge-ready, and the SEVENTH pass is now the ONLY thing left before it — there is no build work to do instead. Six passes running have each found a defect inside the previous pass's fixes; it is JP's call.** ✅ `pnpm test:e2e` **27/27 cold, twice** — §4 A9 is DIAGNOSED and fixed (`3ca3a2c`), and it was never an app defect. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
-**Working tree is CLEAN as of the thirteenth session.** The tooling changes that had sat
+**Working tree is CLEAN as of the fourteenth session**, and this was verified with `git status` as
+the first action of the session (§5 item 1). The thirteenth session's claim was accurate — the only
+thing stale was the SHA in this header, as usual: it said `74053c2` while HEAD was `b0f0c89`.
+
+**Earlier note, still true:** The tooling changes that had sat
 uncommitted since the tenth session are committed (`5a8db20`), and `.claude/settings.json.doctor-backup`
 is deleted — git is the reversibility mechanism now that the change is in history. They could NOT go
 on a branch off `main`: `main` has neither `defect-classes.sh` nor `ensure-docker.sh`, both commits on
@@ -663,27 +680,96 @@ them was wrong when it was written. The commit that widened the world did not go
 
 ---
 
-## 2m. What this session did NOT fix, deliberately
+## 2n. The Phase 2 build list is empty (2026-08-03, fourteenth session) — UNREVIEWED
+
+**A BUILD session.** Four commits. `pnpm verify` green after each: **84 files / 934 tests** (was
+83/922), bundle **146.45 KB** gz. **No agents run** — not asked, and the rule is owner-triggered.
+
+| Commit | What |
+|---|---|
+| `d0dd571` | **§2m #1 — the two halves of a move are ONE action (FR-102/FR-112).** A shared batch id, REQUIRED on a transfer half and refused on every other reason |
+| `6abb6cf` | **§2m #2, #3, #5, #6** — the non-SEV leftovers. Three of the four were a screen or a projection stating something untrue |
+| `3ca3a2c` | **§4 A9 DIAGNOSED and fixed.** Not an app defect; see §4 A9 |
+| this one | STATUS |
+
+**The decisions inside the transfer link worth not re-litigating:**
+
+- ⭐ **The batch id IS sent, unlike `carriedWithholdUntil`, and the distinction is the useful part.**
+  A withholding is a regulated value the server must own — a phone with a stale product register
+  must never shorten one by being the one that did the arithmetic. A batch id is not that: it is the
+  FACT that two captures were one action, and only the device that performed the action knows it.
+  The halves reach the server as separate requests, possibly days apart, with nothing else in the
+  second to recognise the first by. The server cannot invent it, so the server must be told it.
+- ⭐ **REQUIRED, not optional, and enforced in `recordMobTally` rather than at the wire.** An
+  optional link is one a caller forgets — which is exactly what happened: `batchId: null` was
+  written for a year under a comment claiming the halves were "tied by the envelope's `batch_id`".
+  `recordMobTally` is the one function BOTH the device and the server build a tally through, so a
+  rule there cannot hold on one side and not the other. Restating it in the request schema would be
+  the hand-written duplicate that drifts; the wire field is nullable and the capture refuses a null.
+- ⭐ **The flush now sends DEPARTURES, then arrivals, then everything else** — one pass more than
+  the arrivals-before-disposals rule needed. `tallyPass` is a total function rather than three
+  filters, so a reason added later cannot fall out of the queue silently.
+- ⭐ **A HELD item now taints what it provides, and this is the sharper half of the slice.** `taint`
+  means "the server does not have this"; a refusal is only one way to get there. No queue item had
+  ever had BOTH `provides` and `guardedBy`, so this could not bite — a held `transfer_in` has both,
+  and without it the destination mob stayed clean and the slaughter behind it posted to a server
+  that had never heard of the arrival. **This is the fifth pass's finding A and the sixth pass's
+  `transfer_in`-provides finding, arriving a third time one layer further in.** Worth expecting a
+  fourth: this mechanism has now been widened three times and each widening exposed the next reader.
+
+**⚠️ A test-fixture bug found by refusing to accept a green test, and it generalises.** The outbox
+test was directional — it went red against the old code — but it failed on an assertion named
+`IN_ID`, which did not match how the mechanism was supposed to work. Chasing that rather than
+banking the red found that `IN_ID` had been given the same value as the file's existing `TALLY_ID`,
+so ONE seeded id stood for two captures and the assertion was firing under the wrong name. **A test
+that goes red for a reason you cannot explain is not yet evidence.** Both halves are now proven
+separately: the old ordering sends the arrival, and deleting the taint-on-hold line sends the
+slaughter.
+
+**The rules out of this session:**
+
+- **A comment that describes a mechanism is a claim, and this repo's comments have been wrong about
+  their own mechanism four times now.** `batch_id` "ties the halves"; `withdrawal.ts`'s header said
+  both entry points read both routes; `residue.ts` claimed a closed defect it still had; the
+  `/land/walk` a11y comment counted two panels where one renders. Every one was written in good
+  faith and outlived its premise.
+- **Three absences are sometimes three facts.** The land list had learned "walked vs not walked" and
+  still collapsed "no shape at all" into "shape typed in but never walked". The gestation cold-cache
+  lesson keeps generalising one state further than it was learned.
+- **A false sentence on a compliance screen is worse than a missing one**, because an auditor reads
+  it as a fact. `/attention` told a farmer a capture was "not sent yet" when the server had it and
+  had merely not flagged it — which the server is entitled to do, holding more of the log.
+
+⛔ **Both the transfer link and `/attention` are REGULATED (FR-131 — a withholding carried across a
+transfer, and the residue register). Saying so out loud is the §6 obligation: they are UNREVIEWED,
+and the SEVENTH pass now has them to cover as well.**
+
+---
+
+## 2m. What the THIRTEENTH session did not fix — ALL NOW CLOSED except #4
+
+Kept for the record. #1, #2, #3, #5 and #6 are built (§2n, `d0dd571` and `6abb6cf`); **#4 stands as
+the recorded decision it always was, not as a defect.**
 
 Named so the next session does not re-derive them. None is a SEV.
 
-1. ⭐ **The two halves of a transfer are not linked (MED, `sync-auditor`).** `recordMobTally` writes
+1. ✅ **CLOSED (`d0dd571`) — the two halves of a transfer were not linked (MED, `sync-auditor`).** `recordMobTally` writes
    `batchId: null`. They are two queue items with two ids, so a refused `transfer_out` — the as-at
    fold finding the source short — does not hold back the `transfer_in`, and the destination gains
    head that never left anywhere. **This is a BUILD SLICE and it is the top of the next session's
    list:** a shared batch id on the wire (schema + service + domain + client) and a flush that holds
    the second half when the first is refused, through the `provides`/`guardedBy` mechanism that
    already exists. The false comment is gone; the gap is now stated in the schema itself.
-2. `herd.ts:65` `positionByAnimal` still orders by `localeCompare` on `occurredAt` alone — outside
+2. ✅ **CLOSED (`6abb6cf`).** `herd.ts` `positionByAnimal` ordered by `localeCompare` on `occurredAt` alone — outside
    the review range, and the sibling of a projection corrected inside it.
-3. `LandScreen` says "fence not walked yet" for a camp with a TYPED `boundaryGeojson`, collapsing
+3. ✅ **CLOSED (`6abb6cf`).** `LandScreen` said "fence not walked yet" for a camp with a TYPED `boundaryGeojson`, collapsing
    three states into two — the "two absences are two facts" rule again.
-4. `DraftStore` is last-write-wins across tabs (no `storage` listener). Consistent with
+4. ◐ **STANDS — a decision, not a defect.** `DraftStore` is last-write-wins across tabs (no `storage` listener). Consistent with
    `capture-store.ts`, so not new; a walk is a single-tab act in practice.
-5. `AttentionScreen` keeps "Saved on this phone. Not sent yet." on a row the server legitimately
+5. ✅ **CLOSED (`6abb6cf`).** `AttentionScreen` kept "Saved on this phone. Not sent yet." on a row the server legitimately
    omits. Fails toward blocking, so not a safety issue, but it is a false statement on a compliance
    screen.
-6. The a11y comment for `/land/walk` says "the two tinted warning panels"; the act renders one.
+6. ✅ **CLOSED (`6abb6cf`).** The a11y comment for `/land/walk` said "the two tinted warning panels"; the act renders one.
 
 ---
 
@@ -1059,7 +1145,7 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | A7 | ✅ **FIXED 2026-07-26 — the e2e lane could report green against code that no longer existed.** `vite preview` serves `dist`, and `turbo.json`'s `build` task declared no `outputs`, so turbo cached only LOGS: a cache hit printed "FULL TURBO" and wrote no files, leaving whatever bundle was already on disk. Proven rather than theorised — a screen's heading was replaced with a literal and the suite stayed 25-green, then kept FAILING for five consecutive runs after the source was restored, because the broken bundle was never replaced either way. Two changes: `outputs: ["dist/**"]` in `turbo.json`, and `pnpm test:e2e` now builds first (turbo-cached, so free when nothing changed). Verified in both directions — breaking a heading now fails 2 tests, restoring it returns 25 green. **This is why the earlier "2 failed then clean on a re-run" was never a flake; do not re-diagnose it as one.** |
 | A10 | ⛔ **NEW 2026-07-28 — `pnpm verify` CANNOT BE RUN on a machine with no Docker, and it fails LOUDLY rather than skipping.** 13 test files die on `Could not find a working container runtime strategy`; **272 of the 806 tests — the entire testcontainers integration tier — never execute**, and the gate exits 1. Locally the real figure was 534/806 passing. This is an environment condition, not a defect. ✅ **RESOLVED THE SAME DAY, two ways.** (1) With Docker started, `pnpm verify` was re-run and exits **0 — 78 files / 806 tests, all passing, 157s**, so the 806 figure is now confirmed LOCALLY as well as on CI. (2) A `SessionStart` hook (`.claude/hooks/ensure-docker.sh`, wired in `.claude/settings.json`) now checks the runtime at session start, launches Docker Desktop if it is down, waits up to 60s, and **never blocks** — worst case it prints a warning saying the integration tier cannot run, which beats thirteen confusing failures later. Silent and instant when Docker is already up |
 | A11 | ✅ **FIXED 2026-07-30 (`513da32`).** Both ADRs cherry-picked from `docs/phase-3-6-scope` onto this branch — they reference only ADR-0001/0005/0007, all already here, so nothing new dangles. The three citations (`STATUS.md` §2.6, §3, `phase-checklists.md`) now resolve. ⚠️ Consequence for the post-merge cherry-pick of the scope branch (§2.2): those two ADR files now exist on BOTH branches and will conflict/skip — drop them from that cherry-pick |
-| A9 | ⭐ **STILL OPEN, BUT IT FINALLY LEFT EVIDENCE (2026-08-02, thirteenth session) — READ THIS BEFORE THEORISING ABOUT A9 AGAIN.** It reproduced (25/27, `a11y.spec.ts:50` and `:64`, light theme, second factor — the same two, again), and this is the FIRST reproduction since `40ea435` added failure instrumentation, so the screenshot and trace actually fired. **The captured screenshot is COMPLETELY BLANK** — the light theme's background colour and nothing else on the page. That is a much stronger fact than anything A9 has had, and it kills the standing hypothesis: this is NOT a missing button, and it is NOT the route guard redirecting (a redirect renders the sign-in screen; a guard failure renders something). The page background proves `index.html`'s pre-paint theme script RAN and `data-theme` was set — which is also why the sibling `toHaveAttribute('data-theme', theme)` assertion has always passed. So the HTML shell loaded and the React tree rendered NOTHING. ⛔ **That is evidence, not a diagnosis, and it must not be written up as one.** No top-level `return null` was found in `App`/`AuthProvider` to explain it. The leading unconfirmed candidate is now the PWA service worker (`sw.js`, workbox precache) serving a partial or stale precache on a COLD run under load, which would fit "load/cold-start dependent" better than anything proposed so far — but the trace zip has not been opened. **Next step, and it is cheap: `pnpm exec playwright show-trace` on the captured trace, and check for a console error or a failed chunk request.** The artefacts live under `test-results/` (git-ignored) and are overwritten by the next run, so read them before re-running. Original note follows. ◐ **2026-08-02 (twelfth session): a COLD `pnpm test:e2e` ran 27/27 GREEN, and CI's e2e lane was green too — with two NEW audits added to it (`/land/walk`, empty and populated, both themes). ⛔ Do NOT read that as a fix: nothing was done to A9, the snapshot-on-failure instrumentation `40ea435` added never fired because nothing failed, and a load-dependent failure that does not reproduce once has not been diagnosed. It is one more data point that the failure is load/cold-start dependent rather than deterministic. Original note follows.** ◐ **NOW DIAGNOSABLE. 2026-07-30 (`40ea435`): the e2e config captures a DOM snapshot + screenshot ON FAILURE** (`trace: 'retain-on-failure'` + `screenshot: 'only-on-failure'`; retries stay 0). The root cause of the "no evidence" problem was that `trace: 'on-first-retry'` never fired against `retries: 0`. Next red run leaves a snapshot to read instead of another hypothesis. The candidate below (async session seed racing the route guard) is still unconfirmed — confirm it from the captured snapshot. Original note follows. ◐ **NARROWED 2026-07-28, AND A9'S OWN RECORDED SUSPICION IS RULED OUT.** Reproduced on a cold local run: **25 passed / 2 failed, exit 1, 53.9s** — the same two light-theme tests. Two things are now FACT that were not: (1) the failure is `element(s) not found`, and **BOTH** the passkey button and the "use an authenticator app instead" fallback are absent — so it is not one button, the entire choice UI is missing; (2) `passkeysAvailable()` (`apps/web/src/auth/passkeys.ts:42`) is a **synchronous** DOM check (`typeof window.PublicKeyCredential === 'function'`) consumed as `useState(passkeysAvailable)` — it has **no timing dependence whatsoever**, so **A9's recorded "async can-this-device-do-it probe" hypothesis is dead.** That leaves the screen either not mounting or mounting without a session, which points at the async session seed racing the route guard — `a11y.spec.ts:73` already comments that "the seed arrives asynchronously". ⛔ **That is a NARROWED CANDIDATE, NOT A DIAGNOSIS** — no page snapshot was captured to confirm what did render. Next step is cheap and specific: capture `page.content()` or a screenshot on failure. Original note follows. ◐ **THE FAILING TESTS NOW HAVE NAMES (2026-07-28), which is what A8 and A9 both asked for.** A full `pnpm test:e2e` reported **25 passed, exit 1** again — the same signature — and this time the names were captured before anything else: `a11y.spec.ts:50` *the second-factor choice has no accessibility violations in the **light** theme* and `a11y.spec.ts:64` *second-factor enrolment …* **in the light theme**. Both timed out on `getByRole('button', { name: /use this phone as the key/i })` — the PASSKEY button, which §2b's own rule puts behind an async "can this device do it" probe. **Evidence, not a diagnosis:** the failing run was COLD and took 53.2s; an immediate second full run was 27-green in 21.7s, and the two tests alone pass in 5.5s. So it is load/cold-start dependent and the 5s `expect` timeout inside a 30s test is the prime suspect, not a code fault. ⛔ **Do not close this on that reasoning — it has not been proven.** What IS now settled: it is not random, it is these two tests, and it is the light theme (which runs first). Original note follows. ⚠️ **IT IS THE SAME MISTAKE A8 RECORDS.** One `pnpm test:e2e` run on 2026-07-27 reported **25 passed with exit code 1** — so two failed — and **the failing test names were discarded**, because the command piped the run through `tail -4` while its exit code gated a commit. Three consecutive runs since are 27-green, and `pnpm verify` is green, so this is *probably* a build-cache race between a `prettier --write` and the `turbo build` that `test:e2e` runs first. **That is a guess and it is recorded as one.** ⚠️ **Never pipe a test run through `tail`/`grep` when its result decides whether to commit** — capture the failure first, exactly as A8 says and exactly as was not done here |
+| A9 | ✅ **DIAGNOSED AND CLOSED 2026-08-03 (`3ca3a2c`) — AND IT WAS NEVER AN APP DEFECT.** The trace `40ea435` captured was opened, which is what the thirteenth session said was the cheap next step, and it ended six sessions of hypotheses. **Both failing tests requested `/assets/index-*.js` within 4 ms of each other** — the two workers starting together — **both requests STALLED FOR TEN SECONDS, and one returned `net::ERR_CONNECTION_RESET`.** The page's own CSS and `registerSW.js` stalled the same ten seconds; a later load of the identical assets took 3–30 ms. That explains every symptom, including the ones that killed the earlier candidates: the HTML shell loaded, so the pre-paint theme script ran and the background painted (**the blank screenshot, and why the sibling `data-theme` assertion always passed**); the React bundle never arrived, so the tree rendered NOTHING and the entire choice UI was absent rather than one button; it is cold/load dependent; and the LIGHT theme is simply the one that runs first. `passkeysAvailable()` being synchronous was always irrelevant, as the eighth session had already worked out. **The cause is contention on a single-process static server:** two cold workers each fetch the page assets AND install a service worker precaching 561 KiB, all at once, and `vite preview` resets a connection rather than serving them. Going from "however many cores" to two workers narrowed it from "a different test each run" to "the first two on a cold run"; two is still concurrent. **The lane is now serialised (`workers: 1`)** — the suite is ~8s warm, so racing for sockets wins nothing. Two cold runs after: 27/27 and 27/27, 46s. ⚠️ **This reduces CONTENTION rather than making the server robust, and two green runs are weak evidence by this bug's own history — it ran 27/27 green once while completely unfixed. The DIAGNOSIS is what closes it, not the green.** Original note follows. ◐ **STILL OPEN, BUT IT FINALLY LEFT EVIDENCE (2026-08-02, thirteenth session) — READ THIS BEFORE THEORISING ABOUT A9 AGAIN.** It reproduced (25/27, `a11y.spec.ts:50` and `:64`, light theme, second factor — the same two, again), and this is the FIRST reproduction since `40ea435` added failure instrumentation, so the screenshot and trace actually fired. **The captured screenshot is COMPLETELY BLANK** — the light theme's background colour and nothing else on the page. That is a much stronger fact than anything A9 has had, and it kills the standing hypothesis: this is NOT a missing button, and it is NOT the route guard redirecting (a redirect renders the sign-in screen; a guard failure renders something). The page background proves `index.html`'s pre-paint theme script RAN and `data-theme` was set — which is also why the sibling `toHaveAttribute('data-theme', theme)` assertion has always passed. So the HTML shell loaded and the React tree rendered NOTHING. ⛔ **That is evidence, not a diagnosis, and it must not be written up as one.** No top-level `return null` was found in `App`/`AuthProvider` to explain it. The leading unconfirmed candidate is now the PWA service worker (`sw.js`, workbox precache) serving a partial or stale precache on a COLD run under load, which would fit "load/cold-start dependent" better than anything proposed so far — but the trace zip has not been opened. **Next step, and it is cheap: `pnpm exec playwright show-trace` on the captured trace, and check for a console error or a failed chunk request.** The artefacts live under `test-results/` (git-ignored) and are overwritten by the next run, so read them before re-running. Original note follows. ◐ **2026-08-02 (twelfth session): a COLD `pnpm test:e2e` ran 27/27 GREEN, and CI's e2e lane was green too — with two NEW audits added to it (`/land/walk`, empty and populated, both themes). ⛔ Do NOT read that as a fix: nothing was done to A9, the snapshot-on-failure instrumentation `40ea435` added never fired because nothing failed, and a load-dependent failure that does not reproduce once has not been diagnosed. It is one more data point that the failure is load/cold-start dependent rather than deterministic. Original note follows.** ◐ **NOW DIAGNOSABLE. 2026-07-30 (`40ea435`): the e2e config captures a DOM snapshot + screenshot ON FAILURE** (`trace: 'retain-on-failure'` + `screenshot: 'only-on-failure'`; retries stay 0). The root cause of the "no evidence" problem was that `trace: 'on-first-retry'` never fired against `retries: 0`. Next red run leaves a snapshot to read instead of another hypothesis. The candidate below (async session seed racing the route guard) is still unconfirmed — confirm it from the captured snapshot. Original note follows. ◐ **NARROWED 2026-07-28, AND A9'S OWN RECORDED SUSPICION IS RULED OUT.** Reproduced on a cold local run: **25 passed / 2 failed, exit 1, 53.9s** — the same two light-theme tests. Two things are now FACT that were not: (1) the failure is `element(s) not found`, and **BOTH** the passkey button and the "use an authenticator app instead" fallback are absent — so it is not one button, the entire choice UI is missing; (2) `passkeysAvailable()` (`apps/web/src/auth/passkeys.ts:42`) is a **synchronous** DOM check (`typeof window.PublicKeyCredential === 'function'`) consumed as `useState(passkeysAvailable)` — it has **no timing dependence whatsoever**, so **A9's recorded "async can-this-device-do-it probe" hypothesis is dead.** That leaves the screen either not mounting or mounting without a session, which points at the async session seed racing the route guard — `a11y.spec.ts:73` already comments that "the seed arrives asynchronously". ⛔ **That is a NARROWED CANDIDATE, NOT A DIAGNOSIS** — no page snapshot was captured to confirm what did render. Next step is cheap and specific: capture `page.content()` or a screenshot on failure. Original note follows. ◐ **THE FAILING TESTS NOW HAVE NAMES (2026-07-28), which is what A8 and A9 both asked for.** A full `pnpm test:e2e` reported **25 passed, exit 1** again — the same signature — and this time the names were captured before anything else: `a11y.spec.ts:50` *the second-factor choice has no accessibility violations in the **light** theme* and `a11y.spec.ts:64` *second-factor enrolment …* **in the light theme**. Both timed out on `getByRole('button', { name: /use this phone as the key/i })` — the PASSKEY button, which §2b's own rule puts behind an async "can this device do it" probe. **Evidence, not a diagnosis:** the failing run was COLD and took 53.2s; an immediate second full run was 27-green in 21.7s, and the two tests alone pass in 5.5s. So it is load/cold-start dependent and the 5s `expect` timeout inside a 30s test is the prime suspect, not a code fault. ⛔ **Do not close this on that reasoning — it has not been proven.** What IS now settled: it is not random, it is these two tests, and it is the light theme (which runs first). Original note follows. ⚠️ **IT IS THE SAME MISTAKE A8 RECORDS.** One `pnpm test:e2e` run on 2026-07-27 reported **25 passed with exit code 1** — so two failed — and **the failing test names were discarded**, because the command piped the run through `tail -4` while its exit code gated a commit. Three consecutive runs since are 27-green, and `pnpm verify` is green, so this is *probably* a build-cache race between a `prettier --write` and the `turbo build` that `test:e2e` runs first. **That is a guess and it is recorded as one.** ⚠️ **Never pipe a test run through `tail`/`grep` when its result decides whether to commit** — capture the failure first, exactly as A8 says and exactly as was not done here |
 | A8 | ⚠️ **STILL OPEN, but there is now a live candidate.** §3b finding 11's `toISOString().slice(0,10)` in test assertions was fixed in `511cf3c`, and the two-hour SAST/UTC divergence was DEMONSTRATED rather than assumed — it fits the shape exactly (one run in nine, no reproduction). **That is a candidate, not a diagnosis:** the failing test name was never captured, so this cannot be closed on it. If the suite reds again, capture the test name FIRST. Original note follows. ⚠️ **ONE unexplained unit-suite failure, cause unknown — do not dismiss it.** A single `pnpm verify` run reported `1 failed | 76 passed` and the next EIGHT runs were clean (4 full-suite, 4 targeted). Which test it was is unknown, because the log was discarded before the failure detail was read. **What HAS been ruled out:** the flake recorded in memory as "`confirmTotpEnrolment` reds when a code straddles a 30s boundary" cannot be it — `TOTP_DRIFT_STEPS = 1`, so `verifyTotp` accepts ±1 step and a boundary crossing is tolerated by design. That recorded explanation is simply wrong and has been corrected. If this recurs, capture the failing test name FIRST; a one-in-nine failure in a suite the PR gate depends on is worth a real diagnosis, not a re-run. |
 | A5 | ✅ **FIXED 2026-07-26 (fifth session).** `startWerfTestDatabase()` now memoises ONE container per worker process instead of one per suite (`packages/db/src/testing.ts`), so at most `maxWorkers` (4) exist at once rather than ten. `stop()` on the shared handle is a no-op — the first suite to finish must not pull the database out from under the three behind it in the same worker — and teardown happens on worker exit, with Ryuk reaping anything that outlives a crash. `bootWerfTestDatabase()` is the escape hatch for a suite that genuinely needs a private one. Verified: 77 files / 750 tests still green. Done before CI ever ran the suite, which was the point |
 
@@ -1101,70 +1187,75 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 1b. START DOCKER DESKTOP before running the gate (§4 A10). Without it
    `pnpm verify` exits 1 on the testcontainers tier.
 
-2. Then read §2l (the sixth pass and its fixes), §2m (what was deliberately NOT
-   fixed), §6 (the compliance operating model), CLAUDE.md and
+2. Then read §2n (this session), §2l (the sixth pass and its fixes), §6 (the
+   compliance operating model), CLAUDE.md and
    docs/04-delivery/phase-checklists.md.
 
-⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE. What changed is WHICH clause
-fails. The batched pass has now RUN and its findings are closed — so the clause
-that fails is no longer "no pass has run", it is "the fixes for that pass are
-themselves unreviewed", plus e2e (§4 A9) and CI-green-on-`main` (unmeetable
-before merge).
+⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE, and there is now exactly ONE
+clause left that a session can act on. "No pass has run" was closed by the
+sixth pass; "e2e is red" was closed by the A9 diagnosis; the BUILD list is
+empty. What fails is **"the fixes are unreviewed"** — plus CI-green-on-`main`,
+which is unmeetable before merge and always was.
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  ⭐ THE SIXTH PASS RAN AND ALL THREE AGENTS SAID NOT APPROVABLE. Every    ║
-║  SEV-1, SEV-2 and MED it found is FIXED (§2l), each assertion watched to  ║
-║  fail against the old code first. ⛔ BUT THE FIXES ARE UNREVIEWED, and    ║
-║  this repo has now measured SIX PASSES RUNNING in which each pass found   ║
-║  a real defect inside the previous pass's fixes. Do not read "all fixed"  ║
-║  as "clean". Read it as "the next pass has somewhere obvious to look".    ║
+║  ⭐ THE BUILD LIST IS EMPTY. There is no longer a slice to do INSTEAD of  ║
+║  asking for the seventh pass — that was the honest answer for the last    ║
+║  three sessions and it is not available any more.                        ║
+║                                                                          ║
+║  Six passes ran; all six said NOT APPROVABLE; every one found a real      ║
+║  defect inside the previous pass's fixes. This session added two          ║
+║  REGULATED commits on top of the sixth pass's unreviewed fixes. Do not    ║
+║  read "everything is green" as "clean" — read it as "the seventh pass     ║
+║  has somewhere obvious to look, and nothing is competing for the time".   ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. A SEVENTH pass over THIS session's fixes    §2l        ⭐ JP's call. The
-     (`beb3dc9..HEAD`, or `c986fa2..HEAD` for               empirical case is
-     the fixes alone). It is the only thing                 six for six
-     between here and merge-ready
-  2. §2m #1 — LINK THE TWO TRANSFER HALVES.      §2m        a session can do it;
-     A build slice, and the only BUILD work                 it is REGULATED, so
-     currently unblocked in Phase 2                         it enlarges what the
-                                                            seventh pass covers
-  3. §2.4 labour-law review — BOOK (external)    §2.4       gates Phase 3 DEPLOY
-  4. §2.5 Gazette figures — VERIFY IN A BATCH    §2.5       gates Phase 3 DEPLOY
+  1. THE SEVENTH PASS. Range `beb3dc9..HEAD`   §2l, §2n   ⭐ JP's call, and it
+     — the sixth pass's fixes AND this                     is now the ONLY
+     session's four commits. It is the ONLY                thing left. Six for
+     thing between here and merge-ready                    six
+  2. PUSH and watch CI. Four commits have      §1          a session can do it,
+     never been through a lane, and §2j's                  and should do it
+     rule is that e2e can only be proved by                FIRST — it is free
+     pushing                                               signal
+  3. §2.4 labour-law review — BOOK (external)  §2.4        gates Phase 3 DEPLOY
+  4. §2.5 Gazette figures — VERIFY IN A BATCH  §2.5        gates Phase 3 DEPLOY
 
-  ✅ ALL JP DECISIONS CLOSED. ✅ The tooling from §2i is committed (`5a8db20`)
-     and the working tree is clean.
+  ✅ ALL JP DECISIONS CLOSED. ✅ Working tree clean, tooling committed.
 
 NEXT SESSION, IN ORDER:
 
   A. RECONCILE `git status` AND THE SHAs against §1, as always.
 
-  B. The honest options, in order:
-       (i)  ASK FOR THE SEVENTH PASS over this session's fixes, read its output
+  B. The honest options, in order — and note (ii) is no longer available:
+       (i)  ASK FOR THE SEVENTH PASS over `beb3dc9..HEAD`, read its output
             DIRECTLY (not a summary), fix what it finds. This is the critical
-            path and nothing else shortens it.
-       (ii) BUILD §2m #1, the transfer batch link. It is fully specified there,
-            it is the only unblocked Phase 2 build work, and doing it BEFORE the
-            seventh pass costs one pass rather than two — the same reasoning
-            that put B7 before the sixth pass, and it held.
-       (iii) OPEN THE A9 TRACE (§4 A9). It is cheap, it is the first real
-            evidence A9 has ever produced, and the artefacts are overwritten by
-            the next e2e run. A blank page with the theme applied is a fact
-            worth spending twenty minutes on.
-       (iv) The non-regulated leftovers in §2m #2–#6, and §4 G4's stale docs.
+            path and NOTHING ELSE SHORTENS IT ANY MORE.
+      (ii)  ~~Build the next Phase 2 slice~~ — there isn't one. Everything left
+            in §4 (B2 photos, B4 vaccination programme, B5 FR-602 window) is
+            blocked on infrastructure or on reference data that does not exist,
+            and building half of any of them is the thing this repo forbids.
+      (iii) START PHASE 3 instead of finishing Phase 2 — a real option, but it
+            is JP's call and it stacks unreviewed regulated code on unreviewed
+            regulated code. §6 says Phase 3 is UNBLOCKED to build; it does not
+            say Phase 2 may be left unreviewed. Recommend against.
+      (iv)  §4 G4's stale docs (`user-guide.md`, `ux-design-system.md`), which
+            are genuinely unblocked and genuinely not regulated. This is the
+            only remaining work a session can do without JP.
 
-  ⭐ EXPECT THE SEVENTH PASS TO FIND DEFECTS IN THIS SESSION'S FIXES. That is
-  not pessimism, it is the measured base rate here: six for six. The fixes
-  touched the food-safety boundary in four files and added a RECURSION to a
-  guard that runs on every disposal — new shapes, on the sharpest surface in
-  the phase.
+  ⭐ EXPECT THE SEVENTH PASS TO FIND DEFECTS IN THE FIXES IT REVIEWS. Six for
+  six is the measured base rate here. This session's own additions widened the
+  outbox hold mechanism for the THIRD time — each of the previous two widenings
+  exposed the next reader that had been left standing, and there is no reason
+  to think the third is where that stops.
 
   SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
   code, then keep it — and check the CLAIM as well as the code. This session
-  reverted each fix in turn to prove its test was directional, and one test
-  (the collinear diagonal) turned out NOT to be until its fixture was changed:
-  the old code had been returning the right answer by accident.
+  reverted each change in turn; the outbox test went red for a reason that did
+  NOT match the mechanism, and chasing that rather than banking the red found a
+  fixture id reused across two captures. A red you cannot explain is not
+  evidence yet.
 
 Phase 1 has NO open gaps. **Phase 3 is UNBLOCKED to BUILD under §6** — the
 mechanism is built with placeholder figures; §2.4/§2.5 gate the DEPLOY, not the

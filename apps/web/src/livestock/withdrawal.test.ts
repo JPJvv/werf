@@ -259,6 +259,45 @@ describe('a carried withholding is a floor, not a ceiling', () => {
   });
 });
 
+describe('a dose given AFTER the day being judged — the bound the server has', () => {
+  it('⭐ does not judge a disposal against a dose given after it, exactly as the server does not', () => {
+    // Mirrors livestock.integration.test.ts:2579. `58fed1d` gave the SERVER this bound and left both
+    // client readers unbounded, so the device refused a capture the server would have accepted:
+    // sell on the 15th, write it up later, and the dip on the 20th made the sale UNSAVEABLE — with
+    // "Died" one tap away and never refused, which is the workaround a guard must not teach.
+    const status = meatWithdrawalForMob(
+      DIP_CAMP,
+      '2026-07-15', // the sale happened five days BEFORE the dip
+      [dipOnDipCamp], // administered 2026-07-20
+      [tickaway],
+      [],
+      [],
+      [],
+    );
+
+    expect(status.blocked).toBe(false);
+    // And it claims no clear date either: head that left before the needle carry nothing from it.
+    expect(status.clearFrom).toBeNull();
+  });
+
+  it('still blocks on the day the dose was given — the boundary is INCLUSIVE', () => {
+    // Dipped-and-sold on one day is a real residue question, and a food-safety boundary fails
+    // toward blocking. This is the case the bound must NOT swallow.
+    const status = meatWithdrawalForMob(
+      DIP_CAMP,
+      '2026-07-20',
+      [dipOnDipCamp],
+      [tickaway],
+      [],
+      [],
+      [],
+    );
+
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBe('2026-08-17');
+  });
+});
+
 describe('disposal subject sets — what the outbox must hold on', () => {
   it('⭐ an animal disposal is held by its OWN id and EVERY mob it has stood in, not just the current one', () => {
     // The fifth-pass finding (all three agents): the flush held a sale only by the animal's current
@@ -275,10 +314,56 @@ describe('disposal subject sets — what the outbox must hold on', () => {
     // The mirror gap: a tally held only by `[mobId]` missed an individual dose on a registered member
     // and a dose that member carried in from another mob. The ox stands in the ox mob on the disposal
     // day, so the ox mob's held set must include the ox and the dip camp it came from.
-    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [ox], [movedIntoOxen]);
+    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [ox], [movedIntoOxen], []);
     expect(subjects).toContain(OXEN); // the mob's own head-count doses
     expect(subjects).toContain(OX); // an individual member's own doses
     expect(subjects).toContain(DIP_CAMP); // a withholding the member carried in
+  });
+
+  it('⭐ a mob disposal is held by the SOURCE of a transfer into it, and so on up the chain', () => {
+    // The route `mobDisposalSubjects` could not see, found by `compliance-checker`. Since §2.3b the
+    // mob guard RECURSES into the source of every `transfer_in` (the carried date is a floor, so the
+    // source is asked again live). The subject set did not, while its own docstring claimed it read
+    // "the exact set" — true when written, false once the world widened.
+    //
+    // What it cost, and it is the one shape here where meat reaches a truck rather than a farmer
+    // being blocked: dip the dip camp Monday; transfer head dip camp → oxen and slaughter out of the
+    // oxen on a phone that has not recorded the dip yet. The dip is refused and taints DIP_CAMP; the
+    // slaughter's set was [OXEN, ...members] and did not contain DIP_CAMP, so it was NOT held. It
+    // posted, the server asked the dip camp live, the dose was set aside — 201 for dipped meat.
+    const arrival = {
+      mobId: OXEN,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+      reason: 'transfer_in',
+      counterpartMobId: DIP_CAMP,
+    };
+
+    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [], [], [arrival]);
+
+    expect(subjects).toContain(OXEN);
+    // The source the guard walks into. Without this the refused dose on it holds nothing.
+    expect(subjects).toContain(DIP_CAMP);
+  });
+
+  it('terminates on a transfer cycle rather than walking A → B → A forever', () => {
+    // Head really does go back and forth in a fortnight. `mobWithdrawal` guards this with `visited`;
+    // the subject walk has to as well, or the flush hangs building its queue.
+    const there = {
+      mobId: OXEN,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+      reason: 'transfer_in',
+      counterpartMobId: DIP_CAMP,
+    };
+    const back = {
+      mobId: DIP_CAMP,
+      occurredAt: '2026-07-24T12:00:00.000Z',
+      reason: 'transfer_in',
+      counterpartMobId: OXEN,
+    };
+
+    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [], [], [there, back]);
+
+    expect([...subjects].sort()).toEqual([DIP_CAMP, OXEN].sort());
   });
 
   it('does not hold a mob for a member that is no longer standing in it on the disposal day', () => {
@@ -292,7 +377,7 @@ describe('disposal subject sets — what the outbox must hold on', () => {
       toMobId: '0190f3a0-0000-7000-8000-00000000b099',
       batchId: null,
     };
-    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [ox], [movedIntoOxen, leftOxen]);
+    const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [ox], [movedIntoOxen, leftOxen], []);
     expect(subjects).toEqual([OXEN]);
   });
 });

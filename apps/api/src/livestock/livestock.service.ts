@@ -347,7 +347,14 @@ export class LivestockService {
 
       // The reasons that are NOT refused still record the circumstance, for the same reason the
       // individual death path does: a blocked `slaughter` is one tap from an unblocked `death`.
+      //
+      // ⛔ But NOT on a transfer. A camp-to-camp move is not head leaving the herd, and both
+      // register readers exclude `TALLY_TRANSFERS` — so stamping the flag on a transfer wrote a
+      // regulated field that nothing reads, which is exactly the §2f SEV-3 #6 class ("written, read
+      // by nothing, asserted by no test") re-created for the reasons `2e35e94` added. The
+      // withholding a transfer carries is recorded properly, as `carriedWithholdUntil`.
       const mobWithinWithdrawal =
+        !(schemas.TALLY_TRANSFERS as readonly string[]).includes(input.reason) &&
         input.reason !== 'sale' &&
         input.reason !== 'slaughter' &&
         (await mobIsWithinMeatWithdrawal(tx, input.farmId, input.mobId, input.occurredAt));

@@ -120,9 +120,11 @@ Quality gates
 ☑ axe-core: 0 violations in BOTH themes, wired into CI (NFR-401) — enables the deferred Phase 0 axe step
 ☑ API integration tests against real Postgres in testcontainers; no mocking our own DB
 ☑ Auth/session/2FA unit tests assert observable behaviour, not implementation
-◐ Bundle ≤250KB gz (NFR-009); pnpm verify exits 0 — verify exits 0 and the bundle is 98.6KB gz,
-  but the budget is MEASURED, not ENFORCED: nothing fails the build when it is exceeded.
-  `.claude/rules/frontend.md` says it must. Wiring a size gate is a Phase 2 first task.
+☑ Bundle ≤250KB gz (NFR-009); pnpm verify exits 0 — the gate is ENFORCED, not merely measured:
+  `apps/web/scripts/check-bundle-size.mjs` fails the build when the budget is exceeded. That was
+  the Phase 2 first task this line asked for, and it was done; the line stayed ◐ with the old
+  98.6KB figure for the whole phase, contradicting the Phase 2 line below that records the gate.
+  A checklist line is part of the diff that makes it stale — fifth occurrence of that class.
 ```
 
 **Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe); CI green on `main`;
@@ -449,7 +451,7 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
   without a route does not say what happened to the animal. A dose that was TYPED but is not a
   number blocks the save rather than being dropped — a register that silently lost the dose someone
   stood there and entered is worse than one that never had it, because nobody knows to go back
-◐ 📶 Automatic withdrawal period from product reference data: compute + store meat/milk withdrawal
+☑ 📶 Automatic withdrawal period from product reference data: compute + store meat/milk withdrawal
   ON THE EVENT (not on read — the rule at time of treatment, ADR-0005); block or hard-warn on
   sale/slaughter within it. Withdrawal periods live in regulatory reference data, by date (FR-131, FR-614)
   — DONE end to end (commits d32451a, e5fc018). The `veterinary_products` register reaches the
@@ -723,52 +725,31 @@ home tile, entirely offline for the capture paths.
 > word that hid the difference. Everything before the pack in this sentence is still an offline
 > path end to end.
 
-**Where the gate stands (2026-07-28, eighth session — AUDIT, branch `phase-2/livestock` @ `7917645`).**
-`pnpm verify` exits 0 **on CI** (**78 files / 806 tests**, bundle **138.72 KB** gz); CI green on both
-lanes at HEAD — run `30374965420`, 2026-07-28, which is the first run to cover `f38af66`, `e5792d3`
-and the B1 slice `2590c9f`.
+**Where the gate stands (2026-08-03, fifteenth session — branch `phase-2/livestock`).**
 
-◐ **`pnpm test:e2e` is NOT green and this line no longer claims it is.** A cold local run on
-2026-07-28 was **25 passed / 2 failed, exit 1** — `a11y.spec.ts:50` and `:64`, both light theme,
-both on the second-factor choice screen. See STATUS.md §4 A9; the cause is narrowed but not proven.
+⚠️ **Read the figures from STATUS.md §1, not from here.** This paragraph restated a commit, a test
+count and a bundle size for five sessions after they changed, and the arithmetic below ("three
+clauses are unmet") was computed from those stale facts. Restating a number in a second document is
+how it goes wrong; what belongs here is which CLAUSES hold and why.
 
-⚠️ **`pnpm verify` cannot be fully run on a machine with no Docker.** 13 test files — the entire
-testcontainers integration tier, 272 of the 806 tests — fail to boot with *"Could not find a working
-container runtime strategy"* and the gate exits 1. That is an environment condition, not a defect,
-but "the gate is green" is only checkable where Docker runs, and locally it is 534 of 806.
+| Clause | Reads |
+|---|---|
+| `pnpm verify` exits 0 | ✅ TRUE |
+| `pnpm test:e2e` green (both-theme axe, incl. the offline cold-start path) | ✅ TRUE — §4 A9 was diagnosed 2026-08-03 and was never an app defect. See STATUS.md §4 A9 |
+| CI green on `main` | ⚪ UNMEETABLE before the merge, by construction — CI does not run on feature branches (STATUS.md §4 G5). It can only go true AT merge, and it is the one clause the phase cannot satisfy by working harder |
+| every checklist line ☑ or ◐ with its remainder named | ✅ TRUE — re-audited 2026-08-03. The FR-131 line was ◐ with its remainder silently closed and nothing naming one, which satisfied neither arm; it is ☑. Phase 1's bundle line was ◐ against a gate this phase enforced |
+| the `reviewer`, `sync-auditor` **and** `compliance-checker` agents pass | ◐ **SEVEN passes have run; all seven returned NOT APPROVABLE, and every one found a real defect inside the previous pass's fixes.** The seventh (2026-08-03, JP-triggered, over `beb3dc9..HEAD`) found four SEV-2s — two of them raised by two agents independently — all now fixed with tests watched to fail first. STATUS.md §2o. ⛔ Those fixes are themselves unreviewed, which is the state every previous pass was in when the next one found something |
+| the end-to-end farmer sentence | ✅ TRUE — every leg has a route and an offline capture path |
 
-⛔ **THE EXIT GATE DOES NOT READ TRUE.** The gate has five clauses. `pnpm verify` ✅ (on CI),
-`pnpm test:e2e` ◐ **(demoted 2026-07-28 — it fails cold, see above)**, CI-green-on-`main` ⚪
-(unmeetable before the merge, by construction). **THREE clauses are now unmet, not two**, and the
-FIRST one below is still the live blocker:
+⛔ **So the gate does not read fully true, and the honest reading is narrow: one clause is
+unmeetable before the merge itself, and one is "the last review pass found defects, they are fixed,
+and the fixes have not been read by a second reader."** Everything else holds.
 
-- **"the `reviewer`, `sync-auditor` and `compliance-checker` agents pass" — THEY DO NOT.** All
-  three were run over `a6c8eff..HEAD` on 2026-07-26 (fifth session) and `compliance-checker`
-  returned **NOT APPROVABLE**. All twelve of those findings are now closed in code (STATUS.md §2c).
-  ⛔ **A THIRD pass ran 2026-07-27 over `5c769b4..HEAD` and the verdict is STILL NOT APPROVABLE** —
-  on a NEW SEV-1 found in the code written to close the previous ones: the outbox flush sent health
-  events after the disposals the withdrawal guard had to judge against them, so a point-in-time
-  guard returned 201 for meat inside an active withholding. That, and seven other findings across
-  the three agents, are fixed in `16fbb6a`…`e5792d3` (STATUS.md §2d).
-  ⛔ **THE FOURTH PASS RAN 2026-07-28 over `7c2acd9..HEAD` and the verdict is STILL NOT APPROVABLE**
-  — seven findings including a **NEW SEV-1** (`AdjustMobScreen.tsx:128` memoises the capture id, so
-  a second tally on the same mob on the same day silently overwrites the first and never reaches the
-  server) and three SEV-2s. **Three of the four are inside pass three's own fixes.** `reviewer`
-  returned NOT APPROVABLE independently. STATUS.md §2f. **The pattern is now measured four passes
-  running: each pass finds real defects in the previous pass's fixes.**
-- **"CI green on `main`" — structurally unmeetable before the PR exists**, because CI does not run
-  on feature branches (STATUS.md §4 G5). This clause can only ever go true AT MERGE. Read it that
-  way rather than treating it as a pre-PR blocker; it is the one clause the phase cannot satisfy
-  by working harder.
-
-The other three clauses hold — but the second of them only as of 2026-07-27. `pnpm verify` exits 0;
-every checklist line is ☑ or ◐ with its remainder named; and the end-to-end sentence is TRUE.
-⚠️ **The checklist clause was FALSE for a whole session and nothing caught it**: three lines
-described the code as it stood BEFORE the fixes — one of them writing the FR-103 defect up as the
-design — and a ☑ on the compliance-checker line contradicted this same file forty lines below it.
-Reconciled 2026-07-27. **When a fix lands, the checklist line it makes stale is part of the diff.** The two
-clauses of that sentence which were false when it was first written — creating a camp, and tagging
-an animal — were the first two slices of this stretch of work.
+**What the seventh pass changed about how this is written.** It found the paragraph that used to sit
+here — the one adjudicating the gate — stale in four separate ways, in the document the gate is
+measured against, one commit after another fix had specifically closed two stale checklist lines in
+this same file. That is the fifth occurrence of the class. Hence the table above states clauses and
+defers every figure to STATUS.md.
 
 > **The lesson, since it has now happened twice.** STATUS.md §1 concluded "every checklist line is
 > ☑ or ◐, **so** the exit gate reads true as written". That "so" is a non-sequitur: the checklist

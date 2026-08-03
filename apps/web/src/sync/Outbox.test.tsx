@@ -606,6 +606,112 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(stored).toContain(TALLY_ID);
   });
 
+  it('⭐ sends a CHAINED move A→B→C in one round, without a false refusal on the second leg', async () => {
+    // Found by `sync-auditor`, and it was a regression inside the previous session's own fix. That
+    // fix lifted every `transfer_out` into the first pass, which inverts the order of a CHAIN: the
+    // departure from B was posted before the arrival INTO B had landed, so the server folded B's log,
+    // saw no head, and refused with "There are 0 head on file in this group… count the group and
+    // record what you find". The capture was perfectly valid.
+    //
+    // ⭐ Why that is worse than a retry: the `/not-sent` copy tells the farmer to record it again,
+    // and a recount RESETS rather than adds. Following the instruction turns a transient ordering
+    // artefact into a permanent double-move that no later capture repairs.
+    const A = '0190f3a0-0000-7000-8000-0000000000e5';
+    const B = '0190f3a0-0000-7000-8000-0000000000e6';
+    const C = '0190f3a0-0000-7000-8000-0000000000e7';
+    const BATCH_1 = '0190f3a0-0000-7000-8000-0000000000f5';
+    const BATCH_2 = '0190f3a0-0000-7000-8000-0000000000f6';
+    const OUT_A = '0190f3a0-0000-7000-8000-0000000000d1';
+    const IN_B = '0190f3a0-0000-7000-8000-0000000000d2';
+    const OUT_B = '0190f3a0-0000-7000-8000-0000000000d3';
+    const IN_C = '0190f3a0-0000-7000-8000-0000000000d4';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify(
+        [
+          { id: A, head: 100 },
+          { id: B, head: 0 },
+          { id: C, head: 0 },
+        ].map((m) => ({
+          id: m.id,
+          farmId: FARM_ID,
+          name: `Flock ${m.id.slice(-1)}`,
+          species: 'sheep',
+          headCount: m.head,
+          initialHeadCount: m.head,
+        })),
+      ),
+    );
+    // Captured in the order the screen writes them: each move's departure, then its arrival.
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify(
+        [
+          {
+            id: OUT_A,
+            mobId: A,
+            reason: 'transfer_out',
+            count: 40,
+            delta: -40,
+            counterpartMobId: B,
+            batchId: BATCH_1,
+          },
+          {
+            id: IN_B,
+            mobId: B,
+            reason: 'transfer_in',
+            count: 40,
+            delta: 40,
+            counterpartMobId: A,
+            batchId: BATCH_1,
+          },
+          {
+            id: OUT_B,
+            mobId: B,
+            reason: 'transfer_out',
+            count: 20,
+            delta: -20,
+            counterpartMobId: C,
+            batchId: BATCH_2,
+          },
+          {
+            id: IN_C,
+            mobId: C,
+            reason: 'transfer_in',
+            count: 20,
+            delta: 20,
+            counterpartMobId: B,
+            batchId: BATCH_2,
+          },
+        ].map((t) => ({ ...t, farmId: FARM_ID, occurredAt: '2026-07-22T12:00:00.000Z' })),
+      ),
+    );
+
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+
+    // ⭐ The assertion is the ORDER, not the outcome. The outcome self-heals: a refused `out_B` is
+    // set aside, `in_B` lands, and the next round sends it — so asserting "everything arrived"
+    // passes against the broken order too, and would be an assertion that cannot fail. What the
+    // farmer actually suffers is the round in between, where `/not-sent` shows a refusal for a
+    // capture that was never wrong and tells them to record it again.
+    const bodies = fetchMock.mock.calls
+      .filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
+      .map((call) => String((call[1] as RequestInit).body));
+    const at = (id: string) => bodies.findIndex((b) => b.includes(id));
+
+    // Each departure before its own arrival — a refused departure must taint the batch first.
+    expect(at(OUT_A)).toBeLessThan(at(IN_B));
+    expect(at(OUT_B)).toBeLessThan(at(IN_C));
+    // ⭐ And the second leg AFTER the arrival that funds it. This is the one the three-pass order
+    // broke: `out_B` overtook `in_B`, so the server folded B's log, saw no head, and refused.
+    expect(at(IN_B)).toBeLessThan(at(OUT_B));
+  });
+
   it('⭐ keeps every capture when the session cannot be refreshed — invariant 5', async () => {
     // `offline-sync.md` §5 calls this "a two-line mistake that destroys a month of a farmer's work"
     // and says it gets its own test. It did not have one: the behaviour was correct and held by

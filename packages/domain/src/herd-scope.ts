@@ -12,7 +12,9 @@
  *   • an `enterpriseId` — for a herd-wide event with no single subject (dose the whole cattle herd).
  *
  * The one class of exception is an event about the FARM rather than a herd, listed in
- * FARM_SCOPED_EVENT_TYPES in @werf/core — rainfall today. It is a closed list on purpose: a new
+ * FARM_SCOPED_EVENT_TYPES in @werf/core — rainfall and boundary_walk today (a camp is GROUND: the
+ * same camp carries cattle this winter and sheep next, so filing its shape under one enterprise
+ * would hide it from the other side of a mixed farm). It is a closed list on purpose: a new
  * event type is herd-scoped by default and has to be named there to escape this rule, so the next
  * capture cannot quietly arrive unfiled.
  *

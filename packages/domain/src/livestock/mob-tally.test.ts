@@ -188,15 +188,21 @@ describe('recordMobTally — the two halves of a move are ONE action', () => {
     expect(out.event.id).not.toBe(into.event.id);
   });
 
-  it('⭐ refuses a transfer half that arrives with no link, on either side of the wire', () => {
-    // The gap this closes: `recordMobTally` wrote `batchId: null` under a comment claiming the
-    // halves were tied by it. A half with no link is a half that can land alone — the destination
-    // gaining forty head that no group ever lost.
-    expect(() => recordMobTally(half({ batchId: undefined }))).toThrow(ValidationError);
-    expect(() => recordMobTally(half({ batchId: null }))).toThrow(/must share one batch id/);
-    expect(() => recordMobTally(half({ reason: 'transfer_in', batchId: undefined }))).toThrow(
-      /must share one batch id/,
-    );
+  it('⭐ RECORDS an unlinked transfer half rather than refusing it — the server cannot check a pair', () => {
+    // ⛔ This asserts the absence of a rule, deliberately, so that re-adding it reds this test.
+    //
+    // "A transfer half must carry a batch id" is a CAPTURE-TIME rule and it lives on the capture
+    // path (`useRecordTallies`), not here. The server receives the halves as separate requests,
+    // possibly days apart, with nothing in the second identifying the first — it cannot verify a
+    // pair, so refusing on a missing link buys no safety. It costs two things: `offline-sync.md` §6
+    // forbids tightening a constraint in the release that starts enforcing it (a half already
+    // queued by an older client would 400 forever), and a refusal that loses a real record is the
+    // class this repo has ruled against everywhere else.
+    const unlinked = recordMobTally(half({ batchId: undefined }));
+
+    expect(unlinked.event.batchId).toBeNull();
+    expect(unlinked.event.payload).toMatchObject({ reason: 'transfer_out', delta: -40 });
+    expect(recordMobTally(half({ reason: 'transfer_in', batchId: null })).event.batchId).toBeNull();
   });
 
   it('refuses a batch id on a reason that is not half of anything', () => {

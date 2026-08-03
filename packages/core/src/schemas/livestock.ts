@@ -369,12 +369,22 @@ export const recordMobTallyRequestSchema = z.object({
    */
   declaredWithdrawalUntil: dateSchema.optional(),
   /**
-   * ⭐ Ties the two halves of one group-to-group move together. Required on `transfer_in` /
-   * `transfer_out` and refused on every other reason — but NOT by this schema, deliberately. The
-   * rule lives in `recordMobTally`, which is the one function both the device and the server build a
-   * tally through, so it cannot hold on one side and not the other. Stating it here as well would be
-   * the hand-written duplicate that drifts; the field is nullable at the wire and the capture refuses
-   * a null on a transfer.
+   * ⭐ Ties the two halves of one group-to-group move together. A batch id on a NON-transfer reason
+   * is refused by `recordMobTally` on both sides; the converse — that a transfer half must carry one
+   * — is enforced only on the CAPTURING DEVICE (`useRecordTallies`), because that is the only place
+   * it is knowable.
+   *
+   * ⛔ KNOWN GAP, stated rather than implied. The server cannot verify a pair: the halves arrive as
+   * separate requests, possibly days apart, and nothing in the second identifies the first. So an
+   * UNLINKED half, or an ORPHANED one whose sibling was refused or never sent, is accepted and is
+   * not detectable server-side. Nothing reads `batch_id` anywhere yet.
+   *
+   * The consequence is a count that cannot be reconciled: head leave the source and arrive nowhere,
+   * or arrive somewhere having left nowhere. The client outbox closes the common case — the halves
+   * are one act on one device, the departure is sent first, and a refused departure holds the
+   * arrival — but that is a device guarantee, not a boundary one. Closing it properly means either
+   * accepting the pair as ONE request (atomic server-side) or an orphan-half reader on `/attention`,
+   * which is where a count that cannot be reconciled belongs. Neither is built.
    *
    * A tally has one subject mob and one delta, so a move must be written as two events. This is the
    * only thing that says they are one action: without it a `transfer_in` can land after its

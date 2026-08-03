@@ -23,7 +23,7 @@ import {
 } from 'react';
 import { createCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordMobTally } from '@werf/domain';
-import type { schemas } from '@werf/core';
+import { ValidationError, schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 
 /**
@@ -141,51 +141,94 @@ export function useTallies(): readonly StoredTally[] {
  * the append-only log, and the screen shows the domain's own message rather than inventing one.
  */
 export function useRecordTally(): (capture: TallyCapture) => void {
+  const record = useRecordTallies();
+  return useCallback((c) => record([c]), [record]);
+}
+
+/**
+ * Commit a SET of head-count adjustments as one act (FR-102).
+ *
+ * ⭐ ALL of them are validated before ANY of them is appended, and that is the whole reason this
+ * exists — raised by all three review agents. A mob-to-mob move is two captures, and the screen
+ * wrote them one at a time: if the second threw, the first was already in the append-only log. That
+ * leaves an orphan `transfer_out` carrying a batch id whose sibling never existed, which still
+ * flushes and takes forty head out of the source into nothing — the exact outcome the screen's own
+ * `canSave` guard says it prevents. The farmer meanwhile sees an error and records the move again.
+ *
+ * A capture store cannot roll back: it is append-only on purpose, because it holds a farmer's work.
+ * So the only place to be atomic is BEFORE the first append.
+ */
+export function useRecordTallies(): (captures: readonly TallyCapture[]) => void {
   const store = useTallyStore();
   return useCallback(
-    (c) => {
-      const { event } = recordMobTally({
-        id: c.id,
-        farmId: c.farmId,
-        mobId: c.mobId,
-        occurredAt: c.occurredAt,
-        reason: c.reason,
-        count: c.count,
-        currentHead: c.currentHead,
-        counterparty: c.counterparty,
-        priceCents: c.priceCents,
-        // Validated through the domain like everything else — the schema refuses a transfer with no
-        // counterpart, and a declared withdrawal on anything but a purchase.
-        counterpartMobId: c.counterpartMobId,
-        // Validated here too: the domain refuses a transfer half with no batch id, so a screen that
-        // wrote only one half of a move cannot get the first one into the append-only log.
-        batchId: c.batchId,
-        carriedWithholdUntil: c.carriedWithholdUntil,
-        declaredWithdrawalUntil: c.declaredWithdrawalUntil,
-      });
-      const payload = event.payload as { delta?: number; countedHead?: number };
-
-      store.append({
-        id: c.id,
-        farmId: c.farmId,
-        mobId: c.mobId,
-        occurredAt: c.occurredAt.toISOString(),
-        reason: c.reason,
-        count: c.count,
-        ...(payload.delta === undefined ? {} : { delta: payload.delta }),
-        ...(payload.countedHead === undefined ? {} : { countedHead: payload.countedHead }),
-        ...(c.counterparty === undefined ? {} : { counterparty: c.counterparty }),
-        ...(c.priceCents === undefined ? {} : { priceCents: c.priceCents }),
-        ...(c.counterpartMobId === undefined ? {} : { counterpartMobId: c.counterpartMobId }),
-        ...(c.batchId === undefined ? {} : { batchId: c.batchId }),
-        ...(c.carriedWithholdUntil === undefined
-          ? {}
-          : { carriedWithholdUntil: c.carriedWithholdUntil }),
-        ...(c.declaredWithdrawalUntil === undefined
-          ? {}
-          : { declaredWithdrawalUntil: c.declaredWithdrawalUntil }),
-      });
+    (captures) => {
+      const built = captures.map((c) => ({ c, event: buildTally(c) }));
+      for (const { c, event } of built) appendTally(store, c, event);
     },
     [store],
   );
+}
+
+/** The domain capture, which throws before anything is written. Pure; no store, no side effect. */
+function buildTally(c: TallyCapture) {
+  // ⭐ THE CAPTURE-TIME HALF OF THE BATCH RULE, and it lives here rather than in the domain because
+  // here is the only place it is knowable. A move is two events, and only the device performing it
+  // knows they are one act — the server receives them as separate requests, possibly days apart,
+  // with nothing in the second identifying the first, so it cannot check this and must not refuse
+  // on it (see `recordMobTally`). A half written without a link is a half that can flush alone.
+  if (
+    (schemas.TALLY_TRANSFERS as readonly string[]).includes(c.reason) &&
+    (c.batchId === undefined || c.batchId === null)
+  ) {
+    throw new ValidationError('Both halves of a group-to-group move must share one batch id');
+  }
+  const { event } = recordMobTally({
+    id: c.id,
+    farmId: c.farmId,
+    mobId: c.mobId,
+    occurredAt: c.occurredAt,
+    reason: c.reason,
+    count: c.count,
+    currentHead: c.currentHead,
+    counterparty: c.counterparty,
+    priceCents: c.priceCents,
+    // Validated through the domain like everything else — the schema refuses a transfer with no
+    // counterpart, and a declared withdrawal on anything but a purchase.
+    counterpartMobId: c.counterpartMobId,
+    // Validated here too: the domain refuses a transfer half with no batch id, so a screen that
+    // wrote only one half of a move cannot get the first one into the append-only log.
+    batchId: c.batchId,
+    carriedWithholdUntil: c.carriedWithholdUntil,
+    declaredWithdrawalUntil: c.declaredWithdrawalUntil,
+  });
+  return event;
+}
+
+/** The append, once every capture in the act has been proved buildable. */
+function appendTally(
+  store: TallyStore,
+  c: TallyCapture,
+  event: ReturnType<typeof buildTally>,
+): void {
+  const payload = event.payload as { delta?: number; countedHead?: number };
+  store.append({
+    id: c.id,
+    farmId: c.farmId,
+    mobId: c.mobId,
+    occurredAt: c.occurredAt.toISOString(),
+    reason: c.reason,
+    count: c.count,
+    ...(payload.delta === undefined ? {} : { delta: payload.delta }),
+    ...(payload.countedHead === undefined ? {} : { countedHead: payload.countedHead }),
+    ...(c.counterparty === undefined ? {} : { counterparty: c.counterparty }),
+    ...(c.priceCents === undefined ? {} : { priceCents: c.priceCents }),
+    ...(c.counterpartMobId === undefined ? {} : { counterpartMobId: c.counterpartMobId }),
+    ...(c.batchId === undefined ? {} : { batchId: c.batchId }),
+    ...(c.carriedWithholdUntil === undefined
+      ? {}
+      : { carriedWithholdUntil: c.carriedWithholdUntil }),
+    ...(c.declaredWithdrawalUntil === undefined
+      ? {}
+      : { declaredWithdrawalUntil: c.declaredWithdrawalUntil }),
+  });
 }

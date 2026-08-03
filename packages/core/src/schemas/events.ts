@@ -287,10 +287,12 @@ export type RainfallPayload = z.infer<typeof rainfallPayloadSchema>;
  * `transfer_out` (the as-at fold finding the source short) did not hold back the `transfer_in`, and
  * the destination gained head that never left anywhere.
  *
- * The link is now REQUIRED on both halves — `recordMobTally` throws without it, on the device and on
- * the server both, because an optional link is one a caller forgets and this one was forgotten. The
- * outbox reads it as the subject the second half is `guardedBy`, so the arrival is HELD, not refused,
- * when the departure did not land.
+ * The link is REQUIRED on both halves AT CAPTURE (`useRecordTallies` throws without it), because an
+ * optional link is one a caller forgets and this one was forgotten. It is NOT required at the
+ * server: it cannot verify a pair, and refusing a half would lose a real record. The outbox reads it
+ * as the subject the second half is `guardedBy`, so the arrival is HELD, not refused, when the
+ * departure did not land. ⛔ An orphaned half is therefore accepted and undetectable server-side —
+ * a KNOWN GAP, stated in `recordMobTallyRequestSchema`.
  */
 export const TALLY_INCREASES = ['birth', 'purchase', 'transfer_in'] as const;
 export const TALLY_DECREASES = ['death', 'sale', 'theft', 'slaughter', 'transfer_out'] as const;

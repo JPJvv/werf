@@ -568,6 +568,37 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(into?.['batchId']).toBe(out?.['batchId']);
   });
 
+  it('⭐ does not carry a transfer destination into a SALE, losing the sale entirely', async () => {
+    // Found independently by `reviewer` and `compliance-checker`. The reason buttons cleared only
+    // the count, so a destination picked for a move survived a change of mind. `save()` then sent a
+    // sale with a `counterpartMobId` and a batch id, the domain threw "Only a group-to-group move is
+    // captured as two linked halves", and `save()` returned — THE SALE WAS NEVER WRITTEN. Not
+    // queued, not stored, gone, with a message about a move the farmer did not make. And `reset()`
+    // only runs on success, so every later Save failed the same way until the page was reloaded.
+    cachedSession();
+    seedTwoFlocks();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /moved to another group/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+    await user.selectOptions(screen.getByLabelText(/which group did they go to/i), OTHER_MOB_ID);
+
+    // The change of mind. The destination input unmounts; the state behind it used to survive.
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '10');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    const saved = storedTallies();
+    // ONE tally — the sale — and no phantom `transfer_in` on the other flock.
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ mobId: MOB_ID, reason: 'sale', delta: -10 });
+    expect(saved[0]?.['counterpartMobId']).toBeUndefined();
+    expect(saved[0]?.['batchId']).toBeUndefined();
+  });
+
   it('⭐ refuses to send the joined group for slaughter while the carried withholding runs', async () => {
     // The device's own guard, not the server's. The point of carrying the date locally is that the
     // refusal reaches the person who can still act on it — a server-only rule arrives on Friday.

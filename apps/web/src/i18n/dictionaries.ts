@@ -773,6 +773,10 @@ const en = {
     'Head that left the herd while it was still inside a meat withdrawal. Nothing here is a refusal — it is the record, so you can answer for it if you are ever asked.',
   'residue.empty': 'Nothing needs your attention. No head has left inside a withdrawal.',
   'residue.foodChain': 'Meat from this must not go into the food chain.',
+  // Flagged when recorded, but not inside a withdrawal on the records we hold now — the dose behind
+  // it was corrected. The row stays as an audit fact; the warning would be a false statement.
+  'residue.noLongerWithin':
+    'This was flagged when it was recorded. On the records we hold now, it was not inside a withdrawal.',
   'residue.notFoodChain': 'This did not go into the food chain.',
   'residue.clearFrom': 'The withdrawal ran to',
   'residue.clearUnknown': 'The withdrawal period is no longer on record.',
@@ -1437,6 +1441,8 @@ const af: Record<TranslationKey, string> = {
     'Diere wat die kudde verlaat het terwyl hulle nog binne ’n vleisonttrekkingstydperk was. Niks hier is ’n weiering nie — dit is die rekord, sodat jy kan antwoord as daar ooit gevra word.',
   'residue.empty': 'Niks kort jou aandag nie. Geen diere het binne ’n onttrekking uitgegaan nie.',
   'residue.foodChain': 'Vleis hiervan mag nie in die voedselketting ingaan nie.',
+  'residue.noLongerWithin':
+    'Dit is gemerk toe dit aangeteken is. Op die rekords wat ons nou hou, was dit nie binne ’n onttrekkingstydperk nie.',
   'residue.notFoodChain': 'Dit het nie in die voedselketting ingegaan nie.',
   'residue.clearFrom': 'Die onttrekking het geloop tot',
   'residue.clearUnknown': 'Die onttrekkingstydperk is nie meer op rekord nie.',

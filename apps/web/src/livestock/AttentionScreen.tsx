@@ -57,6 +57,19 @@ interface Row {
    * surface. It is read from the sent-log, which is the only thing that actually knows.
    */
   readonly known: 'late' | 'known' | 'unsent' | 'sent';
+  /**
+   * ⭐ Whether the disposal is STILL inside a withholding on the records held now, as opposed to
+   * having been flagged when it was recorded. `residueFlagSchema` carries this and `knownAtCapture`
+   * as two facts on purpose, and this screen used to drop it — so a row the server's own
+   * re-derivation says is CLEAR (the longer dose was corrected away, and the register keeps it
+   * because an audit trail is a fact) rendered identically to a live one, including "Meat from this
+   * must not go into the food chain."
+   *
+   * Contradicting your own authoritative record on a compliance screen is worse than having no
+   * screen. Locally-derived rows are always `true` — the device only builds a row when its own
+   * derivation says so.
+   */
+  readonly withinWithdrawal: boolean;
 }
 
 /**
@@ -128,6 +141,9 @@ export function AttentionScreen() {
       intoFoodChain: flag.intoFoodChain,
       clearFrom: flag.clearFrom,
       known: sent.has(flag.eventId) ? 'sent' : 'unsent',
+      // The device builds a local row only when its own derivation says the disposal is inside a
+      // withholding, so this is true by construction here.
+      withinWithdrawal: true,
     });
   };
   for (const flag of local) addLocal(flag);
@@ -145,6 +161,7 @@ export function AttentionScreen() {
       intoFoodChain: flag.intoFoodChain,
       clearFrom: flag.clearFrom,
       known: flag.knownAtCapture ? 'known' : 'late',
+      withinWithdrawal: flag.withinWithdrawal,
     });
   }
 
@@ -200,10 +217,15 @@ export function AttentionScreen() {
               {/* NEVER colour alone (NFR-411). The food-chain state is a tinted panel with a left
                   rule AND the words; the not-food-chain state is plain text in the flow. Two
                   different FORMS, so sun glare on a phone screen cannot collapse them into one. */}
-              {row.intoFoodChain ? (
+              {row.intoFoodChain && row.withinWithdrawal ? (
                 <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
                   {t('residue.foodChain')}
                 </p>
+              ) : row.intoFoodChain ? (
+                /* Flagged when it was recorded, and NOT inside a withholding on what we hold now —
+                   the dose behind it was corrected away. The row stays, because the flag is a fact
+                   about the audit trail; the warning does not, because it is no longer true. */
+                <p className="mt-2 text-body text-soil-700">{t('residue.noLongerWithin')}</p>
               ) : (
                 <p className="mt-2 text-body text-soil-700">{t('residue.notFoodChain')}</p>
               )}

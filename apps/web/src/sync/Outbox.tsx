@@ -198,19 +198,74 @@ const arrivesWithheld = (tally: StoredTally): boolean =>
   (tally.reason === 'purchase' && tally.declaredWithdrawalUntil !== undefined);
 
 /**
- * Which of three passes a tally is sent in, and it is a total function rather than three filters so
- * a reason added later cannot fall out of the queue entirely.
+ * Which of TWO passes a tally is sent in: everything that is not a food-chain disposal, then the
+ * disposals. A total function rather than filters, so a reason added later cannot fall out.
  *
- *   0. DEPARTURES — the `transfer_out` half of a move. It goes first so that when the source is
- *      short and the server refuses it, the arrival behind it is held rather than landing alone and
- *      giving the destination head that never left anywhere.
- *   1. ARRIVALS — head coming IN carrying a withholding (`transfer_in`, or a purchase whose seller
- *      declared one). For a counted flock this event IS the withholding, so it must not be overtaken
- *      by the disposal it withholds.
- *   2. Everything else, including every disposal.
+ *   0. Everything else — births, purchases, deaths, recounts, and BOTH halves of a move — kept in
+ *      CAPTURE ORDER by the stable sort.
+ *   1. Food-chain disposals (`sale`, `slaughter`).
+ *
+ * ⭐ This replaces a THREE-pass order (departures → arrivals → rest) that `d0dd571` introduced and
+ * that was a regression, found by `sync-auditor`. Lifting departures above everything broke chains:
+ * move 40 A→B then 20 B→C in one offline session, and `out_B` was posted before `in_B` had landed,
+ * so the server folded B's log, saw no head, and refused with *"There are 0 head on file in this
+ * group… count the group and record what you find."* A perfectly valid capture, refused — and the
+ * `/not-sent` copy tells the farmer to record it again, which turns a transient ordering artefact
+ * into a permanent double-move. `reviewer` found the same shape with an increase: a birth of 20
+ * captured before a transfer of 110 out of a 100-head flock.
+ *
+ * ⭐ CAPTURE ORDER IS CAUSAL, which is why preserving it is the fix rather than a compromise. A
+ * farmer cannot transfer head they have not yet recorded arriving — the device's OWN fold refuses
+ * that at capture (`canSave`), so anything that funds a departure was necessarily captured before
+ * it. Departures likewise precede their own arrivals because `AdjustMobScreen.save()` writes the
+ * two halves in that order, which `AdjustMob.test.tsx` pins.
+ *
+ * The one thing capture order does NOT give is arrivals before disposals, and that is what pass 1
+ * is for: a slaughter recorded on Tuesday and a BACK-DATED transfer recorded on Wednesday arrive in
+ * that order, so the disposal would otherwise reach a server that has never heard of the withholding
+ * walking in with the head. That was `6ae9dfa`'s finding and it stays closed.
  */
 const tallyPass = (tally: StoredTally): number =>
-  tally.reason === 'transfer_out' ? 0 : arrivesWithheld(tally) ? 1 : 2;
+  tally.reason === 'sale' || tally.reason === 'slaughter' ? 1 : 0;
+
+/**
+ * The send order for tallies: `tallyPass`, then capture order — with ONE guarantee made explicit
+ * instead of inherited, because inheriting it is how the chain bug got in.
+ *
+ * ⭐ Within a batch, the DEPARTURE is emitted immediately before its ARRIVAL. `AdjustMobScreen`
+ * already writes them that way, so in practice this changes nothing; but the reason the departure
+ * must go first is a correctness rule — a refused departure has to taint the batch before the
+ * arrival is attempted, or the destination gains head that never left anywhere — and a correctness
+ * rule that holds only because another file happens to write in a convenient order is one refactor
+ * away from being wrong. It is stated here, where it is relied on.
+ *
+ * ⛔ It pulls the departure FORWARD to just before its own arrival; it never pushes departures to
+ * the front of the queue. That distinction is the whole fix: hoisting every departure is exactly
+ * what broke a chained A→B→C move, because `out_B` then overtook the `in_B` that funded it.
+ */
+function orderTallies(tallies: readonly StoredTally[]): readonly StoredTally[] {
+  const ordered = [...tallies].sort((a, b) => tallyPass(a) - tallyPass(b));
+  const result: StoredTally[] = [];
+  const emitted = new Set<string>();
+
+  for (const tally of ordered) {
+    if (emitted.has(tally.id)) continue;
+    if (tally.reason === 'transfer_in' && tally.batchId !== undefined) {
+      // Its own half, if the store happens to hold it later than the arrival. Already emitted in
+      // the ordinary case, so this is a no-op on every queue the product itself produces.
+      const departure = ordered.find(
+        (t) => t.reason === 'transfer_out' && t.batchId === tally.batchId && !emitted.has(t.id),
+      );
+      if (departure !== undefined) {
+        result.push(departure);
+        emitted.add(departure.id);
+      }
+    }
+    result.push(tally);
+    emitted.add(tally.id);
+  }
+  return result;
+}
 
 /** Injectable so tests can back the sent-log with in-memory storage instead of localStorage. */
 export type SentLogFactory = (key: string) => SentLog;
@@ -230,9 +285,18 @@ const OutboxContext = createContext<SyncState | null>(null);
  * not reached us yet" instead of offering a button that 404s and reads as the app being broken.
  *
  * Deliberately NOT a general "is this saved?" signal. A capture is SAVED the moment it is in its
- * local store — that is the whole promise (FR-009) — and nothing in the product should gate a
- * farmer's own view of their own work on this set. It gates one thing: asking the server to
- * produce a document.
+ * local store — that is the whole promise (FR-009) — and nothing in the product should GATE a
+ * farmer's own view of their own work on this set.
+ *
+ * Two readers, and the rule that separates them is gating versus labelling:
+ *   • the stock-theft pack GATES on it — the PDF is rendered from rows the server holds, so there
+ *     is nothing to render before then, and the screen says so instead of offering a button that
+ *     404s;
+ *   • `/attention` LABELS with it — "not sent yet" versus "sent, flagged from what this phone
+ *     holds". It never withholds a row, and an empty set falls back to the more cautious sentence.
+ *
+ * (This paragraph said "it gates one thing" for one session after the second reader landed —
+ * `6abb6cf`. The premise-outlived-comment class, in the file that keeps collecting it.)
  *
  * An empty set outside a provider is the safe default: it withholds the action, never invents it.
  */
@@ -412,11 +476,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // capture order, a slaughter captured on Tuesday could overtake the transfer captured on Monday
     // that withholds it, and the server cannot refuse what it has not received.
     //
-    // ⭐ And DEPARTURES go before arrivals, which is one pass more than that rule needed. The two
-    // halves of a move are two events, and the arrival must not land when the departure did not:
-    // that is the destination gaining head no group ever lost. `sort` is stable, so within a pass
-    // captures keep the order the farmer made them in.
-    for (const tally of [...tallies].sort((a, b) => tallyPass(a) - tallyPass(b))) {
+    // ⭐ Everything that is not a disposal keeps CAPTURE ORDER, which is causal — see `tallyPass`.
+    // That is what makes a departure precede its own arrival, and an increase precede the departure
+    // it funds, without a pass for either. `sort` is stable, so the order is the farmer's own.
+    for (const tally of orderTallies(tallies)) {
       if (!sent.has(tally.id)) {
         // Only a sale or slaughter tally is judged against a withholding; a death or recount takes
         // head out without putting meat into the food chain, so it is not held for evidence.
@@ -442,8 +505,17 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // individual dose on a member, or a dose carried in from a mob a member has left, must
           // hold this tally exactly as `meatWithdrawalForMob` refuses it at capture. Shadowing the
           // guard with a narrower set was the gap the fifth pass found in all three agents.
+          // One expression for the same question on both arms — `link !== undefined` twice, not
+          // `!== undefined` outside and truthiness inside. They agree today only because
+          // `StoredTally.batchId` cannot be `''`; a `provides: []` that exists and protects nothing
+          // is not a thing to leave one type change away.
           ...(arrives || (departs && link !== undefined)
-            ? { provides: [...(arrives ? [tally.mobId] : []), ...(departs && link ? [link] : [])] }
+            ? {
+                provides: [
+                  ...(arrives ? [tally.mobId] : []),
+                  ...(departs && link !== undefined ? [link] : []),
+                ],
+              }
             : {}),
           // A tally is guarded by at most one of these two, never both: a disposal is never a
           // transfer half (the reasons are disjoint), which is why one key can carry either.
@@ -454,6 +526,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
                   farmDay(new Date(tally.occurredAt)),
                   animals,
                   moves,
+                  // ⛔ The tally log, so the subject set walks the TRANSFER CHAIN the guard walks.
+                  // Without it the set stopped at this mob and its members, and a refused dose on
+                  // the SOURCE of an accepted transfer held nothing — 201 for meat inside an active
+                  // withholding, which is the only shape in this file where meat reaches a truck.
+                  tallies,
                 ),
               }
             : tally.reason === 'transfer_in' && link !== undefined

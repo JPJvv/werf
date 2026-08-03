@@ -2770,28 +2770,34 @@ describe('weight capture (FR-140)', () => {
       expect(out.id).not.toBe(into.id);
     });
 
-    it('⭐ refuses a transfer half that arrives with no link at all', async () => {
-      // The boundary, not only the device. A half with no batch id is a half that can land alone,
-      // and the arrival landing alone is the one that hurts: the destination gains head that no
-      // group ever lost, and no later capture repairs a count that was never wrong locally.
+    it('⭐ ACCEPTS a transfer half with no link rather than losing the record', async () => {
+      // ⛔ Asserts the absence of a rule, so re-adding one reds this test. The server cannot verify
+      // a pair — the halves arrive as separate requests, possibly days apart, and nothing in the
+      // second identifies the first — so refusing on a missing link buys no safety while breaking
+      // `offline-sync.md` §6 (a half queued by an older client would 400 forever) and losing a real
+      // record. The requirement is enforced where it is knowable: on the capturing device.
+      //
+      // ⚠️ The cost is stated rather than hidden: an unlinked or orphaned half is accepted and is
+      // not detectable server-side. That is a KNOWN GAP, named in the request schema and STATUS.
       const a = await tenant('Alpha');
       const source = await aMob(a.farmId);
       const destination = await anotherMob(a.farmId, 'Flock B');
 
-      await expect(
-        service.recordMobTally(
-          a.userId,
-          schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
-            farmId: a.farmId,
-            mobId: destination,
-            occurredAt: '2026-07-25T06:00:00.000Z',
-            reason: 'transfer_in',
-            count: 40,
-            counterpartMobId: source,
-          }),
-        ),
-      ).rejects.toThrow(ValidationError);
+      const orphan = await service.recordMobTally(
+        a.userId,
+        schemas.recordMobTallyRequestSchema.parse({
+          id: randomUUID(),
+          farmId: a.farmId,
+          mobId: destination,
+          occurredAt: '2026-07-25T06:00:00.000Z',
+          reason: 'transfer_in',
+          count: 40,
+          counterpartMobId: source,
+        }),
+      );
+
+      expect(orphan.type).toBe('tally');
+      expect(orphan.batchId).toBeNull();
     });
 
     it('carries nothing across when the source was never under a withholding', async () => {

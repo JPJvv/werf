@@ -285,6 +285,29 @@ describe('the residue register (FR-131)', () => {
     expect(screen.getByText(/this phone flagged it from the records it holds/i)).toBeTruthy();
   });
 
+  it('⭐ stops warning about the food chain once the derivation says it was never withheld', async () => {
+    // Found by `compliance-checker`. The server keeps a row whose STORED flag stands but whose live
+    // re-derivation now says the disposal was outside any withholding — the longer dose behind it
+    // was corrected away. `withinWithdrawal` and `knownAtCapture` are two facts for exactly this
+    // reason, and this screen carried only the second. So the row rendered identically to a live
+    // one, including "Meat from this must not go into the food chain."
+    //
+    // An auditor reading a screen that contradicts the system's own authoritative derivation is
+    // worse off than with no screen at all. The row STAYS — the flag is a fact about the audit
+    // trail — but the warning goes.
+    cachedSession();
+    seedFlock();
+    seedServerRegister([{ withinWithdrawal: false, knownAtCapture: true }]);
+    window.history.pushState({}, '', '/attention');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: /needs your attention/i })).toBeTruthy();
+    expect(screen.queryByText(/must not go into the food chain/i)).toBeNull();
+    expect(
+      screen.getByText(/on the records we hold now, it was not inside a withdrawal/i),
+    ).toBeTruthy();
+  });
+
   it('⭐ says plainly that a late discovery could not have been caught on this phone', async () => {
     // The cross-device race. Device A recorded the dip; this device tallied to the abattoir having
     // never seen it. The row must not read as an accusation — nothing here could have known.

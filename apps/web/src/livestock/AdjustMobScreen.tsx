@@ -28,7 +28,7 @@ import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveMobs } from './herd';
-import { useRecordTally, useTallies } from './LocalTallies';
+import { useRecordTallies, useTallies } from './LocalTallies';
 import { useMobs } from './LocalMobs';
 import { useHealthEvents } from './LocalHealth';
 import { useAnimals } from './LocalHerd';
@@ -107,7 +107,7 @@ function parseCount(typed: string): number | null {
 export function AdjustMobScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const recordTally = useRecordTally();
+  const recordTallies = useRecordTallies();
   // The PROJECTED mobs — each carrying the head standing in it after every adjustment the device
   // holds, which is the number the farmer is about to change.
   const mobs = useEffectiveMobs();
@@ -287,57 +287,79 @@ export function AdjustMobScreen() {
       isTransfer && withdrawal !== null && withdrawal.clearFrom !== null
         ? withdrawal.clearFrom
         : undefined;
-    const declared = declaredUntil.trim() === '' ? undefined : declaredUntil;
-    // ⭐ One id for the whole action, minted once and put on BOTH halves. It is the only thing that
+    // ⭐ EVERY reason-scoped field is derived from `reason`, never from whatever state a control
+    // last left behind. The reason buttons clear these too, and BOTH belong: clearing alone leaves
+    // the derivation one missed `setX('')` away from writing a field the reason forbids.
+    //
+    // What that cost, found by `reviewer` and `compliance-checker` independently: pick "Moved to
+    // another group", pick Flock B, change your mind and tap "Sold". `destination` was still set, so
+    // a sale was sent with a `counterpartMobId` and a batch id; `recordMobTally` threw *"Only a
+    // group-to-group move is captured as two linked halves"*, `save()` returned, and THE SALE WAS
+    // NEVER WRITTEN — not queued, not stored, gone, with a message about a move the farmer did not
+    // make. `reset()` only runs on success, so every later Save failed identically until reload.
+    // Same again with a declared seller withdrawal left over from `purchase`.
+    const linkedMove = isTransfer && destination !== null ? destination : null;
+    const declared =
+      reason === 'purchase' && declaredUntil.trim() !== '' ? declaredUntil : undefined;
+    // One id for the whole action, minted once and put on BOTH halves. It is the only thing that
     // says these two captures are one move: they are two events with two ids because a tally has one
     // subject mob and one delta, and without the link the outbox could land the arrival after the
     // departure was refused — the destination gaining forty head that never left anywhere.
-    const batchId = destination === null ? undefined : uuidv7();
+    const batchId = linkedMove === null ? undefined : uuidv7();
 
+    // ⭐ BUILT AS A SET, appended as a set. Both halves are validated before either is written, so a
+    // throw on the second cannot leave an orphan `transfer_out` in the append-only log — head out of
+    // the source and into nothing, which is what `canSave` claims to prevent. Raised by all three
+    // review agents.
     try {
-      recordTally({
-        id,
-        farmId: activeFarm.id,
-        mobId: selected.id,
-        // Midday on the farm's day, exactly as the missing report does it: the farmer gave a DAY,
-        // and midday cannot slide either side of it when the instant is read back in any zone.
-        //
-        // ⭐ Every tally on a day therefore shares one instant, which is why the projection orders
-        // by `(occurredAt, id)` and not by the instant alone — see `projectHeadCount`.
-        occurredAt: new Date(`${day}T12:00:00.000Z`),
-        reason,
-        count: typed,
-        currentHead,
-        ...(buyer === undefined ? {} : { counterparty: buyer }),
-        ...(price === undefined ? {} : { priceCents: price }),
-        ...(destination === null ? {} : { counterpartMobId: destination.id }),
-        ...(batchId === undefined ? {} : { batchId }),
-        ...(carried === undefined ? {} : { carriedWithholdUntil: carried }),
-        ...(declared === undefined ? {} : { declaredWithdrawalUntil: declared }),
-      });
-
-      // ⭐ The other half of the same action. One move, two facts, and the second is the one that
-      // stops the laundering: without a `transfer_in` on the destination carrying the source's
-      // withholding, forty dipped sheep are clear the moment they change camp.
-      //
-      // Its own UUIDv7, because it is its own event — sharing the source's id would make the flush
-      // treat the second as a duplicate of the first and send only one of them.
-      if (destination !== null) {
-        recordTally({
-          id: uuidv7(),
+      recordTallies([
+        {
+          id,
           farmId: activeFarm.id,
-          mobId: destination.id,
+          mobId: selected.id,
+          // Midday on the farm's day, exactly as the missing report does it: the farmer gave a DAY,
+          // and midday cannot slide either side of it when the instant is read back in any zone.
+          //
+          // ⭐ Every tally on a day therefore shares one instant, which is why the projection orders
+          // by `(occurredAt, id)` and not by the instant alone — see `projectHeadCount`.
           occurredAt: new Date(`${day}T12:00:00.000Z`),
-          reason: 'transfer_in',
+          reason,
           count: typed,
-          currentHead: headAsAt(destination.id),
-          counterpartMobId: selected.id,
-          // The SAME batch id as the half above — that is the entire point of it. A fresh one here
-          // would be two links to nothing.
+          currentHead,
+          ...(buyer === undefined ? {} : { counterparty: buyer }),
+          ...(price === undefined ? {} : { priceCents: price }),
+          ...(linkedMove === null ? {} : { counterpartMobId: linkedMove.id }),
           ...(batchId === undefined ? {} : { batchId }),
           ...(carried === undefined ? {} : { carriedWithholdUntil: carried }),
-        });
-      }
+          ...(declared === undefined ? {} : { declaredWithdrawalUntil: declared }),
+        },
+        // ⭐ The other half of the same action, and it is DELIBERATELY second in this array: the
+        // departure must reach the outbox before the arrival, because a refused departure has to
+        // taint the batch before the arrival is attempted. One move, two facts, and the second is
+        // what stops the laundering — without a `transfer_in` carrying the source's withholding,
+        // forty dipped sheep are clear the moment they change camp.
+        //
+        // Its own UUIDv7, because it is its own event — sharing the source's id would make the
+        // flush treat the second as a duplicate of the first and send only one of them.
+        ...(linkedMove === null
+          ? []
+          : [
+              {
+                id: uuidv7(),
+                farmId: activeFarm.id,
+                mobId: linkedMove.id,
+                occurredAt: new Date(`${day}T12:00:00.000Z`),
+                reason: 'transfer_in' as const,
+                count: typed,
+                currentHead: headAsAt(linkedMove.id),
+                counterpartMobId: selected.id,
+                // The SAME batch id as the half above — that is the entire point of it. A fresh
+                // one here would be two links to nothing.
+                ...(batchId === undefined ? {} : { batchId }),
+                ...(carried === undefined ? {} : { carriedWithholdUntil: carried }),
+              },
+            ]),
+      ]);
     } catch (error) {
       setRefused({ detail: error instanceof Error ? error.message : null });
       return;
@@ -450,6 +472,13 @@ export function AdjustMobScreen() {
                       onClick={() => {
                         setReason(r);
                         setCount('');
+                        // Every field that belongs to ONE reason goes with it. Their inputs only
+                        // UNMOUNT when the reason changes — the state behind them survived, and
+                        // `save()` read it, so a sale carried the destination picked for a move it
+                        // is no longer. `save()` derives from `reason` as well; this is the other
+                        // half of that fix, and a farmer coming back to the field expects it blank.
+                        setDestinationId(null);
+                        setDeclaredUntil('');
                       }}
                       className={`min-h-touch-min rounded border px-4 font-ui text-body ${
                         reason === r

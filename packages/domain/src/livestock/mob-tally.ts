@@ -161,18 +161,27 @@ export function recordMobTally(input: MobTallyInput): MobTallyCapture {
     throw new ValidationError('A group cannot be transferred into itself');
   }
 
-  // ⭐ The link between the two halves, enforced here rather than trusted, because this function is
-  // the one place BOTH the device and the server build a tally — so the rule cannot hold on one side
-  // and not the other. A half with no batch id is a half that can arrive alone.
+  // A batch id on any other reason would claim this capture is part of an action it is not part of,
+  // and a later reader following the link finds a move that never happened. A tally is one fact
+  // about one mob; only a transfer is half of something bigger. Safe to enforce on both sides.
   const isTransfer = TRANSFERS.includes(input.reason);
-  if (isTransfer && (input.batchId === undefined || input.batchId === null)) {
-    throw new ValidationError('Both halves of a group-to-group move must share one batch id');
-  }
-  // On any other reason it would be a claim that this capture is part of an action it is not part of.
-  // A tally is one fact about one mob; only a transfer is half of something bigger.
   if (!isTransfer && input.batchId !== undefined && input.batchId !== null) {
     throw new ValidationError('Only a group-to-group move is captured as two linked halves');
   }
+  // ⛔ THE CONVERSE — "a transfer half MUST carry one" — is deliberately NOT enforced here, and the
+  // reason is worth keeping. It is a CAPTURE-TIME rule: only the device performing the move knows
+  // that these two events are one act, and the server cannot check it at all — the halves arrive as
+  // separate requests, possibly days apart, and nothing in the second identifies the first. So the
+  // rule lives on the capture path (`useRecordTallies`), where it is knowable.
+  //
+  // Enforcing it here as well cost two things and bought nothing. It made the SERVER refuse an
+  // unlinked half — which `offline-sync.md` §6 forbids ("never tighten a constraint in the same
+  // release that starts enforcing it"), because a half already queued by an older client would 400
+  // forever with nothing the farmer could do. And a refusal that loses a real record is the class
+  // this repo has ruled against everywhere else: flag, never refuse.
+  //
+  // ⚠️ WHAT THIS LEAVES OPEN, stated rather than implied: an unlinked or orphaned half is accepted
+  // and is not detectable server-side. See `recordMobTallyRequestSchema`.
 
   // Re-checked against the payload schema so the two rules — this function's and the schema's —
   // cannot drift apart, exactly as every other capture in this package does it.

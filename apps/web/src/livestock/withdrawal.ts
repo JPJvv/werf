@@ -16,12 +16,24 @@
  * deliberate and it is safe in the direction that matters: the server still refuses what the client
  * lets through, and the client warns about what the server would refuse.
  *
- * Both entry points read BOTH routes a dose takes, because health events are animal-XOR-mob. An
+ * Both entry points read BOTH routes a DOSE takes, because health events are animal-XOR-mob. An
  * asymmetry here is not a rounding error — it is this guard silently disagreeing with the one that
  * will actually refuse. The individual path was blind to mob doses and the group path was blind to
  * individual ones; each was found by a different review agent, from its own side. Membership is
  * reconstructed from the move log in farm-local days, the same shape the server runs, so the two
  * answer the same question rather than two similar-looking ones.
+ *
+ * ⭐ THERE IS A THIRD SOURCE, and this header did not mention it for two sessions after it landed.
+ * Since §2.3b a withholding can ARRIVE WITH head rather than be given to it — a `transfer_in` out of
+ * a dipped camp, or a purchase whose seller declared one — and for a counted flock that event is the
+ * only place the fact can live, because there are no `animals` rows to hang a dose on. Only the MOB
+ * entry point reads it (`latestArrivedWithhold`), and that asymmetry is CORRECT rather than the next
+ * defect: the server's per-animal rule reads only health events too, so the two sides agree. It is
+ * named here because the route that goes unmentioned is the route the next reader forgets, and this
+ * file has now paid for that three times.
+ *
+ * ⭐ AND EVERY ROUTE IS BOUNDED BY THE DAY BEING JUDGED. A dose given after a disposal cannot
+ * withhold it — see `latestClearAcross`, which had no such bound while the server did.
  */
 
 import { isWithinWithdrawal, withholdUntil } from '@werf/domain';
@@ -309,28 +321,100 @@ export function animalDisposalSubjects(
  * individually-registered animal standing in it on the disposal day AND every mob each of those has
  * stood in (a carried-in dose withholds the member, and the member is on the truck). Without the
  * members, a refused individual dose on one of them would not hold the flock's tally.
+ *
+ * ⭐ AND THE TRANSFER CHAIN, which is the third route and the one that was missing. Since §2.3b the
+ * mob rule recurses into the SOURCE of every `transfer_in` (`latestArrivedWithhold`), because the
+ * carried date is a floor and the source must be asked again live. This function did not, and its
+ * own docstring claimed it read "the exact set". It was true when written and stopped being true
+ * when the world widened — the sixth pass's root cause, found for a fourth time, one route along.
+ *
+ * What that cost, and it is the one shape in this file where meat actually reaches a truck rather
+ * than a farmer being blocked: dip counted Flock A Monday, transfer 40 head A→B and slaughter 10 out
+ * of B on a phone that has not recorded the dip yet. The dip is refused (4xx) and taints `A`; the
+ * slaughter's subject set was `[B, …members]`, which does not contain `A`, so it was NOT held. It
+ * posted, the server asked A live, A has no dose because the dose was set aside — 201 for meat
+ * inside an active withholding.
+ *
+ * ⛔ Written as the SAME traversal `mobWithdrawal` runs, not a parallel one that agrees today. Two
+ * computations of one food-safety boundary is exactly how §2h finding A happened, and this is the
+ * second time the two have drifted.
  */
 export function mobDisposalSubjects(
   mobId: string,
   disposalOn: string,
-  animals: readonly StoredAnimal[] = [],
-  moves: readonly StoredMove[] = [],
+  animals: readonly StoredAnimal[],
+  moves: readonly StoredMove[],
+  /** ⛔ REQUIRED, no default — see `meatWithdrawalForMob`. An optional one narrowed this silently. */
+  tallies: readonly ArrivedHead[],
 ): readonly string[] {
-  const subjects = new Set<string>([mobId]);
-  for (const animal of animals) {
-    const intervals = mobMembership(animal, moves);
+  const subjects = new Set<string>();
+  collectMobSubjects(mobId, disposalOn, { animals, moves, tallies }, new Set(), subjects);
+  return [...subjects];
+}
+
+/** Just the parts of the mob context the subject walk needs; doses and products decide no subject. */
+interface SubjectContext {
+  readonly animals: readonly StoredAnimal[];
+  readonly moves: readonly StoredMove[];
+  readonly tallies: readonly ArrivedHead[];
+}
+
+/**
+ * One step of the same walk `mobWithdrawal` performs, accumulating subjects instead of dates.
+ * `visited` terminates the A → B → A cycle exactly as it does there.
+ */
+function collectMobSubjects(
+  mobId: string,
+  disposalOn: string,
+  ctx: SubjectContext,
+  visited: ReadonlySet<string>,
+  out: Set<string>,
+): void {
+  if (visited.has(mobId)) return;
+  const seen = new Set(visited).add(mobId);
+  out.add(mobId);
+
+  for (const animal of ctx.animals) {
+    const intervals = mobMembership(animal, ctx.moves);
     if (inMobOn(intervals, mobId, disposalOn)) {
-      subjects.add(animal.id);
-      for (const interval of intervals) subjects.add(interval.mobId);
+      out.add(animal.id);
+      for (const interval of intervals) out.add(interval.mobId);
     }
   }
-  return [...subjects];
+
+  // Every mob that sent head in here on or before the day being judged — and recursively whatever
+  // sent head to THEM. A purchase has no counterpart mob on this farm, so it contributes no subject.
+  for (const tally of ctx.tallies) {
+    if (tally.mobId !== mobId) continue;
+    if (tally.reason !== 'transfer_in') continue;
+    const arrivedOn = farmDay(new Date(tally.occurredAt));
+    if (arrivedOn > disposalOn) continue;
+    const source = tally.counterpartMobId;
+    if (source === undefined) continue;
+    collectMobSubjects(source, arrivedOn, ctx, seen, out);
+  }
 }
 
 /**
  * The LATEST clear date across a set of doses wins: a subject dosed twice is held by whichever
  * withholding runs longest, and taking the most recent event instead would release it early
  * whenever the second product had a shorter period than the first.
+ *
+ * ⭐ A DOSE GIVEN AFTER THE DAY BEING JUDGED CANNOT WITHHOLD IT, and until this bound existed the
+ * client said otherwise. `58fed1d` gave the SERVER exactly this rule (`onOrBefore`,
+ * `livestock.service.ts`) and left both client readers standing on the unbounded version — the
+ * read-path-fixed-write-path-standing class, and the two-mechanisms-one-boundary class at once.
+ *
+ * What it cost: sell five head on the 1st, write it up on the 20th, and a dip on the 10th made the
+ * sale UNSAVEABLE on the device — `canSave` false, no way to record it, and "Died" one tap away and
+ * never refused, which is precisely the workaround a guard must not teach. The server would have
+ * accepted the very same capture. It also put false rows on the residue register, which reads
+ * through here: a disposal that left before the needle was listed as inside a withholding.
+ *
+ * Safe in the direction that matters — head that left five days before a dose was drawn cannot be
+ * carrying that residue, so nothing is released early. INCLUSIVE at the boundary, because
+ * dipped-and-sold on one day is a real residue question and a food-safety boundary fails toward
+ * blocking. Identical to the server's comparison, deliberately.
  */
 function latestClearAcross(
   events: readonly StoredHealthEvent[],
@@ -341,6 +425,8 @@ function latestClearAcross(
 
   let latest: string | undefined;
   for (const event of events) {
+    // The day bound, before anything else: this is not about which product it was.
+    if (event.administeredOn > disposalOn) continue;
     const days = withdrawalDays.get(event.productId);
     // A product the device does not know about contributes nothing. That is the honest answer —
     // guessing a withdrawal would be inventing a regulated number — and the server still holds the

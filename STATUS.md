@@ -681,6 +681,60 @@ them was wrong when it was written. The commit that widened the world did not go
 
 ---
 
+## 2o. The SEVENTH review pass (2026-08-03, fifteenth session) — ALL FIXED
+
+**JP TRIGGERED IT and asked for the phase to be made merge-ready.** All three agents over
+`beb3dc9..HEAD` (24 commits, including the sixth pass's own fix commits and the fourteenth session's
+four), run in parallel, output read directly.
+
+**`reviewer`: NOT APPROVABLE. `sync-auditor`: NOT APPROVABLE. `compliance-checker`: NOT APPROVABLE.**
+Seventh consecutive pass. Every SEV-2 was inside code the range added or touched.
+
+⭐ **TWO findings were raised by two agents INDEPENDENTLY**, which is the signal this repo trusts
+most — and both had the same root shape: *a rule was added to the server and its client twin was
+left standing.*
+
+| Sev | Found by | What was wrong | Fix |
+|---|---|---|---|
+| **SEV-2** ⭐⭐ | `reviewer` + `compliance-checker` | **The client withdrawal guard had no dose-day bound.** `58fed1d` gave the SERVER `onOrBefore` and left both client readers unbounded. Sell five head on the 1st, write it up on the 20th, and a dip on the 10th made the sale UNSAVEABLE — with "Died" one tap away and never refused, which is the workaround a guard must not teach. The server would have accepted the identical capture. It also put false rows on the residue register, which reads the same functions | `34e0685` — the bound is in `latestClearAcross`, where every route funnels, INCLUSIVE at the boundary like the server's |
+| **SEV-2** ⭐⭐ | `reviewer` + `compliance-checker` | **A reason change kept the previous reason's fields, and the capture was LOST.** Pick "moved to another group", pick a destination, change to "Sold": the sale went out with a `counterpartMobId` and a batch id, the domain refused it, `save()` returned — **the sale was never written.** Not queued, gone, with a message about a move the farmer did not make. `reset()` only runs on success, so every later Save failed identically until reload | `34e0685` — every reason-scoped field DERIVED from `reason`, and the reason buttons clear their state. Both halves, because clearing alone is one missed `setX` from writing a forbidden field |
+| **SEV-2** | `compliance-checker` | **`mobDisposalSubjects` never walked the TRANSFER CHAIN.** The only shape in that file where meat reaches a truck rather than a farmer being blocked: dip flock A, transfer A→B and slaughter out of B on a phone that has not recorded the dip. The dip is refused and taints A; the slaughter's subject set was `[B, …members]` — **201 for meat inside an active withholding.** Its own docstring claimed it read "the exact set" the guard reads; true when written, false once §2.3b widened the world | `34e0685` — the SAME traversal the guard runs (`collectMobSubjects`), not a parallel one that agrees today |
+| **SEV-2** | `sync-auditor` | **A chained move A→B→C got a FALSE refusal** — a regression inside the fourteenth session's own fix. Hoisting every departure meant `out_B` was posted before `in_B` had landed, the server saw no head in B, and refused a valid capture. Worse than a retry: the `/not-sent` copy says *"Record it again"*, and a recount RESETS — following it corrupts the count permanently | `34e0685` — capture order is CAUSAL and is preserved; only a departure is pulled forward to just before its OWN arrival, never to the front |
+| MED | `reviewer` + `sync-auditor` | **The server refused an unlinked transfer half**, which it cannot verify and `offline-sync.md` §6 forbids tightening | `34e0685` — the rule moved to the capture path, where it is knowable. **The gap is now STATED in the schema** rather than implied closed |
+| MED | `compliance-checker` | **`/attention` dropped `withinWithdrawal`**, so a row the server's own derivation says is CLEAR still said "meat from this must not go into the food chain" | `34e0685` — carried onto `Row`; the row stays (an audit fact), the warning goes |
+| MED | **all three** | **The two halves of a move were written non-atomically** — a throw on the second left an orphan departure in the append-only log, head out of the source into nothing | `34e0685` — `useRecordTallies` builds and validates all before appending any |
+| MED | `reviewer` | **The exit-gate paragraph in `phase-checklists.md` was stale in four ways**, in the document the gate is measured against, one commit after `b326321` closed two stale lines in that same file. Fifth occurrence | `34e0685` — rewritten to state CLAUSES and defer every figure to this file |
+| MED | `reviewer` | **The FR-131 checklist line was ◐ with NO remainder named** — satisfying neither arm of the gate clause | `34e0685` — ☑ |
+| LOW×4 | various | Three premise-outlived-comment fixes (`SentCaptures` "gates one thing", `withdrawal.ts`'s two-source header, `herd-scope`'s escape list); one truthiness mismatch on `provides` | `34e0685` |
+
+**Gate after: 84 files / 941 tests** (was 934), bundle **146.79 KB** gz, `pnpm test:e2e` **27/27 cold**.
+**Both CI lanes green at `34e0685`** (run `30807663310`, `gh run view`). Every fix has a test watched
+to fail against the old code first.
+
+**The rules that came out of this pass:**
+
+- ⭐ **When you bound a rule on one side of a seam, go and bound it on the other IN THE SAME COMMIT.**
+  Both independently-confirmed SEV-2s are one shape: a server gained a constraint, its client twin
+  did not. That is the "read path fixed, write path left standing" class, and it is now the most
+  reproducible defect this repo has.
+- **A guard that fails toward blocking is still a defect.** The dose-day bound made the device refuse
+  an honest back-dated sale. Nothing unsafe reached the food chain — and a farmer who cannot record
+  what happened stops recording, which is how you lose the register entirely.
+- **State that clears only on SUCCESS is state that survives every failure.** `reset()` ran on save;
+  the reason buttons did not, so a field belonging to an abandoned reason poisoned the next capture
+  and the screen refused it forever.
+- ⭐ **A subject set that shadows a guard must be the SAME TRAVERSAL, not a parallel one.** Two
+  computations of one food-safety boundary have now drifted twice, both times because the guard
+  learned a route and its shadow did not.
+- **Enforcing a rule where it cannot be checked costs a record and buys nothing.** The server cannot
+  see a transfer's sibling, so refusing an unlinked half only lost data. The rule belongs at capture;
+  the residual gap belongs in writing.
+- ⭐ **Closing a false positive can open a false negative, and the second is worse.** `/attention`
+  suppressing a stale warning had to be checked in the other direction — a row still inside a
+  withholding must never lose its warning.
+
+---
+
 ## 2n. The Phase 2 build list is empty (2026-08-03, fourteenth session) — UNREVIEWED
 
 **A BUILD session.** Four commits. `pnpm verify` green after each: **84 files / 934 tests** (was

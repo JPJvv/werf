@@ -9,9 +9,10 @@ DIAGNOSED) ·
 `pnpm verify` green LOCALLY: **84** files / **934** tests (was 83/922), bundle **146.45 KB** gz.
 `pnpm test:e2e` **27/27 on two consecutive cold runs, 46s** — see §4 A9, and read the warning there
 before treating that as proof of anything.
-**BOTH CI LANES GREEN at 74053c2**; this session's four commits have NOT been through CI yet —
-push and watch (§2j's rule: `pnpm verify` does not run e2e, so a lane that touches the network
-shape of a screen can only be proved by pushing).
+**BOTH CI LANES GREEN at `9861bd6`** — run `30801523078`, `Lint · Typecheck · Test · Build` and
+`E2E · axe (both themes)` both success, verified with `gh run view` rather than inferred. Pushed and
+watched, per §2j's rule that `pnpm verify` does not run e2e. ⭐ **This is the first CI run against a
+SERIALISED e2e lane (§4 A9), and it passed** — worth knowing, since CI never reproduced A9 anyway.
 See §6 for the compliance operating model JP set.
 
 > ⭐ **THE FOURTEENTH SESSION CLOSED THE LAST OF THE PHASE 2 BUILD LIST.** §2m #1 (the transfer

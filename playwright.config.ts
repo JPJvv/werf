@@ -19,12 +19,32 @@ export default defineConfig({
   testDir: './apps/web/e2e',
   fullyParallel: true,
   /**
-   * Two workers, not "however many cores". The suite is served by a single `vite preview`
-   * process, and six concurrent Chromium instances hammering it produced `page.goto`
-   * timeouts on a DIFFERENT test each run — the classic flake that gets re-run rather
-   * than read. The suite takes about eight seconds; there is nothing to win here.
+   * ⭐ ONE worker, and this is the fix for §4 A9 — read the diagnosis before raising it again.
+   *
+   * A9 was two light-theme axe tests failing on a COLD run, for six sessions, with no explanation.
+   * The captured trace ended it: BOTH failing tests requested `/assets/index-*.js` within 4 ms of
+   * each other (the two workers starting together), both requests STALLED for ten seconds, and one
+   * came back `net::ERR_CONNECTION_RESET`. The page's own CSS and `registerSW.js` stalled the same
+   * ten seconds. A later load of the identical assets took 3–30 ms.
+   *
+   * So nothing was ever wrong with the app. The HTML shell loaded — which is why the theme script
+   * had run, the background was painted, and the sibling `data-theme` assertion always passed — and
+   * the React bundle never arrived, so the tree rendered nothing and every control on it was
+   * "not found". That is the blank screenshot, exactly.
+   *
+   * The cause is load on a single-process static server: two cold workers each fetch the page's
+   * assets AND install a service worker that precaches 561 KiB, all at once, and `vite preview`
+   * resets a connection rather than serving them. Dropping to two workers (from "however many
+   * cores") narrowed it from "a different test each run" to "the first two, on a cold run"; it did
+   * not remove it, because two is still concurrent and the precache burst is the expensive part.
+   *
+   * The suite takes about eight seconds warm, so serialising it wins back nothing worth having, and
+   * it makes the lane's result depend on the app rather than on a race for sockets.
+   *
+   * ⚠️ This reduces CONTENTION; it does not make the server robust. If a green run is ever offered
+   * as proof this is fixed, note that A9 already ran 27/27 green once while entirely unfixed.
    */
-  workers: 2,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   /**
    * No retries. A retry on this suite would hide exactly the failure above, and the axe

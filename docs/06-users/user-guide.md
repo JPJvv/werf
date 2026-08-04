@@ -2,6 +2,15 @@
 
 *This document is also the source for in-app help. Written in the product's voice ([ux-design-system.md §5](../02-design/ux-design-system.md)): plain, direct, no apology, no cheer. Ships in English and Afrikaans.*
 
+> **⚠️ For the team, not for farmers — delete this block when the product ships.**
+> **As at 2026-08-04, "Getting started", "Working without signal", "Animals", "Rainfall" and the
+> stock-theft parts of "Compliance" describe what is BUILT (end of Phase 2).**
+> **"Lands and crops" (sprays, harvest, pre-harvest intervals), "People and wages", "Money", the
+> GlobalGAP/SIZA checklist and the analytical reports are PLANNED — Phases 3–6 — and no screen for
+> them exists yet.** Camps and fence-walking under "Lands" ARE built; everything else in that
+> section is not. A guide with no "as at today" line is a claim about the present, which is how this
+> file came to promise farmers a withholding override the product has never had (STATUS.md §2p).
+
 ---
 
 ## Getting started
@@ -51,6 +60,12 @@ Two ways, and **both work with no signal**:
 
 **Your recovery codes.** You get ten, once. **Print them and put them in the safe.** If your phone goes into the dam and you have no codes, getting back in takes us 48 hours and a lot of questions — because if it were faster, someone could talk their way into your farm by pretending to be you.
 
+**Settings → Security** lists every phone and authenticator you have added, and lets you add another or remove one. **Add your second phone before you need it.** Removing a lost phone from a working one takes seconds; doing it with nothing left takes 48 hours.
+
+If you are opening Werf on a borrowed tablet with no fingerprint reader, it offers the authenticator app instead. It will not ask you for a lock the device in your hand cannot provide.
+
+⚠️ **Fingerprints are for your own account only.** Werf never takes a worker's fingerprint. Consent between an employer and a farm worker is not the same thing as consent between you and your own phone, and the law treats it that way (POPIA s26).
+
 ## Working without signal
 
 **This is the part that matters, so read it once properly.**
@@ -70,7 +85,13 @@ At the top of the screen there is a strip:
 
 ### When two people record the same thing
 
-If you and your herdsman both record the same calving on different phones, Werf keeps both and asks you which is right. It will not quietly delete one. You decide.
+**Werf never quietly throws one away.**
+
+What you recorded and what your herdsman recorded are both facts, and both are kept — a calving he wrote down in a camp with no signal is still there when your phone and his finally meet. Records of things that *happened* are never merged or overwritten; they are added to the history, each with the day it happened and who recorded it.
+
+Where two people edit the same *detail* — a camp's name, an animal's breed — the last edit made wins. That is fine for a name and it is why counts do not work that way: see **Herd → Count** above.
+
+⚠️ **The strip at the top says what has reached the server, not what your herdsman has recorded.** If his phone has been in a dead zone for a week, his week is on his phone, and it arrives when he does.
 
 ---
 
@@ -78,11 +99,29 @@ If you and your herdsman both record the same calving on different phones, Werf 
 
 ### Adding one
 
-**Herd → Add animal.** Tag number, sex, breed, date of birth. Take a photo — it takes three seconds and it is what you will hand the police if the animal is stolen.
+**Herd → Add animal.** Tag number, sex, breed, date of birth, and the marks it carries.
+
+> **⚠️ Team note, delete before ship — photos are NOT built.** This line used to say *"take a photo — it is what you will hand the police."* There is no object storage behind `photo_key` (STATUS.md §4 B2, §2.8: a Phase 3 infrastructure slice), so no photo can be taken or shown. The evidence pack correctly prints the photo reference and says the image is not attached rather than claiming "Yes" — restore this sentence when the upload path exists, and not before.
+
+### Tags and marks
+
+**Animal → Add tag.** An animal can carry more than one identifier — an ear tag, a tattoo, a brand, a microchip — and it keeps them all. Replace a lost tag and the old number is kept, not overwritten: a tag reissued after a theft is exactly the number the animal was wearing when it went, and that is the number the police will be given.
 
 ### Groups instead of individuals
 
 Three hundred sheep and you do not want three hundred records? Make a **flock** with a head count. Treat them, move them, and count them as a group. You can start recording individuals later without redoing anything.
+
+**Herd → Count.** This is how a flock of 300 becomes 297, and says why.
+
+You tell Werf **what changed and why** — died, sold, slaughtered, stolen, moved to another group, born, bought, arrived from another group — and it does the arithmetic. You never type the new total.
+
+**That is deliberate, and it is the whole design.** If you and your herdsman are both out of signal and you each record three deaths, the changes add up to 294, which is the truth. If you had each typed a new head count instead, the last phone to reach signal would win, the flock would sit at 297, and three dead sheep would stay in the count with nothing to show what was lost.
+
+**Counted the whole camp yourself? Use "I counted them".** That is the one entry that replaces the total instead of adjusting it — because "I walked the camp and there are 297" is a stronger fact than arithmetic on a number you have just proved wrong. Use it when the count has drifted, not for everyday changes.
+
+**Moving head between two groups is one action.** Pick "moved to another group" and choose where they went; Werf writes both halves — out of one, into the other — so the two can never disagree. A withholding period follows them across. It is still one flock's worth of head; nothing was sold and nothing died.
+
+**Bought-in head.** If the seller tells you the stock is inside a withholding period, record it. If they tell you nothing, leave it blank — Werf will say "history unknown" rather than inventing a date or quietly treating the animals as clear. Both of those would be a lie in a residue traceback, and one of them is the dangerous kind.
 
 ### Weighing
 
@@ -94,11 +133,69 @@ Get interrupted? It picks up where you stopped.
 
 ### Treatments and withholding periods
 
-**Animal → Treat.** Pick the product. Werf works out the withholding period and remembers it.
+**Animal → Treat**, or **Flock → Treat** for a whole mob at once — a plunge dip is one entry, not three hundred. Pick the product and the day it was given. Werf works out the withholding period and remembers it.
 
-**If you try to sell an animal inside its withholding period, Werf stops you** and tells you the date it is clear. This works with no signal.
+**Record the day it actually happened.** If you dipped on Monday and are writing it up on Thursday, say Monday. Werf works the withholding period from the day you give it, not from today.
 
-You can override it. You will have to give a reason, and it is recorded. That is deliberate — the reason exists so that if the abattoir asks, you have an answer.
+**If you try to sell or slaughter an animal inside its withholding period, Werf stops you** and tells you the date it is clear. It works with no signal, on the phone in your hand, while the animal is still in front of you — not days later when the truck has already gone.
+
+**It follows the animal.** Dip a flock, move forty head into another camp, and the withholding goes with them. Treat one cow on her own and put her in a mob, and that mob cannot go to the abattoir while she is still inside her period.
+
+**There is no override, and that is deliberate.** Meat inside a withholding period is a residue traceback and a rejected consignment, and no reason box makes that untrue. What you can always do is **record what actually happened** — a death is never refused, whatever the withholding says, because refusing to record a fact is worse than recording it.
+
+**If something did slip through, Werf tells you.** See *Needs your attention* below.
+
+---
+
+### Births, weaning, moving, losses
+
+**Animal → Calving/lambing.** The dam, the sire if you know him, birth weight, and how the calving went. **Twins are two lambs**, not one entry with a note — record the number born and Werf makes a record for each.
+
+**Animal → Wean.** Weaning weight and the day.
+
+**Herd → Move.** Which camp they went to, and when. Werf keeps the whole movement history, because "where was this animal in March" is a question an auditor and a police officer both ask.
+
+**Animal → Loss.** Died, stolen, or missing. Say what day it happened — not the day you are writing it up. If it went into the food chain, say so; that is a different record from an animal that died in the veld.
+
+### Breeding
+
+**Animal → Mating.** Two ways to record it, and you pick the honest one:
+
+- **A date**, if you know it — an AI technician knows the hour.
+- **A period**, if a bull ran with the cows. Give the day he went in and the day he came out. "He is still with them" is a normal answer in October; leave the out date blank.
+
+Werf will not make you name a day the service did not happen on. A calving date worked out from a date you invented is worse than no date at all.
+
+**Animal → Pregnancy test.** The result and how it was tested. If she is pregnant, Werf works out roughly when she is due, from the day she was served.
+
+**Some species have no due date, and Werf says so plainly.** Poultry incubate rather than gestate, and "game" covers everything from a springbok to a kudu — there is no honest average. The test result is still recorded; only the date is missing, and the screen tells you why. A date guessed off a nearby species is not a kindness.
+
+---
+
+## When Werf needs you
+
+### Needs your attention
+
+Some things can only be worked out after the fact, and this screen is where they surface. It appears on the home screen **only when there is something on it**.
+
+The main one is a residue problem nobody could have seen coming. You dip a flock on Monday, out of signal. Your herdsman, on his own phone that has never seen that dip, sends five head to the abattoir on Wednesday. Both of you did the right thing with what you knew, and neither phone could have stopped it.
+
+**Werf does not refuse the record days later — it happened, and losing the record helps nobody.** It flags it, tells you what the withholding period was, and leaves the entry standing so you have an answer when the abattoir asks.
+
+The screen separates two things that look alike and are not:
+
+- **You were warned and went ahead anyway.**
+- **No phone could have known.**
+
+The second is not blame. It is the one you show someone.
+
+### Not sent
+
+**Settings → Not sent.** If the server refused a record, this is where it says which one and why, in plain language.
+
+**Nothing is ever thrown away.** A refused record is kept, not deleted, and one bad record never blocks the ones behind it — sixty tags captured in a crush with one duplicate digit means fifty-nine go up and one waits for you.
+
+⚠️ **If it tells you to record something again, read what it says first.** Recording a count again is not free: "I counted them" replaces the total.
 
 ---
 
@@ -107,6 +204,24 @@ You can override it. You will have to give a reason, and it is recorded. That is
 ### Blocks
 
 **Blocks → Add.** Draw the boundary on the map or type the hectares.
+
+### Walking a fence
+
+**Camp → Walk the fence.** Put the phone in your pocket, drive or walk the boundary, and mark a corner at each corner post. Werf works out the hectares from the shape you walked.
+
+**It is saved from the first corner, not from the end.** A 200 ha camp takes the better part of an hour; phones lock and browsers close backgrounded tabs. Stop halfway, come back, carry on.
+
+It checks the shape while you are still standing there — too few corners, a fence that crosses itself, corners that enclose nothing — because a problem you hear about days later is one you cannot walk back to.
+
+**Your title-deed hectares are not overwritten.** Werf shows both: the figure you typed and the figure the fence actually encloses. They are different claims and both are worth having.
+
+**Walk it again whenever the fence moves.** The newest walk becomes the camp's shape, and the old one is kept — it is a true record of where the fence used to run.
+
+---
+
+## Rainfall
+
+**Rainfall → Record.** The gauge reading and the day. Rainfall belongs to the farm, not to the cattle or the vineyard, so both sides of a mixed farm see it.
 
 ### Sprays
 

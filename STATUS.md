@@ -3,17 +3,33 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-08-03 (FOURTEENTH session — ⭐ THE PHASE 2 BUILD LIST IS EMPTY, AND A9 IS
-DIAGNOSED) ·
-**Branch:** `phase-2/livestock` (this file's own commit moves HEAD — re-read with `git log`).
-`pnpm verify` green LOCALLY: **84** files / **934** tests (was 83/922), bundle **146.45 KB** gz.
+**Last updated:** 2026-08-04 (SIXTEENTH session — a DOCS AUDIT: five architecture/delivery documents
+were contradicting the built system, incl. the sync contract) ·
+**Branch:** `phase-2/livestock`, **in sync with origin** (this file's own commit moves HEAD —
+re-read with `git log`).
+`pnpm verify` green LOCALLY, re-run this session: **84** files / **941** tests, bundle
+**146.79 KB** gz (the bundle figure was confirmed against a fresh build, not copied forward).
 `pnpm test:e2e` **27/27 on two consecutive cold runs, 46s** — see §4 A9, and read the warning there
 before treating that as proof of anything.
-**BOTH CI LANES GREEN at `9861bd6`** — run `30801523078`, `Lint · Typecheck · Test · Build` and
-`E2E · axe (both themes)` both success, verified with `gh run view` rather than inferred. Pushed and
-watched, per §2j's rule that `pnpm verify` does not run e2e. ⭐ **This is the first CI run against a
-SERIALISED e2e lane (§4 A9), and it passed** — worth knowing, since CI never reproduced A9 anyway.
-See §6 for the compliance operating model JP set.
+**BOTH CI LANES GREEN at `34e0685`** — run `30807663310`, verified with `gh run view` rather than
+inferred (§2o). See §6 for the compliance operating model JP set.
+
+> ⚠️ **The figures in this header were STALE when the sixteenth session opened** — it claimed 934
+> tests and 146.45 KB, both superseded by §2o's own numbers one section below. **Fourth consecutive
+> session in which something in §1 was stale.** The tree/SHA claim is now checked every session; the
+> FIGURES were not, and they are the same class. Check both.
+
+> ⭐ **THE SIXTEENTH SESSION (2026-08-04) AUDITED THE DOCUMENTS AND FOUND SIX LIVE CONTRADICTIONS
+> WITH THE BUILT SYSTEM — see §2p.** The sharpest is `offline-sync.md` §5 invariant 3, which said
+> *"the queue drains in `occurred_at` order"* under a heading reading *"these are not aspirations"*.
+> That is the shape of a SEV-1 this repo already shipped and fixed (§2d `16fbb6a`), sitting in the
+> document CLAUDE.md points at for "anything about sync". **No agents were run** (not asked; the
+> standing rule is owner-triggered only).
+
+> ⭐ **THE SEVENTH REVIEW PASS RAN (2026-08-03, fifteenth session) AND EVERY FINDING IS FIXED
+> (§2o).** Four SEV-2s, five MEDs, four LOWs; seventh consecutive NOT APPROVABLE; both CI lanes
+> green at `34e0685`. ⛔ **The fixes are themselves unreviewed — that is the eighth pass, and it is
+> JP's call.** See §5.
 
 > ⭐ **THE FOURTEENTH SESSION CLOSED THE LAST OF THE PHASE 2 BUILD LIST.** §2m #1 (the transfer
 > batch link, `d0dd571`) and the non-SEV leftovers §2m #2/#3/#5/#6 (`6abb6cf`). **There is now no
@@ -91,7 +107,7 @@ See §6 for the compliance operating model JP set.
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. ⭐ THE BUILD LIST IS EMPTY** — §2m #1 is built (`d0dd571`) and the non-SEV leftovers with it (`6abb6cf`); everything still named in §4 B2/B4/B5 is blocked on something that does not exist. See §2n. ⭐ **THE BATCHED SIXTH REVIEW PASS RAN (JP-triggered) and all three agents returned NOT APPROVABLE; every SEV-1/SEV-2/MED is FIXED (§2l).** `pnpm verify` green LOCALLY: **84** files / **934** tests, bundle **146.45 KB** gz. ⛔ **Not merge-ready, and the SEVENTH pass is now the ONLY thing left before it — there is no build work to do instead. Six passes running have each found a defect inside the previous pass's fixes; it is JP's call.** ✅ `pnpm test:e2e` **27/27 cold, twice** — §4 A9 is DIAGNOSED and fixed (`3ca3a2c`), and it was never an app defect. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. ⭐ THE BUILD LIST IS EMPTY** — §2m #1 is built (`d0dd571`) and the non-SEV leftovers with it (`6abb6cf`); everything still named in §4 B2/B4/B5 is blocked on something that does not exist. See §2n. ⭐ **SEVEN review passes have now run; the seventh's findings are ALL FIXED (§2o).** `pnpm verify` green LOCALLY: **84** files / **941** tests, bundle **146.79 KB** gz. ⛔ **Not merge-ready. What is left is the EIGHTH pass over the seventh's own fix commit `34e0685` + this session's docs work — seven passes running have each found a real defect inside the previous pass's fixes, and there is still no build work to do instead. JP's call.** ✅ `pnpm test:e2e` **27/27 cold, twice** — §4 A9 is DIAGNOSED and fixed (`3ca3a2c`), and it was never an app defect. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
@@ -178,10 +194,10 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    with the server, a `??` that reintroduced the very bug it was written to fix, and an axe lane
    auditing seventeen screens with almost no widgets on them. There is no reason to believe pass
    four finds nothing. Run all three over `7c2acd9..HEAD` and read the output.
-   → _Answer (say the word and it runs):_ **STILL OPEN.** The seventh session was instructed to
-   run no agents at all, so this was deliberately skipped rather than forgotten, and the
-   seventh session's own work is now ALSO unreviewed — the fourth pass should run over
-   `7c2acd9..HEAD`, which now includes the breeding slice.
+   → _Answer:_ ✅ **CLOSED — the fourth pass RAN on 2026-07-28 (§2f) and three more have run since
+   (§2h fifth, §2l sixth, §2o seventh).** This "STILL OPEN" line was stale from the eighth session
+   until the sixteenth, in the block of the file that exists to say what is open. The live request
+   is now the **EIGHTH** pass — see §5.
 
 1c. **NEW — install the defect-class hook?** Proposed at the end of the fifth session, **not
    installed**, awaiting your call. A `PostToolUse` hook on `Edit|Write` that greps the changed
@@ -735,6 +751,89 @@ to fail against the old code first.
 
 ---
 
+## 2p. The documentation audit (2026-08-04, sixteenth session) — six live contradictions
+
+**A DOCS session, asked for as a high-level soundness audit of the architecture and specification
+documents.** No agents were run. The working tree was clean and in sync with origin at `b20fdf9`;
+`pnpm verify` was re-run cold and is green (84 files / 941 tests, bundle **146.79 KB** gz — which is
+how §1's stale 146.45 was caught).
+
+⭐ **The finding that matters is the first one, and it is the repo's own recurring class one tier
+higher than it has been found before.** Every previous instance was a stale COMMENT or a stale
+CHECKLIST LINE. These are stale CONTRACTS, in the four documents `CLAUDE.md`'s "Where to look"
+section sends you to.
+
+| # | Document | What it claimed | Reality |
+|---|---|---|---|
+| **1** ⭐⭐⭐ | `offline-sync.md` §5, invariant 3 | **"The queue drains in `occurred_at` order."** Stated under *"Invariants. These are not aspirations."* | **False, and deliberately so.** The flush orders by the FK graph, then puts the EVIDENCE a guard reads ahead of the act it judges, then keeps causal capture order. An `occurred_at` drain is *exactly* §2d's SEV-1 (`16fbb6a`): dip Monday, tally to the abattoir Tuesday, reconnect Friday → the tally POSTs first and gets a **201** for meat inside an active withholding. `Outbox.tsx`'s own header comment has said "ordered by the FOREIGN KEY graph, **not** by when things were captured" since that fix. **A reader who trusted the invariant would reintroduce the SEV-1 and think they were fixing a bug.** Rewritten as the five rules the flush actually applies, incl. the departure/arrival hoist limit (§2o) and taint-on-hold (§2n) |
+| **2** | `database-schema.md` §5 | The `event_type` enum DDL lists 24 values | **Three missing**: `rainfall` (0014), `tally` (0017), `boundary_walk` (0020). The document's own PROSE discusses `boundary_walk` and `tally` two hundred lines further down — the DDL block and the paragraph explaining it disagreed |
+| **3** ⭐⭐ | `database-schema.md` §4 | `mobs` has `head_count` | **`initial_head_count` (0018) was absent entirely** — the IMMUTABLE baseline the tally log folds over. §3b finding 7 was precisely the defect of folding over the mutable `head_count` instead, and it "detonates the moment PowerSync hydrates `mobs` in Phase 3". The canonical schema document still showed only the dangerous column. Both are now documented, each labelled with what it is for |
+| **4** | `database-schema.md` | — | **`species_gestation` (0019) was undocumented.** Added, with the reasons that are load-bearing: global rather than farm-scoped (gestation is biology, not tenancy), safe because `GRANT SELECT` only + RLS FORCE + `reference-global`, and the deliberate absence from `testing.ts`'s truncate list |
+| **5** ⭐⭐ | `api-specification.md` §1 | **"Animals, events, blocks, and camps do not have REST endpoints… if you find yourself adding `POST /animals`, stop."** | The API has **24 REST capture endpoints**, incl. `POST /api/livestock/animals`. They are correct — PowerSync is Phase 3, so this is the interim transport — but that reconciliation lived ONLY in `phase-checklists.md`'s scope-boundary paragraph. **Read on its own, the API spec says the livestock controller is a defect.** Also: base path is `/api`, not `/v1`, so every path in the document has the wrong prefix; the auth routes were never built under the names given; `species-gestation` and `residue-register` are undocumented. A TARGET-vs-today warning added, matching the one `ci-cd.md` and `testing-strategy.md` already carry |
+| **6** | `roadmap.md` Phase 2 gate | ✓ `pnpm test:e2e:offline`, ✓ `pnpm test:tenancy` | **Neither script exists.** G1 corrected four documents for exactly this in the fifth session and `roadmap.md` was not one of them — so a phase GATE was still measured against two commands that cannot be run. Both now point at what actually runs them |
+| **7** | `ci-cd.md`, the ⚠️ warning at the top | "neither has ever run… no PR has been opened yet" | **The correction note had itself gone stale.** Draft PR #3 opened 2026-07-26; CI has run on every push since and both lanes are green. G5 is closed. Corrected, keeping the fact worth keeping (CI does not run on a feature branch with no PR) |
+| **8** | `STATUS.md` §1 and §5 | 934 tests / 146.45 KB; "the SEVENTH pass is the ONLY thing left" | Superseded by §2o **in this same file** — 941 tests / 146.79 KB, and the seventh pass ran and is fixed. §5's whole resume block was written for the pre-seventh-pass world |
+
+### The slice: §4 G4, the user guide — half done
+
+**G4 was the only unblocked Phase 2 work left** (§5's option (iv)), and the audit made it the obvious
+one: `user-guide.md` is the farmer-facing twin of the documents that had just been found contradicting
+the code. It did the same thing, and worse, because a farmer cannot read the source to check.
+
+**Three of its claims were false, and one of them is a food-safety claim:**
+
+| What it told farmers | Reality |
+|---|---|
+| ⛔ **"You can override it. You will have to give a reason, and it is recorded."** — of the withholding-period block | **There is no override anywhere in the product**, and there never has been — `grep -ri override` over `apps/`, `packages/domain/` returns nothing but a theme comment and two NestJS reflector calls. A farmer told they may override a meat withholding "with a reason" has been told something both false and dangerous. Rewritten to say what is actually true: no override, and a death is never refused |
+| **"Take a photo — it is what you will hand the police if the animal is stolen"** | **Photos are not built** (§4 B2, blocked on object storage). The evidence pack was fixed in `511cf3c` to stop claiming "Photograph on file: Yes"; the user guide kept promising the farmer the photo itself |
+| **"Werf keeps both and asks you which is right"** — of two people recording one calving | There is no such screen. Events are append-only and never merged; entity FIELDS are last-write-wins. Rewritten to describe both, and to point at why counts are deltas |
+
+**Added, all of it built and none of it previously documented:** counted flocks (`/animals/groups/count`
+— why you never type the new total, why a recount RESETS, transfers as one action, an undeclared
+purchase claiming nothing); "Needs your attention" (`/attention`) and the cross-device residue race
+in a farmer's words, incl. the warned/could-not-have-known split; "Not sent" (`/not-sent`) and the
+warning that "record it again" is not free when a recount replaces a total; walking a fence
+(`/land/walk`); breeding (`/animals/mating`, `/animals/pregnancy`), incl. why a service window is a
+first-class answer and why poultry/game get no due date; tags and retired identifiers; births,
+weaning, moves, losses; rainfall; passkey management under Settings → Security.
+
+**And an "as at today" block at the top**, which is the audit's own lesson applied to the file: the
+guide describes Phases 3–6 (payroll, sprays, harvest, GlobalGAP) in the present tense, and that is
+how it came to promise an override for a screen that does not exist.
+
+⚠️ **G4 IS ONLY HALF CLOSED. `ux-design-system.md` (480 lines) was NOT touched** — it is the other
+half of the gap and it is still stale for the same fourteen-plus screens. Named here rather than
+quietly left: **G4 stays OPEN in §4.** The grievance flow that G4 says "needs real UX care" is
+Phase 3 work and is untouched.
+
+**The rules that came out of this session:**
+
+- ⭐ **A document that states a CONTRACT ages exactly like a comment, and costs more when it does.**
+  This repo has caught five stale comments and five stale checklist lines. Invariant 3 is the same
+  failure at the tier where a reader goes to learn what is true — and unlike a comment, nothing sits
+  next to the code to contradict it. **When a review pass changes a mechanism, grep the docs for the
+  old mechanism in the same commit**, exactly as §2o's rule says to bound both sides of a seam.
+- ⭐ **The dangerous stale document is the one that is RIGHT about the destination.** `api-specification.md`
+  and `offline-sync.md` are both accurate descriptions of the Phase-3 system. Neither says so, so
+  both read as descriptions of today — and one of them forbids code that is already merged and
+  correct. **A design document with no "as at today" line is a claim about the present.**
+- **A stale correction note is worse than the staleness it corrected**, because it has already been
+  audited once and reads as freshly checked. `ci-cd.md`'s warning was written to fix a false claim
+  and became one.
+- **Figures in a header are the same defect class as SHAs in a header.** §1's tree/SHA claim is
+  reconciled every session by §5's first instruction; its TEST COUNT and BUNDLE SIZE were not, and
+  had drifted from a section of the same file. Both are checked now.
+- **A gate measured against a command that does not exist is not a gate.** Fifth-session G1 found
+  this in four documents; `roadmap.md` kept it for eleven more sessions because nothing greps the
+  docs for `pnpm <script>` against `package.json`. **That grep is cheap and is the obvious hook.**
+- ⭐ **The farmer-facing document is where a stale claim does the most damage**, because the reader
+  cannot check it against the source. The withholding "override" is the sharpest thing this session
+  found in any document: false, and false in the direction that puts residue in the food chain.
+  **Every review pass so far has audited code. None has audited what the product TELLS the farmer** —
+  and `user-guide.md` ships as in-app help.
+
+---
+
 ## 2n. The Phase 2 build list is empty (2026-08-03, fourteenth session) — UNREVIEWED
 
 **A BUILD session.** Four commits. `pnpm verify` green after each: **84 files / 934 tests** (was
@@ -1225,7 +1324,7 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 | G1 | ✅ **CLOSED 2026-07-26 (fifth session), both halves.** `scripts/test-trace.mjs` exists and is wired as `pnpm test:trace`. It parses the FR catalogue and greps FR IDs out of `describe`/`it`/`test` TITLES. **It is REPORT-ONLY and exits 0** (`--strict` exits 1; nothing in CI passes it) — the baseline had never been measured and it turns out to be **40 of 146 named**, so a strict gate would have failed on 91 P1/P2 requirements that are mostly unbuilt phases 3–7. It proves a test NAMES an FR, never that it exercises one. The claim was also wider than filed: `test:tenancy`, `test:e2e:offline`, `test:unit`, `test:integration`, `test:perf` and `test:coverage` are all claimed by `testing-strategy.md` and none exists. All four documents corrected — `functional-requirements.md`, `SRS.md`, `testing-strategy.md`, `ci-cd.md` |
 | G2 | ✅ **CLOSED 2026-07-26 (fifth session).** Phase 3's checklist is written: 3a–3i mapped 1:1 from the roadmap, with the two external blockers (§2.4 legal review, §2.5 Gazette) raised to explicit ⛔ lines at the top instead of being implied, 3a flagged as a standalone session and review unit, and 3d–3e flagged as many small sessions with mandatory human review of every diff and **never batched**. Phases 4–7 remain deliberately unwritten |
 | G3 | **Equipment register (FR-504) has no table.** `vehicles` carries a comment to add `equipment_id` additively. Phase 4i |
-| G4 | **`user-guide.md` and `ux-design-system.md` not updated** for the 2026-07-25 scope, nor for the fourteen screens added since. Now also missing `/animals/groups/count` and Settings → Security. The **grievance flow needs real UX care** when it lands |
+| G4 | ◐ **HALF CLOSED 2026-08-04 (§2p).** `user-guide.md` is updated for every Phase 2 screen that exists — counted flocks, `/attention`, `/not-sent`, fence walking, breeding, tags, births/weaning/moves/losses, rainfall, Settings → Security — and **three false claims were removed, one of them a food-safety claim**: it told farmers they could override the withholding block "with a reason" (no override exists anywhere in the product), that they could photograph an animal for the police (B2 is unbuilt), and that Werf asks which of two conflicting records is right (no such screen). It also carries an "as at today" block, since it describes Phases 3–6 in the present tense. ⛔ **`ux-design-system.md` (480 lines) is UNTOUCHED and still stale for the same fourteen-plus screens — that is the open half.** The **grievance flow needs real UX care** when it lands (Phase 3) |
 | G5 | ✅ **CLOSED 2026-07-26 (fifth session).** The draft PR opened and CI ran — both lanes green on the first ever run (§4 A4). The underlying fact still holds and is worth remembering: CI does not run on a feature branch with no PR, so "green locally" stays unproven until one exists. Open the PR as a draft EARLY next phase rather than at the end; it costs nothing and it is the only way to find out |
 
 ---
@@ -1253,64 +1352,71 @@ empty. What fails is **"the fixes are unreviewed"** — plus CI-green-on-`main`,
 which is unmeetable before merge and always was.
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  ⭐ THE BUILD LIST IS EMPTY. There is no longer a slice to do INSTEAD of  ║
-║  asking for the seventh pass — that was the honest answer for the last    ║
-║  three sessions and it is not available any more.                        ║
+║  ⭐ THE BUILD LIST IS STILL EMPTY, AND THE SEVENTH PASS HAS NOW RUN.      ║
+║  What stands between this branch and merge-ready is the EIGHTH pass over  ║
+║  the seventh's own fix commit `34e0685` plus the sixteenth session's      ║
+║  docs work.                                                              ║
 ║                                                                          ║
-║  Six passes ran; all six said NOT APPROVABLE; every one found a real      ║
-║  defect inside the previous pass's fixes. This session added two          ║
-║  REGULATED commits on top of the sixth pass's unreviewed fixes. Do not    ║
-║  read "everything is green" as "clean" — read it as "the seventh pass     ║
-║  has somewhere obvious to look, and nothing is competing for the time".   ║
+║  Seven passes ran; all seven said NOT APPROVABLE; every one found a real  ║
+║  defect inside the previous pass's fixes. `34e0685` is ONE commit fixing  ║
+║  four SEV-2s in food-safety and capture-loss code, and it is unreviewed.  ║
+║  Do not read "everything is green" as "clean" — read it as "the eighth    ║
+║  pass has somewhere obvious to look".                                    ║
+║                                                                          ║
+║  ⚠️ AND NOTE WHAT §2p FOUND: seven passes have audited CODE. Nothing has  ║
+║  ever audited what the product TELLS THE FARMER, and when someone         ║
+║  finally looked, the user guide was promising an override of the meat     ║
+║  withholding block that has never existed. `user-guide.md` ships as       ║
+║  in-app help. Point the eighth pass at the docs as well as the diff.      ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. THE SEVENTH PASS. Range `beb3dc9..HEAD`   §2l, §2n   ⭐ JP's call, and it
-     — the sixth pass's fixes AND this                     is now the ONLY
-     session's four commits. It is the ONLY                thing left. Six for
-     thing between here and merge-ready                    six
-  2. PUSH and watch CI. Four commits have      §1          a session can do it,
-     never been through a lane, and §2j's                  and should do it
-     rule is that e2e can only be proved by                FIRST — it is free
-     pushing                                               signal
+  1. THE EIGHTH PASS. Range `b20fdf9..HEAD`    §2o, §2p   ⭐ JP's call, and it
+     at minimum — better, `beb3dc9..HEAD`,                 is the ONLY thing
+     which re-covers the seventh pass's own                left. Seven for
+     fixes. It is the ONLY thing between                   seven
+     here and merge-ready
+  2. §4 G4's OTHER HALF — `ux-design-system.md` §2p        a session can do it
+     is still stale for 14+ screens. Not                   without JP. The
+     regulated, genuinely unblocked                        only build-ish work
   3. §2.4 labour-law review — BOOK (external)  §2.4        gates Phase 3 DEPLOY
   4. §2.5 Gazette figures — VERIFY IN A BATCH  §2.5        gates Phase 3 DEPLOY
 
-  ✅ ALL JP DECISIONS CLOSED. ✅ Working tree clean, tooling committed.
+  ✅ ALL JP DECISIONS CLOSED. ✅ Working tree clean; branch IN SYNC with origin.
 
 NEXT SESSION, IN ORDER:
 
-  A. RECONCILE `git status` AND THE SHAs against §1, as always.
+  A. RECONCILE `git status` AND THE SHAs against §1, as always — and now the
+     FIGURES too (§2p: §1's test count and bundle size had drifted from §2o in
+     the same file).
 
-  B. The honest options, in order — and note (ii) is no longer available:
-       (i)  ASK FOR THE SEVENTH PASS over `beb3dc9..HEAD`, read its output
-            DIRECTLY (not a summary), fix what it finds. This is the critical
-            path and NOTHING ELSE SHORTENS IT ANY MORE.
-      (ii)  ~~Build the next Phase 2 slice~~ — there isn't one. Everything left
-            in §4 (B2 photos, B4 vaccination programme, B5 FR-602 window) is
-            blocked on infrastructure or on reference data that does not exist,
-            and building half of any of them is the thing this repo forbids.
-      (iii) START PHASE 3 instead of finishing Phase 2 — a real option, but it
+  B. The honest options, in order:
+       (i)  ASK FOR THE EIGHTH PASS, read its output DIRECTLY (not a summary),
+            fix what it finds. This is the critical path and nothing shortens
+            it. ⭐ Ask it to cover the DOCUMENTS too — §2p is the evidence that
+            the doc tier has never been audited and was wrong in six places.
+      (ii)  Finish §4 G4 — `ux-design-system.md`. Unblocked, not regulated,
+            and the user-guide half is done (§2p). This is the only remaining
+            work a session can do without JP.
+     (iii)  ~~Build the next Phase 2 slice~~ — there still isn't one. B2
+            photos, B4 vaccination programme and B5 FR-602 window are all
+            blocked on infrastructure or on reference data that does not
+            exist, and half-building any of them is what this repo forbids.
+      (iv)  START PHASE 3 instead of finishing Phase 2 — a real option, but it
             is JP's call and it stacks unreviewed regulated code on unreviewed
             regulated code. §6 says Phase 3 is UNBLOCKED to build; it does not
             say Phase 2 may be left unreviewed. Recommend against.
-      (iv)  §4 G4's stale docs (`user-guide.md`, `ux-design-system.md`), which
-            are genuinely unblocked and genuinely not regulated. This is the
-            only remaining work a session can do without JP.
 
-  ⭐ EXPECT THE SEVENTH PASS TO FIND DEFECTS IN THE FIXES IT REVIEWS. Six for
-  six is the measured base rate here. This session's own additions widened the
-  outbox hold mechanism for the THIRD time — each of the previous two widenings
-  exposed the next reader that had been left standing, and there is no reason
-  to think the third is where that stops.
+  ⭐ EXPECT THE EIGHTH PASS TO FIND DEFECTS IN THE FIXES IT REVIEWS. Seven for
+  seven is the measured base rate. `34e0685` widened `collectMobSubjects` and
+  reworked the tally capture path and the outbox order — the outbox hold
+  mechanism has now been widened FOUR times, and each previous widening
+  exposed the next reader that had been left standing.
 
   SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
-  code, then keep it — and check the CLAIM as well as the code. This session
-  reverted each change in turn; the outbox test went red for a reason that did
-  NOT match the mechanism, and chasing that rather than banking the red found a
-  fixture id reused across two captures. A red you cannot explain is not
-  evidence yet.
+  code, then keep it — and check the CLAIM as well as the code. A red you
+  cannot explain is not evidence yet.
 
 Phase 1 has NO open gaps. **Phase 3 is UNBLOCKED to BUILD under §6** — the
 mechanism is built with placeholder figures; §2.4/§2.5 gate the DEPLOY, not the

@@ -81,8 +81,11 @@ This phase proves the two riskiest bets in the product. If offline-first does no
 **Gate:**
 ```
 ✓ pnpm verify
-✓ pnpm test:e2e:offline          ← write offline, reboot, reopen, record present
-✓ pnpm test:tenancy              ← sync rules and RLS agree, per table
+✓ pnpm test:e2e                  ← incl. the offline path: write offline, reboot,
+                                   reopen, record present (apps/web/e2e/offline-capture.spec.ts)
+                                 ⚠️ `pnpm verify` does NOT run e2e. Push and watch CI.
+✓ (tenancy)                      ← sync rules and RLS agree, per table. Runs inside
+                                   `pnpm test` as packages/sync/test/tenancy.spec.ts
 ✓ Lighthouse: perf ≥90, a11y 100
 ✓ Bundle ≤ 250KB gz
 ```

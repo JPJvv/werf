@@ -255,7 +255,10 @@ CREATE TABLE mobs (
   name          text NOT NULL,
   species       text NOT NULL,
   land_unit_id  uuid REFERENCES land_units(id),
-  head_count    integer,                 -- for group-only management (FR-102)
+  head_count    integer,                 -- for group-only management (FR-102). DENORMALISED:
+                                         -- the current value re-derived from the `tally` log.
+  initial_head_count integer,            -- migration 0018. ⛔ The IMMUTABLE baseline the tally
+                                         -- log folds over. Never updated after creation.
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz
@@ -275,7 +278,14 @@ CREATE TYPE event_type AS ENUM (
   'birth','death','weight','treatment','vaccination','dip','move','sale','purchase',
   'weaning','mating','pregnancy_test','condition_score','missing','recovered',
   'planting','spray','fertiliser','irrigation','harvest','scouting','soil_test',
-  'attendance','piece_work','task_complete'
+  'attendance','piece_work','task_complete',
+  -- ⭐ Appended by migration, never inserted mid-list. `ALTER TYPE … ADD VALUE` rewrites nothing
+  -- and rehashes nothing; reordering would take an exclusive lock across every farm's partition.
+  'rainfall',        -- migration 0014 (FR-705). The exception that proves the "enumerate it all
+                     -- up front" rule: it was not foreseen, so it cost a migration.
+  'tally',           -- migration 0017 (FR-102). A group-only mob's head count changes by an
+                     -- append-only DELTA or an absolute RECOUNT — never by editing head_count.
+  'boundary_walk'    -- migration 0020 (FR-150). A camp's fence as walked on the ground.
 );
 
 CREATE TABLE events (
@@ -565,6 +575,32 @@ CREATE TABLE veterinary_products (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+-- Migration 0019 (FR-120). Reference data for the breeding projection, and the ONE table on this
+-- page that is global rather than farm-scoped — gestation is biology, not tenancy, so it carries
+-- no `farm_id`. It is safe because it is read-only to the app: `GRANT SELECT` only, RLS FORCEd
+-- with a `USING (true)` read policy, and classified `reference-global` in the sync rules. The
+-- seeding INSERT works because the migration role is BYPASSRLS.
+CREATE TABLE species_gestation (
+  id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  species       text NOT NULL,           -- UNIQUE index; matches animals.species
+  gestation_days integer NOT NULL,       -- CHECK > 0 AND <= 730
+  source        text NOT NULL,           -- ⭐ the citation, not a comment. Merck Veterinary
+                                         -- Manual species means, with the range stated.
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+```
+
+⛔ **A species with no row here refuses the PROJECTION and keeps the FACT.** Seeded for cattle,
+sheep, goat and pig only. `poultry` incubates rather than gestates, and `game` spans a hundred days
+between a springbok and a kudu — so there is no honest mean to store. The server records the
+pregnancy diagnosis with a `warning` and no due date rather than falling back to a nearby species:
+that fallback is the same defect class as hardcoding a regulated number. The screen says plainly why
+no date could be worked out. ⚠️ It is also absent from the truncate list in `packages/db/src/testing.ts`
+**on purpose** — the migration seeds it and no farm writes it, so "completing" that list would empty
+the table and redden every projection for a reason that looks nothing like the cause.
+
+```sql
 CREATE TABLE compliance_checklists (
   id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
   farm_id       uuid NOT NULL REFERENCES farms(id),

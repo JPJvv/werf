@@ -3,9 +3,14 @@
 **CI is where `pnpm verify` becomes non-negotiable.** Everything in the [Claude Code playbook](claude-code-playbook.md) depends on the gate being real — a check that can be skipped is not a gate, it is a suggestion, and Claude Code will eventually find the skip.
 
 > **⚠️ The workflows below are the TARGET design, not what `.github/workflows/ci.yml` contains today.**
-> As at the end of Phase 2 CI has **two** lanes — `pnpm verify` and `pnpm test:e2e` — and neither has
-> ever run, because CI does not run on feature branches and no PR has been opened yet (STATUS.md §4 G5).
-> In particular the `trace` job below does not exist, and `pnpm test:trace` is **report-only** and
+> As at the end of Phase 2 CI has **two** lanes — `pnpm verify` and `pnpm test:e2e`. Both have run
+> many times and both are green; draft PR #3 opened 2026-07-26 and CI has run on every push since
+> (STATUS.md §4 A4, G5 — G5 is CLOSED). The underlying fact that G5 recorded still holds and is worth
+> keeping: **CI does not run on a feature branch with no PR**, so "green locally" stays unproven
+> until one exists — open the draft PR early in a phase, not at the end.
+> In particular the `tenancy` and `trace` jobs below do not exist as separate lanes
+> (`pnpm test:tenancy` is not a script at all; the check itself runs inside `pnpm test` as
+> `packages/sync/test/tenancy.spec.ts`), and `pnpm test:trace` is **report-only** and
 > exits 0 regardless; see [testing-strategy.md](testing-strategy.md). Treat every job here as a plan
 > until it is in the YAML, and when you add one, delete the corresponding part of this warning.
 

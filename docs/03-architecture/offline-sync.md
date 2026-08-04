@@ -135,7 +135,31 @@ stateDiagram-v2
 
 1. A queued write survives app close, browser kill, and device reboot. Tested by chaos test, not by hope.
 2. A queued write is **never** discarded by the system. Only a human, explicitly, after review.
-3. The queue drains in `occurred_at` order.
+3. ⛔ **The queue does NOT drain in `occurred_at` order, and must not.** It drains in an order
+   that puts the EVIDENCE a server-side guard reads ahead of the thing that guard judges. This
+   invariant used to read "drains in `occurred_at` order"; that was never what the code did and it
+   is the shape of a SEV-1 this repo has already shipped and fixed. The rules, in the order the
+   flush applies them (`apps/web/src/sync/Outbox.tsx`):
+   1. **The foreign-key graph first** — a row cannot insert before the row it references.
+   2. **Evidence before the act it is judged against.** A dose creates a withholding; a move
+      decides which mob an animal stood in. Both must reach the server BEFORE any disposal
+      (`sale`, `slaughter`) that the server's withdrawal guard will judge against them. The guard
+      is a point-in-time query and cannot refuse what it has not received: dip a flock Monday
+      offline, tally forty to the abattoir Tuesday, reconnect Friday, and an `occurred_at` drain
+      posts the tally first and gets a **201** for meat inside an active withholding.
+   3. **Capture order for everything else, because capture order is CAUSAL.** It is what makes a
+      departure precede its own arrival and an increase precede the departure it funds. The sort
+      is stable, so what is left is the farmer's own order.
+   4. ⛔ **A departure is pulled forward only to just before its OWN arrival — never to the front.**
+      Hoisting every departure breaks a chained move A→B→C: `out_B` posts before `in_B` has landed,
+      the server sees no head in B, and refuses a valid capture. That refusal is worse than a
+      retry, because `/not-sent` tells the farmer to record it again and a recount RESETS.
+   5. **A refused or held capture taints what depends on it.** Evidence declares `provides`,
+      disposals declare `guardedBy`; a disposal whose evidence was set aside this round is HELD
+      (pending, not refused), so it cannot reach a server that never heard of the withholding.
+
+   `occurred_at` remains what REPORTS are ordered by, and the total order for any projection is
+   `(occurred_at, id)` on both sides. Neither is the send order.
 4. A dropped connection resumes from the last acknowledged checkpoint. **Never restarts.** On EDGE, a restart means it never completes.
 5. **An expired refresh token holds the queue; it does not clear it.** (UC-050 A2.1)
 6. The queue is never evicted for storage pressure. Degrade the read set instead.

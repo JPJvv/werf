@@ -331,71 +331,95 @@ export type RecordDipRequest = z.infer<typeof recordDipRequestSchema>;
  * never sent — a client that could send a negative birth could corrupt a count in a way no later
  * read would catch.
  */
-export const recordMobTallyRequestSchema = z.object({
-  /** Client-generated UUIDv7 for the event row. */
-  id: uuidSchema,
-  farmId: uuidSchema,
-  /** The mob whose head count is changing. Required — a tally with no mob has no subject. */
-  mobId: uuidSchema,
-  /** When it happened on the farm, not when it was captured. Reports read this. */
-  occurredAt: timestampSchema,
-  reason: tallyReasonSchema,
-  /**
-   * How many. Non-negative because a recount of an emptied camp is legitimately zero; a `death` of
-   * zero is not, and the `tally` payload's own rule refuses it once the sign has been applied.
-   */
-  count: z.number().int().nonnegative(),
-  /** Who the animals went to or came from. Meaningful on a sale or a purchase. */
-  counterparty: z.string().min(1).optional(),
-  /** Money as integer cents, never a float. The price of the whole lot, not per head. */
-  priceCents: moneySchema.nonnegative().optional(),
-  /**
-   * The other group in a mob-to-mob move. Required on `transfer_in` / `transfer_out` and refused
-   * on every other reason. Checked to be on THIS farm server-side, like every client-settable
-   * reference — a transfer naming a neighbour's mob would carry a withholding across a boundary
-   * that does not exist.
-   */
-  counterpartMobId: uuidSchema.optional(),
-  /**
-   * ⭐ The withdrawal the SELLER declared, on a `purchase` only, and it is the farmer's to send —
-   * unlike every other regulated date in this product, which the server computes.
-   *
-   * That asymmetry is the point rather than an oversight. A treatment's clear date is derived from
-   * a registered product and a treatment day the server can see; this one is a thing a seller SAID
-   * about an animal nobody here watched being dosed. There is no reference row to resolve it from,
-   * so the only honest options are to record what was said or to record nothing. Absent means
-   * UNKNOWN HISTORY, and unknown is a legitimate answer for bought-in stock — inventing a period
-   * would be the fabricated-regulated-number defect with extra steps.
-   */
-  declaredWithdrawalUntil: dateSchema.optional(),
-  /**
-   * ⭐ Ties the two halves of one group-to-group move together. A batch id on a NON-transfer reason
-   * is refused by `recordMobTally` on both sides; the converse — that a transfer half must carry one
-   * — is enforced only on the CAPTURING DEVICE (`useRecordTallies`), because that is the only place
-   * it is knowable.
-   *
-   * ⛔ KNOWN GAP, stated rather than implied. The server cannot verify a pair: the halves arrive as
-   * separate requests, possibly days apart, and nothing in the second identifies the first. So an
-   * UNLINKED half, or an ORPHANED one whose sibling was refused or never sent, is accepted and is
-   * not detectable server-side. Nothing reads `batch_id` anywhere yet.
-   *
-   * The consequence is a count that cannot be reconciled: head leave the source and arrive nowhere,
-   * or arrive somewhere having left nowhere. The client outbox closes the common case — the halves
-   * are one act on one device, the departure is sent first, and a refused departure holds the
-   * arrival — but that is a device guarantee, not a boundary one. Closing it properly means either
-   * accepting the pair as ONE request (atomic server-side) or an orphan-half reader on `/attention`,
-   * which is where a count that cannot be reconciled belongs. Neither is built.
-   *
-   * A tally has one subject mob and one delta, so a move must be written as two events. This is the
-   * only thing that says they are one action: without it a `transfer_in` can land after its
-   * `transfer_out` was refused, and the destination gains head that never left anywhere.
-   */
-  batchId: uuidSchema.nullable().default(null),
-  /** Herd attribution (FR-113). Derived from the mob server-side; this is the fallback. */
-  enterpriseId: uuidSchema.nullable().default(null),
-  locationGeojson: geoJsonStringSchema.nullable().default(null),
-  notes: z.string().min(1).nullable().default(null),
-});
+export const recordMobTallyRequestSchema = z
+  .object({
+    /** Client-generated UUIDv7 for the event row. */
+    id: uuidSchema,
+    farmId: uuidSchema,
+    /** The mob whose head count is changing. Required — a tally with no mob has no subject. */
+    mobId: uuidSchema,
+    /** When it happened on the farm, not when it was captured. Reports read this. */
+    occurredAt: timestampSchema,
+    reason: tallyReasonSchema,
+    /**
+     * How many. Non-negative because a recount of an emptied camp is legitimately zero; a `death` of
+     * zero is not, and the `tally` payload's own rule refuses it once the sign has been applied.
+     */
+    count: z.number().int().nonnegative(),
+    /** Who the animals went to or came from. Meaningful on a sale or a purchase. */
+    counterparty: z.string().min(1).optional(),
+    /** Money as integer cents, never a float. The price of the whole lot, not per head. */
+    priceCents: moneySchema.nonnegative().optional(),
+    /**
+     * The other group in a mob-to-mob move. Required on `transfer_in` / `transfer_out` and refused
+     * on every other reason. Checked to be on THIS farm server-side, like every client-settable
+     * reference — a transfer naming a neighbour's mob would carry a withholding across a boundary
+     * that does not exist.
+     */
+    counterpartMobId: uuidSchema.optional(),
+    /**
+     * ⭐ The withdrawal the SELLER declared, on a `purchase` only, and it is the farmer's to send —
+     * unlike every other regulated date in this product, which the server computes.
+     *
+     * That asymmetry is the point rather than an oversight. A treatment's clear date is derived from
+     * a registered product and a treatment day the server can see; this one is a thing a seller SAID
+     * about an animal nobody here watched being dosed. There is no reference row to resolve it from,
+     * so the only honest options are to record what was said or to record nothing. Absent means
+     * UNKNOWN HISTORY, and unknown is a legitimate answer for bought-in stock — inventing a period
+     * would be the fabricated-regulated-number defect with extra steps.
+     */
+    declaredWithdrawalUntil: dateSchema.optional(),
+    /**
+     * ⭐ Ties the two halves of one group-to-group move together. A batch id on a NON-transfer reason
+     * is refused by `recordMobTally` on both sides; the converse — that a transfer half must carry one
+     * — is enforced only on the CAPTURING DEVICE (`useRecordTallies`), because that is the only place
+     * it is knowable.
+     *
+     * ⛔ KNOWN GAP, stated rather than implied. The server cannot verify a pair: the halves arrive as
+     * separate requests, possibly days apart, and nothing in the second identifies the first. So an
+     * UNLINKED half, or an ORPHANED one whose sibling was refused or never sent, is accepted and is
+     * not detectable server-side. Nothing reads `batch_id` anywhere yet.
+     *
+     * The consequence is a count that cannot be reconciled: head leave the source and arrive nowhere,
+     * or arrive somewhere having left nowhere. The client outbox closes the common case — the halves
+     * are one act on one device, the departure is sent first, and a refused departure holds the
+     * arrival — but that is a device guarantee, not a boundary one. Closing it properly means either
+     * accepting the pair as ONE request (atomic server-side) or an orphan-half reader on `/attention`,
+     * which is where a count that cannot be reconciled belongs. Neither is built.
+     *
+     * A tally has one subject mob and one delta, so a move must be written as two events. This is the
+     * only thing that says they are one action: without it a `transfer_in` can land after its
+     * `transfer_out` was refused, and the destination gains head that never left anywhere.
+     */
+    batchId: uuidSchema.nullable().default(null),
+    /** Herd attribution (FR-113). Derived from the mob server-side; this is the fallback. */
+    enterpriseId: uuidSchema.nullable().default(null),
+    locationGeojson: geoJsonStringSchema.nullable().default(null),
+    notes: z.string().min(1).nullable().default(null),
+  })
+  .superRefine((request, ctx) => {
+    // ⛔ Mirrors `tallyPayloadSchema`'s rule at the WIRE, so the refusal names the offending field
+    // instead of surfacing as a generic "Invalid tally payload" from the domain one layer in. The
+    // rule itself is stated once, where it is enforced on both sides — see `events.ts`. The reason
+    // it matters most is `theft`: a named third party on a theft record is banned outright by
+    // `.claude/rules/domain.md`.
+    const isTrade = request.reason === 'sale' || request.reason === 'purchase';
+    if (isTrade) return;
+    if (request.counterparty !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['counterparty'],
+        message: 'Only a sale or a purchase names the other party',
+      });
+    }
+    if (request.priceCents !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['priceCents'],
+        message: 'Only a sale or a purchase carries a price',
+      });
+    }
+  });
 export type RecordMobTallyRequest = z.infer<typeof recordMobTallyRequestSchema>;
 
 /**

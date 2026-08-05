@@ -284,7 +284,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     render(<App />);
 
     // The dose is what needs the farmer; the tally is not refused, just still waiting.
-    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
 
     const paths = postedPaths(fetchMock);
     // The dose was attempted and refused; the tally was HELD behind it and never posted this round.
@@ -405,7 +405,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
-    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
 
     const paths = postedPaths(fetchMock);
     // The move landed; the dip was refused; the tally is HELD because the ox carried the dip camp's
@@ -488,7 +488,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
-    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
 
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(TALLY_ID);
@@ -592,7 +592,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     render(<App />);
     // One REFUSAL — the departure. The other two are held, which is pending and not the farmer's
     // problem to solve: nothing was rejected about them.
-    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
 
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(OUT_ID);
@@ -725,7 +725,13 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     render(<App />);
     // One REFUSAL — `out_A`. The three behind it are held, which is pending, not the farmer's fault.
-    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+    //
+    // ⛔ THE SECOND HALF OF THIS LINE IS THE NINTH PASS'S FIX AND IT USED TO BE ABSENT. The strip
+    // returned early on the refusal count, so the pending total vanished and this exact scenario —
+    // one refusal, three captures stranded behind it — read as "1 not sent" with the other three
+    // counted nowhere a farmer could see. Held is a third state; a hold nobody can see is a lost
+    // record. The count needing attention is still first, because it is the only one that is a task.
+    expect(await screen.findByText('1 not sent — needs your attention · 3 to send')).toBeTruthy();
 
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(OUT_A);
@@ -738,6 +744,160 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     // And nothing was dropped — the queue keeps every capture for the next round.
     const stored = window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '';
     for (const id of [OUT_A, IN_B, OUT_B, IN_C]) expect(stored).toContain(id);
+  });
+
+  it('⭐⭐ SENDS a death the mob can fund, even though an unrelated increase on it was refused', async () => {
+    // ⛔ THE NINTH PASS'S SEV-2, AND THE BOUND THE EIGHTH PASS HAD NO TEST FOR. Two agents found it
+    // independently; §2q claimed "all 14 pre-existing outbox tests still pass, which is the check
+    // that no false hold crept in", and not one of those tests refused an INCREASE — so the check
+    // was structurally incapable of detecting this. An assertion that cannot fail, one level up.
+    //
+    // The first fix made a decrease `guardedBy: ['head:<mob>']` and every increase provide it, so a
+    // decrease was held whenever ANY increase on the mob was tainted — related or not. Here the mob
+    // has 100 head standing on the server. The purchase of 10 is refused on its merits. The three
+    // deaths need none of those 10: the server folds 100, takes 3, and returns 201.
+    //
+    // Held, they would never move. The refusal is permanent by this file's own definition, there is
+    // no edit or discard path for a refused capture, and a held item appeared in no surface — so
+    // three dead ewes would sit on the phone for ever while the strip said "1 not sent". That is a
+    // capture silently lost, which is the same harm as the false pass the hold was added to stop.
+    const M = '0190f3a0-0000-7000-8000-0000000000c1';
+    const BOUGHT = '0190f3a0-0000-7000-8000-0000000000c2';
+    const DIED = '0190f3a0-0000-7000-8000-0000000000c3';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: M,
+          farmId: FARM_ID,
+          name: 'Home camp',
+          species: 'sheep',
+          headCount: 107,
+          // ⭐ The mob is ALREADY on the server with 100 head — the baseline the server folds from.
+          initialHeadCount: 100,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: BOUGHT,
+          farmId: FARM_ID,
+          mobId: M,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'purchase',
+          count: 10,
+          delta: 10,
+        },
+        {
+          id: DIED,
+          farmId: FARM_ID,
+          mobId: M,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'death',
+          count: 3,
+          delta: -3,
+        },
+      ]),
+    );
+    // The mob row is already on the server, so only the two tallies are in flight. Refuse the
+    // purchase alone, on its own id, so nothing else is caught by the same rule.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      return body.includes(BOUGHT)
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    // Deliberately a REGEX, and matched loosely on purpose: the exact wording differs between the
+    // held and the sent case, and the strip's phrasing is the SIBLING test's subject, not this
+    // one's. Waiting on the exact string here made the red land on the wording instead of on the
+    // assertion below — a test whose failure names the wrong cause is most of the way to a test
+    // that cannot fail.
+    expect(await screen.findByText(/not sent — needs your attention/)).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(BOUGHT);
+    // ⭐ THE ASSERTION THIS TEST EXISTS FOR. The death is funded by head the server already holds.
+    expect(sent).toContain(DIED);
+  });
+
+  it('⭐ still HOLDS a decrease the mob genuinely cannot fund without the refused increase', async () => {
+    // The other side of the bound, and the reason the fix is arithmetic rather than a deletion. Same
+    // shape as above with one number changed: the camp holds 2 head on the server, not 100. Now the
+    // three deaths DO depend on the refused purchase, the server would fold 2, take 3, and refuse
+    // with "There are 2 head on file in this group… count the group and record what you find" —
+    // whose instruction, followed, RESETS the count and corrupts it permanently.
+    //
+    // Same guard, opposite answer, decided by the same fold the server runs. A test that only ever
+    // asserted the holding direction is what let the over-broad version look correct.
+    const M = '0190f3a0-0000-7000-8000-0000000000c5';
+    const BOUGHT = '0190f3a0-0000-7000-8000-0000000000c6';
+    const DIED = '0190f3a0-0000-7000-8000-0000000000c7';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: M,
+          farmId: FARM_ID,
+          name: 'Small camp',
+          species: 'sheep',
+          headCount: 9,
+          initialHeadCount: 2,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: BOUGHT,
+          farmId: FARM_ID,
+          mobId: M,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'purchase',
+          count: 10,
+          delta: 10,
+        },
+        {
+          id: DIED,
+          farmId: FARM_ID,
+          mobId: M,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'death',
+          count: 3,
+          delta: -3,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      return body.includes(BOUGHT)
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    // One refused, one held — and the held one is COUNTED, which is the visibility half of the fix.
+    expect(await screen.findByText('1 not sent — needs your attention · 1 to send')).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(BOUGHT);
+    expect(sent).not.toContain(DIED);
   });
 
   it('⭐ sends a CHAINED move A→B→C in one round, without a false refusal on the second leg', async () => {

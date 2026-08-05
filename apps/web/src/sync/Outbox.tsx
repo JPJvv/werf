@@ -35,6 +35,9 @@ import {
   type ReactNode,
 } from 'react';
 import { schemas } from '@werf/core';
+// The SAME fold the server runs, which is the point: the outbox asks whether a decrease would
+// underflow using the projection `deriveHeadCount` uses, not an approximation of it.
+import { projectHeadCount } from '@werf/domain';
 import { createSentLog, type SentLog } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
@@ -128,6 +131,16 @@ function replaceIfChanged(
   return next;
 }
 
+/** The same identity-preserving swap for the held set: a round that changes nothing re-renders
+ *  nothing. Compared by membership, which is all a set carries. */
+function replaceSetIfChanged(
+  previous: ReadonlySet<string>,
+  next: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (previous.size === next.size && [...next].every((id) => previous.has(id))) return previous;
+  return next;
+}
+
 /**
  * What KIND of thing a queued capture is, in the farmer's terms rather than the table's.
  *
@@ -162,18 +175,41 @@ interface FlushItem {
   readonly detail: string | null;
   readonly send: (token: string) => Promise<void>;
   /**
-   * The subjects (animal ids, mob ids) this EVIDENCE establishes for a server-side guard: a move
-   * settles where an animal is, a dose settles what a mob or animal was given. If this item is set
-   * aside on a refusal, every later disposal that reads one of these subjects must be HELD, or the
-   * act lands without the evidence and the guard returns 201 for meat inside a withholding.
+   * The subjects this item ESTABLISHES for something later in the queue: a move settles where an
+   * animal is, a dose settles what a mob or animal was given, a departure settles that head left,
+   * a mob row settles that the mob exists at all. If this item is set aside on a refusal — or held
+   * — every later item that reads one of these subjects must be HELD too, or the act lands without
+   * the thing it depended on.
+   *
+   * ⭐ Not only "evidence a server-side guard reads", and not only animal and mob ids. It also
+   * carries batch ids and `mobrow:` subjects, and the failure mode differs per namespace: a
+   * missing dose returns 201 for meat inside a withholding, a missing arrival corrupts a head
+   * count, a missing mob row earns a 404 per capture behind it.
    */
   readonly provides?: readonly string[];
   /**
-   * The subjects a DISPOSAL is judged against. When one of them was tainted by a refused evidence
+   * The subjects this item is judged against. When one of them was tainted by a refused or held
    * item earlier in the same round, this item is held back — left pending, not refused — so the
-   * next round can send it once the evidence lands or the farmer resolves the refusal.
+   * next round can send it once the dependency lands or the farmer resolves the refusal.
+   *
+   * ⭐ No longer "the subjects a DISPOSAL is judged against". A `sale` is judged against a
+   * withholding; a `transfer_in` is judged against its own departure; every tally is judged
+   * against whether the server has the mob row at all. The union is ordinary now.
    */
   readonly guardedBy?: readonly string[];
+  /**
+   * ⭐ Whether this capture would take out head the server does not yet have — asked as ARITHMETIC
+   * rather than as a subject, because that is what the server asks.
+   *
+   * `landed(id)` answers "will the server hold this capture when this item is sent": everything
+   * accepted in an earlier round plus everything sent earlier in this one. The item computes the
+   * same fold the server computes, over the same cut, and reports whether it would underflow.
+   *
+   * A subject could only say "something this mob's count depends on did not land", which held
+   * captures the server would have accepted — see the note at the tally's own `guardedBy`. The
+   * question is not whether an increase is missing; it is whether THIS decrease is short.
+   */
+  readonly needsHead?: (landed: (id: string) => boolean) => boolean;
 }
 
 /** A capture the server refused on its merits, with enough to tell the farmer what and why. */
@@ -192,7 +228,13 @@ export interface RefusedCapture {
  *
  * An UNDECLARED purchase is deliberately not one. It claims nothing in either direction: inventing a
  * period would be a fabricated regulated number and assuming clear would be the laundering the
- * declaration exists to stop. It is not evidence, so it holds nothing back.
+ * declaration exists to stop. It carries no WITHHOLDING, so it holds no disposal back.
+ *
+ * ⛔ It said "it is not evidence, so it holds nothing back", which was briefly false: while head
+ * availability was a subject, every increase — undeclared purchases included — provided it and so
+ * held departures back. Head availability is arithmetic again (`needsHead`), so this is true once
+ * more, and stated narrowly this time. A purchase still contributes head to the fold, which is a
+ * different sentence from holding something back.
  */
 const arrivesWithheld = (tally: StoredTally): boolean =>
   tally.reason === 'transfer_in' ||
@@ -308,6 +350,9 @@ const SentCapturesContext = createContext<ReadonlySet<string>>(EMPTY_SENT);
 const EMPTY_REFUSED: readonly RefusedCapture[] = [];
 const RefusedCapturesContext = createContext<readonly RefusedCapture[]>(EMPTY_REFUSED);
 
+/** The captures HELD behind one of those refusals — waiting, not rejected. */
+const HeldCapturesContext = createContext<readonly RefusedCapture[]>(EMPTY_REFUSED);
+
 export interface OutboxProviderProps {
   children: ReactNode;
   factory?: SentLogFactory;
@@ -397,6 +442,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'mob',
           detail: mob.name,
           send: (token) => livestockApi.createMob(mob, token),
+          // The row every tally on this mob is a foreign key to. Refused or held, the tallies
+          // behind it must wait rather than each earning its own 404 for the same one cause.
+          provides: [`mobrow:${mob.id}`],
         });
       }
     }
@@ -482,8 +530,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // it funds, without a pass for either. `sort` is stable, so the order is the farmer's own.
     for (const tally of orderTallies(tallies)) {
       if (!sent.has(tally.id)) {
-        // Only a sale or slaughter tally is judged against a withholding; a death or recount takes
-        // head out without putting meat into the food chain, so it is not held for evidence.
+        // Only a sale or slaughter tally is judged against a WITHHOLDING; a death or recount takes
+        // head out without putting meat into the food chain.
+        //
+        // ⛔ That does not mean a death is never held. It said "so it is not held for evidence" and
+        // that stopped being true the moment a tally could be held for HEAD as well — a death is a
+        // decrease like any other, and a death on a mob the server has not accepted waits for the
+        // mob row. Two different questions, and this flag answers only the food-chain one.
         const intoFoodChain = tally.reason === 'sale' || tally.reason === 'slaughter';
         // Declaring nothing here meant a refused transfer tainted no subject, so the slaughter
         // behind it was sent and the server — which had never received the arrival — returned 201.
@@ -496,39 +549,40 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // batch id and is judged against nothing here — there is no other half to wait for.
         const departs = tally.reason === 'transfer_out';
         const link = tally.batchId;
-        // ⭐ HEAD-COUNT AVAILABILITY IS ITS OWN SUBJECT NAMESPACE, and the prefix is the whole point
-        // rather than a formatting choice.
+        // ⭐⭐ HEAD AVAILABILITY IS AN ARITHMETIC QUESTION, NOT A SUBJECT-GRAPH ONE. This is the
+        // ninth pass's SEV-2 and the reason §7's ceiling clause fired, so it is worth stating why
+        // the shape changed rather than widening once more.
         //
-        // The gap it closes: `transfer_out`, `death` and `theft` declared no `guardedBy` at all, so
-        // they were SENT even when the arrival that funded the head was refused or held. Offline
-        // chain A→B→C: `out_A` is refused (another phone recounted A), `in_B` is correctly held —
-        // and `out_B` went anyway, to a server whose fold of B has no head in it. The refusal that
-        // comes back says *"count the group and record what you find"* and `/not-sent` says
-        // *"Record it again"*, and A RECOUNT RESETS — so following either instruction corrupts B's
-        // count permanently. That is the seventh pass's finding #4 reached through the HOLD path
-        // after its fix closed the ORDERING path, and `offline-sync.md` §5 invariant 3.5 ("a refused
-        // or held capture taints what depends on it") was describing a mechanism that did not exist.
+        // The gap being closed originally: `transfer_out`, `death` and `theft` declared no
+        // `guardedBy` at all, so they were SENT even when the arrival that funded the head was
+        // refused or held. Offline chain A→B→C: `out_A` is refused (another phone recounted A),
+        // `in_B` is correctly held — and `out_B` went anyway, to a server whose fold of B has no
+        // head in it. The refusal that comes back says *"count the group and record what you find"*
+        // and `/not-sent` says *"Record it again"*, and A RECOUNT RESETS, so following either
+        // instruction corrupts B's count permanently.
         //
-        // ⛔ It must NOT be the bare `tally.mobId`. A refused mob dose already taints that id
-        // (`health` provides `nonNull(animalId, mobId)`), and a transfer is deliberately NOT judged
-        // against a withholding — so reusing it would falsely hold every departure out of a dipped
-        // camp, turning a fix for a false pass into a false refusal. Two different questions about
-        // one mob need two subjects.
+        // ⛔ The first fix for that was a `head:<mobId>` SUBJECT, and it held a decrease whenever
+        // ANY increase on the mob was tainted — whether or not this decrease needed it. Mob of 100
+        // on the server, a refused purchase of 10, three unrelated deaths: the deaths were held
+        // every round for ever, the server would have taken them, and a held item appears in no
+        // surface the product has. That is a capture silently lost, which is the same severity as
+        // the false pass it replaced. Two agents found it independently.
         //
-        // Reasons come from the schema, never a local copy: a hand-written sign rule that drifts is
-        // the defect this screen's own `INCREASES` comment already records.
-        const headSubject = `head:${tally.mobId}`;
-        // A recount ADDS availability without being an increase — it is absolute and RESETS the
-        // count, so it establishes head rather than depending on any. It is guarded by nothing for
-        // the same reason: "I walked the camp and counted 297" does not need the log to be right.
-        const addsHead =
-          (schemas.TALLY_INCREASES as readonly string[]).includes(tally.reason) ||
-          tally.reason === 'recount';
-        const removesHead = (schemas.TALLY_DECREASES as readonly string[]).includes(tally.reason);
+        // ⭐ THE FIX IS TO STOP APPROXIMATING AND RUN THE SERVER'S OWN TEST. The server folds the
+        // log it actually holds, strictly before `(occurredAt, id)`, over `initialHeadCount`, and
+        // refuses only when the result would go negative (`deriveHeadCount` → `recordMobTally`).
+        // The device can compute exactly that: it knows the baseline, it holds the whole log, and
+        // the sent-log tells it which rows the server has. So a decrease is held only when the
+        // server genuinely could not accept it yet — same projection, same total order, both sides.
+        // That is this repo's general rule for every aggregate it adds, applied to the hold instead
+        // of re-derived one reader at a time.
+        //
+        // A `recount` needs no special case any more: `projectHeadCount` already RESETS on one, so
+        // a landed recount is simply part of the fold. The old sign literals are gone with it.
+        const consumesHead = (schemas.TALLY_DECREASES as readonly string[]).includes(tally.reason);
         const providesFor = [
           ...(arrives ? [tally.mobId] : []),
           ...(departs && link !== undefined ? [link] : []),
-          ...(addsHead ? [headSubject] : []),
         ];
         const guardedByFor = [
           ...(intoFoodChain
@@ -545,7 +599,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
               )
             : []),
           ...(tally.reason === 'transfer_in' && link !== undefined ? [link] : []),
-          ...(removesHead ? [headSubject] : []),
+          // ⭐ The mob ROW is a foreign key, which genuinely IS a graph question, so it keeps a
+          // subject — in its own namespace, for the reason the head subject should never have
+          // shared one. A tally on a mob the server has not accepted 404s; without this, creating a
+          // camp offline and recording five deaths in it yielded six "needs your attention" rows
+          // for one cause. Nothing provides `mobrow:` for a mob the server already has, so this
+          // cannot hold anything in the ordinary case.
+          `mobrow:${tally.mobId}`,
         ];
         items.push({
           id: tally.id,
@@ -563,9 +623,42 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // is not a thing to leave one type change away.
           ...(providesFor.length > 0 ? { provides: providesFor } : {}),
           // ⛔ A UNION, and no longer "at most one of these two". That claim was true only while a
-          // disposal could not also be a head-count dependant; a `sale` is now BOTH — judged against
-          // a withholding AND against whether the head it removes are actually there.
+          // disposal could not also depend on something else; a `sale` is now BOTH — judged against
+          // a withholding AND against the mob row existing. Head availability left this set in the
+          // ninth pass and is asked as arithmetic below.
           ...(guardedByFor.length > 0 ? { guardedBy: guardedByFor } : {}),
+          // Only a DECREASE can underflow: `recordMobTally` adds the signed delta and refuses a
+          // negative result, so an increase and a recount can never be short of head.
+          ...(consumesHead
+            ? {
+                needsHead: (landed: (id: string) => boolean): boolean => {
+                  const stored = mobs.find((m) => m.id === tally.mobId);
+                  // The mob row itself has not been seen. `mobrow:` above is what holds this;
+                  // underflow is not the question and a guess here would be a second answer.
+                  if (stored === undefined) return false;
+                  const baseline =
+                    stored.initialHeadCount === undefined
+                      ? stored.headCount
+                      : stored.initialHeadCount;
+                  // Managed as individual animals: there is no head count to be short of. The
+                  // server refuses this on its merits, permanently — a 4xx, not a hold.
+                  if (baseline === null) return false;
+                  // ⭐ Strictly BEFORE `(occurredAt, id)` and only what the server actually holds —
+                  // the same cut `deriveHeadCount` applies, with the same total order. A tally
+                  // later in this queue, refused this round, or held this round is not in the
+                  // sent-log and is correctly absent: the server will not have it either.
+                  const before = tallies.filter(
+                    (t) =>
+                      t.mobId === tally.mobId &&
+                      landed(t.id) &&
+                      (t.occurredAt < tally.occurredAt ||
+                        (t.occurredAt === tally.occurredAt && t.id < tally.id)),
+                  );
+                  const head = projectHeadCount(baseline, before);
+                  return head !== null && head - tally.count < 0;
+                },
+              }
+            : {}),
         });
       }
     }
@@ -676,6 +769,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // and on every cold start. One that was only situationally invalid — a move whose destination
   // camp had not been sent yet — heals itself the moment the cause clears.
   const [refused, setRefused] = useState<ReadonlyMap<string, RefusalReason>>(() => new Map());
+  // Captures HELD this round: the server never saw them, because something they depend on did not
+  // land. Held in memory and re-derived every round for the same reason refusals are — a hold is a
+  // fact about one attempt, and it clears itself the moment the cause does.
+  const [held, setHeld] = useState<ReadonlySet<string>>(() => new Set());
 
   // Refs the async flush reads for its latest view, without being re-created on every render.
   const tokenRef = useRef<string | undefined>(session?.accessToken);
@@ -711,6 +808,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     const taint = (item: FlushItem): void => {
       for (const subject of item.provides ?? []) taintedSubjects.add(subject);
     };
+    // ⛔ The ids HELD this round. A hold is not a refusal — the server never saw the capture — but
+    // it is not nothing either, and until the ninth pass it was reported nowhere: `blocked` is
+    // derived from the refusal map, so a held capture appeared in no list, and the strip's status
+    // line returned early on the refusal count so it was not even in the pending total. Three
+    // stranded deaths behind one refused move read to a farmer as "1 not sent".
+    const heldThisRound = new Set<string>();
     try {
       for (const item of items) {
         if (!mountedRef.current) return;
@@ -728,6 +831,17 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // sixth pass's own finding, one round deeper.
         if (item.guardedBy?.some((subject) => taintedSubjects.has(subject))) {
           taint(item);
+          heldThisRound.add(item.id);
+          continue;
+        }
+        // ⭐ The head check runs on the SAME footing as the subject check and taints identically: a
+        // decrease that cannot be funded did not land either, so anything depending on it — the
+        // other half of its move — must wait too. `sentLog` is the live view of what the server
+        // holds, so this asks the server's own question at the moment of sending rather than from a
+        // snapshot taken when the queue was built.
+        if (item.needsHead?.((id) => sentLog.has(id)) === true) {
+          taint(item);
+          heldThisRound.add(item.id);
           continue;
         }
         try {
@@ -789,6 +903,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         setFlushing(false);
         // Committed in `finally` so an aborted round still reports what it managed to learn.
         setRefused((previous) => replaceIfChanged(previous, refusedThisRound));
+        setHeld((previous) => replaceSetIfChanged(previous, heldThisRound));
       }
     }
   }, [online, sentLog, refreshSession]);
@@ -817,6 +932,22 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   );
   const blockedCount = blocked.length;
 
+  // ⭐ The captures WAITING on one of those refusals, derived the same way and for the same reason.
+  // A held capture is not the farmer's fault and must never be listed as needing attention — but
+  // it was previously listed nowhere at all, and the strip's own status line hid it from the
+  // pending total too, so three deaths stranded behind one refused move read as "1 not sent".
+  // "Waiting" is a third state, and the farmer is owed it.
+  const waiting = useMemo<readonly RefusedCapture[]>(
+    () =>
+      queue.flatMap((item) =>
+        held.has(item.id) && !refused.has(item.id)
+          ? [{ id: item.id, kind: item.kind, detail: item.detail, code: 'held', status: 0 }]
+          : [],
+      ),
+    [queue, held, refused],
+  );
+  const waitingCount = waiting.length;
+
   const state = useMemo<SyncState>(() => {
     const status: SyncState['status'] = !online
       ? 'offline'
@@ -827,14 +958,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           : pendingCount > 0
             ? 'pending'
             : 'synced';
-    return { status, pendingCount, blockedCount };
-  }, [online, flushing, errored, pendingCount, blockedCount]);
+    return { status, pendingCount, blockedCount, waitingCount };
+  }, [online, flushing, errored, pendingCount, blockedCount, waitingCount]);
 
   return (
     <OutboxContext.Provider value={state}>
       <SentCapturesContext.Provider value={sent}>
         <RefusedCapturesContext.Provider value={blocked}>
-          {children}
+          <HeldCapturesContext.Provider value={waiting}>{children}</HeldCapturesContext.Provider>
         </RefusedCapturesContext.Provider>
       </SentCapturesContext.Provider>
     </OutboxContext.Provider>
@@ -859,6 +990,18 @@ export function useSentCaptures(): ReadonlySet<string> {
  */
 export function useRefusedCaptures(): readonly RefusedCapture[] {
   return useContext(RefusedCapturesContext);
+}
+
+/**
+ * The captures HELD behind a refusal, in queue order. Empty outside an `OutboxProvider`.
+ *
+ * Separate from `useRefusedCaptures` on purpose: these were never rejected, and listing them as
+ * "needs your attention" would blame the farmer for a capture the server has not even seen. What
+ * they need is the opposite — to be visible while needing nothing, so that resolving the ONE
+ * refusal they wait on is legibly the thing that releases them.
+ */
+export function useHeldCaptures(): readonly RefusedCapture[] {
+  return useContext(HeldCapturesContext);
 }
 
 /**

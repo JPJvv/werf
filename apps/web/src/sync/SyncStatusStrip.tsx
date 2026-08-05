@@ -37,7 +37,17 @@ const STATUS_COLOR: Record<SyncStatus, string> = {
 function statusText(state: SyncState, t: (key: TranslationKey) => string): string {
   // A refusal outranks the generic error: "will retry" is true of a dropped signal and false of a
   // record the server has rejected on its merits, and the farmer needs to know which one they have.
-  if (state.blockedCount > 0) return `${state.blockedCount} ${t('sync.blocked')}`;
+  //
+  // ⛔ IT DOES NOT OUTRANK THE PENDING TOTAL, and returning here as though it did was how held
+  // captures became invisible. `pendingCount` INCLUDES the refused and the held, so dropping the
+  // line meant a farmer with one refused move and three deaths stranded behind it read "1 not
+  // sent" — the three had no surface anywhere in the product. Both numbers, always, when both are
+  // real: what needs them, and what is simply not sent yet.
+  if (state.blockedCount > 0) {
+    const attention = `${state.blockedCount} ${t('sync.blocked')}`;
+    const rest = state.pendingCount - state.blockedCount;
+    return rest > 0 ? `${attention} · ${rest} ${t('sync.toSend')}` : attention;
+  }
   if (state.status === 'pending') return `${state.pendingCount} ${t('sync.toSend')}`;
   return t(STATUS_TEXT_KEY[state.status]);
 }
@@ -57,7 +67,7 @@ export function SyncStatusStrip() {
         <span aria-hidden="true">⌁</span>
         <span>{statusText(state, t)}</span>
       </div>
-      {state.blockedCount > 0 && (
+      {(state.blockedCount > 0 || state.waitingCount > 0) && (
         <Link to="/not-sent" className="shrink-0 text-body text-dam-700">
           {t('sync.blocked.see')}
         </Link>

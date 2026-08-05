@@ -87,6 +87,16 @@ const en = {
   'notSent.intro':
     'Nothing here is lost — all of it is saved on this phone. The server would not take these as they stand. Fix what it names and they go up on their own; there is nothing to press.',
   'notSent.empty': 'Everything has gone up. Nothing needs you.',
+  // NOT phrased as a problem, because it is not one and the farmer has nothing to do about it.
+  // These were invisible until the ninth pass — stranded behind one refusal with no surface
+  // anywhere — and a record nobody can see is a record that is lost.
+  // Blocked because the DAY cannot be read, not because of a withholding we can name. Answers the
+  // next question the way every other refusal in this product does: here is what to do about it.
+  'loss.needDay': 'Tell us what day this happened and we will check the withholding period.',
+  'tally.needDay': 'Tell us what day this happened and we will check the withholding period.',
+  'notSent.waiting.title': 'Waiting on one of the above',
+  'notSent.waiting.intro':
+    'These are saved and fine. Each one needs a record above it to go up first — two halves of the same move, or a group that is not on the server yet. Sort out what is above and these follow on their own.',
   'notSent.back': 'Back to home',
   'notSent.kind.landUnit': 'A camp or block',
   'notSent.kind.boundaryWalk': 'A boundary you walked',
@@ -859,6 +869,11 @@ const af: Record<TranslationKey, string> = {
   'notSent.intro':
     'Niks hier is verlore nie — dit is alles op hierdie foon gestoor. Die bediener wou dit nie so vat nie. Maak reg wat dit noem, dan gaan hulle vanself op; daar is niks om te druk nie.',
   'notSent.empty': 'Alles is opgestuur. Niks benodig jou nie.',
+  'loss.needDay': 'Sê vir ons watter dag dit gebeur het, dan kyk ons na die onttrekkingstydperk.',
+  'tally.needDay': 'Sê vir ons watter dag dit gebeur het, dan kyk ons na die onttrekkingstydperk.',
+  'notSent.waiting.title': 'Wag vir een hierbo',
+  'notSent.waiting.intro':
+    'Hierdie is gestoor en reg. Elkeen wag vir ’n rekord hierbo om eers op te gaan — twee helftes van dieselfde skuif, of ’n groep wat nog nie op die bediener is nie. Maak reg wat hierbo is, dan volg hulle vanself.',
   'notSent.back': 'Terug na tuis',
   'notSent.kind.landUnit': '’n Kamp of blok',
   'notSent.kind.boundaryWalk': '’n Grens wat jy geloop het',

@@ -271,10 +271,15 @@ export function AdjustMobScreen() {
     // the reason-scoping fix missed: their inputs render only under `sale`/`purchase`, so they are
     // reason-scoped by the same test — but they were derived from raw state and the reason buttons
     // did not clear them. Type a buyer and a price under "Sold", change to "Stolen", and the
-    // append-only log permanently held *"5 head stolen, buyer Willem Botha, R5 000"*. Nothing
-    // refuses it: `recordMobTally` copies both for any reason and `tallyPayloadSchema` constrains
-    // neither. A named third party on a theft record is what `.claude/rules/domain.md` bans
-    // outright — arriving here by accident rather than by design, into a log with no edit path.
+    // append-only log permanently held *"5 head stolen, buyer Willem Botha, R5 000"*. A named
+    // third party on a theft record is what `.claude/rules/domain.md` bans outright — arriving
+    // here by accident rather than by design, into a log with no edit path.
+    //
+    // ⭐ The BOUNDARY now refuses it too (`tallyPayloadSchema`, mirrored on
+    // `recordMobTallyRequestSchema`), which it did not when this comment was first written — the
+    // ninth pass found the fix had stopped at the screen. This scoping stays because it is what a
+    // farmer meets: the server refusing a capture days later is not how anyone should learn that
+    // a buyer cannot be attached to a theft. Client and boundary, always.
     const price = trade && priceRands.trim() !== '' ? toCents(priceRands) : undefined;
     const buyer = trade && counterparty.trim() !== '' ? counterparty.trim() : undefined;
 
@@ -404,6 +409,18 @@ export function AdjustMobScreen() {
         >
           {t('tally.withinWithdrawal')}{' '}
           <span className="font-data tabular-nums">{withdrawal!.clearFrom}</span>
+        </p>
+      )}
+
+      {/* ⛔ Blocked with no date to show — see the same panel in `RecordLossScreen`. The guard now
+          fails closed on a day it cannot read, so `blocked` no longer implies a `clearFrom`, and
+          every panel here was gated on the date being present. */}
+      {(withheld || noteWithdrawal) && withdrawal?.clearFrom === null && (
+        <p
+          role="alert"
+          className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
+        >
+          {t('tally.needDay')}
         </p>
       )}
 

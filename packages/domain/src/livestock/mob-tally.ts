@@ -67,8 +67,10 @@ export interface MobTallyInput {
   /** The other mob in a mob-to-mob move. Required on `transfer_in` / `transfer_out`. */
   readonly counterpartMobId?: string | undefined;
   /**
-   * ⭐ Ties the two halves of ONE mob-to-mob move together (FR-102/FR-112). REQUIRED on a transfer
-   * half and refused on every other reason.
+   * ⭐ Ties the two halves of ONE mob-to-mob move together (FR-102/FR-112). Refused on every reason
+   * that is not a transfer; required on a transfer half BY THE CAPTURING DEVICE ONLY — see the ⛔
+   * paragraph below, which this line used to contradict. The summary is what a reader sees on
+   * hover, so it has to carry the qualification rather than leave it ten lines down.
    *
    * The two halves are two events with two ids because a tally has one subject mob and one delta —
    * the sign is derived from the reason so it is never the farmer's to type. Without something

@@ -8,7 +8,11 @@
 > **"Lands and crops" (sprays, harvest, pre-harvest intervals), "People and wages", "Money", the
 > GlobalGAP/SIZA checklist and the analytical reports are PLANNED — Phases 3–6 — and no screen for
 > them exists yet.** Camps and fence-walking under "Lands" ARE built; everything else in that
-> section is not. A guide with no "as at today" line is a claim about the present, which is how this
+> section is not. **"Your data is yours" and "When something goes wrong" were classified by
+> NEITHER list until the ninth pass, and each was found to name a Settings screen that does not
+> exist** — Settings has four children (appearance, language, farms, security) and has never had
+> more. An unclassified section is where a false claim hides, so classify every one.
+> A guide with no "as at today" line is a claim about the present, which is how this
 > file came to promise farmers a withholding override the product has never had (STATUS.md §2p).
 
 ---
@@ -191,9 +195,11 @@ The second is not blame. It is the one you show someone.
 
 ### Not sent
 
-**Tap the “not sent” line at the top of any screen.** If the server refused a record, this is where it says which one and why, in plain language.
+**When the strip at the top says “needs your attention”, tap _See what_ beside it.** That is the link; the sentence itself is not tappable. It tells you which record the server refused and why, in plain language.
 
-**Nothing is ever thrown away.** A refused record is kept, not deleted, and one bad record never blocks the ones behind it — sixty tags captured in a crush with one duplicate digit means fifty-nine go up and one waits for you.
+**Nothing is ever thrown away.** A refused record is kept, not deleted — sixty tags captured in a crush with one duplicate digit means fifty-nine go up and one waits for you.
+
+**Some records wait for another one.** Two halves of the same move, or anything recorded against a group the server has not accepted yet, go up only once the record they depend on does. Those are listed separately, under **Waiting on one of the above**, and they need nothing from you: sort out the refusal above them and they follow on their own. The strip counts them too, so “1 not sent · 3 to send” means one needs you and three are simply still on their way.
 
 ⚠️ **If it tells you to record something again, read what it says first.** Recording a count again is not free: "I counted them" replaces the total.
 
@@ -358,7 +364,7 @@ Giving your vet access to one herd's treatment history for thirty days gives the
 
 ## Your data is yours
 
-**Settings → Export data.** Everything, as CSV and JSON, no phone call, no notice period.
+**Export: everything, as CSV and JSON, no phone call, no notice period.** _(Planned — no export screen exists yet. Ask us and we will send you your data.)_
 
 We keep it in South Africa. It does not leave.
 
@@ -376,7 +382,7 @@ Werf is built for South African law — the wages, the animal marking, the stock
 | **"2 need attention"** | Tap it. Usually two people recorded the same thing. Pick the right one. |
 | **"Payroll needs a connection"** | Correct. Find signal. Your attendance is safe. |
 | **Blocked from harvesting or selling** | Read the message. It names the product and the date you are clear. It is protecting you. |
-| **Phone is full** | Settings → Storage → shorten the history kept on the phone. **Your unsent work is never removed.** |
+| **Phone is full** | **Your unsent work is never removed** — it is the last thing we would drop. Shortening the history kept on the phone is planned; there is no setting for it yet. |
 
 **support@werf.co.za** · **status.werf.co.za**
 

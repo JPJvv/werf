@@ -429,6 +429,22 @@ export function RecordLossScreen() {
                 </p>
               )}
 
+              {/* ⛔ BLOCKED WITH NO DATE TO SHOW — a day the guard cannot read. Until the ninth pass
+                  every panel above was gated on `clearFrom !== null`, which was a safe assumption
+                  only while `blocked` implied a date. It stopped being one when an unreadable day
+                  started failing closed: clear the date field and the red panel VANISHED while Save
+                  stayed disabled. A food-safety refusal with nothing on screen saying why is the
+                  one shape `.claude/rules/frontend.md` names outright — what happened, why, what
+                  now. */}
+              {(withheld || deathWithinWithdrawal) && withdrawal?.clearFrom === null && (
+                <p
+                  role="alert"
+                  className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900"
+                >
+                  {t('loss.needDay')}
+                </p>
+              )}
+
               {outcome === 'sold' && (
                 <>
                   <div className="mb-4 flex flex-col">

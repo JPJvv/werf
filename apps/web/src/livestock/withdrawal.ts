@@ -142,6 +142,8 @@ export function meatWithdrawalFor(
   products: readonly StoredVetProduct[],
   moves: readonly StoredMove[] = [],
 ): WithdrawalStatus {
+  // Before anything is read: an unreadable day cannot be judged. See `unreadableDay`.
+  if (unreadableDay(disposalOn)) return { clearFrom: null, blocked: true };
   const wasIn = mobMembership(animal, moves);
   return latestClearAcross(
     events.filter((e) => reachedAnimal(e, animal, wasIn)),
@@ -185,6 +187,9 @@ export function meatWithdrawalForMob(
    */
   tallies: readonly ArrivedHead[],
 ): WithdrawalStatus {
+  // ⭐ HERE rather than inside, because `mobWithdrawal` recombines `blocked` with an arrival's date
+  // and would discard a fail-closed verdict returned deeper in. See `unreadableDay`.
+  if (unreadableDay(disposalOn)) return { clearFrom: null, blocked: true };
   return mobWithdrawal(mobId, disposalOn, { events, products, animals, moves, tallies }, new Set());
 }
 
@@ -236,6 +241,30 @@ function mobWithdrawal(
   const clearFrom =
     dosed.clearFrom === null || arrived > dosed.clearFrom ? arrived : dosed.clearFrom;
   return { clearFrom, blocked: isWithinWithdrawal(clearFrom, disposalOn) };
+}
+
+/**
+ * ⛔ A DAY WE CANNOT READ IS NOT A DAY BEFORE EVERY DOSE — it is a question we cannot answer, and
+ * this boundary fails toward BLOCKING.
+ *
+ * `disposalOn` comes from a native `<input type="date">`, which is clearable, so `''` is an
+ * ordinary state rather than a defect elsewhere. Without this, every `administeredOn > disposalOn`
+ * bound in this file reads `'2026-07-10' > ''` as true for EVERY dose, skips them all, and returns
+ * CLEAR for an animal deep inside a withholding — a bound added to close a false refusal opening a
+ * false pass, which is the worse direction.
+ *
+ * ⭐ IT LIVES AT THE ENTRY POINTS, not inside `latestClearAcross`, and that is the ninth pass's
+ * finding rather than a preference. Inside, `mobWithdrawal` took the fail-closed verdict and then
+ * RECOMPUTED `blocked` from `isWithinWithdrawal(clearFrom, disposalOn)` whenever an arrival was
+ * present — discarding it. It survived only because `''` also happens to make
+ * `latestArrivedWithhold` return null; a malformed day that sorts high (`'2026-7-5'`) took the
+ * other branch and came back CLEAR. Fail-closed by lexical coincidence is not fail-closed.
+ *
+ * `clearFrom` stays null: there is no date to show, and the screen that asked for the day is the
+ * one that must ask again.
+ */
+function unreadableDay(disposalOn: string): boolean {
+  return !/^\d{4}-\d{2}-\d{2}$/.test(disposalOn);
 }
 
 /** A tally that may have brought a withholding into a mob with it. The device's own log, verbatim. */
@@ -422,17 +451,6 @@ function latestClearAcross(
   products: readonly StoredVetProduct[],
 ): WithdrawalStatus {
   const withdrawalDays = new Map(products.map((p) => [p.id, p.meatWithdrawalDays]));
-
-  // ⛔ A DAY WE CANNOT READ IS NOT A DAY BEFORE EVERY DOSE — it is a question we cannot answer, and
-  // this boundary fails toward BLOCKING. `disposalOn` comes from a native `<input type="date">`,
-  // which is clearable, so `''` is an ordinary state rather than a defect elsewhere. Without this
-  // the bound below reads `'2026-07-10' > ''` as true for EVERY dose, skips them all, and returns
-  // "clear" for an animal deep inside a withholding — the bound added to close a false refusal
-  // opening a false pass, which is the worse direction. `clearFrom` stays null: there is no date to
-  // show, and the screen that asked for the day is the one that must ask again.
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(disposalOn)) {
-    return { clearFrom: null, blocked: true };
-  }
 
   let latest: string | undefined;
   for (const event of events) {

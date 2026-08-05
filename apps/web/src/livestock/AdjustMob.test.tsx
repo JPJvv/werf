@@ -603,11 +603,15 @@ describe('changing a group’s numbers (FR-102)', () => {
     // The same defect as the test above, two variables along, and missed by the fix that closed it.
     // `counterparty` and `priceRands` render only under sale/purchase — reason-scoped by exactly the
     // test the fix used — but they were derived from raw state and the reason buttons did not clear
-    // them. Nothing downstream refuses the combination: `recordMobTally` copies both for any reason
-    // and `tallyPayloadSchema` constrains neither by reason. So the append-only log, which has no
-    // edit path, permanently recorded a named third party and a price against a STOLEN tally — the
-    // exposure `.claude/rules/domain.md` bans outright ("No `suspect` field on theft records.
-    // Ever."), reached by accident rather than by design.
+    // them. So the append-only log, which has no edit path, permanently recorded a named third
+    // party and a price against a STOLEN tally — the exposure `.claude/rules/domain.md` bans
+    // outright ("No `suspect` field on theft records. Ever."), reached by accident rather than by
+    // design.
+    //
+    // ⛔ When this was written nothing downstream refused the combination either, and the comment
+    // said so without closing it. The ninth pass called that the finding: the fix had stopped at
+    // the screen. `tallyPayloadSchema` now reason-scopes both fields, tested directly in
+    // `mob-tally.test.ts` — this test covers the screen half, which is the half a farmer meets.
     cachedSession();
     seedTwoFlocks();
     const user = userEvent.setup();

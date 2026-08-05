@@ -153,6 +153,58 @@ describe('recordMobTally — what it refuses, and what it tells the farmer to do
       /record the death, sale or birth against the animal itself/,
     );
   });
+
+  // ⛔ A NAMED THIRD PARTY ON A THEFT RECORD IS BANNED OUTRIGHT — `.claude/rules/domain.md`:
+  // defamation exposure for the farmer, POPIA s26 criminal-behaviour processing exposure for us.
+  // The screen stopped offering the fields, which is where a farmer meets the rule; this is the
+  // boundary, which is where the rule is actually enforced. Both, always — a guard only the client
+  // runs is not a boundary, and captures queued before the screen was fixed still flush through
+  // here.
+  //
+  // The event log is append-only with no edit path, so a name that lands here is permanent.
+  it('⭐ refuses a buyer and a price on a THEFT — the log has no edit path and a name is forever', () => {
+    expect(() =>
+      recordMobTally(input({ reason: 'theft', count: 5, counterparty: 'Willem Botha' })),
+    ).toThrow(ValidationError);
+    expect(() => recordMobTally(input({ reason: 'theft', count: 5, priceCents: 500_000 }))).toThrow(
+      ValidationError,
+    );
+  });
+
+  it('refuses a buyer or a price on every reason that is not a trade', () => {
+    // Not a theft-only rule. A death with a buyer is the same class of nonsense, and leaving the
+    // other reasons open is how the next screen re-introduces the theft case by a different door.
+    for (const reason of ['death', 'birth', 'slaughter', 'transfer_in', 'transfer_out'] as const) {
+      expect(() =>
+        recordMobTally(
+          input({
+            reason,
+            count: 2,
+            counterparty: 'Somebody',
+            ...(reason === 'transfer_in' || reason === 'transfer_out'
+              ? { counterpartMobId: '01900000-0000-7000-8000-0000000000b2', batchId: EVENT_ID }
+              : {}),
+          }),
+        ),
+      ).toThrow(ValidationError);
+    }
+  });
+
+  it('still accepts the buyer and price on the two reasons that HAVE a counterparty', () => {
+    // The bound. This constraint must not narrow what a real sale or purchase can record — the
+    // client gates these two fields on exactly `sale`/`purchase`, and a schema that refused one of
+    // them would queue a capture the device can never send.
+    expect(() =>
+      recordMobTally(
+        input({ reason: 'sale', count: 20, counterparty: 'Bethlehem abattoir', priceCents: 1 }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      recordMobTally(
+        input({ reason: 'purchase', count: 20, counterparty: 'Neighbour', priceCents: 1 }),
+      ),
+    ).not.toThrow();
+  });
 });
 
 describe('recordMobTally — the two halves of a move are ONE action', () => {

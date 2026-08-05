@@ -298,6 +298,58 @@ describe('a dose given AFTER the day being judged — the bound the server has',
   });
 });
 
+describe('a day the guard cannot read — the boundary fails toward BLOCKING', () => {
+  // The eighth pass closed a false PASS here: with `disposalOn = ''`, `administeredOn > ''` is true
+  // for every dose, so every one was skipped and an animal deep inside a withholding read CLEAR.
+  // The ninth pass found the fix sat inside `latestClearAcross`, whose own caller RECOMPUTES
+  // `blocked` when an arrival is present and discards it. `''` survived only by coincidence —
+  // `latestArrivedWithhold` also skips everything on an empty day, so the recomputing branch was
+  // never taken. A malformed day that sorts HIGH takes it, and came back CLEAR.
+  //
+  // Neither case had a test on the mob arm. That is why the guard could move and nobody would know.
+  const arrivedWithheld = {
+    mobId: OXEN,
+    occurredAt: '2026-07-22T12:00:00.000Z',
+    reason: 'transfer_in',
+    counterpartMobId: DIP_CAMP,
+    carriedWithholdUntil: undefined,
+  };
+
+  it('blocks on an EMPTY day — a cleared date input is an ordinary state, not a defect', () => {
+    const status = meatWithdrawalForMob(OXEN, '', [dipOnDipCamp], [tickaway], [], [], []);
+
+    expect(status.blocked).toBe(true);
+    // No date to show: the screen that asked for the day is the one that must ask again.
+    expect(status.clearFrom).toBeNull();
+  });
+
+  it('⭐ blocks on a MALFORMED day even when an arrival is present — the branch that discarded it', () => {
+    // `'2026-7-5'` sorts ABOVE '2026-07-22', so `latestArrivedWithhold` does NOT skip the arrival,
+    // `arrived` is non-null, and the old placement recomputed `blocked` from a string comparison
+    // that says '2026-7-5' < '2026-08-17' is false. CLEAR, for a flock inside a live withholding.
+    const status = meatWithdrawalForMob(
+      OXEN,
+      '2026-7-5',
+      [dipOnDipCamp],
+      [tickaway],
+      [],
+      [],
+      [arrivedWithheld],
+    );
+
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBeNull();
+  });
+
+  it('does NOT block a well-formed day — the bound, so the guard cannot just always refuse', () => {
+    // A guard that refuses everything is not a guard, and this is the direction a fail-closed rule
+    // breaks in. Every day a native date input can emit is `YYYY-MM-DD` and must still be judged.
+    const status = meatWithdrawalForMob(OXEN, '2026-09-01', [dipOnDipCamp], [tickaway], [], [], []);
+
+    expect(status.blocked).toBe(false);
+  });
+});
+
 describe('disposal subject sets — what the outbox must hold on', () => {
   it('⭐ an animal disposal is held by its OWN id and EVERY mob it has stood in, not just the current one', () => {
     // The fifth-pass finding (all three agents): the flush held a sale only by the animal's current

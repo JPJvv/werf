@@ -384,6 +384,38 @@ export const tallyPayloadSchema = z
         message: 'Only a purchase can record a withdrawal declared by the seller',
       });
     }
+    // ⛔ A COUNTERPARTY AND A PRICE BELONG TO A TRADE AND NOWHERE ELSE, and the sharp case is
+    // `theft`: `.claude/rules/domain.md` bans a named third party on a theft record outright —
+    // defamation exposure for the farmer, POPIA s26 criminal-behaviour processing for us. Record
+    // facts. A stolen animal has no buyer, and the person a farmer suspects is not a fact.
+    //
+    // This lives at the BOUNDARY rather than only on the screen. The capture screen scopes both
+    // fields to `sale`/`purchase`, which is where a farmer meets the rule — but a capture queued
+    // before that screen existed still flushes through here, and the event log is append-only with
+    // no edit path, so a name that lands is permanent. A guard only the client runs is not a
+    // boundary; a guard only the server runs arrives after the truck has left. Both, always.
+    //
+    // ⭐ Enforced BEFORE the recount branch returns, so `recount` is covered too. The trade pair is
+    // exactly the client's own `trade` gate in `AdjustMobScreen` — a schema that refused a reason
+    // the screen still offers would queue a capture the device can never send, which reads as a
+    // sync bug rather than as the mismatch it is.
+    const isTrade = payload.reason === 'sale' || payload.reason === 'purchase';
+    if (!isTrade) {
+      if (payload.counterparty !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['counterparty'],
+          message: 'Only a sale or a purchase names the other party',
+        });
+      }
+      if (payload.priceCents !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['priceCents'],
+          message: 'Only a sale or a purchase carries a price',
+        });
+      }
+    }
 
     const isRecount = payload.reason === 'recount';
     if (isRecount) {

@@ -1,6 +1,13 @@
 /**
  * What needs your attention (FR-009) — the captures the server refused, one by one, with what each
- * one is and why it came back.
+ * one is and why it came back, plus the captures WAITING behind one of them.
+ *
+ * ⭐ The second list is the ninth pass's fix and it is not a nicety. A held capture — the far half
+ * of a move, a tally on a group the server has not accepted, a disposal short of head — is one the
+ * server has never seen, so it is not a refusal and must not be presented as the farmer's problem.
+ * But it was listed NOWHERE: `blocked` is derived from the refusal map, and the strip returned
+ * early on the refusal count, so three captures stranded behind one refused move read as "1 not
+ * sent". A hold nobody can see is a lost record, however faithfully the queue keeps the bytes.
  *
  * This exists because the honest half of the answer was already being given and the useful half was
  * not. Once the flush stopped stranding the whole queue behind a refusal, the strip could say
@@ -23,7 +30,12 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
-import { useRefusedCaptures, type CaptureKind, type RefusedCapture } from './Outbox';
+import {
+  useHeldCaptures,
+  useRefusedCaptures,
+  type CaptureKind,
+  type RefusedCapture,
+} from './Outbox';
 
 /** What each kind of capture is called, in the farmer's words. */
 const KIND_KEY: Record<CaptureKind, TranslationKey> = {
@@ -70,12 +82,17 @@ function reasonKey(capture: RefusedCapture): TranslationKey {
 export function NotSentScreen() {
   const { t } = useTranslation();
   const refused = useRefusedCaptures();
+  // ⭐ The captures WAITING on one of the refusals above. They were listed nowhere until the ninth
+  // pass: `blocked` is derived from the refusal map, so a held capture appeared in no surface in
+  // the product, and a farmer reading "1 not sent" had three more stranded with no way to learn it.
+  // A hold nobody can see is a lost record, whatever the queue believes.
+  const waiting = useHeldCaptures();
 
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
       <h1 className="mb-2 font-ui text-h1 text-soil-900">{t('notSent.title')}</h1>
 
-      {refused.length === 0 ? (
+      {refused.length === 0 && waiting.length === 0 ? (
         // Reached from the strip, so it can be open when the last one clears. Says the good news
         // plainly instead of showing an empty list that reads like a loading state.
         <p className="text-body text-soil-700">{t('notSent.empty')}</p>
@@ -109,6 +126,37 @@ export function NotSentScreen() {
               </li>
             ))}
           </ul>
+          {waiting.length > 0 && (
+            // A SECOND list, deliberately below the refusals and deliberately not styled as a
+            // warning. Nothing here needs the farmer to do anything: these clear themselves the
+            // moment the record they wait on goes up. Showing them as problems would ask for work
+            // that would not help, and hiding them was how three deaths went missing in silence.
+            <section className="mt-8">
+              <h2 className="mb-2 font-ui text-h2 text-soil-900">{t('notSent.waiting.title')}</h2>
+              <p className="mb-4 text-body text-soil-700">{t('notSent.waiting.intro')}</p>
+              <ul
+                aria-label={t('notSent.waiting.title')}
+                className="flex list-none flex-col gap-4 p-0"
+              >
+                {waiting.map((capture) => (
+                  <li
+                    key={capture.id}
+                    className="rounded border border-soil-200 bg-sand-50 p-3 text-soil-900"
+                  >
+                    <p className="text-body">
+                      {t(KIND_KEY[capture.kind])}
+                      {capture.detail !== null && (
+                        <>
+                          {' '}
+                          <span className="font-data tabular-nums">{capture.detail}</span>
+                        </>
+                      )}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
 

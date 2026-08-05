@@ -154,9 +154,22 @@ stateDiagram-v2
       Hoisting every departure breaks a chained move A→B→C: `out_B` posts before `in_B` has landed,
       the server sees no head in B, and refuses a valid capture. That refusal is worse than a
       retry, because `/not-sent` tells the farmer to record it again and a recount RESETS.
-   5. **A refused or held capture taints what depends on it.** Evidence declares `provides`,
-      disposals declare `guardedBy`; a disposal whose evidence was set aside this round is HELD
-      (pending, not refused), so it cannot reach a server that never heard of the withholding.
+   5. **A refused or held capture taints what depends on it.** An item declares `provides` for what
+      it establishes and `guardedBy` for what it needs; anything whose subject was tainted this
+      round is HELD (pending, not refused), so it cannot reach a server that never heard of the
+      thing it depended on. Three namespaces, and they are deliberately disjoint: bare animal/mob
+      ids for a **withholding**, a batch id for the **two halves of a move**, `mobrow:<id>` for the
+      **mob row itself**. Sharing one namespace across two questions is how a fix for a false pass
+      became a false refusal — see 6.
+   6. ⛔ **Head availability is ARITHMETIC, not a subject.** A decrease is held only when the
+      device's own fold — `projectHeadCount` over the baseline and the captures the server actually
+      holds, cut at `(occurred_at, id)` — says the server would refuse it. This is the same
+      projection `deriveHeadCount` runs, so the two sides cannot disagree. It was briefly a
+      `head:<mobId>` subject, which held any decrease whenever any increase on that mob was tainted:
+      three deaths in a camp of a hundred, stranded for ever behind an unrelated refused purchase.
+   7. **A held capture is REPORTED.** `/not-sent` lists it under "waiting on one of the above" and
+      the strip counts it in the pending total. A hold nobody can see is a lost record — the strip
+      used to return early on the refusal count, so three held captures read as "1 not sent".
 
    `occurred_at` remains what REPORTS are ordered by, and the total order for any projection is
    `(occurred_at, id)` on both sides. Neither is the send order.

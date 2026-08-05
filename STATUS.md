@@ -1477,3 +1477,38 @@ Three things get called "compliance" and cost differently:
 **All JP decisions are now closed.** What remains is BUILD work (a JP-owner or a session does it) and
 two EXTERNAL bookings on someone's calendar (§2.4 labour-law review, §2.5 Gazette re-verification —
 both now gate Phase 3 *deploy*, not its first line, per this section).
+
+---
+
+## 7. The review-pass STOPPING RULE (set 2026-08-05 by JP)
+
+**The problem this solves, stated plainly.** Seven passes ran. All seven returned NOT APPROVABLE.
+Every one found a real defect inside the previous pass's fixes — which is a genuine finding and not a
+process failure. But the fixes for pass N are then unreviewed, and *that is the exact argument for
+pass N+1*. The recursion has no terminal condition, so "Phase 2 is not merge-ready" could stay true
+for ever while the code gets steadily better. **Seven-for-seven is not evidence that an eighth pass is
+owed; it is evidence that the exit criterion was never defined.**
+
+**The rule. Four clauses, and clause 3 is the one that actually breaks the loop.**
+
+| # | Clause |
+|---|---|
+| **1** | **SCOPE NARROWS EVERY PASS.** A pass reviews only what is genuinely unreviewed: the previous pass's fix diff, plus anything committed since. **Never the accumulated range.** The commits before `34e0685` have been read seven times; an eighth reading is not where the next defect is, and re-reading them is most of what makes a pass expensive |
+| **2** | **A SEVERITY FLOOR CLEARS THE GATE.** A pass CLEARS when it returns no SEV-1 and no SEV-2 in its range. MED and LOW findings are **fixed or filed as tracked issues on `main`** — they are not merge blockers. A MED has never been the thing that put residue in a food chain |
+| **3** ⭐ | **THE TERMINAL CONDITION.** If a pass returns **only** MED/LOW, those fixes merge **WITHOUT another pass**, provided each fix is (i) mechanical, (ii) confined to the files the finding names, and (iii) covered by a test watched to FAIL against the old code first. **This is the clause that ends the recursion.** It is a bounded risk taken deliberately: the unreviewed final diff is small, mechanical, and directionally tested. A SEV-1/SEV-2 fix never qualifies — that always earns another pass under clause 1 |
+| **4** | **HARD CEILING: TWO PASSES (the eighth and, if needed, the ninth).** If the ninth still returns a SEV-2, **do not spawn a tenth.** Three consecutive passes finding severe defects in a shrinking diff is evidence of a DESIGN problem in that surface — almost certainly the outbox hold mechanism, which has been widened four times and exposed a new reader each time. Escalate it to JP as a scope decision (redesign the mechanism, or descope it from Phase 2), not as more review |
+
+**What the rule deliberately does NOT do.** It does not lower the bar on regulated code: a SEV-1 or
+SEV-2 in FR-131 / animal ID / stock theft / POPIA still blocks the merge absolutely, and clause 1
+still sends its fixes to another pass. It changes *when reviewing stops*, never *what a defect is*.
+
+**Why the floor sits between SEV-2 and MED.** Read §2c–§2o and sort the findings by what they cost a
+farmer. Every SEV-1 and SEV-2 in this repo's history is either meat reaching a truck inside a
+withholding, or a capture silently lost. Every MED and LOW is a wrong label, a stale comment, a test
+that cannot fail, or a missing axe sweep — all real, none of them worth holding a phase that is
+otherwise complete. **Tracked on `main` they get fixed; blocking the merge on them is how a branch
+sits unreviewable for nine sessions.**
+
+⚠️ **The rule was written and committed BEFORE the eighth pass's findings were read**, deliberately,
+so that it could not be bent to fit whatever came back. If a future session wants to relax it, say so
+out loud and get JP's call — do not quietly re-interpret clause 3.

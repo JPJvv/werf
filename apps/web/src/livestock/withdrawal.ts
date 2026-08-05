@@ -423,6 +423,17 @@ function latestClearAcross(
 ): WithdrawalStatus {
   const withdrawalDays = new Map(products.map((p) => [p.id, p.meatWithdrawalDays]));
 
+  // ⛔ A DAY WE CANNOT READ IS NOT A DAY BEFORE EVERY DOSE — it is a question we cannot answer, and
+  // this boundary fails toward BLOCKING. `disposalOn` comes from a native `<input type="date">`,
+  // which is clearable, so `''` is an ordinary state rather than a defect elsewhere. Without this
+  // the bound below reads `'2026-07-10' > ''` as true for EVERY dose, skips them all, and returns
+  // "clear" for an animal deep inside a withholding — the bound added to close a false refusal
+  // opening a false pass, which is the worse direction. `clearFrom` stays null: there is no date to
+  // show, and the screen that asked for the day is the one that must ask again.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(disposalOn)) {
+    return { clearFrom: null, blocked: true };
+  }
+
   let latest: string | undefined;
   for (const event of events) {
     // The day bound, before anything else: this is not about which product it was.

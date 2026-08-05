@@ -60,7 +60,7 @@ Two ways, and **both work with no signal**:
 
 **Your recovery codes.** You get ten, once. **Print them and put them in the safe.** If your phone goes into the dam and you have no codes, getting back in takes us 48 hours and a lot of questions — because if it were faster, someone could talk their way into your farm by pretending to be you.
 
-**Settings → Security** lists every phone and authenticator you have added, and lets you add another or remove one. **Add your second phone before you need it.** Removing a lost phone from a working one takes seconds; doing it with nothing left takes 48 hours.
+**Settings → Security** lists every phone you have added as a key, and lets you add another or remove one. (Your authenticator app is set up separately, when you first turn on the second step — it is not managed from this list.) **Add your second phone before you need it.** Removing a lost phone from a working one takes seconds; doing it with nothing left takes 48 hours.
 
 If you are opening Werf on a borrowed tablet with no fingerprint reader, it offers the authenticator app instead. It will not ask you for a lock the device in your hand cannot provide.
 
@@ -113,7 +113,7 @@ Three hundred sheep and you do not want three hundred records? Make a **flock** 
 
 **Herd → Count.** This is how a flock of 300 becomes 297, and says why.
 
-You tell Werf **what changed and why** — died, sold, slaughtered, stolen, moved to another group, born, bought, arrived from another group — and it does the arithmetic. You never type the new total.
+You tell Werf **what changed and why** — died, sold, slaughtered, stolen, moved to another group, born, bought, or counted — and it does the arithmetic. You never type the new total.
 
 **That is deliberate, and it is the whole design.** If you and your herdsman are both out of signal and you each record three deaths, the changes add up to 294, which is the truth. If you had each typed a new head count instead, the last phone to reach signal would win, the flock would sit at 297, and three dead sheep would stay in the count with nothing to show what was lost.
 
@@ -191,7 +191,7 @@ The second is not blame. It is the one you show someone.
 
 ### Not sent
 
-**Settings → Not sent.** If the server refused a record, this is where it says which one and why, in plain language.
+**Tap the “not sent” line at the top of any screen.** If the server refused a record, this is where it says which one and why, in plain language.
 
 **Nothing is ever thrown away.** A refused record is kept, not deleted, and one bad record never blocks the ones behind it — sixty tags captured in a crush with one duplicate digit means fifty-nine go up and one waits for you.
 

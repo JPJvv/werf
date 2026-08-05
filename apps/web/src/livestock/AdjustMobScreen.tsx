@@ -246,7 +246,9 @@ export function AdjustMobScreen() {
     // A transfer with no destination is half a move, and the half that would be written is the one
     // that takes head OUT of the source — losing forty sheep into nothing.
     (!isTransfer || destination !== null) &&
-    priceIsValid(priceRands);
+    // Only a trade has a price to be valid. Gating every reason on it let a malformed price from an
+    // abandoned "Sold" disable Save on a "Died" that has no price input to correct it.
+    (!trade || priceIsValid(priceRands));
 
   const reset = () => {
     setReason(null);
@@ -265,8 +267,16 @@ export function AdjustMobScreen() {
     // a second tally on the same mob on the same day reused the first id, the flush skipped it as a
     // duplicate forever, and the capture reached no one. Every capture gets its own id.
     const id = uuidv7();
-    const price = priceRands.trim() === '' ? undefined : toCents(priceRands);
-    const buyer = counterparty.trim() === '' ? undefined : counterparty.trim();
+    // ⭐ SCOPED TO `trade`, exactly like `linkedMove` and `declared` below. These two were the arm
+    // the reason-scoping fix missed: their inputs render only under `sale`/`purchase`, so they are
+    // reason-scoped by the same test — but they were derived from raw state and the reason buttons
+    // did not clear them. Type a buyer and a price under "Sold", change to "Stolen", and the
+    // append-only log permanently held *"5 head stolen, buyer Willem Botha, R5 000"*. Nothing
+    // refuses it: `recordMobTally` copies both for any reason and `tallyPayloadSchema` constrains
+    // neither. A named third party on a theft record is what `.claude/rules/domain.md` bans
+    // outright — arriving here by accident rather than by design, into a log with no edit path.
+    const price = trade && priceRands.trim() !== '' ? toCents(priceRands) : undefined;
+    const buyer = trade && counterparty.trim() !== '' ? counterparty.trim() : undefined;
 
     // The domain is the authority on whether this capture is legal, and `canSave` above is a
     // preview of its answer rather than a second implementation of it. If the two ever disagree,
@@ -479,6 +489,12 @@ export function AdjustMobScreen() {
                         // half of that fix, and a farmer coming back to the field expects it blank.
                         setDestinationId(null);
                         setDeclaredUntil('');
+                        // The trade pair belongs to `sale`/`purchase` and goes with them. Without
+                        // this, a malformed price typed under "Sold" also kept Save disabled after
+                        // switching to "Died" — the input was gone, so nothing on screen named the
+                        // cause, and the escape is not discoverable in a crush.
+                        setCounterparty('');
+                        setPriceRands('');
                       }}
                       className={`min-h-touch-min rounded border px-4 font-ui text-body ${
                         reason === r

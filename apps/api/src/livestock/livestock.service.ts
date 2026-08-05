@@ -382,7 +382,8 @@ export class LivestockService {
         // move are captured on ONE device in one action, and the id that ties them has to be minted
         // where that action happens. The server cannot invent it — the halves arrive as separate
         // requests, possibly days apart, and there is nothing in the second to recognise the first
-        // by. `recordMobTally` refuses a transfer half that arrives without one.
+        // by — so it is REQUIRED at capture (`useRecordTallies`) and deliberately NOT refused here.
+        // This line used to say `recordMobTally` refuses one; it does not, and cannot.
         batchId: input.batchId,
         ...(carriedWithholdUntil === undefined ? {} : { carriedWithholdUntil }),
         // ⭐ Taken from the body, which nothing else regulated in this file does. There is no

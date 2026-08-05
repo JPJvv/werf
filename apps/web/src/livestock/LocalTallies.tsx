@@ -195,8 +195,10 @@ function buildTally(c: TallyCapture) {
     // Validated through the domain like everything else — the schema refuses a transfer with no
     // counterpart, and a declared withdrawal on anything but a purchase.
     counterpartMobId: c.counterpartMobId,
-    // Validated here too: the domain refuses a transfer half with no batch id, so a screen that
-    // wrote only one half of a move cannot get the first one into the append-only log.
+    // ⚠️ NOT validated by the domain — the check above this is the only one. `recordMobTally`
+    // deliberately accepts an unlinked half because the server cannot verify a sibling it may not
+    // receive for days, so the rule lives at capture, where it is knowable. This comment said the
+    // opposite twenty lines under the header that explains why.
     batchId: c.batchId,
     carriedWithholdUntil: c.carriedWithholdUntil,
     declaredWithdrawalUntil: c.declaredWithdrawalUntil,

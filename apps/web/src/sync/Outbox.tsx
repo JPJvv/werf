@@ -34,6 +34,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { schemas } from '@werf/core';
 import { createSentLog, type SentLog } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
@@ -495,6 +496,57 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // batch id and is judged against nothing here — there is no other half to wait for.
         const departs = tally.reason === 'transfer_out';
         const link = tally.batchId;
+        // ⭐ HEAD-COUNT AVAILABILITY IS ITS OWN SUBJECT NAMESPACE, and the prefix is the whole point
+        // rather than a formatting choice.
+        //
+        // The gap it closes: `transfer_out`, `death` and `theft` declared no `guardedBy` at all, so
+        // they were SENT even when the arrival that funded the head was refused or held. Offline
+        // chain A→B→C: `out_A` is refused (another phone recounted A), `in_B` is correctly held —
+        // and `out_B` went anyway, to a server whose fold of B has no head in it. The refusal that
+        // comes back says *"count the group and record what you find"* and `/not-sent` says
+        // *"Record it again"*, and A RECOUNT RESETS — so following either instruction corrupts B's
+        // count permanently. That is the seventh pass's finding #4 reached through the HOLD path
+        // after its fix closed the ORDERING path, and `offline-sync.md` §5 invariant 3.5 ("a refused
+        // or held capture taints what depends on it") was describing a mechanism that did not exist.
+        //
+        // ⛔ It must NOT be the bare `tally.mobId`. A refused mob dose already taints that id
+        // (`health` provides `nonNull(animalId, mobId)`), and a transfer is deliberately NOT judged
+        // against a withholding — so reusing it would falsely hold every departure out of a dipped
+        // camp, turning a fix for a false pass into a false refusal. Two different questions about
+        // one mob need two subjects.
+        //
+        // Reasons come from the schema, never a local copy: a hand-written sign rule that drifts is
+        // the defect this screen's own `INCREASES` comment already records.
+        const headSubject = `head:${tally.mobId}`;
+        // A recount ADDS availability without being an increase — it is absolute and RESETS the
+        // count, so it establishes head rather than depending on any. It is guarded by nothing for
+        // the same reason: "I walked the camp and counted 297" does not need the log to be right.
+        const addsHead =
+          (schemas.TALLY_INCREASES as readonly string[]).includes(tally.reason) ||
+          tally.reason === 'recount';
+        const removesHead = (schemas.TALLY_DECREASES as readonly string[]).includes(tally.reason);
+        const providesFor = [
+          ...(arrives ? [tally.mobId] : []),
+          ...(departs && link !== undefined ? [link] : []),
+          ...(addsHead ? [headSubject] : []),
+        ];
+        const guardedByFor = [
+          ...(intoFoodChain
+            ? mobDisposalSubjects(
+                tally.mobId,
+                farmDay(new Date(tally.occurredAt)),
+                animals,
+                moves,
+                // ⛔ The tally log, so the subject set walks the TRANSFER CHAIN the guard walks.
+                // Without it the set stopped at this mob and its members, and a refused dose on
+                // the SOURCE of an accepted transfer held nothing — 201 for meat inside an active
+                // withholding, which is the only shape in this file where meat reaches a truck.
+                tallies,
+              )
+            : []),
+          ...(tally.reason === 'transfer_in' && link !== undefined ? [link] : []),
+          ...(removesHead ? [headSubject] : []),
+        ];
         items.push({
           id: tally.id,
           kind: 'tally',
@@ -509,33 +561,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // `!== undefined` outside and truthiness inside. They agree today only because
           // `StoredTally.batchId` cannot be `''`; a `provides: []` that exists and protects nothing
           // is not a thing to leave one type change away.
-          ...(arrives || (departs && link !== undefined)
-            ? {
-                provides: [
-                  ...(arrives ? [tally.mobId] : []),
-                  ...(departs && link !== undefined ? [link] : []),
-                ],
-              }
-            : {}),
-          // A tally is guarded by at most one of these two, never both: a disposal is never a
-          // transfer half (the reasons are disjoint), which is why one key can carry either.
-          ...(intoFoodChain
-            ? {
-                guardedBy: mobDisposalSubjects(
-                  tally.mobId,
-                  farmDay(new Date(tally.occurredAt)),
-                  animals,
-                  moves,
-                  // ⛔ The tally log, so the subject set walks the TRANSFER CHAIN the guard walks.
-                  // Without it the set stopped at this mob and its members, and a refused dose on
-                  // the SOURCE of an accepted transfer held nothing — 201 for meat inside an active
-                  // withholding, which is the only shape in this file where meat reaches a truck.
-                  tallies,
-                ),
-              }
-            : tally.reason === 'transfer_in' && link !== undefined
-              ? { guardedBy: [link] }
-              : {}),
+          ...(providesFor.length > 0 ? { provides: providesFor } : {}),
+          // ⛔ A UNION, and no longer "at most one of these two". That claim was true only while a
+          // disposal could not also be a head-count dependant; a `sale` is now BOTH — judged against
+          // a withholding AND against whether the head it removes are actually there.
+          ...(guardedByFor.length > 0 ? { guardedBy: guardedByFor } : {}),
         });
       }
     }

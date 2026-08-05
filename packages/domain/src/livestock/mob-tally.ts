@@ -77,9 +77,16 @@ export interface MobTallyInput {
    * and the source keeps head it no longer has. The shared id is what lets the outbox hold the second
    * half back, and what lets a later reader see one action rather than two coincidences.
    *
-   * It is REQUIRED rather than optional on purpose: an optional link is one a caller can forget, and
-   * this one was already forgotten once — `recordMobTally` wrote `batchId: null` for a year under a
-   * comment claiming the halves were "tied by the envelope's `batch_id`".
+   * ⛔ REQUIRED OF THE CAPTURE, NOT ENFORCED HERE — and the distinction is the contract. This
+   * function ACCEPTS an unlinked half on purpose: the server runs it too, and it receives the halves
+   * as separate requests, possibly days apart, with nothing in the second identifying the first. A
+   * rule it cannot check is a rule that only loses records. `useRecordTallies` (the device, which is
+   * the one place the pairing is knowable) refuses one, and that is where the test for it lives.
+   *
+   * The residual gap is stated rather than implied closed: a half that reaches the server alone is
+   * accepted and cannot be reconciled. Earlier this docstring claimed the opposite, which is how
+   * `recordMobTally` came to write `batchId: null` for a year under a comment claiming the halves
+   * were "tied by the envelope's `batch_id`".
    */
   readonly batchId?: string | null | undefined;
   /**

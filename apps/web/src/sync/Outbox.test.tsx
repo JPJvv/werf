@@ -606,6 +606,140 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(stored).toContain(TALLY_ID);
   });
 
+  it('⭐ holds the SECOND departure of a chain when the first arrival never landed', async () => {
+    // The eighth pass, and the fifth widening of this mechanism. `transfer_out`, `death` and `theft`
+    // declared no `guardedBy` at all, so they were sent regardless of whether the arrival that
+    // funded the head had landed. The seventh pass fixed the chain in the SORT; the HOLD path
+    // reached the same harm.
+    //
+    // A→B→C offline. Another phone recounts A, so the server legitimately refuses `out_A`. `in_B` is
+    // held (correct, it is linked). `out_B` then went ANYWAY, to a server whose fold of B has no head
+    // in it — and the refusal it earns says "count the group and record what you find" while
+    // `/not-sent` says "Record it again". A RECOUNT RESETS, so following either instruction corrupts
+    // B's count permanently. That is why this is not merely a redundant round trip.
+    //
+    // ⚠️ Every id below is distinct from every other fixture in this file — a duplicate once made an
+    // assertion fire under the wrong name and read as a flush defect.
+    const A = '0190f3a0-0000-7000-8000-0000000000b5';
+    const B = '0190f3a0-0000-7000-8000-0000000000b6';
+    const C = '0190f3a0-0000-7000-8000-0000000000b7';
+    const BATCH1 = '0190f3a0-0000-7000-8000-0000000000bb';
+    const BATCH2 = '0190f3a0-0000-7000-8000-0000000000bc';
+    const OUT_A = '0190f3a0-0000-7000-8000-0000000000d9';
+    const IN_B = '0190f3a0-0000-7000-8000-0000000000da';
+    const OUT_B = '0190f3a0-0000-7000-8000-0000000000db';
+    const IN_C = '0190f3a0-0000-7000-8000-0000000000dc';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: A,
+          farmId: FARM_ID,
+          name: 'Camp A',
+          species: 'sheep',
+          headCount: 100,
+          initialHeadCount: 100,
+        },
+        {
+          id: B,
+          farmId: FARM_ID,
+          name: 'Camp B',
+          species: 'sheep',
+          headCount: 0,
+          initialHeadCount: 0,
+        },
+        {
+          id: C,
+          farmId: FARM_ID,
+          name: 'Camp C',
+          species: 'sheep',
+          headCount: 0,
+          initialHeadCount: 0,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      // Capture order, which is causal: the farmer moved A→B and then B→C.
+      JSON.stringify([
+        {
+          id: OUT_A,
+          farmId: FARM_ID,
+          mobId: A,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'transfer_out',
+          count: 40,
+          delta: -40,
+          counterpartMobId: B,
+          batchId: BATCH1,
+        },
+        {
+          id: IN_B,
+          farmId: FARM_ID,
+          mobId: B,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'transfer_in',
+          count: 40,
+          delta: 40,
+          counterpartMobId: A,
+          batchId: BATCH1,
+        },
+        {
+          id: OUT_B,
+          farmId: FARM_ID,
+          mobId: B,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'transfer_out',
+          count: 20,
+          delta: -20,
+          counterpartMobId: C,
+          batchId: BATCH2,
+        },
+        {
+          id: IN_C,
+          farmId: FARM_ID,
+          mobId: C,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'transfer_in',
+          count: 20,
+          delta: 20,
+          counterpartMobId: B,
+          batchId: BATCH2,
+        },
+      ]),
+    );
+    // Only the FIRST departure is refused, chosen on the record's own id so the other departure is
+    // not caught by the same rule — the whole point is what happens to the one behind it.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      return body.includes(OUT_A)
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'the source group is short' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    // One REFUSAL — `out_A`. The three behind it are held, which is pending, not the farmer's fault.
+    expect(await screen.findByText('1 not sent — needs your attention')).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(OUT_A);
+    expect(sent).not.toContain(IN_B);
+    // ⭐ THE ASSERTION THIS TEST EXISTS FOR. Before the head-count subject this went out and earned a
+    // destructive refusal.
+    expect(sent).not.toContain(OUT_B);
+    expect(sent).not.toContain(IN_C);
+
+    // And nothing was dropped — the queue keeps every capture for the next round.
+    const stored = window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '';
+    for (const id of [OUT_A, IN_B, OUT_B, IN_C]) expect(stored).toContain(id);
+  });
+
   it('⭐ sends a CHAINED move A→B→C in one round, without a false refusal on the second leg', async () => {
     // Found by `sync-auditor`, and it was a regression inside the previous session's own fix. That
     // fix lifted every `transfer_out` into the first pass, which inverts the order of a CHAIN: the

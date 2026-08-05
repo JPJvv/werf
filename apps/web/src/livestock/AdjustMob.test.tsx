@@ -599,6 +599,40 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(saved[0]?.['batchId']).toBeUndefined();
   });
 
+  it('⭐ does not carry a BUYER and a PRICE from an abandoned sale onto a theft', async () => {
+    // The same defect as the test above, two variables along, and missed by the fix that closed it.
+    // `counterparty` and `priceRands` render only under sale/purchase — reason-scoped by exactly the
+    // test the fix used — but they were derived from raw state and the reason buttons did not clear
+    // them. Nothing downstream refuses the combination: `recordMobTally` copies both for any reason
+    // and `tallyPayloadSchema` constrains neither by reason. So the append-only log, which has no
+    // edit path, permanently recorded a named third party and a price against a STOLEN tally — the
+    // exposure `.claude/rules/domain.md` bans outright ("No `suspect` field on theft records.
+    // Ever."), reached by accident rather than by design.
+    cachedSession();
+    seedTwoFlocks();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '5');
+    await user.type(screen.getByLabelText(/who bought them/i), 'Willem Botha');
+    await user.type(screen.getByLabelText(/price for the lot/i), '5000');
+
+    // The change of mind. Both inputs unmount; the state behind them used to survive.
+    await user.click(screen.getByRole('button', { name: /stolen/i }));
+    await user.type(screen.getByLabelText(/how many/i), '5');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    const saved = storedTallies();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ mobId: MOB_ID, reason: 'theft', delta: -5 });
+    // The two that matter: no buyer and no price on a theft.
+    expect(saved[0]?.['counterparty']).toBeUndefined();
+    expect(saved[0]?.['priceCents']).toBeUndefined();
+  });
+
   it('⭐ refuses to send the joined group for slaughter while the carried withholding runs', async () => {
     // The device's own guard, not the server's. The point of carrying the date locally is that the
     // refusal reaches the person who can still act on it — a server-only rule arrives on Friday.

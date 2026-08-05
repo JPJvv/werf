@@ -179,6 +179,10 @@ export function RecordLossScreen() {
       recordDeath({ ...base, cause: SLAUGHTER_CAUSE, slaughtered: true });
     } else if (outcome === 'sold') {
       if (counterparty.trim().length === 0 || !priceIsValid(priceRands)) return;
+      // The same backstop the slaughter branch carries, and for the same reason: `canSave` is what
+      // the farmer sees, this is what the code guarantees. A sale is a route into the food chain
+      // exactly as a slaughter is, and it had no second line.
+      if (withheld || disposalDay === '') return;
       recordSale({
         ...base,
         counterparty: counterparty.trim(),
@@ -234,9 +238,16 @@ export function RecordLossScreen() {
       : outcome === 'slaughtered'
         ? !withheld && disposalDay !== ''
         : outcome === 'sold'
-          ? counterparty.trim().length > 0 &&
+          ? // ⭐ `disposalDay !== ''` belongs here for BOTH reasons the slaughter branch has it, and
+            // a sale is the route that had neither. (1) A cleared date reaches `save` as
+            // `new Date('T12:...')` = Invalid Date and throws out of the click handler, losing the
+            // sale with no message. (2) It is the day the withdrawal guard is judged against, so a
+            // blank one used to disarm the guard entirely — see `latestClearAcross`, which now
+            // refuses an unreadable day rather than treating it as "before every dose".
+            counterparty.trim().length > 0 &&
             priceIsValid(priceRands) &&
             weightIsValid(saleWeight) &&
+            disposalDay !== '' &&
             !withheld
           : outcome === 'missing'
             ? lastSeenDay !== '' && !locating

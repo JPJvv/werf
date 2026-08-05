@@ -316,6 +316,38 @@ describe('recording a loss', () => {
     );
   });
 
+  it('⭐ a CLEARED day does not disarm the sale guard, and cannot save an un-sendable sale', async () => {
+    // The dose-day bound added to `latestClearAcross` compares `administeredOn > disposalOn`. A
+    // native date input is clearable, and every real day is `> ''`, so a blank day skipped EVERY
+    // dose, `latest` stayed undefined, and the animal read CLEAR: the red panel vanished and Save
+    // went live on an animal deep inside a withholding. The bound written to stop a false REFUSAL
+    // had opened a false PASS, which is the worse direction. Second arm: the sale then reached
+    // `save` as `new Date('T12:00:00.000Z')` = Invalid Date and threw out of the click handler, so
+    // the record was lost with no message. The death branch was given both guards and pinned by a
+    // test; the sale branch — the other route into the food chain — was given neither.
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female' }));
+    seedActiveWithdrawal('a1');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Sold' }));
+    await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
+    await user.type(screen.getByLabelText(/^price/i), '8500');
+    await user.clear(screen.getByLabelText(/what day/i));
+
+    // Everything the sale needs is filled in EXCEPT the day. Save must stay disabled...
+    expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+
+    // ...and clicking anyway must write nothing — no Invalid Date, no stranded capture.
+    await user.click(screen.getByRole('button', { name: /record sale/i }));
+    expect(storedEvents()).toHaveLength(0);
+  });
+
   it('still lets an untreated animal be slaughtered', async () => {
     // The bound: a guard that refuses what it should not is a guard people learn to work around.
     cachedSession();

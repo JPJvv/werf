@@ -3,17 +3,24 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-08-05 (SEVENTEENTH session — a STOPPING RULE (§7) and the EIGHTH pass under
-it: three SEV-2s, all fixed; plus a dev-database exposure closed) ·
-**Branch:** `phase-2/livestock`, **in sync with origin** (this file's own commit moves HEAD —
+**Last updated:** 2026-08-05 (EIGHTEENTH session — the NINTH pass; **§7 clause 4 FIRED**; two SEV-2s
+fixed by REPLACING the outbox hold mechanism rather than widening it a sixth time) ·
+**Branch:** `phase-2/livestock`, **ahead of origin** (this file's own commit moves HEAD —
 re-read with `git log`).
-`pnpm verify` green LOCALLY, re-run this session: **84** files / **944** tests, bundle
-**146.92 KB** gz (confirmed against a fresh build, not copied forward).
-`pnpm test:e2e` **27/27 on two consecutive cold runs, 46s** — see §4 A9, and read the warning there
-before treating that as proof of anything.
+`pnpm verify` green LOCALLY, exit 0, re-run this session on a quiet machine: **84** files /
+**952** tests, bundle **147.77 KB** gz (a real execution, 221s — not a turbo cache replay, and the
+distinction is checked below).
+`pnpm test:e2e` **NOT re-run this session** — the last figure was 27/27 cold, twice, and it is now
+one session stale against a diff that changes the outbox's network shape. Treat it as unverified.
 **CI last green at `34e0685`** (run `30807663310`, `gh run view`). ⛔ **Commits since then are NOT
-yet CI-verified — push and watch, because `pnpm verify` does not run e2e and this session changed the
-outbox's network shape.** See §6 for the compliance operating model and **§7 for the STOPPING RULE**.
+yet CI-verified — push and watch.** See §6 for the compliance operating model, **§7 for the STOPPING
+RULE and §7a for the gap using it exposed.**
+
+> ⚠️ **A GATE CAN BE GREEN WITHOUT HAVING RUN.** The first `pnpm verify` this session reported
+> `FULL TURBO`, 7 cached, **112ms** — a legitimate cache replay of §2q's inputs, and no test
+> executed. The one uncached run that session FAILED on `Port 5432/tcp not bound` because three
+> review agents were competing for Docker at the time. **Do not schedule the gate alongside agents,
+> and read the duration: a verify that returns in milliseconds proved nothing today.**
 
 > ⚠️ **The figures in this header were STALE when the sixteenth session opened** — it claimed 934
 > tests and 146.45 KB, both superseded by §2o's own numbers one section below. **Fourth consecutive
@@ -26,6 +33,24 @@ outbox's network shape.** See §6 for the compliance operating model and **§7 f
 > That is the shape of a SEV-1 this repo already shipped and fixed (§2d `16fbb6a`), sitting in the
 > document CLAUDE.md points at for "anything about sync". **No agents were run** (not asked; the
 > standing rule is owner-triggered only).
+
+> ⛔⭐ **THE NINTH PASS RAN (2026-08-05) AND §7 CLAUSE 4 FIRED — see §2r.** Two SEV-2s, both fixed.
+> One was **inside the eighth pass's own fix**: the `head:<mobId>` subject held decreases that needed
+> no held head, for ever, and a held capture was reported in NO surface the product had. The other
+> was the theft-record fix stopping at the screen while its own comment documented the open boundary.
+> **Nine for nine.** ⭐ **No tenth pass was spawned — that is the rule working, not the rule being
+> ignored.** JP's call was to REPLACE the mechanism: head availability is now arithmetic (the
+> device runs the server's own fold) rather than a subject, and held captures are surfaced.
+>
+> ⛔ **The sharpest finding is not either SEV-2. §2q claimed "all 14 pre-existing outbox tests still
+> pass, which is the check that no false hold crept in" — and NOT ONE of them refuses an increase, so
+> that check was impossible.** A gate claim that cannot fail is worse than a test that cannot fail,
+> because it is the sentence that ends the argument. §2q is corrected in place.
+>
+> ⚠️ **The agents SPLIT on severity: `reviewer` rated the head-hold defect MED and returned
+> APPROVABLE.** It was rated SEV-2 against that vote — `reviewer`'s own finding text says the
+> captures are held "indefinitely" with no discard path, which contradicts its rating. **Severity is
+> the reviewer's call, not the agent's.**
 
 > ⭐ **THE EIGHTH PASS RAN (2026-08-05) UNDER A STOPPING RULE, AND EVERY SEV-2 IS FIXED (§2q).**
 > Three SEV-2s, all inside the seventh pass's own fix commit `34e0685`, one of them two variables
@@ -112,7 +137,7 @@ outbox's network shape.** See §6 for the compliance operating model and **§7 f
 |---|---|
 | **Phase 0** — scaffold | ✅ Merged to `main`. Repo public, CI green, branch protection on |
 | **Phase 1** — auth, sync, onboarding | ✅ Merged to `main` as `9452ebc` (PR #2). **All four of its named gaps are now closed** — the last one, client passkey enrolment + management, went in this session. Phase 1 has no open gaps |
-| **Phase 2** — livestock & crops | 🟡 **NOT merged. ⭐ THE BUILD LIST IS EMPTY** — §2m #1 is built (`d0dd571`) and the non-SEV leftovers with it (`6abb6cf`); everything still named in §4 B2/B4/B5 is blocked on something that does not exist. See §2n. ⭐ **SEVEN review passes have now run; the seventh's findings are ALL FIXED (§2o).** `pnpm verify` green LOCALLY: **84** files / **941** tests, bundle **146.79 KB** gz. ⛔ **Not merge-ready. What is left is the EIGHTH pass over the seventh's own fix commit `34e0685` + this session's docs work — seven passes running have each found a real defect inside the previous pass's fixes, and there is still no build work to do instead. JP's call.** ✅ `pnpm test:e2e` **27/27 cold, twice** — §4 A9 is DIAGNOSED and fixed (`3ca3a2c`), and it was never an app defect. ⚠️ `pnpm verify` needs Docker. **Do not mark the PR ready; do not merge** |
+| **Phase 2** — livestock & crops | 🟡 **NOT merged. THE BUILD LIST IS EMPTY** — everything still named in §4 B2/B4/B5 is blocked on something that does not exist (§2n). ⭐ **NINE review passes have run. All nine returned NOT APPROVABLE; the ninth's two SEV-2s are FIXED (§2r).** `pnpm verify` green LOCALLY, real execution: **84** files / **952** tests, bundle **147.77 KB** gz. ⛔ **Not merge-ready, and the reason is now a RULE QUESTION rather than a work question: §7 clause 4 fired, so no tenth pass may be spawned, while clause 1 says these SEV-2 fixes earn one. See §7a and answer §2 item 9.** The outbox hold mechanism was REPLACED this session, not widened — head availability is arithmetic now. ⚠️ `pnpm test:e2e` **not re-run this session** and the diff changes the outbox's network shape; the 27/27 figure is stale. ⚠️ `pnpm verify` needs Docker, and must not run alongside agents. **Do not mark the PR ready; do not merge** |
 | **Phase 3** — labour & wages 🇿🇦 | ⬜ Not started. **Critical path** |
 | **Phases 4–7** | ⬜ Not started. Scope expanded 2026-07-25 (fuel + refund, photo flag, price board) |
 
@@ -292,6 +317,19 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    "handed over in person" the answer, or does this need a channel we do not operate yet?
    → _Answer:_ ✅ **In-person handover (JP, 2026-07-30).** No new delivery channel; SMS stays ruled
    out. The membership is recorded and the owner hands the invite over.
+
+9. ⛔ **NEW AND IT BLOCKS THE MERGE — clause 4 fired and left a gap. What clears Phase 2 now?**
+   The ninth pass returned a SEV-2 in the outbox hold mechanism, so §7 clause 4 forbade a tenth pass
+   and sent it to you as a scope decision. You chose redesign; the redesign is built and tested
+   (§2r). **Clause 1 says a SEV-2 fix earns another pass. Clause 4 says do not spawn one. They now
+   contradict, and no pass has ever returned APPROVABLE on this branch.** Full argument in §7a.
+   My recommendation, and the reasoning is in §7a: **(a) ONE pass scoped to the new mechanism only**
+   — `bd78e53..HEAD` is a different design, not another patch, and clause 4 was aimed at patching.
+   The alternatives are **(b)** merge on clause 3's logic extended to this diff (every fix watched
+   to fail first, confined to the named files) and **(c)** Phase 2 stays blocked pending you.
+   ⚠️ **Whichever you pick, amend §7 rather than making an exception for this one case — that is
+   what §7's own closing paragraph demands.**
+   → _Answer:_
 
 8. **NEW — object storage.** FR-108 photos cannot be built without it, and it is not a design
    question but a missing tier: `architecture.md` plans presigned direct-from-client upload to S3
@@ -850,8 +888,23 @@ everything before `34e0685` has now been read seven times and is not where the n
 is what made the pass affordable.
 
 **`reviewer`: NOT APPROVABLE. `sync-auditor`: NOT APPROVABLE. `compliance-checker`: NOT APPROVABLE.**
-Eighth consecutive pass. **All three SEV-2s were inside `34e0685` itself**, one of them two variables
-along from the exact line it fixed.
+Eighth consecutive pass.
+
+> ⚠️ **THREE CLAIMS IN THIS SECTION WERE CORRECTED BY THE NINTH PASS (§2r). Read them as a warning
+> about how a write-up flatters itself, because the third one cost a SEV-2.**
+>
+> 1. ~~"All three SEV-2s were inside `34e0685` itself"~~ — **SEV-2 #1 was not.** `transfer_out`,
+>    `death` and `theft` never had a `guardedBy`; that is a hole `34e0685` failed to close, not one
+>    it opened. Overstating it strengthens the "always in the previous fix" narrative that the
+>    scope-narrowing of clause 1 rests on, which is the one claim that must not be inflated.
+> 2. ~~"`34e0685` removed that throw and updated three of the four sites"~~ — if three of four had
+>    been updated, ONE comment would have been stale, not three. The fourth site needed nothing.
+> 3. ⛔ ~~"All 14 pre-existing outbox tests still pass, which is the check that no false hold crept
+>    in."~~ **THAT CHECK WAS IMPOSSIBLE. Not one of those tests refuses an INCREASE**, so none of
+>    them could have detected a false hold in the `head:` namespace — and there was one, rated SEV-2
+>    by the ninth pass. An assertion that cannot fail is not a test; a GATE CLAIM that cannot fail
+>    is worse, because it is the sentence that ends the argument. **Ask of any "and these tests
+>    prove it did not regress": what edit would those tests have caught?**
 
 | Sev | Found by | What was wrong | Fix |
 |---|---|---|---|
@@ -861,6 +914,11 @@ along from the exact line it fixed.
 | MED×3 | `sync-auditor` + `reviewer` | Three comments claiming the domain refuses an unlinked transfer half — `34e0685` removed that throw and updated three of the four sites | `0b2adc6` |
 | MED | `compliance-checker` | **Three FALSE NAVIGATION CLAIMS in `user-guide.md`**, introduced by `faf0c19` — the commit whose purpose was to stop that file lying. A "Settings → Not sent" that does not exist; Settings → Security described as managing authenticators (passkeys only); a tally reason the screen deliberately never offers | `0b2adc6` |
 | MED | `reviewer` | **The batch-link rule has ZERO test coverage anywhere.** `34e0685` moved it from two tested sites to one untested one and rewrote both tests to assert the opposite. Correct today (`canSave` always mints the id) | ⬜ **TRACKED, not fixed — §7 clause 2.** See below |
+
+⛔ **AND THE FIX FOR THAT FIRST SEV-2 WAS ITSELF A SEV-2 — see §2r.** The `head:<mobId>` subject
+held a decrease whenever ANY increase on the mob was tainted, whether or not the decrease needed it,
+and a held capture was reported nowhere. It has been replaced by the server's own arithmetic. Ninth
+for ninth.
 
 ⭐ **THE AGENTS DISAGREED ON THE FIX FOR THE FIRST SEV-2, AND ONE OF THEM WAS WRONG.**
 `compliance-checker` proposed `guardedBy: [tally.mobId]`. `sync-auditor` had specifically shown that
@@ -884,7 +942,8 @@ harness for a hook. It is a tracked issue on `main`, not a Phase 2 blocker. **If
 reviewer's judgment over the rule, say so and build the harness — but change the RULE, not this one
 case.**
 
-**Gate after: 84 files / 944 tests** (was 941), bundle **146.92 KB** gz. Every fix has a test watched
+**Gate after: 84 files / 944 tests** (was 941), bundle **146.92 KB** gz — superseded by §2r's
+952 / 147.77 KB. Every fix has a test watched
 to fail against the old code first, and **each red was confirmed for the RIGHT REASON** rather than
 banked: `expected false to be true` on the Save-disabled assertion; the theft tally coming back
 carrying `counterparty: "Willem Botha"`; `OUT_B` and `IN_C` present in the sent log while their
@@ -911,6 +970,111 @@ and its `ryuk` reaper.
 - **A `python3` patch bypasses the format hook.** Four files failed `prettier --check` in the gate
   because the PostToolUse formatter only fires on Edit/Write. Run prettier on anything patched by
   script.
+
+---
+
+## 2r. The NINTH review pass (2026-08-05, eighteenth session) — two SEV-2s, and §7 clause 4 FIRED
+
+**JP triggered it. Scope narrowed under §7 clause 1 to `bd78e53..HEAD`** — the eighth pass's own fix
+commit `0b2adc6` (11 source files) plus the §2q write-up. Nothing else on the branch was unreviewed.
+All three agents in parallel, output read directly, **ninth consecutive NOT APPROVABLE.**
+
+⛔ **THIS WAS THE LAST PASS §7 ALLOWS (clause 4: hard ceiling of two).** It returned SEV-2s, so the
+rule's instruction was followed: **no tenth pass was spawned**, and the question went to JP as a
+scope decision. JP chose to replace the mechanism rather than descope it.
+
+### The agents SPLIT on severity, and the adjudication is the point
+
+| Agent | On the head-hold defect | Verdict |
+|---|---|---|
+| `sync-auditor` | **SEV-2** | NOT APPROVABLE |
+| `reviewer` | **MED-1** — "a hold that retries and keeps everything" | **APPROVABLE** |
+| `compliance-checker` | did not find it; argued clause 4 had NOT fired | NOT APPROVABLE (own SEV-2) |
+
+**Rated SEV-2, against `reviewer`'s vote.** Two agents found the defect independently, which is this
+repo's own strongest signal. On severity: `reviewer`'s own finding text says the captures are *"held
+every round, indefinitely"* and that *"a refused capture has no edit or discard path in the product,
+so 'indefinitely' is literal"* — the rating and the analysis contradict each other. §7's calibration
+says SEV-1/SEV-2 is *"meat reaching a truck inside a withholding, or a capture silently lost"*, and
+the precedent is §2f's breeding SEV-2, rated exactly this way for the same shape: "recorded" in
+`localStorage`, unsendable on the wire.
+
+⭐ **`compliance-checker`'s "clause 4 has not fired" was true of its OWN finding and wrong overall.**
+It verified the `head:` namespace is disjoint from residue subjects — correct, and that is what would
+have caused a false REFUSAL of a departure from a dipped camp. `sync-auditor` asked a different
+question: a decrease funded by the mob's own baseline, held by an unrelated refused increase. Not a
+contradiction; one is narrower. **Two agents checking "the same" mechanism can be checking different
+questions — reconcile what each actually tested, not what each concluded.**
+
+| Sev | Found by | What was wrong | Fix |
+|---|---|---|---|
+| **SEV-2** ⭐⭐ | `sync-auditor` + `reviewer` (as MED) | **The `head:<mobId>` subject held decreases that needed no held head, for ever, invisibly.** Camp of 100 on the server, a refused purchase of 10, three unrelated deaths — the server folds 100, takes 3, returns 201. Held instead: the refusal is permanent by this file's own definition, there is no edit or discard path, `blocked` is derived from the refusal map so a held item was in NO list, and the strip returned early on the refusal count so it was not even in the pending total. **"1 not sent" while three dead ewes sat on the phone.** Introduced by `0b2adc6`, the eighth pass's fix | `head:` replaced by `needsHead` — the device runs `projectHeadCount` over the baseline and the captures the server actually holds, cut at `(occurredAt, id)`, and holds only on a real underflow. **The same projection `deriveHeadCount` runs**, so the two sides cannot disagree |
+| **SEV-2** | `compliance-checker` | **The theft-record fix stopped at the screen.** `0b2adc6` scoped `counterparty`/`priceCents` to a trade in `AdjustMobScreen` and its own comment documented the boundary as still open: `mob-tally.ts:152` copies both for any reason, `tallyPayloadSchema` constrained neither. A named third party on a theft record is banned outright by `.claude/rules/domain.md` — POPIA s26, in an append-only log with no edit path | Reason-scoped in `tallyPayloadSchema.superRefine`, mirrored on `recordMobTallyRequestSchema` so the wire refusal names the field. Enforced BEFORE the recount early-return |
+| MED | `reviewer` + `sync-auditor` | **The fail-closed day check was discarded by its own caller.** `latestClearAcross` returned `{blocked: true}` for an unreadable day, but `mobWithdrawal` recomputed `blocked` whenever an arrival was present. `''` survived only because `latestArrivedWithhold` also skips everything on an empty day; a malformed day that sorts HIGH (`'2026-7-5'`) took the other branch and came back **CLEAR** for a flock inside a live withholding | Moved to the two public entry points. Watched to fail: `expected false to be true` |
+| MED | `sync-auditor` + `compliance-checker` | **A food-safety block with nothing on screen saying why.** `blocked` no longer implied `clearFrom !== null`, and all five explanation panels were gated on the date being present — so clearing the date field made the red panel VANISH while Save stayed disabled | `loss.needDay` / `tally.needDay` in both locales, on both screens |
+| MED | `sync-auditor` | A tally on a mob the server has not accepted earned a 404 **per capture** — six "needs your attention" rows for one cause | `mobrow:<mobId>` — a third, disjoint namespace, because a foreign key genuinely IS a graph question |
+| MED×2 | `reviewer` | Four comments in `Outbox.tsx` the fix made false, one three lines above the change (*"a death… is not held for evidence"*); `offline-sync.md` invariant 5 still described the narrower mechanism | Corrected; the doc now states all three namespaces, the arithmetic rule, and that a hold is reported |
+| LOW×4 | all three | `user-guide.md` "tap the 'not sent' line" (it is a `role="status"` div; the control is a separate **See what** link); `Settings → Export data` and `Settings → Storage`, neither of which exists — Settings has four children and always has; `mob-tally.ts`'s summary line contradicting its own correction ten lines down | All fixed. The as-at block now says an UNCLASSIFIED section is where a false claim hides |
+
+### ⛔ The meta-finding, which matters more than either SEV-2
+
+**§2q claimed "all 14 pre-existing outbox tests still pass, which is the check that no false hold
+crept in". Not one of those tests refuses an INCREASE.** The check was structurally incapable of
+detecting the defect that was there. This is the "assertion that cannot fail" class promoted one
+level: not a test that cannot fail, but a **gate claim** that cannot fail — the sentence that ends
+the argument and licenses the merge. §2q's three factual slips are corrected in place above.
+
+**Ask of any "and the existing tests prove it did not regress": what edit would those tests catch?**
+
+### What the fix actually changed, and why it is not a sixth widening
+
+The hold mechanism had been widened five times, each widening exposing the next reader. The ninth
+pass's diagnosis is that **head availability was never a graph question.** The server refuses a
+decrease only when its own fold goes negative; a subject can only say "something this mob's count
+depends on did not land", which is a different and much broader claim. So the device now runs the
+server's test instead of approximating it — the repo's own general rule for aggregates (§2b),
+applied to the hold. `recount` needs no special case: `projectHeadCount` already RESETS on one.
+
+**Three namespaces remain and they are deliberately disjoint:** bare ids for a withholding, a batch
+id for the two halves of a move, `mobrow:` for the mob row. Each answers one question.
+
+**And a held capture is now REPORTED** — `/not-sent` lists it under "Waiting on one of the above",
+the strip shows `1 not sent — needs your attention · 3 to send`. Not styled as a problem, because it
+is not one and the farmer can do nothing about it. **A hold nobody can see is a lost record.**
+
+### Discipline
+
+**Gate after: 84 files / 952 tests** (was 944), bundle **147.77 KB** gz. A real execution — 221s,
+exit 0, run alone with no agents competing for Docker.
+
+Every fix has a test watched to fail against the old code first, **and each red was confirmed for
+the RIGHT reason rather than banked.** The head-hold bound test first went red on the strip WORDING,
+which masked the assertion it exists for; the wait was loosened to a regex and the red moved to
+`expected '[…]' to contain '…c3'` — the death missing from the sent log. **A test whose failure
+names the wrong cause is most of the way to a test that cannot fail.**
+
+The four pre-existing hold tests that asserted the strip's exact string were relaxed to an anchored
+regex, NOT rewritten to match new output: each still pins "exactly one refusal", which is its own
+subject. The two tests whose subject IS the strip assert the full string.
+
+⭐ **The bound tests are the deliverable as much as the fix is.** `SENDS a death the mob can fund`
+and `still HOLDS a decrease the mob genuinely cannot fund` are the same guard with one number
+changed. A suite that only ever asserted the holding direction is what let the over-broad version
+look correct for a whole pass.
+
+### The rules that came out of this pass
+
+- ⭐ **A gate claim can be unfalsifiable too.** "These N tests still pass" is worthless unless at
+  least one of them could have failed. Name the edit it would catch.
+- ⭐ **Severity is the reviewer's call, not the agent's.** Two agents found this defect; one rated it
+  MED on a premise its own finding text contradicted. Read the analysis, not the label.
+- ⭐ **Agents checking "the same mechanism" may be checking different questions.** One verified no
+  false refusal and concluded the mechanism was sound; the false HOLD was a different question, and
+  the conclusion did not cover it.
+- **When a mechanism has been widened five times, stop widening.** Ask what question it is
+  approximating and whether the exact answer is available. Here it was, on the device, already
+  imported by a screen two files away.
+- **A comment three lines from the change is the one that goes stale.** Fourth-plus occurrence.
 
 ---
 
@@ -1421,8 +1585,13 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 1b. START DOCKER DESKTOP before running the gate (§4 A10). Without it
    `pnpm verify` exits 1 on the testcontainers tier.
 
-2. Then read §2n (this session), §2l (the sixth pass and its fixes), §6 (the
-   compliance operating model), CLAUDE.md and
+1c. DO NOT run `pnpm verify` while review agents are running. They compete for
+   Docker and the gate fails on `Port 5432/tcp not bound`, which looks like a
+   defect and is not. Also: a verify that returns in ~100ms is a turbo CACHE
+   REPLAY and executed nothing — check the duration before believing it.
+
+2. Then read §2r (the ninth pass), §7 + §7a (the stopping rule and the gap it
+   left), §6 (the compliance operating model), CLAUDE.md and
    docs/04-delivery/phase-checklists.md.
 
 ⛔ PHASE 2'S EXIT GATE STILL DOES NOT READ TRUE, and there is now exactly ONE
@@ -1432,30 +1601,32 @@ empty. What fails is **"the fixes are unreviewed"** — plus CI-green-on-`main`,
 which is unmeetable before merge and always was.
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  ⭐ THE LOOP NOW HAS AN END. §7 IS THE STOPPING RULE — read it first.     ║
+║  ⛔ THE NINTH PASS RAN AND CLAUSE 4 FIRED. §7 IS THE RULE, §7a IS THE     ║
+║  GAP IT LEFT — read both, and DO NOT SPAWN A TENTH PASS.                  ║
 ║                                                                          ║
-║  The EIGHTH pass ran (§2q) and its three SEV-2s are fixed. Under §7 the   ║
-║  NINTH pass is the LAST one permitted, and it reviews ONLY the fix diff   ║
-║  `0b2adc6` — not the accumulated range.                                   ║
+║  It returned two SEV-2s (§2r), one of them created by the eighth pass's   ║
+║  own fix. Under clause 4 that is a DESIGN signal, not a reason for more   ║
+║  review. It was escalated; JP chose REDESIGN over descope, and the        ║
+║  redesign is built: head availability is arithmetic (the device runs the  ║
+║  server's own fold), not a subject, and held captures are surfaced.       ║
 ║                                                                          ║
-║  ⭐ If the ninth returns NO SEV-1/SEV-2 → the gate clause CLOSES. Mark    ║
-║  PR #3 ready and merge; CI-green-on-main resolves at the merge itself.    ║
-║  ⭐ If it returns only MED/LOW → fix them and merge WITHOUT a tenth pass  ║
-║  (§7 clause 3). That is the clause that ends the recursion.               ║
-║  ⛔ If it returns a SEV-2 in the outbox hold mechanism AGAIN, do NOT      ║
-║  spawn a tenth. That mechanism has been widened five times, each          ║
-║  widening exposing the next stale reader. Escalate a REDESIGN to JP as    ║
-║  a scope decision (§7 clause 4).                                          ║
+║  ⛔ NOW THE RULE CONTRADICTS ITSELF AND ONLY JP CAN RESOLVE IT. Clause 1: ║
+║  a SEV-2 fix earns another pass. Clause 4: do not spawn one. Nine passes, ║
+║  zero APPROVABLE. → §2 item 9. Amend §7; do not make a one-off exception. ║
+║                                                                          ║
+║  ⛔ AND DO NOT READ "nine passes ran" AS "therefore merge."               ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
   1. PUSH and watch CI. `pnpm verify` does     §2j        a session does it
      NOT run e2e, and this session changed                 — do it FIRST
-     the outbox's network shape. Green
-     locally is not a green branch
-  2. THE NINTH PASS over `0b2adc6` only.       §2q, §7    ⭐ JP's call. The
-     The LAST one §7 permits                              last one permitted
+     the outbox's network shape AND its
+     copy. Green locally is not a green
+     branch, and e2e was NOT re-run
+  2. ANSWER §2 ITEM 9 — what clears Phase 2    §7a        ⭐ JP's call, and
+     now that clause 4 has fired? This is                 it is the ONLY
+     the whole critical path                              thing left
   3. §4 G4's OTHER HALF — `ux-design-system.md`  §2p      a session can do it
      still stale for 14+ screens. Not                     without JP
      regulated, genuinely unblocked
@@ -1579,3 +1750,30 @@ sits unreviewable for nine sessions.**
 ⚠️ **The rule was written and committed BEFORE the eighth pass's findings were read**, deliberately,
 so that it could not be bent to fit whatever came back. If a future session wants to relax it, say so
 out loud and get JP's call — do not quietly re-interpret clause 3.
+
+---
+
+### ⛔ 7a. THE GAP CLAUSE 4 LEFT, found by using it (2026-08-05, eighteenth session)
+
+**Clause 4 fired exactly as designed and then ran out of instructions.** The ninth pass returned a
+SEV-2 in the outbox hold mechanism — the surface the clause named in advance. No tenth pass was
+spawned. It was escalated to JP, who chose **redesign** over descope, and the redesign is built:
+head availability is arithmetic now, not a subject, and held captures are surfaced.
+
+**So what is the state of Phase 2?** Clause 4 says do not spawn a tenth pass. Clause 1 says a fix
+for a SEV-2 always earns another pass. **Those two now contradict each other**, and the rule does
+not say which wins after an escalation resolves. Nine passes have run and none has cleared the
+branch.
+
+**This is not a question to answer by silence, and it is not mine to answer.** ⛔ **It is a live
+decision for JP — see §2 item 9.** My own view, argued rather than assumed:
+
+> **Clause 4 exists to stop a mechanism being patched round after round, not to stop a NEW mechanism
+> being read once.** The subject-graph approximation is gone; what replaced it is a different
+> design that no agent has ever seen. Reviewing it once is the first review of a new thing, not the
+> tenth review of an old one. **But that is an amendment to the RULE, and §7 says out loud that
+> amendments are JP's and must not be a quiet re-interpretation.** So it is asked, not assumed.
+
+**What must NOT happen is the rule being read as "nine passes ran, therefore merge".** No pass has
+returned APPROVABLE on this branch, and the last one found a lost-capture defect inside the previous
+one's fix.

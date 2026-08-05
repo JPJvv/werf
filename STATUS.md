@@ -3,16 +3,17 @@
 > **Read this first, before planning anything.** It is the live pointer between sessions.
 > `CLAUDE.md` links here. Update it at the end of every session and commit it with the work.
 
-**Last updated:** 2026-08-04 (SIXTEENTH session — a DOCS AUDIT: five architecture/delivery documents
-were contradicting the built system, incl. the sync contract) ·
+**Last updated:** 2026-08-05 (SEVENTEENTH session — a STOPPING RULE (§7) and the EIGHTH pass under
+it: three SEV-2s, all fixed; plus a dev-database exposure closed) ·
 **Branch:** `phase-2/livestock`, **in sync with origin** (this file's own commit moves HEAD —
 re-read with `git log`).
-`pnpm verify` green LOCALLY, re-run this session: **84** files / **941** tests, bundle
-**146.79 KB** gz (the bundle figure was confirmed against a fresh build, not copied forward).
+`pnpm verify` green LOCALLY, re-run this session: **84** files / **944** tests, bundle
+**146.92 KB** gz (confirmed against a fresh build, not copied forward).
 `pnpm test:e2e` **27/27 on two consecutive cold runs, 46s** — see §4 A9, and read the warning there
 before treating that as proof of anything.
-**BOTH CI LANES GREEN at `34e0685`** — run `30807663310`, verified with `gh run view` rather than
-inferred (§2o). See §6 for the compliance operating model JP set.
+**CI last green at `34e0685`** (run `30807663310`, `gh run view`). ⛔ **Commits since then are NOT
+yet CI-verified — push and watch, because `pnpm verify` does not run e2e and this session changed the
+outbox's network shape.** See §6 for the compliance operating model and **§7 for the STOPPING RULE**.
 
 > ⚠️ **The figures in this header were STALE when the sixteenth session opened** — it claimed 934
 > tests and 146.45 KB, both superseded by §2o's own numbers one section below. **Fourth consecutive
@@ -26,10 +27,14 @@ inferred (§2o). See §6 for the compliance operating model JP set.
 > document CLAUDE.md points at for "anything about sync". **No agents were run** (not asked; the
 > standing rule is owner-triggered only).
 
-> ⭐ **THE SEVENTH REVIEW PASS RAN (2026-08-03, fifteenth session) AND EVERY FINDING IS FIXED
-> (§2o).** Four SEV-2s, five MEDs, four LOWs; seventh consecutive NOT APPROVABLE; both CI lanes
-> green at `34e0685`. ⛔ **The fixes are themselves unreviewed — that is the eighth pass, and it is
-> JP's call.** See §5.
+> ⭐ **THE EIGHTH PASS RAN (2026-08-05) UNDER A STOPPING RULE, AND EVERY SEV-2 IS FIXED (§2q).**
+> Three SEV-2s, all inside the seventh pass's own fix commit `34e0685`, one of them two variables
+> along from the line it fixed. **Eight for eight.** ⭐ **§7 is the new thing and it matters more than
+> the findings: the review loop now has a TERMINAL CONDITION.** A pass clears on no SEV-1/SEV-2;
+> MED/LOW are tracked, not blockers; a pass returning only MED/LOW merges its own fixes without
+> another pass; hard ceiling of two passes. **Written and committed BEFORE the findings were read.**
+> ⛔ **One MED is deliberately unfixed under that rule — the untested batch-link seam. `reviewer`
+> wanted it closed; the rule says otherwise. Change the RULE if you disagree, not the one case.**
 
 > ⭐ **THE FOURTEENTH SESSION CLOSED THE LAST OF THE PHASE 2 BUILD LIST.** §2m #1 (the transfer
 > batch link, `d0dd571`) and the non-SEV leftovers §2m #2/#3/#5/#6 (`6abb6cf`). **There is now no
@@ -834,6 +839,81 @@ Phase 3 work and is untouched.
 
 ---
 
+## 2q. The EIGHTH review pass (2026-08-05, seventeenth session) — three SEV-2s, ALL FIXED
+
+**JP TRIGGERED IT, and asked for a STOPPING RULE first so the phase could not loop forever.** The
+rule is §7, and it was written and committed (`bd78e53`) BEFORE any finding was read, deliberately.
+
+**Scope was NARROWED under §7 clause 1: `34e0685^..HEAD` only** — the seventh pass's own fix commit
+(one code commit, 12 source files) plus the four docs commits. Previous passes re-read 24 commits;
+everything before `34e0685` has now been read seven times and is not where the next defect is. This
+is what made the pass affordable.
+
+**`reviewer`: NOT APPROVABLE. `sync-auditor`: NOT APPROVABLE. `compliance-checker`: NOT APPROVABLE.**
+Eighth consecutive pass. **All three SEV-2s were inside `34e0685` itself**, one of them two variables
+along from the exact line it fixed.
+
+| Sev | Found by | What was wrong | Fix |
+|---|---|---|---|
+| **SEV-2** ⭐⭐ | `sync-auditor` + `compliance-checker` | **A departure was SENT when the arrival that funded it was held.** `transfer_out`, `death` and `theft` declared no `guardedBy` at all. Offline chain A→B→C, another phone recounts A, `out_A` refused, `in_B` correctly held — and `out_B` went anyway, to a server whose fold of B has no head in it. The refusal says *"count the group and record what you find"* and `/not-sent` says *"Record it again"*; **a recount RESETS**, so following either corrupts B's count permanently. The seventh pass closed the ORDERING route to this harm; the HOLD route reached it | `0b2adc6` |
+| **SEV-2** | `reviewer` | **`counterparty` and `priceCents` survived a reason change.** Neither derived from `reason` nor cleared by the reason buttons — the one arm the reason-scoping fix missed. Type a buyer and a price under "Sold", switch to "Stolen", and the append-only log permanently held *"5 head stolen, buyer Willem Botha, R5 000"*. Nothing refuses it: `recordMobTally` copies both for any reason and `tallyPayloadSchema` constrains neither. A named third party on a theft record is what `.claude/rules/domain.md` bans outright | `0b2adc6` |
+| **SEV-2** | `compliance-checker` | **A blank disposal day disarmed the FR-131 sale guard.** `administeredOn > disposalOn` is true for every dose when `disposalOn` is `''`, so `latestClearAcross` skipped them all and returned CLEAR for an animal deep inside a withholding — the red panel vanished and Save went live. The sale then threw `Invalid Date` out of the click handler and was LOST. **The bound added by `34e0685` to stop a false REFUSAL had opened a false PASS**, on the arm adjacent to the one it fixed and tested | `0b2adc6` |
+| MED×3 | `sync-auditor` + `reviewer` | Three comments claiming the domain refuses an unlinked transfer half — `34e0685` removed that throw and updated three of the four sites | `0b2adc6` |
+| MED | `compliance-checker` | **Three FALSE NAVIGATION CLAIMS in `user-guide.md`**, introduced by `faf0c19` — the commit whose purpose was to stop that file lying. A "Settings → Not sent" that does not exist; Settings → Security described as managing authenticators (passkeys only); a tally reason the screen deliberately never offers | `0b2adc6` |
+| MED | `reviewer` | **The batch-link rule has ZERO test coverage anywhere.** `34e0685` moved it from two tested sites to one untested one and rewrote both tests to assert the opposite. Correct today (`canSave` always mints the id) | ⬜ **TRACKED, not fixed — §7 clause 2.** See below |
+
+⭐ **THE AGENTS DISAGREED ON THE FIX FOR THE FIRST SEV-2, AND ONE OF THEM WAS WRONG.**
+`compliance-checker` proposed `guardedBy: [tally.mobId]`. `sync-auditor` had specifically shown that
+regresses: a refused mob dose ALREADY taints that id (`health` → `provides: nonNull(animalId,
+mobId)`), and a transfer is deliberately not judged against a withholding — so every departure out of
+a dipped camp would be falsely held, turning a false pass into a false refusal. **The fix uses a
+separate subject namespace (`head:<mobId>`).** Two different questions about one mob — *is its
+residue status settled* and *does it have head available* — need two subjects. All 14 pre-existing
+outbox tests still pass, which is the check that no false hold crept in. **Do not accept an agent's
+proposed fix without reconciling it against the other agents' findings.**
+
+**A consequence worth not rediscovering:** `guardedBy` is now a UNION. A `sale` is both a food-chain
+disposal and a head-count dependant, so the comment claiming "at most one of these two, never both"
+became false in the same commit that made it so — corrected there rather than left for the ninth pass.
+
+**⬜ THE ONE FINDING DELIBERATELY NOT FIXED, and the reasoning is the point.** `reviewer` rated the
+untested batch-link seam MED and said it would not close the gate without it. **§7 clause 2 says a
+MED is not a merge blocker, and the rule was written before the findings precisely so it could not be
+renegotiated under pressure.** The behaviour is correct today, and testing it needs a store+auth
+harness for a hook. It is a tracked issue on `main`, not a Phase 2 blocker. **If JP prefers the
+reviewer's judgment over the rule, say so and build the harness — but change the RULE, not this one
+case.**
+
+**Gate after: 84 files / 944 tests** (was 941), bundle **146.92 KB** gz. Every fix has a test watched
+to fail against the old code first, and **each red was confirmed for the RIGHT REASON** rather than
+banked: `expected false to be true` on the Save-disabled assertion; the theft tally coming back
+carrying `counterparty: "Willem Botha"`; `OUT_B` and `IN_C` present in the sent log while their
+funding arrival was held.
+
+**Also this session, before the pass:** `036300b` bound the dev database to loopback. `'5432:5432'`
+publishes on `0.0.0.0` AND `::`, so the development Postgres — credentials `werf`/`werf`, in the same
+file — was reachable from every network the laptop joins. Confirmed live with `netstat`, not
+inferred. A container audit found NOTHING unauthorised: two images, both pinned in this repo, and the
+"other containers" that appear during a session are testcontainers' own ephemeral Postgres instances
+and its `ryuk` reaper.
+
+**The rules that came out of this pass:**
+
+- ⭐ **Two agents proposing the same fix is not two agents agreeing.** One proposal here would have
+  reintroduced a false refusal. Reconcile proposed fixes against each other, not just findings.
+- ⭐ **A shared subject space eventually conflates two questions.** The outbox hold mechanism has been
+  widened five times and each widening exposed the next reader; the fifth was not another reader but
+  the SPACE ITSELF being too narrow to distinguish "residue settled" from "head available".
+- **Closing a false refusal can open a false pass**, which is the sharper direction, and it lands on
+  the arm ADJACENT to the one that was fixed. §2o's own lesson ran the other way; both are live.
+- **A stale correction is created by the correction commit.** `faf0c19` existed to stop `user-guide.md`
+  lying and introduced three new false claims. Same class as `ci-cd.md` in §2p, one session later.
+- **A `python3` patch bypasses the format hook.** Four files failed `prettier --check` in the gate
+  because the PostToolUse formatter only fires on Edit/Write. Run prettier on anything patched by
+  script.
+
+---
+
 ## 2n. The Phase 2 build list is empty (2026-08-03, fourteenth session) — UNREVIEWED
 
 **A BUILD session.** Four commits. `pnpm verify` green after each: **84 files / 934 tests** (was
@@ -1352,71 +1432,58 @@ empty. What fails is **"the fixes are unreviewed"** — plus CI-green-on-`main`,
 which is unmeetable before merge and always was.
 
 ╔══════════════════════════════════════════════════════════════════════════╗
-║  ⭐ THE BUILD LIST IS STILL EMPTY, AND THE SEVENTH PASS HAS NOW RUN.      ║
-║  What stands between this branch and merge-ready is the EIGHTH pass over  ║
-║  the seventh's own fix commit `34e0685` plus the sixteenth session's      ║
-║  docs work.                                                              ║
+║  ⭐ THE LOOP NOW HAS AN END. §7 IS THE STOPPING RULE — read it first.     ║
 ║                                                                          ║
-║  Seven passes ran; all seven said NOT APPROVABLE; every one found a real  ║
-║  defect inside the previous pass's fixes. `34e0685` is ONE commit fixing  ║
-║  four SEV-2s in food-safety and capture-loss code, and it is unreviewed.  ║
-║  Do not read "everything is green" as "clean" — read it as "the eighth    ║
-║  pass has somewhere obvious to look".                                    ║
+║  The EIGHTH pass ran (§2q) and its three SEV-2s are fixed. Under §7 the   ║
+║  NINTH pass is the LAST one permitted, and it reviews ONLY the fix diff   ║
+║  `0b2adc6` — not the accumulated range.                                   ║
 ║                                                                          ║
-║  ⚠️ AND NOTE WHAT §2p FOUND: seven passes have audited CODE. Nothing has  ║
-║  ever audited what the product TELLS THE FARMER, and when someone         ║
-║  finally looked, the user guide was promising an override of the meat     ║
-║  withholding block that has never existed. `user-guide.md` ships as       ║
-║  in-app help. Point the eighth pass at the docs as well as the diff.      ║
+║  ⭐ If the ninth returns NO SEV-1/SEV-2 → the gate clause CLOSES. Mark    ║
+║  PR #3 ready and merge; CI-green-on-main resolves at the merge itself.    ║
+║  ⭐ If it returns only MED/LOW → fix them and merge WITHOUT a tenth pass  ║
+║  (§7 clause 3). That is the clause that ends the recursion.               ║
+║  ⛔ If it returns a SEV-2 in the outbox hold mechanism AGAIN, do NOT      ║
+║  spawn a tenth. That mechanism has been widened five times, each          ║
+║  widening exposing the next stale reader. Escalate a REDESIGN to JP as    ║
+║  a scope decision (§7 clause 4).                                          ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. THE EIGHTH PASS. Range `b20fdf9..HEAD`    §2o, §2p   ⭐ JP's call, and it
-     at minimum — better, `beb3dc9..HEAD`,                 is the ONLY thing
-     which re-covers the seventh pass's own                left. Seven for
-     fixes. It is the ONLY thing between                   seven
-     here and merge-ready
-  2. §4 G4's OTHER HALF — `ux-design-system.md` §2p        a session can do it
-     is still stale for 14+ screens. Not                   without JP. The
-     regulated, genuinely unblocked                        only build-ish work
-  3. §2.4 labour-law review — BOOK (external)  §2.4        gates Phase 3 DEPLOY
-  4. §2.5 Gazette figures — VERIFY IN A BATCH  §2.5        gates Phase 3 DEPLOY
+  1. PUSH and watch CI. `pnpm verify` does     §2j        a session does it
+     NOT run e2e, and this session changed                 — do it FIRST
+     the outbox's network shape. Green
+     locally is not a green branch
+  2. THE NINTH PASS over `0b2adc6` only.       §2q, §7    ⭐ JP's call. The
+     The LAST one §7 permits                              last one permitted
+  3. §4 G4's OTHER HALF — `ux-design-system.md`  §2p      a session can do it
+     still stale for 14+ screens. Not                     without JP
+     regulated, genuinely unblocked
+  4. The untested batch-link seam (§2q MED).   §2q        tracked issue, NOT
+     Needs a store+auth harness for a hook                 a Phase 2 blocker
+  5. §2.4 labour-law review — BOOK (external)  §2.4       gates Phase 3 DEPLOY
+  6. §2.5 Gazette figures — VERIFY IN A BATCH  §2.5       gates Phase 3 DEPLOY
 
-  ✅ ALL JP DECISIONS CLOSED. ✅ Working tree clean; branch IN SYNC with origin.
+  ✅ ALL JP DECISIONS CLOSED. ✅ Working tree clean.
 
 NEXT SESSION, IN ORDER:
 
-  A. RECONCILE `git status` AND THE SHAs against §1, as always — and now the
-     FIGURES too (§2p: §1's test count and bundle size had drifted from §2o in
-     the same file).
+  A. RECONCILE `git status`, the SHAs AND THE FIGURES against §1, as always.
 
-  B. The honest options, in order:
-       (i)  ASK FOR THE EIGHTH PASS, read its output DIRECTLY (not a summary),
-            fix what it finds. This is the critical path and nothing shortens
-            it. ⭐ Ask it to cover the DOCUMENTS too — §2p is the evidence that
-            the doc tier has never been audited and was wrong in six places.
-      (ii)  Finish §4 G4 — `ux-design-system.md`. Unblocked, not regulated,
-            and the user-guide half is done (§2p). This is the only remaining
-            work a session can do without JP.
-     (iii)  ~~Build the next Phase 2 slice~~ — there still isn't one. B2
-            photos, B4 vaccination programme and B5 FR-602 window are all
-            blocked on infrastructure or on reference data that does not
-            exist, and half-building any of them is what this repo forbids.
-      (iv)  START PHASE 3 instead of finishing Phase 2 — a real option, but it
-            is JP's call and it stacks unreviewed regulated code on unreviewed
-            regulated code. §6 says Phase 3 is UNBLOCKED to build; it does not
-            say Phase 2 may be left unreviewed. Recommend against.
+  B. Then, in order:
+       (i)  PUSH if not pushed, and read the CI result with `gh run view`
+            rather than inferring it.
+      (ii)  ASK FOR THE NINTH PASS over `0b2adc6`. Read its output DIRECTLY.
+            Triage it against §7 — do not re-litigate the rule per finding.
+     (iii)  MERGE once §7 says the gate clears. Mark PR #3 ready, merge,
+            delete the branch, close the milestone. Then cherry-pick
+            `docs/phase-3-6-scope` (take 85ffaa7 + 86b40c9, DROP 1331b60,
+            expect ADR-0009/0010 to conflict or skip — §4 A11).
+      (iv)  Finish §4 G4 (`ux-design-system.md`) if a session is spare.
 
-  ⭐ EXPECT THE EIGHTH PASS TO FIND DEFECTS IN THE FIXES IT REVIEWS. Seven for
-  seven is the measured base rate. `34e0685` widened `collectMobSubjects` and
-  reworked the tally capture path and the outbox order — the outbox hold
-  mechanism has now been widened FOUR times, and each previous widening
-  exposed the next reader that had been left standing.
-
-  SAME DISCIPLINE AS EVERY PASS: write the test, WATCH IT FAIL against the old
-  code, then keep it — and check the CLAIM as well as the code. A red you
-  cannot explain is not evidence yet.
+  ⭐ EXPECT THE NINTH PASS TO FIND SOMETHING — eight for eight is the measured
+  base rate. But §7 means finding something is no longer the same as blocking
+  the merge: only a SEV-1/SEV-2 is.
 
 Phase 1 has NO open gaps. **Phase 3 is UNBLOCKED to BUILD under §6** — the
 mechanism is built with placeholder figures; §2.4/§2.5 gate the DEPLOY, not the

@@ -12,7 +12,12 @@ services:
       POSTGRES_PASSWORD: werf
       POSTGRES_DB: werf
     ports:
-      - '5432:5432'
+      # Loopback ONLY. '5432:5432' binds 0.0.0.0 and ::, which published this database —
+      # credentials werf/werf — to every network the laptop joins, including café and farm
+      # Wi-Fi. Nothing needs it off-box: the API and drizzle-kit connect over localhost, and
+      # the testcontainers tier (packages/db/src/testing.ts) never uses this container at all,
+      # it maps its own random loopback port per instance.
+      - '127.0.0.1:5432:5432'
     volumes:
       - werf_pg:/var/lib/postgresql/data
     healthcheck:

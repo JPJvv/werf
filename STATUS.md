@@ -329,7 +329,12 @@ docs/phase-3-6-scope   1331b60   pushed, no PR yet. Stacked on phase-2 @ 86f9330
    to fail first, confined to the named files) and **(c)** Phase 2 stays blocked pending you.
    ⚠️ **Whichever you pick, amend §7 rather than making an exception for this one case — that is
    what §7's own closing paragraph demands.**
-   → _Answer:_
+   → _Answer:_ ✅ **(a), by JP's DELEGATION on 2026-08-05** — "mark what needs to be done next
+   session (your suggestion)". **Recorded as delegated, not as JP's own reasoning**, and that
+   distinction is deliberate so a future reader can re-open it cheaply: JP was asked to choose
+   between three options and answered by handing the choice back, which is an endorsement of the
+   recommendation rather than an independent judgement of it. **§7 is amended in clause 5 rather
+   than excepted for this case.** If JP disagrees on reading it, changing clause 5 is the whole fix.
 
 8. **NEW — object storage.** FR-108 photos cannot be built without it, and it is not a design
    question but a missing tier: `architecture.md` plans presigned direct-from-client upload to S3
@@ -1575,6 +1580,60 @@ correct and symmetric on both sides; all thirteen commits authored by the repo o
 
 ## 5. How to resume
 
+> ## ⭐ NEXT SESSION — DO THESE, IN THIS ORDER
+>
+> **JP will not remember this conversation. This block is the handover; everything else in §5 is
+> background.** JP delegated the plan on 2026-08-05 ("your suggestion") — see §2 item 9 for exactly
+> how that decision was made, because it was a delegation rather than an independent call.
+>
+> **0. `git status` and reconcile against §1** (tree AND SHA — standing rule, this file has lied
+> about a clean tree for a whole session). **Start Docker Desktop** before any gate.
+>
+> **1. PUSH `phase-2/livestock` and watch BOTH CI lanes.** Two commits are unpushed: `d8ca3b9`
+> (the fixes) and `a47ccc5` (STATUS). Nothing since `34e0685` has ever been CI-verified.
+> `gh run watch`. **This is first because everything below is worth less if the branch is red.**
+>
+> **2. Run `pnpm test:e2e` LOCALLY — it was NOT run in the eighteenth session.** ⚠️ Known exposure,
+> stated precisely so it is not re-derived: the e2e specs assert only the `/not-sent` **heading**
+> (`a11y.spec.ts:203`), which did not change. But `/not-sent` gained a **conditional `<h2>`**
+> ("Waiting on one of the above") and the strip's status string gained a `· N to send` tail. Neither
+> is asserted in e2e today, so the risk is LOW — and unverified is not the same as low.
+> ⛔ **Do not run the gate while agents are running** (§4/§1: Docker contention → `Port 5432/tcp not
+> bound`, which reads as a defect and is not). And **read the duration**: a `FULL TURBO` verify in
+> ~100ms executed nothing.
+>
+> **3. THE TENTH PASS — and it is permitted, under NEW §7 clause 5, exactly ONCE.**
+> Scope it to **`17891f0..HEAD`** — the redesign only (`d8ca3b9` + `a47ccc5`). **Not** the
+> accumulated range; everything before that has been read nine times.
+> Point all three agents at `docs/04-delivery/agent-context.md` FIRST, and tell them:
+> - the `head:<mobId>` SUBJECT is **gone**; head availability is now arithmetic (`needsHead` in
+>   `Outbox.tsx`) running the server's own `projectHeadCount` fold over the sent-log;
+> - three namespaces remain and must stay disjoint — bare ids (withholding), batch id (halves of a
+>   move), `mobrow:` (the mob row);
+> - the questions that matter are **false HOLD** (a capture stranded that the server would take) and
+>   **false PASS** (a departure outrunning its funding arrival), plus whether the client fold and
+>   `deriveHeadCount` can drift;
+> - held captures are now surfaced (`useHeldCaptures`, `/not-sent`, the strip) — check the COUNTS,
+>   since the whole SEV-2 was that a hold was invisible;
+> - `tallyPayloadSchema` now reason-scopes `counterparty`/`priceCents` — check the boundary, not
+>   just the screen.
+> ⛔ **Rate severity yourself; do not accept an agent's label.** In the ninth pass one agent rated a
+> lost-capture defect MED and returned APPROVABLE. **Read each agent's analysis and reconcile what
+> each actually TESTED** — two agents "checking the same mechanism" checked different questions.
+> ⛔ **And do not accept an agent's proposed FIX without reconciling it against the others'
+> findings.** That has now nearly reintroduced a closed bug twice.
+>
+> **4. Then, by §7 clause 5 + clause 2:** no SEV-1/SEV-2 → **the gate clause CLOSES**; mark PR #3
+> ready and merge. Only MED/LOW → fix under clause 3 and merge **without an eleventh pass**.
+> ⛔ **A SEV-2 in the outbox hold mechanism again → clause 4 applies and the answer is DESCOPE it
+> from Phase 2, NOT a third design. Escalate to JP; do not decide it in a session.**
+>
+> **5. Only if the above is finished:** §4 G4's other half — `ux-design-system.md` is stale for 14+
+> screens. Not regulated, genuinely unblocked, needs no JP input.
+>
+> ⛔ **NEVER spawn any agent unprompted** (CLAUDE.md). Step 3 is pre-authorised by JP's delegation
+> recorded in §2 item 9 — that is the ONE exception, and it does not generalise.
+
 ```
 1. RUN `git status` AND RECONCILE AGAINST §1 — tree AND SHA. §1 now claims the
    tree is CLEAN (the tooling landed in `5a8db20`). Verify it; this file has
@@ -1610,23 +1669,23 @@ which is unmeetable before merge and always was.
 ║  redesign is built: head availability is arithmetic (the device runs the  ║
 ║  server's own fold), not a subject, and held captures are surfaced.       ║
 ║                                                                          ║
-║  ⛔ NOW THE RULE CONTRADICTS ITSELF AND ONLY JP CAN RESOLVE IT. Clause 1: ║
-║  a SEV-2 fix earns another pass. Clause 4: do not spawn one. Nine passes, ║
-║  zero APPROVABLE. → §2 item 9. Amend §7; do not make a one-off exception. ║
+║  ✅ RESOLVED 2026-08-05 by NEW §7 CLAUSE 5 (JP delegated — §2 item 9).    ║
+║  An accepted REDESIGN resets the ceiling ONCE: the replacement is a new   ║
+║  design no pass has seen, so it earns exactly one pass, scoped to the     ║
+║  replacement diff `17891f0..HEAD`. See the NEXT SESSION block above.      ║
 ║                                                                          ║
-║  ⛔ AND DO NOT READ "nine passes ran" AS "therefore merge."               ║
+║  ⛔ ONCE. A SEV-2 in that mechanism again → clause 4 → DESCOPE, not a     ║
+║  third design. ⛔ AND "nine passes ran" IS NOT "therefore merge."         ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
   OPEN LOOP                                    WHERE      WHOSE CALL
   ─────────────────────────────────────────────────────────────────────
-  1. PUSH and watch CI. `pnpm verify` does     §2j        a session does it
-     NOT run e2e, and this session changed                 — do it FIRST
-     the outbox's network shape AND its
-     copy. Green locally is not a green
-     branch, and e2e was NOT re-run
-  2. ANSWER §2 ITEM 9 — what clears Phase 2    §7a        ⭐ JP's call, and
-     now that clause 4 has fired? This is                 it is the ONLY
-     the whole critical path                              thing left
+  1. PUSH and watch CI, then run e2e           §2r        a session does it
+     locally. Nothing since `34e0685` is                   — do it FIRST
+     CI-verified; e2e was NOT re-run
+  2. THE TENTH PASS over `17891f0..HEAD`       §7 cl.5    pre-authorised by
+     — the redesign only. The LAST one         §2 item 9  JP's delegation;
+     any clause permits                                   read output DIRECTLY
   3. §4 G4's OTHER HALF — `ux-design-system.md`  §2p      a session can do it
      still stale for 14+ screens. Not                     without JP
      regulated, genuinely unblocked
@@ -1735,6 +1794,7 @@ owed; it is evidence that the exit criterion was never defined.**
 | **2** | **A SEVERITY FLOOR CLEARS THE GATE.** A pass CLEARS when it returns no SEV-1 and no SEV-2 in its range. MED and LOW findings are **fixed or filed as tracked issues on `main`** — they are not merge blockers. A MED has never been the thing that put residue in a food chain |
 | **3** ⭐ | **THE TERMINAL CONDITION.** If a pass returns **only** MED/LOW, those fixes merge **WITHOUT another pass**, provided each fix is (i) mechanical, (ii) confined to the files the finding names, and (iii) covered by a test watched to FAIL against the old code first. **This is the clause that ends the recursion.** It is a bounded risk taken deliberately: the unreviewed final diff is small, mechanical, and directionally tested. A SEV-1/SEV-2 fix never qualifies — that always earns another pass under clause 1 |
 | **4** | **HARD CEILING: TWO PASSES (the eighth and, if needed, the ninth).** If the ninth still returns a SEV-2, **do not spawn a tenth.** Three consecutive passes finding severe defects in a shrinking diff is evidence of a DESIGN problem in that surface — almost certainly the outbox hold mechanism, which has been widened four times and exposed a new reader each time. Escalate it to JP as a scope decision (redesign the mechanism, or descope it from Phase 2), not as more review |
+| **5** ⭐ | **AN ACCEPTED REDESIGN RESETS THE CEILING, ONCE.** Added 2026-08-05 (§7a, §2 item 9) because clause 4 fired and clauses 1 and 4 then contradicted each other. When clause 4's escalation is resolved by **replacing** a mechanism — not by patching it again — the replacement is a NEW design that no pass has ever seen, and it earns **exactly one** pass, scoped to the replacement diff alone. That pass is then governed by clauses 2 and 3 as normal. ⛔ **"Once" is the load-bearing word: if that pass returns a SEV-2 in the replaced mechanism, clause 4 applies again and the answer is DESCOPE, not a third design.** Reviewing a new thing once is not the recursion clause 4 exists to stop; a redesign per pass would be |
 
 **What the rule deliberately does NOT do.** It does not lower the bar on regulated code: a SEV-1 or
 SEV-2 in FR-131 / animal ID / stock theft / POPIA still blocks the merge absolutely, and clause 1

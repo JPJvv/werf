@@ -5,6 +5,26 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@werf/core#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@werf/db#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@werf/domain#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@werf/sync#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@werf/ui#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
     "typecheck": {
       "dependsOn": ["^build"]
     },

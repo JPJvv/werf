@@ -3,6 +3,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { THEMES } from '@werf/ui';
 import { seed, WCAG_TAGS } from './session';
 
+// Axe audits the rendered document. Keep fetches on the page so the fixture's explicit offline
+// routes see them; the dedicated offline-capture spec still exercises the production worker.
+test.use({ serviceWorkers: 'block' });
+
 /**
  * NFR-401 on the screens Phase 1 left unaudited: second-factor enrolment, the recovery codes, and
  * Settings. Both themes, zero violations.

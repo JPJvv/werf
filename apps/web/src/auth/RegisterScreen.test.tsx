@@ -10,7 +10,7 @@
 
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 
 const OWNER = {
@@ -31,6 +31,12 @@ const FARM = {
   enterpriseTypes: ['beef_cattle', 'row_crops'],
   role: 'owner',
 };
+
+// These are deliberately full keyboard-and-pointer journeys. Under the uncached verify lane they
+// share a process with Docker-backed integration suites, where the default 5 s unit-test ceiling is
+// too tight for userEvent's per-keystroke semantics. Ten seconds still fails a genuinely stalled UI.
+const UI_FLOW_TIMEOUT_MS = 10_000;
+vi.setConfig({ testTimeout: UI_FLOW_TIMEOUT_MS });
 
 function session(secondFactor: 'required' | 'complete') {
   return {
@@ -91,6 +97,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.clear();
 });
+
+afterAll(() => vi.resetConfig());
 
 async function fillRegistration(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/business name/i), 'Rietfontein Boerdery');

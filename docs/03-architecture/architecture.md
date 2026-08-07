@@ -1,5 +1,10 @@
 # Software Architecture
 
+> **Implementation status (2026-08-07):** this document describes the accepted target architecture.
+> Phase 2 implements the same domain-facing seam with durable browser-local stores; PowerSync,
+> SQLite/OPFS replication and the production AWS topology are Phase 3+ work. Treating this diagram
+> as already deployed hides the largest remaining architectural slice.
+
 ---
 
 ## 1. The shape of the problem
@@ -295,7 +300,7 @@ Named honestly, because the alternative is finding out in month nine.
 | **PostGIS does not sync** | SQLite has no PostGIS | Canonical `geometry` in Postgres for spatial queries; denormalised GeoJSON `text` for the client. Both. Always. Documented in CLAUDE.md because it will be forgotten. |
 | **OPFS quota on iOS** | Safari evicts under storage pressure | Retention window on the client (default 24 months); graceful degradation; the upload queue is never evicted. |
 | **af-south-1 is a small region** | Fewer services, occasional feature lag | Terraform is portable; the exit is Azure South Africa North. |
-| **Payroll correctness** | Legal exposure | Pure functions, table-driven tests against gazetted worked examples, external labour-law review before Phase 3 ships. |
+| **Payroll correctness** | Legal exposure | Pure functions, table-driven tests against gazetted worked examples, external labour-law review before Phase 5 ships. |
 | **Regulated values going stale** | The March deadline is set by the Minister | Rates as data ([ADR-0005](adr/ADR-0005-regulatory-rates.md)), a scheduled annual job with an owner, and a lint rule against constants. |
 | **The jurisdiction seam is the wrong seam** | An interface with one implementation is a guess until the second one arrives | Accepted, knowingly. If we are wrong the cost is one indirection and an unused column — a cheap wrong. [ADR-0006](adr/ADR-0006-multi-jurisdiction.md) explains why this is the narrow case where YAGNI does not apply. |
 | **`bceaThreshold` appears in `packages/core`** | It is the natural thing to type when SA is your only country | Review + the compliance-checker subagent. **No lint rule catches this**, which is why it is called out in three documents. |

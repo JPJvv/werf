@@ -226,7 +226,7 @@ Functional requirements are catalogued separately in [functional-requirements.md
 
 **SRS-34.** Import supports CSV with column mapping, and named importers for BenguFarm, Farmbrite, SA Stud Book (Logix), and generic Excel.
 
-> Migration-in is a growth feature and migration-out is a trust feature. Both are Phase 5. A product that traps data does not get recommended at a farmers' day.
+> Migration-in is a growth feature and migration-out is a trust feature. Both are Phase 7. A product that traps data does not get recommended at a farmers' day.
 
 ---
 

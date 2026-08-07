@@ -1,6 +1,8 @@
 # Functional Requirements
 
-Numbered catalogue. Every FR is a build target and must have a covering automated test. `P` = priority: **1** = MVP (Phase 1–3), **2** = launch (Phase 4–5), **3** = post-launch (Phase 6+).
+Numbered catalogue. Every FR is a build target and must have a covering automated test. `P` =
+priority: **1** = MVP, **2** = launch, **3** = post-launch. Priority is a product commitment, not a
+phase number; the authoritative build sequence is the delivery roadmap.
 
 Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online only) · 🇿🇦 = South-Africa-specific differentiator
 

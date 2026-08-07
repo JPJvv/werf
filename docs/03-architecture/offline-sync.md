@@ -4,6 +4,11 @@
 
 Read this before touching anything in `packages/sync`.
 
+> **Implementation status (2026-08-07):** Phase 2 has durable browser-local capture stores and an
+> explicit outbox behind `@werf/sync`. It does not yet have the PowerSync SDK, SQLite/OPFS domain
+> tables or cross-device replication described below. Phase 3 implements this contract and migrates
+> existing queued captures; the document is normative design, not a claim that the engine is live.
+
 ---
 
 ## 1. The premise

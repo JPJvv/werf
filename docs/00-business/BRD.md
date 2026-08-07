@@ -140,7 +140,7 @@ BA-2 and BA-3 are the load-bearing ones. Both should be tested with real farmers
 
 | ID | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| BRK-1 | Payroll calculates a wage wrong; farmer underpays; CCMA case | Medium | Severe | Rates in data with effective dates; table-driven tests against gazetted examples; qualified labour-law review before Phase 3 ships; in-app disclaimer that Werf assists but the employer remains responsible |
+| BRK-1 | Payroll calculates a wage wrong; farmer underpays; CCMA case | Medium | Severe | Rates in data with effective dates; table-driven tests against gazetted examples; qualified labour-law review before Phase 5 ships; in-app disclaimer that Werf assists but the employer remains responsible |
 | BRK-2 | Sync conflict silently loses a record | Medium | Severe | Conflict resolution specified and tested; never silent — always an audit row; see [offline-sync.md](../03-architecture/offline-sync.md) |
 | BRK-3 | POPIA breach involving worker biometrics/ID numbers | Low | Severe | Do not collect biometrics in v1 (PIN + GPS attendance instead); encrypt ID numbers at rest; s22 breach runbook |
 | BRK-4 | Farmbrite or AgriWebb localises for SA | Low | High | Compliance depth compounds; integrate locally faster than they can |

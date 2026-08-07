@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:e2e": "turbo build --filter @werf/web && playwright test",
     "test:trace": "node scripts/test-trace.mjs",
+    "project:check": "node scripts/check-project-state.mjs",
     "lint": "eslint . && prettier --check .",
     "typecheck": "turbo typecheck",
     "db:up": "docker compose up -d",
@@ -22,7 +23,7 @@
     "db:migrate": "pnpm --filter @werf/db migrate",
     "db:generate": "pnpm --filter @werf/db generate",
     "db:seed": "pnpm --filter @werf/db seed",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm project:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

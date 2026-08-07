@@ -486,11 +486,11 @@ Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-chec
   A records the dip; device B, which has not seen it, tallies to the abattoir. Both captures are
   honest and no ordering can help, because only the server ever sees both. The disposal is recorded
   and a retroactive compliance flag is DERIVED on read — not stamped on arrival, which would be
-  order-dependent — and surfaced on the residue register at `/attention`. See STATUS.md §2j.
+  order-dependent — and surfaced on the residue register at `/attention`.
   ✅ **Head arriving by `purchase` is no longer unconditionally clear (`2e35e94`).** The group model
   has `transfer_out`/`transfer_in`, which carry the withholding across without tripping the
   food-chain guard, and a purchase may record an OPTIONAL declared seller withdrawal — blank means
-  "unknown history", which is never invented. See STATUS.md §2.3b.
+  "unknown history", which is never invented.
   ✅ **A carried withholding is a FLOOR, not a ceiling (sixth pass).** The date frozen on the
   transfer is re-derived against the source mob at read time, so a dose that lands after the
   transfer still reaches the flock it walked into.
@@ -706,7 +706,7 @@ Quality gates
 ```
 
 **Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green (both-theme axe, including the new
-offline cold-start capture path); CI green on `main`; every checklist line is ☑ **or ◐ with its
+offline cold-start capture path); both CI lanes green on the PR; every checklist line is ☑ **or ◐ with its
 remainder named**; the `reviewer`, `sync-auditor` **and** `compliance-checker` agents pass; a farmer
 can create a camp → create an animal → give it a tag → record a weight and a treatment → wean it →
 mark another missing → file a stock-theft incident and generate its pack → see the herd count on the
@@ -725,7 +725,7 @@ home tile, entirely offline for the capture paths.
 > word that hid the difference. Everything before the pack in this sentence is still an offline
 > path end to end.
 
-**Where the gate stands (2026-08-03, fifteenth session — branch `phase-2/livestock`).**
+**Where the gate stands — read live evidence from STATUS.md, not historical session prose.**
 
 ⚠️ **Read the figures from STATUS.md §1, not from here.** This paragraph restated a commit, a test
 count and a bundle size for five sessions after they changed, and the arithmetic below ("three
@@ -734,85 +734,115 @@ how it goes wrong; what belongs here is which CLAUSES hold and why.
 
 | Clause | Reads |
 |---|---|
-| `pnpm verify` exits 0 | ✅ TRUE |
-| `pnpm test:e2e` green (both-theme axe, incl. the offline cold-start path) | ✅ TRUE — §4 A9 was diagnosed 2026-08-03 and was never an app defect. See STATUS.md §4 A9 |
-| CI green on `main` | ⚪ UNMEETABLE before the merge, by construction — CI does not run on feature branches (STATUS.md §4 G5). It can only go true AT merge, and it is the one clause the phase cannot satisfy by working harder |
-| every checklist line ☑ or ◐ with its remainder named | ✅ TRUE — re-audited 2026-08-03. The FR-131 line was ◐ with its remainder silently closed and nothing naming one, which satisfied neither arm; it is ☑. Phase 1's bundle line was ◐ against a gate this phase enforced |
-| the `reviewer`, `sync-auditor` **and** `compliance-checker` agents pass | ◐ **SEVEN passes have run; all seven returned NOT APPROVABLE, and every one found a real defect inside the previous pass's fixes.** The seventh (2026-08-03, JP-triggered, over `beb3dc9..HEAD`) found four SEV-2s — two of them raised by two agents independently — all now fixed with tests watched to fail first. STATUS.md §2o. ⛔ Those fixes are themselves unreviewed, which is the state every previous pass was in when the next one found something |
-| the end-to-end farmer sentence | ✅ TRUE — every leg has a route and an offline capture path |
+| `pnpm verify` exits 0 | Re-run after the current audit changes |
+| `pnpm test:e2e` green (both-theme axe, incl. the offline cold-start path) | ✅ 27/27 on 2026-08-07 |
+| both CI lanes green on the PR | Pending push; do not infer this from local tests |
+| every checklist line ☑ or ◐ with its remainder named | Reconcile once the final audit diff is fixed |
+| the `reviewer`, `sync-auditor` **and** `compliance-checker` agents pass | ⛔ Owner-triggered passes are still required before merge-ready |
+| the end-to-end farmer sentence | ✅ Every leg has a route and an offline capture path |
 
-⛔ **So the gate does not read fully true, and the honest reading is narrow: one clause is
-unmeetable before the merge itself, and one is "the last review pass found defects, they are fixed,
-and the fixes have not been read by a second reader."** Everything else holds.
-
-**What the seventh pass changed about how this is written.** It found the paragraph that used to sit
-here — the one adjudicating the gate — stale in four separate ways, in the document the gate is
-measured against, one commit after another fix had specifically closed two stale checklist lines in
-this same file. That is the fifth occurrence of the class. Hence the table above states clauses and
-defers every figure to STATUS.md.
+⛔ **The gate does not yet read true.** Automated verification must be re-run, CI has not seen the
+local commits, and regulated livestock/stock-theft logic still waits on the owner-triggered review
+passes. The table states clauses rather than repeating commit SHAs and test totals that belong in
+STATUS.md.
 
 > **The lesson, since it has now happened twice.** STATUS.md §1 concluded "every checklist line is
 > ☑ or ◐, **so** the exit gate reads true as written". That "so" is a non-sequitur: the checklist
 > is one clause of five. A gate is not read by checking the clause that is easiest to check.
 
-**What Phase 2 still leaves for its successor, named rather than implied:**
-- ~~**FR-120/121 mating and pregnancy diagnosis**~~ — **CLOSED 2026-07-28 (`2590c9f`), closes B1.**
-  ⚠️ This line said "API and screens not started" for a whole session AFTER they were built, and so
-  did its duplicate below. Both are the §2d defect class again: *a checklist line is part of the diff
-  that makes it stale.* Caught by the eighth session's audit, not by the commit that made it false.
-  ⛔ Note what is closed is the SLICE, not its correctness: pass four found a SEV-2 in it — a
-  diagnosis for a species with no gestation row is refused 400 by the server and set aside forever,
-  so "the fact is still recorded" is false on the wire. STATUS.md §2f.
-- **FR-108 photos** — `photo_key` exists; the local store and deferred upload do not.
-- ~~**FR-107 species-specific attribute validation**~~ — **CLOSED** (commit 5e279b1).
-- ~~**FR-014/014c passkey enrolment and management from the client**~~ — **CLOSED** (commit
-  bb17b24). The last Phase 1 gap. Enrolment offers the passkey FIRST and TOTP as the fallback,
-  sign-in satisfies the second factor with it, and Settings → Security lists, adds and revokes.
-- ~~**FR-120/121 mating and pregnancy diagnosis**~~ — **CLOSED 2026-07-28 (`2590c9f`).** Everything
-  this paragraph listed as missing now exists: `species_gestation` + migration 0019 (biology, so NOT
-  jurisdiction-scoped, unlike `veterinary_products`), its `reference-global` sync classification and
-  seed, the reference endpoint, the client cache, and both capture screens wired through `App.tsx`.
-  It was not half-built, which was the point of parking it.
-- **FR-108 photos** — BLOCKED on infrastructure, not on design. `photo_key` exists and
-  `architecture.md` plans presigned direct-from-client upload to S3; there is no object storage
-  anywhere in this repo and no upload endpoint. Building only the local half would set `photo_key`
-  with no image behind it — and `evidence-pack.pdf.ts` prints "Photograph on file: Yes" off exactly
-  that field, so the pack would claim a photograph the Stock Theft Unit cannot be shown.
-- **FR-132 due/overdue** — needs a vaccination programme schedule that has not been designed.
-- **FR-602 unmarked-past-window flag** — `isUnmarkedPastWindow` is done and tested, but the
-  prescribed window is dated reference data that `regulatory_rates` does not yet carry, and
-  inventing it in code would be exactly the defect the domain rules forbid.
+**What Phase 2 still leaves, named rather than hidden in review history:**
+
+- **FR-108 photos:** `photo_key` exists, but there is no object-storage tier or upload endpoint.
+  STATUS carries the owner decision. Until it is built, no screen or PDF may claim an image exists.
+- **FR-132 due/overdue:** needs a vaccination-programme model and dated reference schedule.
+- **FR-602 unmarked-past-window flag:** the pure function exists, but the prescribed period is not
+  yet stored as verified dated reference data. Do not replace the missing row with a literal.
+- **Phase 3 replication:** Phase 2 stores are behind the ADR-0003 seam but remain browser-local.
 
 **Deferred to later phases (not a Phase 2 miss):** FR-110 pedigree/breed-% and FR-122/123 breeding
-analytics + reminders (P2); FR-134/135/136/137 injury, notifiable-disease flag, medicine inventory,
-vet access (P2); FR-143/144 Bluetooth EID/scale + sale-weight projection (P3); FR-152/153/154
-rest-period warnings, feed, grazing plan (P2/P3); FR-604 removal certificate, FR-606–613 GlobalGAP/
-SIZA/traceability/QR (P2/P3); FR-615 regulatory-rates admin UI (P2); FR-015 global search (P2);
-FR-706–710 the analytical reports (P2); and the **PowerSync replication engine (Phase 3)** — Phase 2
+analytics + reminders; FR-134/135/136/137 injury, notifiable-disease flag, medicine inventory and
+vet access; FR-143/144 Bluetooth EID/scale + sale-weight projection; FR-152/153/154 rest-period
+warnings, feed and grazing plans; FR-604 removal certificates; FR-606–613 GlobalGAP/SIZA/
+traceability/QR; FR-615 regulatory-rates admin UI; FR-015 global search; FR-706–710 analytical
+reports; and the **PowerSync replication engine (Phase 3)** — Phase 2
 livestock is offline-first through the ADR-0003 seam, not through live sync.
 
 ---
 
-## Phase 3 — Labour & Wages 🇿🇦 — CRITICAL PATH
+## Phase 3 — Offline sync
+
+Goal: replace the Phase 2 browser-local adapters with the SQLite/OPFS + PowerSync replication layer
+accepted in ADR-0003, without changing the domain-facing store contracts or losing a queued capture.
+
+```
+☐ 3a PowerSync web SDK is owned by `@werf/sync`; components never import it directly
+☐ 3a Local SQLite/OPFS schema represents every Phase 2 syncable table and reference cache
+☐ 3b PowerSync sync rules and Postgres RLS agree for every farm-scoped table; the cross-farm
+  tenancy test fails when either side is deliberately made permissive
+☐ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
+  at every step leaves either the old readable store or the complete new one, never half of each
+☐ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months
+☐ 3d Queue is durable across browser kill, reboot and quota pressure; read data may be evicted,
+  queued writes may not
+☐ 3d 4xx records are retained and set aside while the round continues; 5xx/unrecognised failures
+  abort the round; an expired refresh token holds rather than clears the queue
+☐ 3d Every changing-state capture checks idempotency before validation on the server
+☐ 3e Two-device conflict matrix is implemented: append-only events coexist; field conflicts are
+  audited; aggregate projections use the immutable baseline and `(occurred_at, id)` total order
+☐ 3e Recount resets rather than adds, and arrival order cannot change the derived result
+☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
+☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
+☐ 3h Sync health reports queue depth/failure per farm without PII
+☐ Offline matrix in testing-strategy.md runs against real Postgres and the real adapter
+☐ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed
+```
+
+**Exit gate:** six weeks of offline captures reach another device with every `occurred_at` intact;
+a deliberately permissive sync rule fails tenancy tests; no queue record is lost on retry, refusal,
+refresh expiry, schema upgrade or quota pressure.
+
+---
+
+## Phase 4 — Crops & fields
+
+Goal: ship the crop notebook replacement on the real Phase 3 sync layer.
+
+```
+☐ 4a Blocks and plantings (FR-201…204), with canonical PostGIS geometry plus synced GeoJSON text
+☐ 4b Fertiliser and harvest capture (FR-205…207), fully offline
+☐ 4c Versioned chemical-product reference data (FR-208…212), available on the device
+☐ 4d PHI and re-entry rules enforced at capture and at the server boundary; regulated intervals
+  come from dated reference data, never constants
+☐ 4d US-030 passes with the network off, including the explicit override/reason audit path
+☐ 4e Grazing, feed and inventory links (FR-150…153, FR-501…503)
+☐ Crop home metrics are derived from local data and never require signal to render
+☐ `pnpm verify` and `pnpm test:e2e` green; regulated crop logic waits on the owner-triggered
+  compliance pass before merge-ready
+```
+
+---
+
+## Phase 5 — Labour & wages 🇿🇦 — CRITICAL PATH
 
 Goal: **the wedge.** A farm can pay people correctly and prove it. This is the phase someone pays
 for, and it is the phase that gets a farmer sued if it is wrong.
 
-Sub-phases map 1:1 onto [roadmap.md](roadmap.md) Phase 3 (3a–3i). Autonomy for the whole phase is
+Sub-phases map 1:1 onto [roadmap.md](roadmap.md) Phase 5 (5a–5i). Autonomy for the whole phase is
 **LOW** — see [claude-code-playbook.md](claude-code-playbook.md), which is generated from the
 roadmap and now says so correctly.
 
 ### ⛔ Two external blockers. Neither is a formality, and both have been open since the second session.
 
-**Do not start 3a until both are answered** — they are STATUS.md §2 items 4 and 5, restated here so
+**Do not deploy Phase 5 until both are answered.** Placeholder dev/test rate rows may support the
+mechanics, but a production seed must reject every unverified row.
 a session reading only this file cannot miss them.
 
 ```
 ⛔ B-1 🇿🇦 THE LABOUR-LAW REVIEW IS BOOKED, with a date
-   Gates sub-phase 3i, which is an exit-gate line — the phase cannot close without a signed
+   Gates sub-phase 5i, which is an exit-gate line — the phase cannot close without a signed
    written sign-off. It is on someone else's calendar, so the lead time IS the risk: booking it
-   in week seven of an eight-week phase means the phase does not close in Phase 3.
-   Book it before 3a, not before 3i. → STATUS.md §2.4
+   in week seven of an eight-week phase means the phase does not close.
+   Book it while Phases 3–4 build, not before 5i.
 
 ⛔ B-2 🇿🇦 EVERY FIGURE IN legal-compliance.md §2.2 RE-VERIFIED AGAINST THE CURRENT GAZETTE
    That table is dated July 2026 and self-describes as decaying. The minimum wage changes every
@@ -821,7 +851,7 @@ a session reading only this file cannot miss them.
    payroll run that is confidently, checkably wrong — and every payslip generated from it is a
    BCEA s33 document with a wrong number on it, handed to a real person.
    Re-verify FIRST, then seed. Record the Gazette number and date on every row you seed.
-   → STATUS.md §2.5
+   Record the source and verification date in the compliance register.
 ```
 
 > **Neither blocker is satisfied by reading this repo.** They are answered by a human with a
@@ -831,12 +861,12 @@ a session reading only this file cannot miss them.
 ### Session and review discipline — this phase only
 
 ```
-□ 3a is a SESSION OF ITS OWN, and a review unit of its own. It is the foundation every other
+□ 5a is a SESSION OF ITS OWN, and a review unit of its own. It is the foundation every other
   sub-phase reads from: get the rate lookup wrong and every number downstream is wrong in a way
-  the tests will cheerfully confirm. Do not bundle it with 3b.
-□ 3d–3e (the payroll engine and the blocking logic) are MULTIPLE SMALL SESSIONS, never one.
+  the tests will cheerfully confirm. Do not bundle it with 5b.
+□ 5d–5e (the payroll engine and the blocking logic) are MULTIPLE SMALL SESSIONS, never one.
   ⛔ NEVER BATCH PAYROLL SLICES. One rule, one diff, one review, one commit.
-□ MANDATORY HUMAN REVIEW OF EVERY DIFF in 3d–3e. Not "the gate is green" — read the diff.
+□ MANDATORY HUMAN REVIEW OF EVERY DIFF in 5d–5e. Not "the gate is green" — read the diff.
   The gate cannot tell you that overtime was classified against the wrong day's rate.
 □ `compliance-checker` runs PER SLICE in this phase, not batched at the end
   ⛔ **AMENDED 2026-07-28 — THE AGENT IS OWNER-TRIGGERED AND IS NEVER SPAWNED UNPROMPTED.** Every
@@ -849,7 +879,7 @@ a session reading only this file cannot miss them.
 □ Hand-calculate at least one payslip on paper per payroll slice, and compare. Every slice.
 ```
 
-### 3a · Rates, the lookup, and the jurisdiction seam ⭐ standalone session + standalone review
+### 5a · Rates, the lookup, and the jurisdiction seam ⭐ standalone session + standalone review
 
 ```
 □ ⛔ B-1 and B-2 above are both answered before this sub-phase begins
@@ -868,7 +898,7 @@ a session reading only this file cannot miss them.
 □ compliance-checker over the seeded rates and the lookup, before commit
 ```
 
-### 3b · Employees
+### 5b · Employees
 
 ```
 □ Employee record (FR-301): name, ID number, job title, start date, contract type, wage rate,
@@ -883,7 +913,7 @@ a session reading only this file cannot miss them.
 □ compliance-checker (POPIA + child-labour rules), before commit
 ```
 
-### 3c · Attendance and piece work 📶 offline
+### 5c · Attendance and piece work 📶 offline
 
 ```
 □ Attendance capture (FR-303): start/end, worker PIN, optional GPS
@@ -896,7 +926,7 @@ a session reading only this file cannot miss them.
 □ GPS is OPTIONAL and is attendance evidence, not worker tracking (ADR-0010 refused tracking)
 ```
 
-### 3d · The payroll engine ⭐ MULTIPLE SMALL SESSIONS — never batched, every diff reviewed
+### 5d · The payroll engine ⭐ MULTIPLE SMALL SESSIONS — never batched, every diff reviewed
 
 ```
 □ Pure functions in packages/domain. NO I/O, no database, no clock — the engine is testable
@@ -920,7 +950,7 @@ a session reading only this file cannot miss them.
 □ Per slice: hand-calculate a payslip on paper; compliance-checker; human reads the diff
 ```
 
-### 3e · Compliance warnings and blocking ⭐ MULTIPLE SMALL SESSIONS — never batched
+### 5e · Compliance warnings and blocking ⭐ MULTIPLE SMALL SESSIONS — never batched
 
 ```
 □ Warnings surfaced BEFORE approval, never after (FR-307) — a warning after approval is a
@@ -935,7 +965,7 @@ a session reading only this file cannot miss them.
 □ Per slice: compliance-checker; human reads the diff
 ```
 
-### 3f · Payslips and contracts 🇿🇦
+### 5f · Payslips and contracts 🇿🇦
 
 ```
 □ BCEA s33-compliant payslip (FR-308) — every element s33 requires, none missing
@@ -947,7 +977,7 @@ a session reading only this file cannot miss them.
 □ compliance-checker over the s33 and s29 output, before commit
 ```
 
-### 3g · The BCEA s31 record — the inspector at the gate 🇿🇦
+### 5g · The BCEA s31 record — the inspector at the gate 🇿🇦
 
 ```
 □ One button (FR-309): name, occupation, time worked, remuneration
@@ -957,7 +987,7 @@ a session reading only this file cannot miss them.
 □ US-023 passes
 ```
 
-### 3h · Leave and the statutory exports
+### 5h · Leave and the statutory exports
 
 ```
 □ Annual leave (FR-310): 21 consecutive days, or 1 day per 17 worked; accrual, balance,
@@ -971,10 +1001,10 @@ a session reading only this file cannot miss them.
 □ Every export is server-side and audit-logged — financial is server-authoritative (db.md)
 ```
 
-### 3i · External labour-law review 🇿🇦 ⛔ EXIT-GATE LINE
+### 5i · External labour-law review 🇿🇦 ⛔ EXIT-GATE LINE
 
 ```
-□ The review actually happened (booked at B-1, before 3a)
+□ The review actually happened (booked at B-1, before 5a)
 □ Sign-off IN WRITING, filed in the repo or referenced by document ID from it
 □ Every finding either fixed, or recorded in STATUS.md with a named owner and a reason
 □ ⛔ The phase does not close without this. It is not a warning; it is the gate
@@ -999,26 +1029,24 @@ a session reading only this file cannot miss them.
 **Human check:** hand-calculate one payslip. On paper. Compare it. Then hand a real payslip to
 someone who has been a farm bookkeeper for twenty years and watch their face.
 
-**Deliberately NOT in Phase 3, so it is named rather than implied:** FR-305 (task assignment),
+**Deliberately NOT in Phase 5, so it is named rather than implied:** FR-305 (task assignment),
 FR-314 (labour cost allocated to enterprise/camp/block), FR-315 (teams) and FR-317 (injury-on-duty
-register, health data restricted to owner + H&S role) are not in the roadmap's 3a–3i and are not
+register, health data restricted to owner + H&S role) are not in the roadmap's 5a–5i and are not
 smuggled in here. FR-317 in particular needs its own access-control design and should not ride
 along on a payroll slice.
 
 ---
 
-## Phases 4–7 — to be written
+## Phases 6–7 — to be written
 
-Detailed checklists for Phase 4 (finance & compliance 🇿🇦), Phase 5 (hardening & pilot), Phase 6
-(integrations) and Phase 7 (intelligence) are authored at the start of each phase from the SRS and
+Detailed checklists for Phase 6 (finance & compliance 🇿🇦) and Phase 7 (hardening & pilot) are
+authored at the start of each phase from the SRS and
 functional-requirements backlog, so they reference real FR/story IDs. Do not pre-write them
 speculatively — write each phase's checklist when you reach it, against the requirements as they
 stand.
 
-> The previous version of this paragraph described Phase 3 as "offline sync", Phase 4 as
-> "crops/fields" and Phase 5 as "labour, wages, finance". All three were wrong against
-> [roadmap.md](roadmap.md) — offline sync is **1c**, crops are part of **Phase 2**, and payroll is
-> **Phase 3**. The same error had propagated into the playbook's autonomy table, which is the
-> document that decides whether a phase may run unattended; it meant the payroll phase was not
-> flagged as one to stay at the keyboard for. Both are corrected. If you find a third copy of that
-> mapping anywhere, it is wrong too.
+> The earlier map put full PowerSync replication in Phase 1 and crops beside livestock in Phase 2,
+> while the built code had only browser-local adapters and no crop module. That made a phase appear
+> complete by changing the checklist rather than meeting the authoritative roadmap. The reconciled
+> sequence is Phase 2 livestock, Phase 3 offline sync, Phase 4 crops, Phase 5 labour, Phase 6
+> finance/compliance and Phase 7 hardening/pilot.

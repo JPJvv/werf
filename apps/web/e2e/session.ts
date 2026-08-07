@@ -99,6 +99,17 @@ function farmTodayForFixtures(): string {
 export function populatedStores(): Record<string, unknown> {
   const today = farmTodayForFixtures();
   return {
+    // This is a previously synced device, not a queue fixture. Mark the captured facts below as
+    // confirmed so the accessibility lane does not turn into an accidental API/proxy retry test.
+    // The dedicated offline-capture spec owns the pending → sent transition.
+    [`werf-sent:${FARM_ID}`]: [
+      FIXTURE.campId,
+      FIXTURE.animalId,
+      FIXTURE.mobId,
+      '0190f3a0-0000-7000-8000-0000000000f1',
+      '0190f3a0-0000-7000-8000-0000000000f2',
+      '0190f3a0-0000-7000-8000-0000000000e1',
+    ],
     [`werf-land:${FARM_ID}`]: [
       {
         id: FIXTURE.campId,
@@ -217,8 +228,26 @@ export interface SeedOptions {
   secondFactor?: 'complete' | 'required';
 }
 
+/**
+ * The browser lane has no API. Abort only the known background reads so providers retain the
+ * durable fixture already on the device. A catch-all would hide a new server-only dependency.
+ */
+async function stubBackgroundReads(page: Page): Promise<void> {
+  const reads = [
+    '**/api/reference/species-gestation?*',
+    '**/api/reference/veterinary-products?*',
+    '**/api/livestock/residue-register?*',
+    '**/api/auth/2fa/passkey',
+  ] as const;
+
+  for (const pattern of reads) {
+    await page.route(pattern, (route) => route.abort('failed'));
+  }
+}
+
 /** Seeds the session (and optionally the theme and the stores) before any app code runs. */
 export async function seed(page: Page, options: SeedOptions = {}): Promise<void> {
+  await stubBackgroundReads(page);
   await page.addInitScript(
     ([sessionKey, session, themeKey, theme, stores]) => {
       if (session) window.localStorage.setItem(sessionKey as string, session as string);

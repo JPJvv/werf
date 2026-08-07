@@ -20,27 +20,27 @@ unattended run safe — Claude cannot declare victory on broken code.
 ## When to let it run, and when not to
 
 > **This table is generated from [roadmap.md](roadmap.md), phase by phase.** If the two ever
-> disagree, the roadmap wins and this table is the bug — it was wrong for four sessions, naming
-> phases that do not exist (there is no "phase 3 offline sync"; sync is **1c**, and payroll is
-> **Phase 3**, not "5–6"). This is the document that gates unattended runs, so a phase number in it
-> is load-bearing rather than descriptive.
+> disagree, the roadmap wins and this table is the bug. This is the document that gates unattended
+> runs, so a phase number in it is load-bearing rather than descriptive.
 
 | Phase | Unattended? | Why |
 |---|---|---|
 | **0** scaffold | ✅ high | No product decisions. Let it run. |
-| **1** auth, sync, onboarding | ⚠️ medium | 1a–1c are mechanical — and note that **offline sync is 1c**, not a later phase. **Sit with 1d**: enterprise adaptation is the product, and it is a judgement call rather than a spec. |
-| **2** livestock & crops | ✅ per checklist item, with two exceptions | CRUD + tests; the gate catches regressions. **Low for 2c** (the crush UX is judgement). **Medium for 2d, 2g** — read [legal-compliance.md §4.3](../00-business/legal-compliance.md) first; withdrawal periods and PHI are legal rules, not technical ones. |
-| **3 labour & wages 🇿🇦** | ❌ **LOW — stay at the keyboard, review every diff** | **This is the payroll phase.** An autonomous run here produces confident, wrong, legally-consequential code. A bug underpays a real worker for a year, and the BCEA does not accept "the tests were green". **Never let 3d–3e (the payroll engine and the blocking logic) run unattended.** Run `compliance-checker` on every slice and read its output yourself. Take 3a as a session of its own. |
-| **4** finance & compliance 🇿🇦 | ⚠️ mixed | **High** for 4a–4b and 4h. **Medium** for 4c–4g: the *content* is legal, the *engine* is code. |
-| **5** hardening & pilot | ❌ low | Mostly judgement. Pilot farms discover things no test does. |
-| **6** integrations | ✅ high | Well-specified, externally bounded, low product judgement. |
-| **7** intelligence | ⚠️ medium | |
+| **1** shell, auth & 2FA | ⚠️ medium | Authentication ceremonies and offline session recovery need close review even when their mechanics are well tested. |
+| **2** livestock | ✅ per checklist item, with two exceptions | **Low for 2c** (the crush UX is judgement). **Medium for 2d and 2f** — read [legal-compliance.md §4.3](../00-business/legal-compliance.md) first; withdrawal, animal-ID and stock-theft rules are regulated. |
+| **3** offline sync | ⚠️ per slice | Tenancy and conflict rules are data-integrity boundaries. Keep schema/RLS/sync-rule changes small and owner-trigger `sync-auditor` when the branch is being cleared. |
+| **4** crops & fields | ⚠️ mixed | CRUD is routine; chemical registration, PHI and re-entry logic require close review and effective-dated reference data. |
+| **5** labour & wages 🇿🇦 | ❌ **low — review every diff** | Payroll is legally consequential. Never run 5d–5e (engine and blocking rules) unattended. The owner triggers `compliance-checker`; an external labour-law review gates deployment. |
+| **6** finance & compliance 🇿🇦 | ⚠️ mixed | The mechanics are testable, but evidence-pack contents, POPIA access and statutory exports need human review. |
+| **7** hardening & pilot | ❌ low | Mostly judgement. Pilot farms and external security testing discover things the automated gate cannot. |
 
 ## Sub-agents
 
-- `reviewer` — end of every phase, against the exit gate.
-- `compliance-checker` — any change to payroll/deductions/animal-ID/POPIA/export-audit.
-- `sync-auditor` — any change to schema, RLS, or sync rules.
+- `reviewer` — owner-triggered at a phase gate.
+- `compliance-checker` — owner-triggered for payroll/deductions/animal-ID/POPIA/export-audit.
+- `sync-auditor` — owner-triggered for schema, RLS, sync rules, or write paths.
+
+These agents are never started silently. See `AGENTS.md` for the current review policy.
 
 ## Guardrails that are always on
 

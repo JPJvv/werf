@@ -13,7 +13,8 @@
 > exist** — Settings has four children (appearance, language, farms, security) and has never had
 > more. An unclassified section is where a false claim hides, so classify every one.
 > A guide with no "as at today" line is a claim about the present, which is how this
-> file came to promise farmers a withholding override the product has never had (STATUS.md §2p).
+> file came to promise farmers a withholding override the product has never had. The product does
+> not implement a withdrawal override.
 
 ---
 

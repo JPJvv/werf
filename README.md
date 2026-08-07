@@ -6,7 +6,9 @@
 >
 > The codename is isolated so a rename stays a ten-second job. Do it once, when a CIPC search is clean — not before.
 
-**What this is:** the complete specification, architecture, and delivery pack for an offline-first, installable web application (PWA) that lets any South African farmer — livestock, crops, or mixed — run their farm admin: animal records, field records, labour and wages, finances, and compliance.
+**What this is:** an actively built offline-first PWA for South African farm management. The app
+currently covers the shell, authentication and the Phase 2 livestock slice; crops, durable
+PowerSync replication, labour, finance and broader compliance follow in the roadmap.
 
 **Who this is for:** a small development team (or one developer plus Claude Code) building this from zero to production.
 
@@ -20,11 +22,9 @@ Global farm software (Farmbrite, AgriWebb, Herdwatch) is feature-rich but has no
 
 ## Screenshots
 
-<!-- SCREENSHOT SLOT — replace when Phase 1 (app shell) lands.
-     Home grid (light + dark), an offline write, and a compliance pack export.
-     Store under docs/assets/screenshots/ and reference with relative paths. -->
-
-_Coming with the Phase 1 app shell. The home grid, an offline capture flow, and a compliance export — light and dark._
+The app shell and livestock capture flows are built. A public screenshot is intentionally still
+pending: use synthetic farm data only, and strip EXIF/location before adding one under
+`docs/assets/screenshots/`.
 
 ---
 
@@ -32,9 +32,14 @@ _Coming with the Phase 1 app shell. The home grid, an offline capture flow, and 
 
 The load-bearing engineering decisions, for anyone reading the repo to judge the work rather than use the product:
 
-- **Offline is the default state, not the error state.** Reads and writes hit local SQLite (PowerSync over OPFS) always; the sync engine moves deltas to Postgres. There is no "you're offline" failure path on a write — if a code path throws when the network is off, that is the bug.
+- **Offline is the default state, not the error state.** Phase 2 writes commit to durable browser-local
+  stores behind `@werf/sync`; Phase 3 replaces that adapter with SQLite/OPFS + PowerSync replication.
+  There is no "you're offline" failure path on a write—if a write throws because the network is off,
+  that is the bug.
 - **No regulated number is ever hardcoded.** Minimum wage, the BCEA threshold, the UIF ceiling, deduction caps — all live in a `regulatory_rates` table keyed by effective date and looked up by *when the event occurred*, never `now()`. Recalculating a two-year-old payslip yields the two-year-old wage, because that is a legal requirement, not a nicety.
-- **Tenancy is enforced twice, on purpose.** Every domain row carries `farm_id`; Postgres RLS and PowerSync sync rules are written and tested *independently*, because sync bypasses PostgREST — a permissive sync rule leaks across farms even when RLS is perfect. There is a test that fails if the two disagree.
+- **Tenancy is enforced twice, on purpose.** Every domain row carries `farm_id`; Postgres RLS and the
+  declared sync classifications are tested independently now. Phase 3 turns those classifications
+  into live PowerSync rules and retains the test that fails on either permissive side.
 - **Money is integer cents in TypeScript and `numeric(14,2)` in Postgres** — a branded `Money` type, never a JS float.
 - **Built offline-native from the ID up:** client-generated UUIDv7 (the client can't ask a server for a key), soft-delete tombstones (a hard `DELETE` breaks replication and destroys the audit trail compliance needs), and a deliberate split between `occurred_at` (when it happened on the farm) and `created_at` (when it synced) — which can differ by a week.
 - **Security choices that reflect the context, not the defaults:** no SMS second factor (SIM-swap is industrialised in SA and SMS dies with no signal — TOTP and passkeys both work offline); no worker biometrics (POPIA s26 consent posture); data resident in `af-south-1` because there is no South African cloud region for the usual managed options.
@@ -78,14 +83,11 @@ Read in this order. Each document assumes the ones above it.
 
 ---
 
-## Quickstart for Claude Code
+## Quickstart
 
-```bash
-git init werf && cd werf
-# copy this pack in, then:
-chmod +x .claude/hooks/*.sh
-claude
-```
+Clone the repository, use Node 22.13+ and the pinned pnpm version, copy `.env.example` to your local
+environment without committing it, then run `pnpm install` and `pnpm verify`. See
+[START-HERE.md](START-HERE.md) for the current branch handoff.
 
 The `.claude/` configuration ships ready to use — no setup session needed:
 
@@ -100,14 +102,15 @@ The `.claude/` configuration ships ready to use — no setup session needed:
 | `hooks/guard-migrations.sh` | Blocks edits to applied migrations |
 | `loop.md` | The default `/loop` prompt |
 
-First session:
+Every work session:
 
 ```
-Read README.md, CLAUDE.md, and docs/04-delivery/phase-checklists.md § Phase 0.
-Plan the scaffold. Do not write code yet.
+Read STATUS.md first, then CLAUDE.md and the active phase in docs/04-delivery/phase-checklists.md.
+Reconcile the checked-out branch and SHA with STATUS before planning.
 ```
 
-Then work phase by phase. Every phase has an exit gate — a command that must pass.
+Work one checklist slice at a time. Every phase has an exit gate—a command that must pass plus a
+human judgement that automation cannot replace.
 **That command is what makes unattended runs safe.** See the
 [Claude Code Playbook](docs/04-delivery/claude-code-playbook.md) for the `/goal`,
 auto-mode, and Stop-hook loops that let a phase run while you sleep — and for the
@@ -121,7 +124,9 @@ honest account of which phases you should not do that to.
 
 **Locked to South Africa, built to open.** v1 serves one jurisdiction (`ZA`) — the localisation *is* the moat. But every regulated rule sits behind a named interface and every regulated row carries a `jurisdiction`, so the second country is a directory and a registry entry rather than a rewrite. What we deliberately did **not** build: a rules engine, a DSL, a plugin loader, or a speculative second country. See [ADR-0006](docs/03-architecture/adr/ADR-0006-multi-jurisdiction.md).
 
-**Explicitly out of scope, v1:** IoT/collar hardware, drone imagery, marketplace/auctions, lending, accounting general ledger, isiZulu/isiXhosa localisation, USSD/SMS channel, AI weight estimation. Each has a home in Phase 7+ or an integration partner. See [Roadmap § Deliberate exclusions](docs/04-delivery/roadmap.md#deliberate-exclusions).
+**Explicitly out of scope, v1:** IoT/collar hardware, drone imagery, marketplace/auctions, lending,
+an accounting general ledger, continuous worker tracking, biometric attendance and AI diagnosis.
+See [Roadmap § Deliberate exclusions](docs/04-delivery/roadmap.md#deliberate-exclusions).
 
 ---
 

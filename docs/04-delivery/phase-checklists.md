@@ -738,17 +738,16 @@ how it goes wrong; what belongs here is which CLAUSES hold and why.
 
 | Clause | Reads |
 |---|---|
-| `pnpm verify` exits 0 | Re-run after the current audit changes |
-| `pnpm test:e2e` green (both-theme axe, incl. the offline cold-start path) | ✅ 27/27 on 2026-08-07 |
-| both CI lanes green on the PR | Pending push; do not infer this from local tests |
-| every checklist line ☑ or ◐ with its remainder named | Reconcile once the final audit diff is fixed |
+| `pnpm verify` exits 0 | ✅ Uncached: 84 files / 953 tests; 7/7 builds on 2026-08-08 |
+| `pnpm test:e2e` green (both-theme axe, incl. the offline cold-start path) | ✅ 27/27 on 2026-08-08 |
+| both CI lanes green on the PR | ✅ At `a3894e6`: main gate 4m0s; E2E/axe 1m46s |
+| every checklist line ☑ or ◐ with its remainder named | ✅ Remainders are enumerated below |
 | the `reviewer`, `sync-auditor` **and** `compliance-checker` agents pass | ⛔ Owner-triggered passes are still required before merge-ready |
 | the end-to-end farmer sentence | ✅ Every leg has a route and an offline capture path |
 
-⛔ **The gate does not yet read true.** Automated verification must be re-run, CI has not seen the
-local commits, and regulated livestock/stock-theft logic still waits on the owner-triggered review
-passes. The table states clauses rather than repeating commit SHAs and test totals that belong in
-STATUS.md.
+⛔ **The gate does not yet read true.** Its automated clauses and end-to-end journey are green, but
+regulated livestock/stock-theft logic still waits on the owner-triggered reviewer, sync-auditor and
+compliance-checker passes. The PR remains draft until their findings are closed.
 
 > **The lesson, since it has now happened twice.** STATUS.md §1 concluded "every checklist line is
 > ☑ or ◐, **so** the exit gate reads true as written". That "so" is a non-sequitur: the checklist

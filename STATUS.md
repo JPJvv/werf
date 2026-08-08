@@ -7,7 +7,7 @@
 
 **Active branch:** `phase-2/livestock`, including the FR-101 capture closure
 
-**Remote state:** five committed changes are ahead of `origin/phase-2/livestock`
+**Remote state:** implementation through `a3894e6` is pushed to draft PR #3; both CI lanes are green
 
 ## 1. Delivery position
 
@@ -72,18 +72,17 @@ No storage implementation should begin until this is answered.
 | `pnpm verify` | Uncached: 84 test files / 953 tests, 7/7 builds; bundle 148.04 KB gz ≤ 250 KB |
 | `pnpm project:check` | Green: STATUS 99/300 lines, no unanswered decisions, phase names agree |
 | FR-101 focused tests | 22/22 green (`AddAnimal` + `Lifecycle`) |
-| CI | Last recorded green at `34e0685`; local commits after it have not been pushed or CI-verified |
-| Review agents | Not run in this audit. They are owner-triggered only |
+| CI | Both PR lanes green at `a3894e6`: main gate 4m0s; E2E/axe 1m46s |
+| Review agents | Not run in this session. The owner will trigger them later |
 
 ## 5. Next executable steps
 
-1. Owner triggers the Phase 2 reviewer, sync-auditor and compliance-checker passes if Phase 2 is to
-   be made merge-ready. This work touches regulated livestock/stock-theft logic; a green automated
-   gate is not legal clearance.
-2. Close findings, re-run both gates, then push the branch and read both CI lanes before changing
-   draft PR #3 to ready.
-3. Merge Phase 2 only after the review findings are closed. Start Phase 3 from the offline-sync
-   checklist; do not begin payroll on top of browser-local adapters.
+1. Owner decides whether the shared local-first object-storage/upload foundation belongs in Phase 3
+   (recommended) or is explicitly deferred further. No Phase 2 attachment claim depends on it.
+2. When ready, owner triggers the Phase 2 reviewer, sync-auditor and compliance-checker passes. This
+   work touches regulated livestock/stock-theft logic; green automation is not legal clearance.
+3. Close findings, re-run both gates, push, and read both CI lanes before changing draft PR #3 to
+   ready. Start Phase 3 from the offline-sync checklist; do not begin payroll on local adapters.
 
 ## 6. Standing decisions
 

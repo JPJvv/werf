@@ -246,9 +246,13 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   (`apps/web/src/sync/Outbox.tsx`) sends the queued animal to `POST /livestock/animals` on reconnect,
   animals first so the events that reference them do not FK-fail. The animal is also FILED UNDER ITS HERD at capture (FR-113): on a farm with
   several the herd is the only subject question asked and the species follows from it; on a farm with
-  one, nothing is asked and the herd is stated. Still ◐: only herd/species/sex/breed are captured on
-  the screen (DOB, source, acquired_at, identifiers are later). DOB stays a YYYY-MM-DD string, never
-  a coerced Date (off-by-one guard)
+  one, nothing is asked and the herd is stated. DOB and its honest `estimated` flag now exist on the
+  screen too, and a bought animal asks for the actual acquisition day: that day is stored on the
+  animal AND timestamps the purchase event, rather than quietly substituting the day the phone was
+  used. DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard). Still ◐ because
+  FR-101 also promises a photo, which remains behind the unresolved FR-108 object-storage decision;
+  visual/EID identifiers use the dedicated crush tagging action, and dam/sire are captured where
+  they can be known honestly (birth/service) rather than demanded for every animal
 ☑ Create a mob/flock and manage it by head_count without individual rows (FR-102) — create ACTION
   DONE (commit fb74d6e): `POST /livestock/mobs` and a capture screen at `/animals/groups/new`,
   offered beside "record an animal" rather than buried, because for a smallholder running 300 sheep

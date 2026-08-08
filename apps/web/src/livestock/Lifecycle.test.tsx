@@ -315,6 +315,8 @@ describe('buying an animal (FR-106)', () => {
 
     await user.click(screen.getByRole('button', { name: /i bought this animal/i }));
     await user.type(screen.getByLabelText(/bought from/i), 'Bloem Vleismark');
+    await user.clear(screen.getByLabelText(/bought on/i));
+    await user.type(screen.getByLabelText(/bought on/i), '2026-06-12');
     await user.type(screen.getByLabelText(/price paid/i), '18450');
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
@@ -322,7 +324,7 @@ describe('buying an animal (FR-106)', () => {
     // Where it came from lives on the ANIMAL too: an evidence pack reads source/acquired_at
     // rather than trawling the event log (FR-603).
     expect(bought).toMatchObject({ source: 'Bloem Vleismark' });
-    expect(bought!['acquiredAt']).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(bought!['acquiredAt']).toBe('2026-06-12');
 
     const [purchase] = storedEvents();
     expect(purchase).toMatchObject({
@@ -330,6 +332,7 @@ describe('buying an animal (FR-106)', () => {
       counterparty: 'Bloem Vleismark',
       // Money is integer cents at the boundary, never a float.
       priceCents: 1_845_000,
+      occurredAt: '2026-06-12T12:00:00.000Z',
       // A purchase moves no status: it arrived alive and stays alive.
       status: null,
     });

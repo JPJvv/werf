@@ -35,7 +35,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useRecordAnimal } from './LocalHerd';
 import { useRecordPurchase } from './LocalLifecycle';
-import { farmDay } from '../farmTime';
+import { farmToday } from '../farmTime';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 import type { TranslationKey } from '../i18n/dictionaries';
 
@@ -86,6 +86,8 @@ export function AddAnimalScreen() {
   const [species, setSpecies] = useState<Species | ''>('');
   const [sex, setSex] = useState<AnimalSex>('female');
   const [breed, setBreed] = useState('');
+  const [dob, setDob] = useState('');
+  const [dobEstimated, setDobEstimated] = useState(false);
   // Where it came from (FR-106). "Bought" is not a different KIND of animal — it is the same herd
   // row plus a purchase event, which is why this lives here rather than on a screen of its own.
   // FR-107. Per-species, and the screen asks only what THIS species has: a wool class field on a
@@ -94,6 +96,7 @@ export function AddAnimalScreen() {
   const [woolClass, setWoolClass] = useState('');
   const [bought, setBought] = useState(false);
   const [seller, setSeller] = useState('');
+  const [acquiredOn, setAcquiredOn] = useState(farmToday);
   const [priceRands, setPriceRands] = useState('');
   const [justSaved, setJustSaved] = useState(false);
 
@@ -107,7 +110,15 @@ export function AddAnimalScreen() {
     ? (enterpriseSpecies(selectedHerd.type) ?? '')
     : species || speciesOptions[0] || '';
 
-  const purchaseIsValid = !bought || (seller.trim() !== '' && priceIsValid(priceRands));
+  const today = farmToday();
+  const dobIsValid = dob === '' || dob <= today;
+  const purchaseIsValid =
+    !bought ||
+    (seller.trim() !== '' &&
+      priceIsValid(priceRands) &&
+      acquiredOn !== '' &&
+      acquiredOn <= today &&
+      (dob === '' || dob <= acquiredOn));
 
   // What this species carries, straight from the schema — so a species added to the vocabulary
   // cannot quietly go unrepresented here, and the screen and the server cannot disagree.
@@ -126,9 +137,10 @@ export function AddAnimalScreen() {
 
   const save = (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedSpecies || !purchaseIsValid || !attributesAreValid) return;
+    if (!selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid) return;
 
-    const occurredAt = new Date();
+    const occurredAt =
+      bought && acquiredOn !== today ? new Date(`${acquiredOn}T12:00:00.000Z`) : new Date();
     const animal = schemas.newAnimalSchema.parse({
       id: uuidv7(),
       farmId: activeFarm.id,
@@ -137,11 +149,13 @@ export function AddAnimalScreen() {
       species: selectedSpecies,
       sex,
       breed: breed.trim() || null,
+      dob: dob || null,
+      dobEstimated: dob !== '' && dobEstimated,
       attributes,
       // A bought animal carries where it came from on the herd row too, because "who did I buy
       // this from" is asked of the ANIMAL, and an evidence pack reads `source`/`acquired_at`
       // rather than trawling the event log (FR-603).
-      ...(bought ? { source: seller.trim(), acquiredAt: farmDay(occurredAt) } : {}),
+      ...(bought ? { source: seller.trim(), acquiredAt: acquiredOn } : {}),
     });
     recordAnimal(animal);
 
@@ -162,6 +176,8 @@ export function AddAnimalScreen() {
     // Kept: herd/species, sex, and the seller — a farmer buying a truckload buys them from one
     // person. Cleared: the per-animal breed and price.
     setBreed('');
+    setDob('');
+    setDobEstimated(false);
     setPriceRands('');
     // Cleared with the breed, for the same reason: horn status and wool class are per ANIMAL, and
     // carrying the last one forward would quietly stamp it on the next fifty head.
@@ -288,6 +304,40 @@ export function AddAnimalScreen() {
           />
         </div>
 
+        <div className="mb-4 flex flex-col">
+          <label htmlFor="dob" className="mb-1 text-label uppercase text-soil-700">
+            {t('animals.new.dob')}
+          </label>
+          <input
+            id="dob"
+            name="dob"
+            type="date"
+            max={today}
+            value={dob}
+            onChange={(e) => {
+              setJustSaved(false);
+              setDob(e.target.value);
+              if (e.target.value === '') setDobEstimated(false);
+            }}
+            className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+          />
+        </div>
+
+        {dob !== '' && (
+          <label className="mb-6 flex min-h-touch-min items-center gap-3 text-body text-soil-900">
+            <input
+              type="checkbox"
+              checked={dobEstimated}
+              onChange={(e) => {
+                setJustSaved(false);
+                setDobEstimated(e.target.checked);
+              }}
+              className="h-6 w-6 accent-ochre-500"
+            />
+            {t('animals.new.dobEstimated')}
+          </label>
+        )}
+
         {/* FR-107, rendered from the species' own schema. Both optional — a farmer tagging fifty
             head is not stopping to record horn status on each one, and demanding it would mean the
             animal does not get recorded at all. */}
@@ -384,6 +434,23 @@ export function AddAnimalScreen() {
               />
             </div>
             <div className="mb-6 flex flex-col">
+              <label htmlFor="acquiredOn" className="mb-1 text-label uppercase text-soil-700">
+                {t('animals.new.acquiredOn')}
+              </label>
+              <input
+                id="acquiredOn"
+                name="acquiredOn"
+                type="date"
+                max={today}
+                value={acquiredOn}
+                onChange={(e) => {
+                  setJustSaved(false);
+                  setAcquiredOn(e.target.value);
+                }}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+              />
+            </div>
+            <div className="mb-6 flex flex-col">
               <label htmlFor="paid" className="mb-1 text-label uppercase text-soil-700">
                 {t('animals.new.paid')}
               </label>
@@ -406,7 +473,7 @@ export function AddAnimalScreen() {
 
         <button
           type="submit"
-          disabled={!selectedSpecies || !purchaseIsValid}
+          disabled={!selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid}
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
           {justSaved ? t('animals.new.another') : t('animals.new.save')}

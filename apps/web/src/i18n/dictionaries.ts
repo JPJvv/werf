@@ -343,6 +343,8 @@ const en = {
   'animals.new.species': 'Species',
   'animals.new.sex': 'Sex',
   'animals.new.breed': 'Breed (optional)',
+  'animals.new.dob': 'Date of birth (optional)',
+  'animals.new.dobEstimated': 'This date is an estimate',
   // FR-107. "Not said" rather than "None": a farmer who has not looked has not said the animal is
   // polled, and the two are different facts about a breeding decision.
   'animals.new.notSaid': 'Not said',
@@ -409,6 +411,7 @@ const en = {
   'animals.wean': 'Weaning session',
   'animals.new.bought': 'I bought this animal',
   'animals.new.seller': 'Bought from',
+  'animals.new.acquiredOn': 'Bought on',
   'animals.new.paid': 'Price paid (R)',
   // Birth (FR-104). Two records from one action: the calf's herd row and the calving, filed
   // against the dam — "which cows calved, and how hard" is the question asked in September.
@@ -1084,6 +1087,8 @@ const af: Record<TranslationKey, string> = {
   'animals.new.species': 'Spesie',
   'animals.new.sex': 'Geslag',
   'animals.new.breed': 'Ras (opsioneel)',
+  'animals.new.dob': 'Geboortedatum (opsioneel)',
+  'animals.new.dobEstimated': 'Hierdie datum is ’n skatting',
   'animals.new.notSaid': 'Nie gesê nie',
   'animals.new.hornStatus': 'Horings (opsioneel)',
   'animals.new.woolClass': 'Wolklas (opsioneel)',
@@ -1145,6 +1150,7 @@ const af: Record<TranslationKey, string> = {
   'animals.wean': 'Speensessie',
   'animals.new.bought': 'Ek het hierdie dier gekoop',
   'animals.new.seller': 'Gekoop van',
+  'animals.new.acquiredOn': 'Gekoop op',
   'animals.new.paid': 'Prys betaal (R)',
   'birth.title': 'Teken ’n geboorte aan',
   'birth.dam': 'Watter koei het gekalf?',

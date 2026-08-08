@@ -3,11 +3,11 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-08
 
-**Active branch:** `phase-2/livestock` at `5d132b4` plus the audit worktree
+**Active branch:** `phase-2/livestock`, including the FR-101 capture closure
 
-**Remote state:** three committed changes are still ahead of `origin/phase-2/livestock`
+**Remote state:** five committed changes are ahead of `origin/phase-2/livestock`
 
 ## 1. Delivery position
 
@@ -15,7 +15,7 @@
 |---|---|---|
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
-| 2 — Livestock | Built, not merge-ready | Uncached `pnpm verify`: 84 files / 952 tests green; e2e: 27/27 green. Regulated livestock work still requires the owner-triggered compliance pass before this may be called merge-ready |
+| 2 — Livestock | Built, not merge-ready | The remaining FR-101 date/source capture gap is closed; uncached `pnpm verify` and e2e are green. Regulated livestock work still requires the owner-triggered compliance pass before this may be called merge-ready |
 | 3 — Offline sync | Not started | The current browser stores are local adapters. The PowerSync/SQLite replication described by ADR-0003 is not installed or implemented and must precede another large offline domain |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
@@ -48,6 +48,9 @@
 7. **The uncached gate exposed a false timeout.** Four full registration journeys now have a
    10-second ceiling instead of the 5-second unit default; under concurrent integration-test load,
    two healthy flows had crossed five seconds. A stalled journey still fails promptly.
+8. **FR-101 fields existed without capture controls.** The create-animal screen now records DOB,
+   whether it is estimated, and the actual acquisition day. A back-dated purchase carries that day
+   on both the animal and its event; it is no longer silently dated to the day the phone was used.
 
 ## 3. Owner decision
 
@@ -65,9 +68,10 @@ No storage implementation should begin until this is answered.
 
 | Check | Latest result |
 |---|---|
-| `pnpm test:e2e` | 27 passed in 1.1 minutes; affected populated light/dark cases re-run clean after harness fix |
-| `pnpm verify` | Uncached: 84 test files / 952 tests, 7/7 builds; bundle 147.77 KB gz ≤ 250 KB |
-| `pnpm project:check` | Green: STATUS 92/300 lines, no blank decision markers, phase names agree |
+| `pnpm test:e2e` | 27/27 passed in 1.2 minutes, including all Phase 2 capture screens in both themes and the production-worker offline journey |
+| `pnpm verify` | Uncached: 84 test files / 953 tests, 7/7 builds; bundle 148.04 KB gz ≤ 250 KB |
+| `pnpm project:check` | Green: STATUS 99/300 lines, no unanswered decisions, phase names agree |
+| FR-101 focused tests | 22/22 green (`AddAnimal` + `Lifecycle`) |
 | CI | Last recorded green at `34e0685`; local commits after it have not been pushed or CI-verified |
 | Review agents | Not run in this audit. They are owner-triggered only |
 

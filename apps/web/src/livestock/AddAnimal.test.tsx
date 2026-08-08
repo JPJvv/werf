@@ -126,6 +126,22 @@ describe('recording an animal', () => {
     expect(within(herd).getByText('1')).toBeTruthy();
   });
 
+  it('records a known or estimated birth date instead of silently leaving both blank', async () => {
+    cachedSession();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/date of birth/i), '2024-09-17');
+    await user.click(screen.getByRole('checkbox', { name: /date is an estimate/i }));
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    const [captured] = JSON.parse(
+      window.localStorage.getItem('werf-herd:0190f3a0-0000-7000-8000-0000000000f1') ?? '[]',
+    ) as Array<Record<string, unknown>>;
+    expect(captured).toMatchObject({ dob: '2024-09-17', dobEstimated: true });
+  });
+
   it('offers only the species the farm actually runs', () => {
     cachedSession(['sheep']);
     window.history.pushState({}, '', '/animals/new');

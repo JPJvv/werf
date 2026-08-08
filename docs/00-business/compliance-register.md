@@ -7,7 +7,11 @@
 > §7 (the annual cycle). It is the ENGINEERING ledger; the farm-facing `compliance_obligations`
 > table (§6) is a separate, in-app thing.
 
-**Established 2026-07-30 by JP.** See STATUS.md §6 (compliance operating model).
+**Established 2026-07-30 by JP.** The operating model is stated below and in `CLAUDE.md`'s
+compliance gate; `STATUS.md` §7 carries the standing decisions that follow from it. ⚠️ This line
+used to point at "STATUS.md §6 (compliance operating model)", a section the STATUS compaction
+removed — and §6 is now the review-pass stopping rule, so the pointer had gone from dangling to
+actively wrong. **Point at a document, not at a section number in a file that gets rewritten.**
 
 ---
 

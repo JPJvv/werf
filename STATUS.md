@@ -7,7 +7,7 @@
 
 **Active branch:** `phase-2/livestock`, including the FR-101 capture closure
 
-**Remote state:** implementation through `a3894e6` is pushed to draft PR #3; both CI lanes are green
+**Remote state:** everything through the tenth-pass closure is pushed to PR #3; both CI lanes green
 
 ## 1. Delivery position
 
@@ -15,7 +15,7 @@
 |---|---|---|
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
-| 2 — Livestock | Built, not merge-ready | The remaining FR-101 date/source capture gap is closed; uncached `pnpm verify` and e2e are green. Regulated livestock work still requires the owner-triggered compliance pass before this may be called merge-ready |
+| 2 — Livestock | ✅ Merge-ready | The owner-triggered tenth pass ran and **cleared** — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`, which withdrew its standing NOT APPROVABLE (§4, §6). Uncached `pnpm verify` and e2e green. MED/LOW fixed under §6 clause 3 or filed as issues #4–#8 |
 | 3 — Offline sync | Not started | The current browser stores are local adapters. The PowerSync/SQLite replication described by ADR-0003 is not installed or implemented and must precede another large offline domain |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
@@ -81,6 +81,9 @@ and claims none until that Phase 3 slice lands.
 2. Flip draft PR #3 to ready and merge once both CI lanes are green at the fix commit.
 3. Start Phase 3 from the offline-sync checklist — **read tripwire 3e before writing any hydration
    code.** Do not begin payroll on local adapters.
+4. ⚠️ `docs/phase-3-6-scope` is stacked on `phase-2/livestock`, not on `main`. Once PR #3 merges it
+   carries merged history; **rebase it onto `main` before Phase 3 work starts**, rather than leaving
+   the next session to discover it.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

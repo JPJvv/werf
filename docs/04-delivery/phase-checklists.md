@@ -249,7 +249,10 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   one, nothing is asked and the herd is stated. DOB and its honest `estimated` flag now exist on the
   screen too, and a bought animal asks for the actual acquisition day: that day is stored on the
   animal AND timestamps the purchase event, rather than quietly substituting the day the phone was
-  used. DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard). Still ◐ because
+  used. ⚠️ **`dobEstimated` is captured and stored but READ by nothing** — `herd.ts` classifies and
+  `WeaningSessionScreen` stamps an age from a possibly-guessed DOB with no marker that it was a
+  guess, so an estimate hardens into a fact on an append-only record. Honest at capture, invisible
+  after it (tenth pass, tracked on `main`; nothing false reaches the SAPS pack, which prints no DOB). DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard). Still ◐ because
   FR-101 also promises a photo, which remains behind the approved Phase 3 FR-108 storage slice;
   visual/EID identifiers use the dedicated crush tagging action, and dam/sire are captured where
   they can be known honestly (birth/service) rather than demanded for every animal
@@ -795,6 +798,17 @@ add the one shared local-first attachment path approved on 2026-08-08.
 ☐ 3e Two-device conflict matrix is implemented: append-only events coexist; field conflicts are
   audited; aggregate projections use the immutable baseline and `(occurred_at, id)` total order
 ☐ 3e Recount resets rather than adds, and arrival order cannot change the derived result
+⛔ 3e HYDRATION TRIPWIRE, LEFT BY THE TENTH PASS — do this BEFORE any down-sync ships.
+  `needsHead` in `apps/web/src/sync/Outbox.tsx` asks `landed()` whether the server holds a tally,
+  and `landed()` is `sentLog.has(id)` — "did THIS DEVICE send it". That is exact only while the
+  device holds the whole log, which is true in Phase 2 because nothing hydrates. The moment mobs
+  and tallies come down from the server, a tally another phone landed is invisible to `landed()`,
+  `projectHeadCount` under-counts, and the decrease is HELD EVERY ROUND FOR EVER with no refusal
+  above it — `/not-sent` then shows it under "Waiting to go up" and it never goes. That is the
+  ninth pass's SEV-2 shape (a hold that cannot clear) reached through the new mechanism.
+  Fix with hydration: `landed()` must become `sentLog.has(id) || hydratedFromServer.has(id)`.
+  Found independently by `reviewer` and `sync-auditor`; NOT a Phase 2 defect — it cannot fire in
+  the shipped configuration — which is exactly why it is written here rather than left in a comment
 ☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
 ☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
 ☐ 3h Sync health reports queue depth/failure per farm without PII

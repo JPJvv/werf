@@ -97,6 +97,13 @@ const en = {
   'notSent.waiting.title': 'Waiting on one of the above',
   'notSent.waiting.intro':
     'These are saved and fine. Each one needs a record above it to go up first — two halves of the same move, or a group that is not on the server yet. Sort out what is above and these follow on their own.',
+  // The same list when there is NOTHING above it. A hold does not need a refusal to exist: a
+  // decrease can wait on head the server has not counted yet. Pointing a farmer at records that
+  // are not on the screen is worse than saying nothing — it sends them looking for work that
+  // is not there.
+  'notSent.waiting.titleAlone': 'Waiting to go up',
+  'notSent.waiting.introAlone':
+    'These are saved and fine. Each one is waiting for a record the server has not counted yet, and they go up on their own as soon as it has. There is nothing to fix and nothing to press.',
   'notSent.back': 'Back to home',
   'notSent.kind.landUnit': 'A camp or block',
   'notSent.kind.boundaryWalk': 'A boundary you walked',
@@ -877,6 +884,9 @@ const af: Record<TranslationKey, string> = {
   'notSent.waiting.title': 'Wag vir een hierbo',
   'notSent.waiting.intro':
     'Hierdie is gestoor en reg. Elkeen wag vir ’n rekord hierbo om eers op te gaan — twee helftes van dieselfde skuif, of ’n groep wat nog nie op die bediener is nie. Maak reg wat hierbo is, dan volg hulle vanself.',
+  'notSent.waiting.titleAlone': 'Wag om op te gaan',
+  'notSent.waiting.introAlone':
+    'Hierdie is gestoor en reg. Elkeen wag vir ’n rekord wat die bediener nog nie getel het nie, en hulle gaan vanself op sodra dit gebeur. Daar is niks om reg te maak of te druk nie.',
   'notSent.back': 'Terug na tuis',
   'notSent.kind.landUnit': '’n Kamp of blok',
   'notSent.kind.boundaryWalk': '’n Grens wat jy geloop het',

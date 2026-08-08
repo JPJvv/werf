@@ -561,6 +561,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // and `/not-sent` says *"Record it again"*, and A RECOUNT RESETS, so following either
         // instruction corrupts B's count permanently.
         //
+        // ⚠️ Both quotes above were challenged by the tenth pass as premises that had outlived
+        // themselves, and both were RE-VERIFIED as true: the shortage throws `ValidationError`
+        // (`mob-tally.ts:146`), `werf-error.filter.ts:85` maps that to code `VALIDATION`, and
+        // `reasonKey` renders `notSent.why.validation` — *"Record it again, checking the numbers
+        // and dates."* Checking `notSent.intro` alone is not checking this screen's copy.
+        //
         // ⛔ The first fix for that was a `head:<mobId>` SUBJECT, and it held a decrease whenever
         // ANY increase on the mob was tainted — whether or not this decrease needed it. Mob of 100
         // on the server, a refused purchase of 10, three unrelated deaths: the deaths were held
@@ -647,6 +653,16 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
                   // the same cut `deriveHeadCount` applies, with the same total order. A tally
                   // later in this queue, refused this round, or held this round is not in the
                   // sent-log and is correctly absent: the server will not have it either.
+                  //
+                  // ⛔ PHASE 3 TRIPWIRE. That last sentence rests on a premise this file cannot
+                  // enforce: `landed()` is `sentLog.has(id)`, which answers "did THIS DEVICE send
+                  // it", and that equals "does the server hold it" ONLY while the device holds the
+                  // whole log. True today — nothing hydrates. The moment PowerSync brings mobs and
+                  // tallies DOWN, a tally another phone landed is invisible here, this fold
+                  // under-counts, and the decrease is held every round for ever with no refusal
+                  // above it to clear. `landed()` must become
+                  // `sentLog.has(id) || hydratedFromServer.has(id)` in the same slice that ships
+                  // hydration. Checklist item 3e carries this; a comment alone goes stale.
                   const before = tallies.filter(
                     (t) =>
                       t.mobId === tally.mobId &&

@@ -87,6 +87,12 @@ export function NotSentScreen() {
   // the product, and a farmer reading "1 not sent" had three more stranded with no way to learn it.
   // A hold nobody can see is a lost record, whatever the queue believes.
   const waiting = useHeldCaptures();
+  // ⭐ A hold can stand ALONE. Every `guardedBy` hold chains back to a refusal, but `needsHead`
+  // waits on arithmetic — the server's fold of the group is short of the head this decrease
+  // spends — and that needs no refusal to exist. With nothing above it, "Waiting on one of the
+  // above" is a pointer at an empty screen, so the section names itself instead.
+  const waitingTitleKey: TranslationKey =
+    refused.length > 0 ? 'notSent.waiting.title' : 'notSent.waiting.titleAlone';
 
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
@@ -98,46 +104,56 @@ export function NotSentScreen() {
         <p className="text-body text-soil-700">{t('notSent.empty')}</p>
       ) : (
         <>
-          {/* The reassurance comes FIRST, above the list. Nothing here is lost, and a farmer
-              scanning a list of problems needs to know that before they read the problems. */}
-          <p className="mb-6 border-l-4 border-soil-200 bg-sand-100 p-3 text-body text-soil-900">
-            {t('notSent.intro')}
-          </p>
-          <ul aria-label={t('notSent.title')} className="flex list-none flex-col gap-4 p-0">
-            {refused.map((capture) => (
-              <li
-                key={capture.id}
-                className="rounded border border-soil-200 bg-sand-50 p-3 text-soil-900"
-              >
-                <p className="text-body">
-                  {t(KIND_KEY[capture.kind])}
-                  {capture.detail !== null && (
-                    <>
-                      {' '}
-                      <span className="font-data tabular-nums">{capture.detail}</span>
-                    </>
-                  )}
-                </p>
-                {/* Warning FORM — tinted panel, left rule — never the ochre action shape
-                    (NFR-411). Meaning is in the words; colour only reinforces. */}
-                <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
-                  {t(reasonKey(capture))}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {/* ⛔ Both the intro and the list are gated on there BEING a refusal. A hold does not
+              need one to exist — a decrease waits on head the server has not counted yet, and
+              that hold stands alone. Ungated, this rendered "The server would not take these as
+              they stand. Fix what it names" above an empty list, and then a section headed
+              "Waiting on one of the above" with nothing above it. The tenth pass found it; it is
+              the same class as every other copy defect here — sending a farmer to do work that
+              does not exist is worse than saying nothing. */}
+          {refused.length > 0 && (
+            <>
+              {/* The reassurance comes FIRST, above the list. Nothing here is lost, and a farmer
+                  scanning a list of problems needs to know that before they read the problems. */}
+              <p className="mb-6 border-l-4 border-soil-200 bg-sand-100 p-3 text-body text-soil-900">
+                {t('notSent.intro')}
+              </p>
+              <ul aria-label={t('notSent.title')} className="flex list-none flex-col gap-4 p-0">
+                {refused.map((capture) => (
+                  <li
+                    key={capture.id}
+                    className="rounded border border-soil-200 bg-sand-50 p-3 text-soil-900"
+                  >
+                    <p className="text-body">
+                      {t(KIND_KEY[capture.kind])}
+                      {capture.detail !== null && (
+                        <>
+                          {' '}
+                          <span className="font-data tabular-nums">{capture.detail}</span>
+                        </>
+                      )}
+                    </p>
+                    {/* Warning FORM — tinted panel, left rule — never the ochre action shape
+                        (NFR-411). Meaning is in the words; colour only reinforces. */}
+                    <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                      {t(reasonKey(capture))}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {waiting.length > 0 && (
             // A SECOND list, deliberately below the refusals and deliberately not styled as a
             // warning. Nothing here needs the farmer to do anything: these clear themselves the
             // moment the record they wait on goes up. Showing them as problems would ask for work
             // that would not help, and hiding them was how three deaths went missing in silence.
-            <section className="mt-8">
-              <h2 className="mb-2 font-ui text-h2 text-soil-900">{t('notSent.waiting.title')}</h2>
-              <p className="mb-4 text-body text-soil-700">{t('notSent.waiting.intro')}</p>
-              <ul
-                aria-label={t('notSent.waiting.title')}
-                className="flex list-none flex-col gap-4 p-0"
-              >
+            <section className={refused.length > 0 ? 'mt-8' : undefined}>
+              <h2 className="mb-2 font-ui text-h2 text-soil-900">{t(waitingTitleKey)}</h2>
+              <p className="mb-4 text-body text-soil-700">
+                {t(refused.length > 0 ? 'notSent.waiting.intro' : 'notSent.waiting.introAlone')}
+              </p>
+              <ul aria-label={t(waitingTitleKey)} className="flex list-none flex-col gap-4 p-0">
                 {waiting.map((capture) => (
                   <li
                     key={capture.id}

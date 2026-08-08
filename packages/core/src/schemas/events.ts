@@ -386,8 +386,10 @@ export const tallyPayloadSchema = z
     }
     // ⛔ A COUNTERPARTY AND A PRICE BELONG TO A TRADE AND NOWHERE ELSE, and the sharp case is
     // `theft`: `.claude/rules/domain.md` bans a named third party on a theft record outright —
-    // defamation exposure for the farmer, POPIA s26 criminal-behaviour processing for us. Record
-    // facts. A stolen animal has no buyer, and the person a farmer suspects is not a fact.
+    // defamation exposure for the farmer, and processing data about suspected criminal behaviour
+    // for us. Record facts. A stolen animal has no buyer, and the person a farmer suspects is not
+    // a fact. (The statute and section live in `docs/00-business/legal-compliance.md` and the ZA
+    // jurisdiction pack; `packages/core` is jurisdiction-neutral and names neither.)
     //
     // This lives at the BOUNDARY rather than only on the screen. The capture screen scopes both
     // fields to `sale`/`purchase`, which is where a farmer meets the rule — but a capture queued

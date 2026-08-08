@@ -187,7 +187,11 @@ stateDiagram-v2
    6. ⛔ **Head availability is ARITHMETIC, not a subject.** A decrease is held only when the
       device's own fold — `projectHeadCount` over the baseline and the captures the server actually
       holds, cut at `(occurred_at, id)` — says the server would refuse it. This is the same
-      projection `deriveHeadCount` runs, so the two sides cannot disagree. It was briefly a
+      projection `deriveHeadCount` runs, so the two sides cannot disagree **as long as the device
+      holds the whole log**. ⛔ That qualifier is load-bearing and is not yet true by construction:
+      "the captures the server actually holds" is really "the captures this device sent", and the
+      two part company the moment Phase 3 hydrates from the server. See the 3e hydration tripwire
+      in `phase-checklists.md` — under-counting there holds a valid decrease for ever. It was briefly a
       `head:<mobId>` subject, which held any decrease whenever any increase on that mob was tainted:
       three deaths in a camp of a hundred, stranded for ever behind an unrelated refused purchase.
    7. **A held capture is REPORTED.** `/not-sent` lists it under "waiting on one of the above" and

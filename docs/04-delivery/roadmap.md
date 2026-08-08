@@ -190,5 +190,5 @@ executed and timed.
 | Sync is postponed because localStorage “works” | Phase 3 is a hard dependency for Phase 4 onward |
 | Payroll review is late | Book while Phases 3–4 build; it gates deploy, not placeholder mechanics |
 | Object storage is half-built | Make the owner decision once; never let `photo_key` imply an uploaded object |
-| A review loop has no terminal condition | Use the stopping rule in STATUS; findings change code or scope, not the existence of a finish line |
+| A review loop has no terminal condition | Use the stopping rule in `STATUS.md` §7; findings change code or scope, not the existence of a finish line |
 | Pilot exposes structural defects | Fix, re-run the gate, and re-pilot rather than launch on schedule |

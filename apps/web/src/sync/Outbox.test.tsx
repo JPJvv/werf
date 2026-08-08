@@ -12,7 +12,7 @@
  * nothing at all leaves the device while offline.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
@@ -898,6 +898,150 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(BOUGHT);
     expect(sent).not.toContain(DIED);
+  });
+
+  it('⭐ NAMES the held capture on /not-sent, so a hold is a thing the farmer can see', async () => {
+    // ⛔ The tenth pass's finding, and it is about the ninth pass's own fix. That fix existed to
+    // end "a hold nobody can see is a lost record" — and the surface it added, the waiting list on
+    // `/not-sent`, was rendered by NO test. `Outbox.test.tsx` asserted the strip COUNT ("· 1 to
+    // send") and stopped there, and the e2e `/not-sent` case reaches the empty state. So deleting
+    // the `HeldCapturesContext.Provider` wrapper, or the `waiting.length > 0` block, made held
+    // captures invisible again with `pnpm verify` fully green — the exact regression the fix was
+    // written to prevent, undetectable by the gate that is supposed to prevent it.
+    //
+    // Same seed as the test above: 2 head on the server, a refused purchase of 10, three deaths
+    // that genuinely need it. One refused, one held. This asserts the held one is NAMED, in its
+    // own list, in the farmer's words — not merely counted.
+    const M = '0190f3a0-0000-7000-8000-0000000000c5';
+    const BOUGHT = '0190f3a0-0000-7000-8000-0000000000c6';
+    const DIED = '0190f3a0-0000-7000-8000-0000000000c7';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: M,
+          farmId: FARM_ID,
+          name: 'Small camp',
+          species: 'sheep',
+          headCount: 9,
+          initialHeadCount: 2,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: BOUGHT,
+          farmId: FARM_ID,
+          mobId: M,
+          occurredAt: '2026-07-22T12:00:00.000Z',
+          reason: 'purchase',
+          count: 10,
+          delta: 10,
+        },
+        {
+          id: DIED,
+          farmId: FARM_ID,
+          mobId: M,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'death',
+          count: 3,
+          delta: -3,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      return body.includes(BOUGHT)
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('link', { name: /see what/i }));
+
+    // The held capture is in its OWN list, not mixed into the refusals — it is not the farmer's
+    // problem and must not be presented as one.
+    const waitingList = await screen.findByRole('list', { name: 'Waiting on one of the above' });
+    expect(within(waitingList).getByText(/a count change for/i)).toBeTruthy();
+    expect(within(waitingList).getByText('Small camp')).toBeTruthy();
+
+    // ⛔ And the held capture is NOT also in the refusal list, which would blame the farmer for a
+    // capture the server has never seen. The refusal list holds exactly ONE item — the purchase
+    // the server actually refused — so the count is what carries this claim, not the label (both
+    // rows would read "A count change for Small camp"; they name the same mob).
+    const refusedList = screen.getByRole('list', { name: 'What needs your attention' });
+    expect(within(refusedList).getAllByRole('listitem').length).toBe(1);
+    expect(within(refusedList).getByText(/already recorded|already on another/i)).toBeTruthy();
+  });
+
+  it('⭐ does not point at an empty list when a hold stands ALONE, with no refusal above it', async () => {
+    // Every `guardedBy` hold chains back to a refusal, so for a long time "Waiting on one of the
+    // above" was always literally true. `needsHead` broke that: it waits on ARITHMETIC — the
+    // server's fold of the group is short of the head this decrease spends — and needs no refusal
+    // to exist. The screen then said "The server would not take these as they stand. Fix what it
+    // names" above an EMPTY list, and headed the holds "Waiting on one of the above" with nothing
+    // above them. A farmer goes looking for work that is not there.
+    //
+    // Seeded past the capture screen on purpose: `AdjustMobScreen` refuses this at capture, but a
+    // queue is not only ever written by the current screen on this device.
+    const M = '0190f3a0-0000-7000-8000-0000000000d1';
+    const DIED = '0190f3a0-0000-7000-8000-0000000000d2';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: M,
+          farmId: FARM_ID,
+          name: 'Small camp',
+          species: 'sheep',
+          headCount: 2,
+          initialHeadCount: 2,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: DIED,
+          farmId: FARM_ID,
+          mobId: M,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'death',
+          count: 3,
+          delta: -3,
+        },
+      ]),
+    );
+    // Everything the server IS asked for succeeds — so there is no refusal anywhere.
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole('link', { name: /see what/i }));
+
+    // The hold is named, under a heading that stands on its own two feet.
+    const waitingList = await screen.findByRole('list', { name: 'Waiting to go up' });
+    expect(within(waitingList).getByText('Small camp')).toBeTruthy();
+
+    // ⛔ And the screen does NOT tell the farmer to fix something. There is no refusal, so there
+    // is no refusal list, no "fix what it names", and no pointer at records that are not there.
+    expect(screen.queryByRole('list', { name: 'What needs your attention' })).toBeNull();
+    expect(screen.queryByText(/would not take these as they stand/i)).toBeNull();
+    expect(screen.queryByText(/sort out what is above/i)).toBeNull();
   });
 
   it('⭐ sends a CHAINED move A→B→C in one round, without a false refusal on the second leg', async () => {

@@ -84,7 +84,7 @@ At the top of the screen there is a strip:
 | **Offline — your work is saved** | No signal. Everything you enter is safe on your phone. |
 | **3 to send** | You have signal, and three records are going up now. |
 | **Synced** | Everything is on the server. Your manager can see it. |
-| **2 need attention** | Two records need you to look at them. Tap it. |
+| **2 not sent — needs your attention** | Two records need you to look at them. Tap **See what** beside it — the sentence itself is not a button. |
 
 **"Offline — your work is saved" means exactly that.** Do not write it on paper as well. That is the whole point of this.
 
@@ -200,7 +200,7 @@ The second is not blame. It is the one you show someone.
 
 **Nothing is ever thrown away.** A refused record is kept, not deleted — sixty tags captured in a crush with one duplicate digit means fifty-nine go up and one waits for you.
 
-**Some records wait for another one.** Two halves of the same move, or anything recorded against a group the server has not accepted yet, go up only once the record they depend on does. Those are listed separately, under **Waiting on one of the above**, and they need nothing from you: sort out the refusal above them and they follow on their own. The strip counts them too, so “1 not sent · 3 to send” means one needs you and three are simply still on their way.
+**Some records wait for another one.** Two halves of the same move, or anything recorded against a group the server has not accepted yet, go up only once the record they depend on does. Those are listed separately, under **Waiting on one of the above**, and they need nothing from you: sort out the refusal above them and they follow on their own. Sometimes a record waits with nothing above it — the server has not yet counted head that the record spends — and then the list is headed **Waiting to go up** and says so. The strip counts these too, so “1 not sent — needs your attention · 3 to send” means one needs you and three are simply still on their way.
 
 ⚠️ **If it tells you to record something again, read what it says first.** Recording a count again is not free: "I counted them" replaces the total.
 
@@ -380,9 +380,9 @@ Werf is built for South African law — the wages, the animal marking, the stock
 | | |
 |---|---|
 | **"Offline — your work is saved" for days** | Normal if you have no signal. If you *do* have signal and it stays like that, contact support — do not keep working and hope. |
-| **"2 need attention"** | Tap it. Usually two people recorded the same thing. Pick the right one. |
+| **"2 not sent — needs your attention"** | Tap **See what** beside it. It lists each record the server refused and why, in plain language. Nothing is lost, and there is no button to press to retry — fixing what it names is what sends it. |
 | **"Payroll needs a connection"** | Correct. Find signal. Your attendance is safe. |
-| **Blocked from harvesting or selling** | Read the message. It names the product and the date you are clear. It is protecting you. |
+| **Blocked from selling or sending for slaughter** | Read the message. If the animal or group was treated, it gives the date from which it may go. If it asks you what day something happened, tell it — it cannot check a withholding period without the day. It is protecting you. |
 | **Phone is full** | **Your unsent work is never removed** — it is the last thing we would drop. Shortening the history kept on the phone is planned; there is no setting for it yet. |
 
 **support@werf.co.za** · **status.werf.co.za**

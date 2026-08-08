@@ -296,9 +296,9 @@ Persistent, 32px, top. **Never modal, never blocking** (SRS-7).
 |---|---|
 | Saved and sent | `--aloe-100` · ✓ · "Saved and sent" |
 | Pending | `--dam-100` · ↑ · "3 to send" |
-| Sending | `--dam-100` · animated ↑ · "Sending 2 of 3" |
+| Sending | `--dam-100` · animated ↑ · "Sending…" (no progress count — a count that stalls at "2 of 3" reads as a fault) |
 | Offline | `--soil-100` · ⌁ · **"Offline — your work is saved"** |
-| Error | `--klei-100` · ! · "2 need attention" → tappable |
+| Error | `--klei-100` · ! · "2 not sent — needs your attention · 3 to send" + a separate **See what** link. ⛔ The sentence is NOT tappable; the link beside it is |
 
 **The offline copy matters more than the icon.** "Offline — your work is saved" does the single most important job in this product: it tells a person the thing they just did is not lost. "No connection" would be accurate and would cause a farmer to write it on paper as well — and the moment they keep a paper backup, the app is extra work and will be abandoned, correctly.
 

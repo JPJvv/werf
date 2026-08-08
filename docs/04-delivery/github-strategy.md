@@ -147,12 +147,26 @@ werf/
 │   ├── ISSUE_TEMPLATE/
 │   └── pull_request_template.md
 ├── CLAUDE.md              ← ✅ commit it. It is engineering documentation.
+├── AGENTS.md              ← ✅ commit it. A BYTE-FOR-BYTE COPY of CLAUDE.md for Codex CLI.
 ├── .claude/               ← ✅ commit it. rules/, agents/, hooks/
+├── .codex/                ← ✅ commit it. The same agents and hooks, Codex's format.
 ├── docs/                  ← ⭐ the differentiator
 └── ...
 ```
 
 **Commit `CLAUDE.md` and `.claude/`.** They are not embarrassing; they are a demonstration that you can specify a system well enough for something else to build it. `.claude/rules/domain.md` — forty lines of South African labour-law guardrails written so an AI cannot get a payslip wrong — is one of the more interesting files in this repository, and it is the kind of thing that gets a follow-up question in an interview.
+
+⚠️ **`AGENTS.md` is a copy of `CLAUDE.md`, not a second document. Edit `CLAUDE.md` and copy it over.**
+Two files stating the same rules in their own words is how one of them starts lying — this repo has
+measured that class often enough to name it. The tenth pass committed `AGENTS.md` because three
+tracked docs already cited it while it existed only in a working tree, so a clone followed three
+pointers to a missing file. Same reasoning for `.codex/`: `compliance-register.md` sends a reader
+there for the review policy.
+
+⚠️ `.codex/hooks/*.sh` are byte-identical duplicates of `.claude/hooks/*.sh`, and `.codex/hooks.json`
+invokes the **`.claude/`** copies — so the `.codex/` copies are currently dead files that can drift
+without anything noticing. Resolve that (delete them, or repoint `hooks.json`) rather than letting
+two copies of a guard diverge.
 
 Do **not** commit `.claude/gate-off`. That is the escape hatch from the Stop hook, and it is in `.gitignore` for a reason.
 

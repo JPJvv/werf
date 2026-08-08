@@ -66,19 +66,58 @@ and claims none until that Phase 3 slice lands.
 |---|---|
 | `pnpm test:e2e` | 27/27 passed in 1.2 minutes, including all Phase 2 capture screens in both themes and the production-worker offline journey |
 | `pnpm verify` | Uncached: 84 test files / 953 tests, 7/7 builds; bundle 148.04 KB gz ≤ 250 KB |
-| `pnpm project:check` | Green: STATUS 99/300 lines, no unanswered decisions, phase names agree |
+| `pnpm project:check` | Green. ⚠️ Unanswered owner decisions are now a WARNING, not a failure — the old exit-1 made "ask, do not guess" break the definition of done. `--strict` restores the hard failure and **nothing invokes it yet**; that is a deliberate, informed weakening, not an oversight |
 | FR-101 focused tests | 22/22 green (`AddAnimal` + `Lifecycle`) |
 | CI | Both PR lanes green at `a3894e6`: main gate 4m0s; E2E/axe 1m46s |
-| Review agents | Not run in this session. The owner will trigger them later |
+| Review agents | ✅ **Tenth pass run 2026-08-08 at owner request over `17891f0..HEAD`.** `sync-auditor`: APPROVABLE. `compliance-checker`: APPROVABLE — **withdraws its standing NOT APPROVABLE**. `reviewer`: NOT APPROVABLE, carried solely by the exit-gate line "owner-triggered passes still open", which this pass closed. **No SEV-1 and no SEV-2 from any agent** |
 
 ## 5. Next executable steps
 
-1. When ready, owner triggers the Phase 2 reviewer, sync-auditor and compliance-checker passes. This
-   work touches regulated livestock/stock-theft logic; green automation is not legal clearance.
-2. Close findings, re-run both gates, push, and read both CI lanes before changing draft PR #3 to
-   ready. Start Phase 3 from the offline-sync checklist; do not begin payroll on local adapters.
+1. ✅ Done 2026-08-08: the owner-triggered tenth pass ran; see §4 and §6. MED/LOW findings were
+   fixed under clause 3 (both code fixes carry a test watched to FAIL first) or filed on `main` as
+   **#4** (a refused animal taints nothing), **#5** (`dobEstimated` read by nothing), **#6** (an
+   aborted round wipes the hold display), **#7** (`/not-sent` says "record it again" for a tally,
+   and a recount RESETS), **#8** (⛔ Phase 3 blocker — `landed()` breaks on hydration).
+2. Flip draft PR #3 to ready and merge once both CI lanes are green at the fix commit.
+3. Start Phase 3 from the offline-sync checklist — **read tripwire 3e before writing any hydration
+   code.** Do not begin payroll on local adapters.
 
-## 6. Standing decisions
+## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
+
+Restored here after the tenth pass found it had been deleted wholesale by this branch's own
+STATUS compaction while `roadmap.md` still pointed at it. It is decision state, not session
+narrative. **Do not delete it again; a rule nobody can find is not a rule.**
+
+| # | Clause |
+|---|---|
+| 1 | **Scope narrows every pass.** A pass reviews only the previous pass's fix diff plus anything committed since — never the accumulated range |
+| 2 | **A severity floor clears the gate.** A pass CLEARS on no SEV-1 and no SEV-2 in its range. MED/LOW are fixed or filed as tracked issues on `main`; they are not merge blockers |
+| 3 ⭐ | **The terminal condition.** If a pass returns only MED/LOW, those fixes merge WITHOUT another pass, provided each is (i) mechanical, (ii) confined to the files the finding names, and (iii) covered by a test **watched to FAIL against the old code first**. A SEV-1/SEV-2 fix never qualifies |
+| 4 | **Hard ceiling: two passes.** Three consecutive passes finding severe defects in a shrinking diff is a DESIGN problem — escalate as a scope decision, not more review |
+| 5 ⭐ | **An accepted redesign resets the ceiling ONCE**, scoped to the replacement diff alone. ⛔ If that pass returns a SEV-2 in the replaced mechanism, the answer is **descope, not a third design** |
+
+It does not lower the bar on regulated code: a SEV-1/SEV-2 in FR-131 / animal ID / stock theft /
+POPIA blocks the merge absolutely. It changes *when reviewing stops*, never *what a defect is*.
+Amendments are JP's and must be asked for out loud, never quietly re-interpreted.
+
+**Outcome, 2026-08-08 — the recursion terminated.** Passes one to nine were all NOT APPROVABLE,
+each finding a real defect inside the previous one's fixes. Clause 4 fired at the ninth; JP chose
+redesign over descope; the tenth pass ran under clause 5 over the replacement and **cleared under
+clause 2 — no SEV-1, no SEV-2, from any of the three agents.** The clause-5 "once" is now spent.
+
+Two things worth keeping from it:
+
+- **`sync-auditor` finding #3 was REFUTED with evidence, and the refutation matters as much as the
+  confirmations.** It claimed `/not-sent` never says "Record it again" and that the `Outbox.tsx`
+  comment saying so was a stale premise. It is not: a head shortage throws `ValidationError`
+  (`mob-tally.ts:146`) → `werf-error.filter.ts:85` maps it to code `VALIDATION` → `reasonKey`
+  renders `notSent.why.validation` = *"Record it again, checking the numbers and dates."* Checking
+  `notSent.intro` alone is not checking that screen's copy. **The "fix" would have been the defect.**
+- **Both `reviewer` and `sync-auditor` independently found the same Phase-3 landmine**, which is
+  worth more than either alone: `landed()` is this device's sent-log. Exact until hydration ships,
+  silently wrong after. Written into the Phase 3 checklist as tripwire 3e, not left in a comment.
+
+## 7. Standing decisions
 
 - Offline writes complete locally; network reconciliation is background work.
 - Review agents are owner-triggered only.

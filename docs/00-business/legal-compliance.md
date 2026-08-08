@@ -18,9 +18,11 @@
 >
 > **The rule:** every regulated value lives in the `regulatory_rates` table with `effective_from` and `effective_to`, and is looked up by the date the event occurred. A regulated constant in code is a defect at code review, even if the value is currently correct.
 >
-> **Before Phase 3 (Labour) begins, re-verify every figure in §2 against the current Government Gazette.** Claude Code should treat "the number in the blueprint" as a hint, not a fact.
+> **Before the labour phase (currently Phase 5) begins, re-verify every figure in §2 against the current Government Gazette.** Claude Code should treat "the number in the blueprint" as a hint, not a fact.
+>
+> ⚠️ Keyed to **the labour phase**, not to a number, on purpose. This document said "Phase 3" while the roadmap renumbered labour to Phase 5 and gave Phase 3 to offline sync — which silently pointed the Gazette re-verification, the practitioner review and the DPIA at a phase where nobody would be looking at a payslip. Re-key rather than renumber the next time the roadmap moves.
 
-**We are not lawyers and neither is this document.** It is an engineering specification informed by public sources. Before the labour module ships to a paying customer, a qualified South African labour law practitioner must review the calculation engine and the generated documents. Budget for this in Phase 3.
+**We are not lawyers and neither is this document.** It is an engineering specification informed by public sources. Before the labour module ships to a paying customer, a qualified South African labour law practitioner must review the calculation engine and the generated documents. Budget for this in the labour phase (currently Phase 5).
 
 ---
 
@@ -34,7 +36,7 @@ Werf is an **operator** (processor) for the farm's employee data, and a **respon
 
 | Condition | What it means here | Build requirement |
 |---|---|---|
-| Accountability (s8) | We can show compliance | Audit log on every personal-data access; DPIA before Phase 3 |
+| Accountability (s8) | We can show compliance | Audit log on every personal-data access; DPIA before the labour phase (currently Phase 5) |
 | Processing limitation (s9–12) | Minimum necessary, lawful basis, consent where required | Field-level justification register; no speculative data collection |
 | Purpose specification (s13–14) | Collected for a stated purpose, retained no longer than needed | Retention policy per table (§1.6) |
 | Further processing limitation (s15) | Don't repurpose | No analytics on worker data without separate consent; no model training on customer data |

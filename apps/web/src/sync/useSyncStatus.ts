@@ -9,8 +9,26 @@ export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'error' | 'offline';
 
 export interface SyncState {
   status: SyncStatus;
-  /** Number of local writes not yet sent to the server. */
+  /** Number of local writes not yet sent to the server. Includes `blockedCount`. */
   pendingCount: number;
+  /**
+   * Of those, how many the server REFUSED on their merits — a duplicate tag number, a sale inside
+   * a withdrawal period. They are held, never discarded, and retried on every round, but they no
+   * longer stop the captures behind them from being sent. A farmer has to change something for
+   * these to move, so the strip has to say so rather than promising a retry that cannot work.
+   */
+  blockedCount: number;
+  /**
+   * Of those, how many are WAITING on one of the refusals above — the two halves of a move, a
+   * disposal whose dose was refused, a tally on a camp the server has not accepted. The server has
+   * never seen these, so they are not the farmer's to fix and must not be counted as needing
+   * attention; they clear on their own when the refusal they wait on does.
+   *
+   * ⛔ Reported because it was not. The strip returned early on `blockedCount`, so the pending
+   * total vanished from the line entirely and three captures stranded behind one refused move read
+   * as "1 not sent". Held is a third state and a silent hold is a lost record.
+   */
+  waitingCount: number;
 }
 
 /**
@@ -36,5 +54,10 @@ export function useSyncStatus(): SyncState {
     };
   }, []);
 
-  return { status: online ? 'synced' : 'offline', pendingCount: 0 };
+  return {
+    status: online ? 'synced' : 'offline',
+    pendingCount: 0,
+    blockedCount: 0,
+    waitingCount: 0,
+  };
 }

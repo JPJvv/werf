@@ -1,0 +1,332 @@
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  StreamableFile,
+} from '@nestjs/common';
+import { schemas } from '@werf/core';
+import { z } from 'zod';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import type { AuthContext } from '../auth/auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  LivestockService,
+  type CapturedAnimal,
+  type CapturedEvent,
+  type CapturedIdentifier,
+  type CapturedMob,
+  type CapturedTheftIncident,
+} from './livestock.service';
+import { renderEvidencePackPdf } from './evidence-pack.pdf';
+
+/** The farm whose register is being read. RLS decides whether the caller may see it. */
+const residueRegisterQuerySchema = z.object({ farmId: schemas.uuidSchema });
+
+// No @UseGuards: AuthGuard is registered globally, so every route here is guarded by default.
+@Controller('livestock')
+export class LivestockController {
+  constructor(@Inject(LivestockService) private readonly livestock: LivestockService) {}
+
+  /**
+   * Create an animal (FR-101). The FK root of the capture graph, so the client flush sends
+   * animals before any event that references one. The body carries the client's own UUIDv7 and
+   * the fields captured offline; the author is taken from the session, never the body. Idempotent
+   * on the id — a re-flushed animal returns the stored row rather than a duplicate.
+   */
+  @Post('animals')
+  @HttpCode(HttpStatus.CREATED)
+  async recordAnimal(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordAnimalRequestSchema))
+    body: schemas.RecordAnimalRequest,
+  ): Promise<CapturedAnimal> {
+    return this.livestock.recordAnimal(auth.userId, body);
+  }
+
+  /**
+   * Create a mob / flock (FR-102) — the group-only model, managed by head count with no individual
+   * animal rows behind it. Sent after land units by the flush (a mob can carry `land_unit_id`) and
+   * before animals (an animal can carry `mob_id`). Idempotent on the id.
+   */
+  @Post('mobs')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMob(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.newMobSchema))
+    body: schemas.NewMob,
+  ): Promise<CapturedMob> {
+    return this.livestock.recordMob(auth.userId, body);
+  }
+
+  /**
+   * Change a mob's head count and say why (FR-102) — births, deaths, sales, theft, home slaughter,
+   * or a recount. Sent after its mob by the flush. The body carries a POSITIVE `count`: the sign
+   * comes from the reason, server-side, so no client can post a birth that removes head.
+   *
+   * Idempotent on the id, and it has to be: this capture changes the count its own validation
+   * reads, so a re-flush that re-applied the delta would take the same animals off twice.
+   */
+  @Post('mob-tallies')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMobTally(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMobTallyRequestSchema))
+    body: schemas.RecordMobTallyRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMobTally(auth.userId, body);
+  }
+
+  /**
+   * Attach an identifier to an animal (FR-109) — the tag number a farmer actually calls it by.
+   * Sent after its animal by the flush (it references `animals(id)`). Idempotent on the id; a
+   * number currently live on a DIFFERENT animal is a refusal, not a silent move.
+   */
+  @Post('identifiers')
+  @HttpCode(HttpStatus.CREATED)
+  async recordIdentifier(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.newAnimalIdentifierSchema))
+    body: schemas.NewAnimalIdentifier,
+  ): Promise<CapturedIdentifier> {
+    return this.livestock.recordIdentifier(auth.userId, body);
+  }
+
+  /**
+   * Record a weight (FR-140). The body carries the client's own event id and the farm-local
+   * `occurredAt`; the author is taken from the session, never the body. 201 with the persisted
+   * event so the client can reconcile its optimistic local row.
+   */
+  @Post('weights')
+  @HttpCode(HttpStatus.CREATED)
+  async recordWeight(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordWeightRequestSchema))
+    body: schemas.RecordWeightRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordWeight(auth.userId, body);
+  }
+
+  /**
+   * Record a move (FR-103) — an animal walked to another camp and/or mob. Only the DESTINATION is
+   * sent; the server reads where the animal is from its own row. Idempotent on the id.
+   */
+  @Post('moves')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMove(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMoveRequestSchema))
+    body: schemas.RecordMoveRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMove(auth.userId, body);
+  }
+
+  /**
+   * Record a birth (FR-104) against the DAM. The calf's `animals` row is created through the
+   * ordinary create-animal path and sent first; this event carries the calving facts.
+   */
+  @Post('births')
+  @HttpCode(HttpStatus.CREATED)
+  async recordBirth(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordBirthRequestSchema))
+    body: schemas.RecordBirthRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordBirth(auth.userId, body);
+  }
+
+  /** Record a weaning (FR-111): the weight at weaning and, if known, the age. No status change. */
+  @Post('weanings')
+  @HttpCode(HttpStatus.CREATED)
+  async recordWeaning(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordWeaningRequestSchema))
+    body: schemas.RecordWeaningRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordWeaning(auth.userId, body);
+  }
+
+  /**
+   * Record a mating / service (FR-120), against the DAM. Natural service or AI; the sire is an
+   * animal on this farm or an external code; a running bull is a bull-in/bull-out WINDOW rather
+   * than a day, because that is what an extensive herd actually knows.
+   */
+  @Post('matings')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMating(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMatingRequestSchema))
+    body: schemas.RecordMatingRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMating(auth.userId, body);
+  }
+
+  /**
+   * Record a pregnancy diagnosis (FR-121), against the DAM. The due date is projected HERE from
+   * the species gestation reference table and is not accepted from the body — the client previews
+   * one from its cached copy, the server stores the one it can vouch for.
+   */
+  @Post('pregnancy-tests')
+  @HttpCode(HttpStatus.CREATED)
+  async recordPregnancyTest(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordPregnancyTestRequestSchema))
+    body: schemas.RecordPregnancyTestRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordPregnancyTest(auth.userId, body);
+  }
+
+  /**
+   * Record a purchase (FR-106) — an acquisition against an animal already in the herd. Unlike a
+   * sale it changes no status: the animal arrived alive and stays alive.
+   */
+  @Post('purchases')
+  @HttpCode(HttpStatus.CREATED)
+  async recordPurchase(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordPurchaseRequestSchema))
+    body: schemas.RecordPurchaseRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordPurchase(auth.userId, body);
+  }
+
+  /**
+   * Mark an animal missing (FR-605) — COMPLIANCE-GATED. Status → 'missing', timestamped by when it
+   * was LAST SEEN and anchored to where. The location is required by the contract: it is the field
+   * the stock-theft evidence pack is built around.
+   */
+  @Post('missing')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMissing(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMissingRequestSchema))
+    body: schemas.RecordMissingRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMissing(auth.userId, body);
+  }
+
+  /**
+   * Record a death (FR-105) → the animal's status becomes 'dead'. An append-only event; the
+   * animal it references must already exist (the flush sends animals first). Idempotent on the id.
+   */
+  @Post('deaths')
+  @HttpCode(HttpStatus.CREATED)
+  async recordDeath(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordDeathRequestSchema))
+    body: schemas.RecordDeathRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordDeath(auth.userId, body);
+  }
+
+  /**
+   * Record a sale (FR-106) → the animal's status becomes 'sold'. An append-only event carrying
+   * Money as integer cents; the animal must already exist. Idempotent on the id.
+   */
+  @Post('sales')
+  @HttpCode(HttpStatus.CREATED)
+  async recordSale(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordSaleRequestSchema))
+    body: schemas.RecordSaleRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordSale(auth.userId, body);
+  }
+
+  /**
+   * Record a treatment (FR-130/131) — COMPLIANCE-GATED. The body carries a `productId`, not a
+   * withdrawal period: the server resolves the registered meat/milk withdrawal from reference data
+   * and stores the clear dates on the event at capture. Idempotent on the id.
+   */
+  @Post('treatments')
+  @HttpCode(HttpStatus.CREATED)
+  async recordTreatment(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordTreatmentRequestSchema))
+    body: schemas.RecordTreatmentRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordTreatment(auth.userId, body);
+  }
+
+  /** Record a vaccination (FR-132) against a programme. Same withdrawal discipline as a treatment. */
+  @Post('vaccinations')
+  @HttpCode(HttpStatus.CREATED)
+  async recordVaccination(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordVaccinationRequestSchema))
+    body: schemas.RecordVaccinationRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordVaccination(auth.userId, body);
+  }
+
+  /** Record a dip / tick treatment (FR-133), required in controlled areas (Animal Diseases Act). */
+  @Post('dips')
+  @HttpCode(HttpStatus.CREATED)
+  async recordDip(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordDipRequestSchema))
+    body: schemas.RecordDipRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordDip(auth.userId, body);
+  }
+
+  /**
+   * Create a stock-theft incident (FR-603/605) — the field record the evidence pack is built from.
+   * Facts only; there is no suspect field. Idempotent on the id.
+   */
+  @Post('theft-incidents')
+  @HttpCode(HttpStatus.CREATED)
+  async createTheftIncident(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.newTheftIncidentSchema))
+    body: schemas.NewTheftIncident,
+  ): Promise<CapturedTheftIncident> {
+    return this.livestock.createTheftIncident(auth.userId, body);
+  }
+
+  /**
+   * The residue register (FR-131) — COMPLIANCE-GATED. Every disposal that took head out of the herd
+   * while it was inside a meat withholding, re-derived from the whole log rather than read off a
+   * stored flag.
+   *
+   * ⭐ A read, and it has to be one. The device can already answer this for its OWN captures — the
+   * at-capture guard does exactly that, offline, which is the only version of the rule that reaches
+   * the person who can still act on it. What a device cannot answer is what a SECOND phone recorded
+   * in a dead zone it has never heard of, and that is precisely the case that gets past the guard:
+   * one phone records the dip, the other tallies to the abattoir. Only the server has both. The
+   * client caches the result so the register still opens with no signal.
+   */
+  @Get('residue-register')
+  async residueRegister(
+    @CurrentUser() auth: AuthContext,
+    @Query(new ZodValidationPipe(residueRegisterQuerySchema))
+    query: z.infer<typeof residueRegisterQuerySchema>,
+  ): Promise<schemas.ResidueFlag[]> {
+    return this.livestock.residueRegister(auth.userId, query.farmId);
+  }
+
+  /**
+   * The one action: generate the stock-theft evidence pack (FR-603) for an incident as a single
+   * PDF — identification, ownership chain, brand certificate, last-seen GPS + timestamp — the
+   * document a farmer hands the SAPS Stock Theft Unit. An incident the caller cannot see is a 404.
+   */
+  @Post('theft-incidents/:id/evidence-pack')
+  @HttpCode(HttpStatus.OK)
+  async generateEvidencePack(
+    @CurrentUser() auth: AuthContext,
+    @Param('id', ParseUUIDPipe) incidentId: string,
+  ): Promise<StreamableFile> {
+    const pack = await this.livestock.buildEvidencePack(auth.userId, incidentId);
+    const pdf = await renderEvidencePackPdf(pack);
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: 'attachment; filename="evidence-pack.pdf"',
+    });
+  }
+}

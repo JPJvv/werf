@@ -1,0 +1,36 @@
+-- Walking a camp boundary by GPS (FR-150): add 'boundary_walk' to the event_type enum.
+--
+-- The gap this closes: `land_units.boundary` (PostGIS) and `land_units.boundary_geojson` (the
+-- client's mirror) have existed since 0008, and the API has accepted a GeoJSON polygon on create
+-- since the land slice — but nothing in the product has ever PRODUCED one. A boundary could only be
+-- typed, standing in a kitchen, which is not how anyone knows where a fence runs. This is the event
+-- the walk writes.
+--
+-- Why an event and not just a column write. A boundary has a history: a fence is moved, a camp is
+-- sub-divided (FR-202), and a walk done in the rain with three satellites is superseded by a better
+-- one next month. `land_units.boundary` becomes the denormalised CURRENT value of this log — the
+-- same relationship `mobs.head_count` has to `tally` and `animals.land_unit_id` has to `move`.
+--
+-- ⭐ AND THE CURRENT VALUE IS RE-DERIVED FROM THE WHOLE LOG, NEVER STEPPED ON ARRIVAL. Two phones
+-- both offline can walk the same camp; arrival order is not `occurred_at` order, so a server that
+-- simply overwrote the column on each insert would leave the boundary at whichever phone reconnected
+-- last rather than at whichever walk happened last. `LandService.recordBoundaryWalk` re-selects the
+-- newest walk by the total order (occurred_at, id) after every insert, so an older walk arriving
+-- late is stored in the log and correctly loses. The id half of that order is not decoration: a walk
+-- is day-grained in practice and two on one day tie on `occurred_at` by construction.
+--
+-- Additive in the one way that is safe here, for the reasons 0014 and 0017 set out at length:
+-- `events` is PARTITIONED BY LIST(farm_id), so any DDL that rewrote the table would take an
+-- exclusive lock across every farm's partition. `ALTER TYPE … ADD VALUE` rewrites nothing. The value
+-- is appended at the END of EVENT_TYPES in @werf/core to match, so a later schema diff sees no
+-- change.
+--
+-- No new table: a boundary walk is an `events` row and inherits the farm-scoped RLS policy and the
+-- TENANCY classification `events` already carries. Unlike a tally it is NOT herd-scoped — a camp is
+-- ground, and the same camp carries cattle this winter and sheep next — so it IS named in
+-- FARM_SCOPED_EVENT_TYPES, alongside rainfall and for the same reason.
+--
+-- No change to land_units either. `boundary` and `boundary_geojson` are already nullable, and null
+-- keeps its existing meaning: this camp has not been mapped yet, which is an ordinary state and must
+-- stay cheap — a farmer naming a camp at a gate is not blocked on walking it.
+ALTER TYPE "public"."event_type" ADD VALUE 'boundary_walk';

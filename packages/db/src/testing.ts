@@ -44,7 +44,46 @@ export interface WerfTestDatabase {
  * Pulling the image on a cold machine takes a while; call this in `beforeAll` with a
  * generous timeout (60s+).
  */
-export async function startWerfTestDatabase(): Promise<WerfTestDatabase> {
+/**
+ * One container per WORKER PROCESS, not one per suite.
+ *
+ * ⭐ This is a gate-stability fix, not an optimisation. Ten suites each booted their own Postgres
+ * (five in `packages/db`, five in `apps/api`), and `HealthCheckWaitStrategy`'s 120-second timeout
+ * is hardcoded inside testcontainers — `vitest.workspace.ts`'s `maxWorkers: 4` and
+ * `hookTimeout: 60_000` do NOT bound it. Under contention the boot simply lost the race and a
+ * suite went red for no reason of its own: it happened once when a review agent ran `pnpm verify`
+ * alongside the main session, and CI is a machine that is ALWAYS under contention. CI has never
+ * run this suite for real, so this is being fixed before the first run rather than after it.
+ *
+ * Vitest gives each worker its own module registry, so memoising here means at most `maxWorkers`
+ * containers exist at once (4) rather than one per suite (10). Suites inside a worker run
+ * sequentially, so sharing a database between them is safe — and `reset()` truncates everything
+ * between tests regardless.
+ *
+ * `stop()` on a shared handle is therefore a NO-OP: the first suite to finish must not pull the
+ * database out from under the three that follow it in the same worker. The container is stopped
+ * when the worker exits, and testcontainers' Ryuk sidecar reaps anything that outlives the run —
+ * so a crashed worker cannot leak a container either.
+ */
+let sharedDatabase: Promise<WerfTestDatabase> | undefined;
+
+export function startWerfTestDatabase(): Promise<WerfTestDatabase> {
+  if (sharedDatabase === undefined) {
+    sharedDatabase = bootWerfTestDatabase().then((db) => {
+      const stopForReal = db.stop;
+      process.once('beforeExit', () => void stopForReal().catch(() => {}));
+      return { ...db, reset: db.reset, stop: async () => {} };
+    });
+  }
+  return sharedDatabase;
+}
+
+/**
+ * Boots a genuinely private Postgres, bypassing the shared instance above. Use only for a test
+ * that must not see another suite's schema state — a migration test that runs migrations itself,
+ * say. Everything else should take the shared one; ten containers is what broke the gate.
+ */
+export async function bootWerfTestDatabase(): Promise<WerfTestDatabase> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(POSTGRES_IMAGE)
     .withDatabase('werf')
     .withUsername('werf')
@@ -66,13 +105,21 @@ export async function startWerfTestDatabase(): Promise<WerfTestDatabase> {
     elevatedUrl,
     appUrl,
     async reset(): Promise<void> {
-      // Every table except drizzle's migration bookkeeping. RESTART IDENTITY is harmless
-      // (we have no sequences — IDs are client-generated UUIDv7) and CASCADE lets us
+      // Every FARM table, plus drizzle's migration bookkeeping excepted. RESTART IDENTITY is
+      // harmless (we have no sequences — IDs are client-generated UUIDv7) and CASCADE lets us
       // ignore FK ordering.
+      //
+      // ⭐ `species_gestation` is ABSENT ON PURPOSE and must stay absent. It is reference data
+      // seeded by migration 0019 and written by no farm ever, so the seeded rows have to survive
+      // between tests — the breeding suite projects due dates from exactly those figures.
+      // Truncating it would empty the table and red every projection in a way that looks nothing
+      // like the cause. `regulatory_rates` and `veterinary_products` ARE here because tests insert
+      // their own rows into both through the elevated path.
       await db.execute(sql`
         TRUNCATE TABLE
-          webauthn_challenges, user_sessions, user_passkeys, farm_users, enterprises,
-          farms, businesses, users, regulatory_rates
+          webauthn_challenges, user_sessions, user_passkeys, theft_incident_animals, theft_incidents,
+          events, animal_identifiers, animals, branding_registers, mobs, land_units, farm_users,
+          enterprises, farms, businesses, users, regulatory_rates, veterinary_products
         RESTART IDENTITY CASCADE
       `);
     },

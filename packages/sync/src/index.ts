@@ -31,12 +31,18 @@ export type SyncClassification = 'farm-scoped' | 'reference' | 'server-only';
  * - `via-membership`: the row is a user; it is owned by every farm that user is a member of.
  * - `reference-jurisdiction`: read-only reference data, filtered by the farm's jurisdiction
  *   (a ZA device never downloads Namibian withdrawal periods).
+ * - `reference-global`: read-only reference data that is TRUE EVERYWHERE and is therefore
+ *   filtered by nothing. Biology, not law: a gestation period does not stop at the border the
+ *   way a product registration does. Spelled out as its own kind rather than given a dummy
+ *   jurisdiction, because "filtered by ZA" and "not filtered at all" are different postures and
+ *   a reader must not have to infer which one a table meant.
  */
 export type RowScope =
   | { readonly kind: 'direct'; readonly column: string }
   | { readonly kind: 'via-business'; readonly column: string }
   | { readonly kind: 'via-membership' }
-  | { readonly kind: 'reference-jurisdiction'; readonly column: string };
+  | { readonly kind: 'reference-jurisdiction'; readonly column: string }
+  | { readonly kind: 'reference-global' };
 
 export interface TenancyEntry {
   readonly classification: SyncClassification;
@@ -99,11 +105,90 @@ export const TENANCY = {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },
+  // Land — camps and blocks (Phase 2). Farm-scoped and bidirectional: the farmer draws and
+  // edits boundaries offline. The canonical PostGIS `boundary` is stripped because SQLite on
+  // the device has no PostGIS; the client reads the denormalised `boundary_geojson` mirror
+  // instead (offline-sync.md). Stripping `boundary` here is the sync half of the dual write;
+  // the sync_geojson trigger is the DB half. Both, always.
+  land_units: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+    neverSyncColumns: ['boundary'],
+  },
+  // Animals, their group model, and their identifiers (Phase 2). All farm-scoped and
+  // bidirectional — the farmer creates and edits stock offline, in the crush, with no signal.
+  // No secrets and no PostGIS here, so nothing is stripped; created_by/updated_by are farm
+  // members' ids, which co-members are already entitled to see.
+  mobs: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  animals: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  // Carries its own farm_id, so it scopes directly rather than through its animal — the same
+  // predicate as every other farm-scoped table, and one fewer join for the sync-rule generator.
+  animal_identifiers: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  // Branding registers — the SA identification mark (Phase 2, FR-601). Farm-scoped and
+  // bidirectional: a mark is the farm's own registered mark, and every co-member is entitled to
+  // see it. No PostGIS and no secrets (a mark is a public-facing three characters), so nothing is
+  // stripped. animals.brand_id / brand_applied_at sync as part of the already-classified animals row.
+  branding_registers: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  // Events — the append-only log (Phase 2). Farm-scoped and bidirectional: the farmer captures
+  // births, weights, moves and treatments offline, in the crush, with no signal. Carries its own
+  // farm_id, so it scopes directly. The canonical PostGIS `location` is stripped for the same
+  // reason land's `boundary` is — SQLite on the device has no PostGIS; the client reads the
+  // denormalised `location_geojson` mirror, kept in step by the events_sync_geojson trigger.
+  // Stripping `location` here is the sync half of that dual write; the trigger is the DB half.
+  events: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+    neverSyncColumns: ['location'],
+  },
   // Regulated reference data: the rate/withdrawal/PHI tables the client must read offline.
   // Read-only, filtered by the FARM's jurisdiction — never the user's or the browser's.
   regulatory_rates: {
     classification: 'reference',
     scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
+  },
+  // Veterinary products — the withdrawal-period source (Phase 2, FR-131). Reference data, filtered
+  // by the FARM's jurisdiction so the meat/milk withdrawal check works offline in the crush: a ZA
+  // device never downloads another country's withdrawal periods. Read-only on the device; the
+  // registration is authored by the elevated admin path, never a farmer.
+  veterinary_products: {
+    classification: 'reference',
+    scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
+  },
+  // Species gestation — the source a due-date projection is injected from (Phase 2, FR-121).
+  // Reference data like the two above, but GLOBAL rather than jurisdiction-filtered: a withdrawal
+  // period is a registration and stops at the border, a gestation period is biology and does not.
+  // Read-only on the device; the figure is authored by the elevated admin path, never a farmer.
+  // Four rows, so shipping all of them to every device costs nothing worth optimising.
+  species_gestation: {
+    classification: 'reference',
+    scope: { kind: 'reference-global' },
+  },
+  // Stock-theft incidents (Phase 2, FR-603/605). Farm-scoped and bidirectional: the farmer captures
+  // the incident at the last-seen location, in the field, offline. The canonical PostGIS
+  // `last_seen_location` is stripped for the same reason land's `boundary` is — SQLite has no
+  // PostGIS; the client reads `last_seen_location_geojson`, kept in step by the sync trigger. There
+  // is no suspect column to leak: the record is facts about the farm's own loss, not a data subject.
+  theft_incidents: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+    neverSyncColumns: ['last_seen_location'],
+  },
+  // The animals a theft incident concerns. Carries its own farm_id, so it scopes directly.
+  theft_incident_animals: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
   },
 } as const satisfies Record<string, TenancyEntry>;
 
@@ -155,6 +240,8 @@ export function owningFarmIds(
       return graph.membership[String(row['id'])] ?? [];
     case 'reference-jurisdiction':
       return []; // scoped by jurisdiction, not by farm ownership
+    case 'reference-global':
+      return []; // owned by nobody — true on every farm in every country
   }
 }
 
@@ -167,6 +254,9 @@ export function syncsToUser(
 ): boolean {
   const entry: TenancyEntry = TENANCY[table];
   if (entry.classification === 'server-only') return false;
+  // Global reference data syncs to everyone with a farm at all. The membership check is not a
+  // formality: it is what stops an unauthenticated or farm-less connection pulling any table.
+  if (entry.scope?.kind === 'reference-global') return userFarmIds.length > 0;
   if (entry.scope?.kind === 'reference-jurisdiction') {
     // Reference data syncs when its jurisdiction matches one of the user's farms.
     const userJurisdictions = new Set(
@@ -194,3 +284,11 @@ export {
   type SessionStore,
   type SessionStoreOptions,
 } from './session-store';
+export { createCaptureStore, type CaptureStore, type CaptureStoreOptions } from './capture-store';
+export { createDraftStore, type DraftStore, type DraftStoreOptions } from './draft-store';
+export { createSentLog, type SentLog, type SentLogOptions } from './sent-log';
+export {
+  createReferenceCache,
+  type ReferenceCache,
+  type ReferenceCacheOptions,
+} from './reference-cache';

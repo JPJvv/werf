@@ -64,11 +64,58 @@ export const refreshRequestSchema = z.object({
 });
 export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
 
+/**
+ * Update the signed-in account's own preferences (FR-008). The user is the AUTHENTICATED caller —
+ * there is no id in the body, so this endpoint cannot be aimed at somebody else's account.
+ *
+ * Locale only, for now, and deliberately: language is a property of the PERSON (it follows them
+ * onto a borrowed tablet), which is why it must reach the user row instead of living on a device.
+ * Theme is a genuinely device-shaped preference — the same farmer wants dark on the phone they
+ * use at 5am and light on the office desktop — so it is not here until there is a reason.
+ */
+export const updateProfileRequestSchema = z.object({
+  locale: localeSchema,
+});
+export type UpdateProfileRequest = z.infer<typeof updateProfileRequestSchema>;
+
+/**
+ * One of the farm's herds/enterprises, as the client needs it (FR-113). The `enterpriseTypes` array
+ * above drives the ADAPTIVE UI — which tiles a farm sees; this carries the enterprise ROWS, because
+ * filing a capture under the herd it concerns needs the enterprise's id, and telling two cattle
+ * herds apart needs its name. A farm may run two enterprises of the same type ("Bonsmara cows",
+ * "Feedlot"), which is precisely why the type alone cannot do this job.
+ */
+export const sessionEnterpriseSchema = z.object({
+  id: uuidSchema,
+  name: z.string().min(1),
+  type: enterpriseTypeSchema,
+});
+export type SessionEnterprise = z.infer<typeof sessionEnterpriseSchema>;
+
 /** The farms a signed-in user may act on, and the role they hold on each (roles are per FARM). */
 export const sessionFarmSchema = z.object({
   id: uuidSchema,
+  /**
+   * The business this farm belongs to (FR-004). DEFAULTED to null for the same reason
+   * `enterprises` is defaulted: a session cached before this field existed is re-parsed on every
+   * cold start, and making it mandatory would fail that parse and sign a farmer out — offline,
+   * with captures queued, because of an app update. Null means "this device does not know yet",
+   * and the client simply cannot offer to add a farm until the next sign-in fills it in.
+   *
+   * It is here because adding a SECOND farm needs it, and a client that had to ask the server for
+   * it first would be a client that cannot start the flow offline.
+   */
+  businessId: uuidSchema.nullable().default(null),
   name: z.string().min(1),
   enterpriseTypes: z.array(enterpriseTypeSchema),
+  /**
+   * The farm's active herds/enterprises. DEFAULTED, not required: a session cached before this
+   * field existed is re-parsed on every cold start, and making it mandatory would fail that parse
+   * and sign a farmer out — offline, with captures queued, because of an app update. An empty list
+   * means "this device does not know the herds yet", which the capture screens handle by asking for
+   * a species instead; the next sign-in fills it in.
+   */
+  enterprises: z.array(sessionEnterpriseSchema).default([]),
   role: z.string().min(1),
 });
 export type SessionFarm = z.infer<typeof sessionFarmSchema>;

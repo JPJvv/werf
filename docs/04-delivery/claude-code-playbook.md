@@ -19,19 +19,28 @@ unattended run safe — Claude cannot declare victory on broken code.
 
 ## When to let it run, and when not to
 
+> **This table is generated from [roadmap.md](roadmap.md), phase by phase.** If the two ever
+> disagree, the roadmap wins and this table is the bug. This is the document that gates unattended
+> runs, so a phase number in it is load-bearing rather than descriptive.
+
 | Phase | Unattended? | Why |
 |---|---|---|
-| 0 scaffold, 1 shell/auth | ✅ mostly | Mechanical, well-specified, strong gate |
-| 2 livestock, 4 crops, 5 finance | ✅ per checklist item | CRUD + tests; the gate catches regressions |
-| **3 offline sync** | ❌ **stay at the keyboard** | Conflict resolution and three-layer tenancy are the hardest, highest-risk code. Review every diff. |
-| **payroll / compliance** (in 5–6) | ❌ **review every change** | A bug underpays a real worker for a year. Run `compliance-checker` and read its output yourself. |
-| 6 compliance packs, 7 polish | ⚠️ mixed | Report generation unattended; legal rules reviewed. |
+| **0** scaffold | ✅ high | No product decisions. Let it run. |
+| **1** shell, auth & 2FA | ⚠️ medium | Authentication ceremonies and offline session recovery need close review even when their mechanics are well tested. |
+| **2** livestock | ✅ per checklist item, with two exceptions | **Low for 2c** (the crush UX is judgement). **Medium for 2d and 2f** — read [legal-compliance.md §4.3](../00-business/legal-compliance.md) first; withdrawal, animal-ID and stock-theft rules are regulated. |
+| **3** offline sync | ⚠️ per slice | Tenancy and conflict rules are data-integrity boundaries. Keep schema/RLS/sync-rule changes small and owner-trigger `sync-auditor` when the branch is being cleared. |
+| **4** crops & fields | ⚠️ mixed | CRUD is routine; chemical registration, PHI and re-entry logic require close review and effective-dated reference data. |
+| **5** labour & wages 🇿🇦 | ❌ **low — review every diff** | Payroll is legally consequential. Never run 5d–5e (engine and blocking rules) unattended. The owner triggers `compliance-checker`; an external labour-law review gates deployment. |
+| **6** finance & compliance 🇿🇦 | ⚠️ mixed | The mechanics are testable, but evidence-pack contents, POPIA access and statutory exports need human review. |
+| **7** hardening & pilot | ❌ low | Mostly judgement. Pilot farms and external security testing discover things the automated gate cannot. |
 
 ## Sub-agents
 
-- `reviewer` — end of every phase, against the exit gate.
-- `compliance-checker` — any change to payroll/deductions/animal-ID/POPIA/export-audit.
-- `sync-auditor` — any change to schema, RLS, or sync rules.
+- `reviewer` — owner-triggered at a phase gate.
+- `compliance-checker` — owner-triggered for payroll/deductions/animal-ID/POPIA/export-audit.
+- `sync-auditor` — owner-triggered for schema, RLS, sync rules, or write paths.
+
+These agents are never started silently. See `AGENTS.md` for the current review policy.
 
 ## Guardrails that are always on
 

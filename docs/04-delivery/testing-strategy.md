@@ -282,7 +282,13 @@ test('O-9: an expired token holds the queue, never clears it', async ({ page, co
 pnpm test:trace
 ```
 
-Walks `docs/01-requirements/functional-requirements.md` for FR IDs, greps the test suites for `@FR-xxx` tags, and **fails if any P1 or P2 FR has no covering test.**
+Walks `docs/01-requirements/functional-requirements.md` for FR IDs and greps every test file for FR IDs **in `describe`/`it`/`test` titles** (not `@FR-xxx` tags — that convention was never adopted).
+
+> **⚠️ It is a REPORT, not a gate. It exits 0 whatever it finds**, unless you pass `--strict`, and nothing in CI passes `--strict`. It lives at `scripts/test-trace.mjs`.
+>
+> **What it proves and what it does not.** It proves a test *names* an FR. It cannot prove the test exercises it — `it('FR-999 works')` with an empty body counts for nothing and scores here. Read it as "which requirements has nobody even claimed to cover", which is a real question, and not as evidence of coverage.
+>
+> **Baseline at the end of Phase 2: 40 of 146 requirements named.** Most of the gap is phases 3–7, which are not built. Turning `--strict` on today would fail on 91 P1/P2 requirements that nobody has written a line of code for, so the gate is deliberately off until the baseline is agreed. When it goes on, update this file, `ci-cd.md`, `functional-requirements.md` and `SRS.md` in the same commit — the claim and the behaviour move together or this gap simply reopens.
 
 ```ts
 // tools/trace.ts
@@ -339,7 +345,11 @@ pnpm test:coverage
 pnpm verify               # lint + typecheck + test + build — THE GATE
 ```
 
-`pnpm verify` does not include E2E (too slow for the inner loop). CI runs `verify` + `test:e2e` + `test:e2e:offline` + `test:tenancy` + `test:trace` on every PR. See [ci-cd.md](ci-cd.md).
+`pnpm verify` does not include E2E (too slow for the inner loop).
+
+> **⚠️ The block above is the INTENDED script set, not the one that exists.** As at the end of Phase 2 the repo has `test`, `test:e2e`, `test:trace` (report-only) and `verify`. `test:unit`, `test:integration`, `test:e2e:offline`, `test:tenancy`, `test:perf` and `test:coverage` **do not exist as scripts** — the work behind several of them does exist and runs inside `pnpm test` (the offline e2e path is `apps/web/e2e/offline-capture.spec.ts`; the tenancy check is `packages/sync/test/tenancy.spec.ts`), it is just not reachable by the name printed here.
+>
+> **What CI actually runs on a PR** ([ci-cd.md](ci-cd.md), `.github/workflows/ci.yml`): `pnpm verify` and `pnpm test:e2e`. That is all. Two lanes, not seven.
 
 ---
 

@@ -34,3 +34,4 @@ coverage/
 # Playwright run artifacts — traces and error contexts, never committed.
 test-results/
 playwright-report/
+.claude/.verify-passed

@@ -5,7 +5,20 @@
  */
 
 import { pgEnum } from 'drizzle-orm/pg-core';
-import { ENTERPRISE_TYPES, USER_ROLES } from '@werf/core';
+import {
+  ANIMAL_SEXES,
+  ANIMAL_STATUSES,
+  ENTERPRISE_TYPES,
+  EVENT_TYPES,
+  IDENTIFIER_TYPES,
+  LAND_UNIT_KINDS,
+  USER_ROLES,
+} from '@werf/core';
 
 export const enterpriseTypeEnum = pgEnum('enterprise_type', ENTERPRISE_TYPES);
 export const userRoleEnum = pgEnum('user_role', USER_ROLES);
+export const landUnitKindEnum = pgEnum('land_unit_kind', LAND_UNIT_KINDS);
+export const animalStatusEnum = pgEnum('animal_status', ANIMAL_STATUSES);
+export const animalSexEnum = pgEnum('animal_sex', ANIMAL_SEXES);
+export const identifierTypeEnum = pgEnum('identifier_type', IDENTIFIER_TYPES);
+export const eventTypeEnum = pgEnum('event_type', EVENT_TYPES);

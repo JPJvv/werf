@@ -57,6 +57,97 @@
       "when": 1784600000000,
       "tag": "0007_membership_write_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784733880653,
+      "tag": "0008_land_units",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784735121917,
+      "tag": "0009_animals",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784789129002,
+      "tag": "0010_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784814209505,
+      "tag": "0011_branding",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784962798096,
+      "tag": "0012_veterinary_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784963545495,
+      "tag": "0013_theft_incidents",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784981513382,
+      "tag": "0014_rainfall_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784990371489,
+      "tag": "0015_evidence_authorship",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785076771489,
+      "tag": "0016_capture_authorship",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785163171489,
+      "tag": "0017_mob_tally_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785163271489,
+      "tag": "0018_mob_initial_head",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785249571489,
+      "tag": "0019_species_gestation",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785422371489,
+      "tag": "0020_boundary_walk_event",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,8 @@
  * NOT a display order — the home grid decides display order itself.
  */
 
+import type { Species } from './animals';
+
 export const ENTERPRISE_TYPES = [
   'beef_cattle',
   'dairy',
@@ -54,4 +56,30 @@ export function isLivestockEnterprise(type: EnterpriseType): boolean {
 
 export function isCropEnterprise(type: EnterpriseType): boolean {
   return CROP_ENTERPRISES.includes(type);
+}
+
+/**
+ * The animal species an enterprise keeps — the vocabulary link that lets a capture screen
+ * offer only the species a farm actually runs. Both beef and dairy are cattle; a crop
+ * enterprise keeps none, so it returns null. Kept here, next to the enterprise enum, so the
+ * client and any future server-side derivation read the one mapping and cannot disagree.
+ */
+export function enterpriseSpecies(type: EnterpriseType): Species | null {
+  switch (type) {
+    case 'beef_cattle':
+    case 'dairy':
+      return 'cattle';
+    case 'sheep':
+      return 'sheep';
+    case 'goats':
+      return 'goat';
+    case 'pigs':
+      return 'pig';
+    case 'poultry':
+      return 'poultry';
+    case 'game':
+      return 'game';
+    default:
+      return null;
+  }
 }

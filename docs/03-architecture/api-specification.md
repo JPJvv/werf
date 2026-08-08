@@ -1,5 +1,32 @@
 # API Specification
 
+> ⛔ **READ THIS BEFORE §1. This document is the PHASE-3 TARGET, and §1 currently contradicts the
+> API that is built.** As at the end of Phase 2 the server carries **24 REST capture endpoints** —
+> `POST /api/livestock/animals`, `/mobs`, `/mob-tallies`, `/births`, `/deaths`, `/sales`,
+> `/treatments`, `/dips`, `/moves`, `/matings`, `/pregnancy-tests`, `/theft-incidents`, …, plus
+> `POST /api/land-units`, `/api/land-units/boundary-walks` and `POST /api/rainfall`. §1 below says
+> those must not exist ("*if you find yourself adding `POST /animals`, stop*"). **They are not a
+> defect and they are not a REST twin of the sync path** — they are the interim transport, because
+> **the PowerSync replication engine is Phase 3** (`phase-checklists.md` § Phase 2 scope boundary,
+> ADR-0003). The client captures offline through the `packages/sync` adapter seam and the outbox
+> flushes to these endpoints; in Phase 3 the engine is swapped underneath with no UI rewrite, and
+> the write path becomes `POST /sync/write`. **There is still only ONE validation path** — every one
+> of these endpoints goes through the shared `insertEvent` / `assertCanCapture` /
+> `assertOwnedReferences` / `assertHerdScoped` helpers in `apps/api/src/common/event-capture.ts`,
+> which is what §1's rule is actually protecting. When the swap happens, delete this warning and
+> §1 becomes true as written.
+>
+> **Two more things below are wrong today, and both are load-bearing if you are calling the API:**
+> - **The base path is `/api`, not `/v1`.** `main.ts` does `setGlobalPrefix('api')`; there is no
+>   version segment anywhere in the app. Every path printed in this document has the wrong prefix.
+> - **The auth routes do not match.** Built: `POST /api/auth/{register,login,refresh,logout}`,
+>   `PATCH /api/auth/profile`, `POST /api/auth/2fa/verify`, and under `/api/auth/2fa/`:
+>   `totp`, `totp/confirm`, `passkey`, `passkey/confirm`, `passkey/challenge`, `passkey/verify`,
+>   `GET passkey`, `DELETE passkey/:passkeyId`. The `/v1/auth/totp/enrol`, `/v1/auth/verify-otp`
+>   and `/v1/auth/passkey/auth` spellings in §3 below are the design, and were never built.
+> - **Undocumented but live:** `GET /api/reference/species-gestation`,
+>   `GET /api/livestock/residue-register`, `GET /api/health`, and the `/api/farms` surface.
+
 ---
 
 ## 1. What this API is, and is not

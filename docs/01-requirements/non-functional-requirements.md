@@ -71,7 +71,7 @@ Full threat model and controls: [security.md](../05-operations/security.md).
 | NFR-211 | Audit log immutable — no UPDATE/DELETE grant at the database level | Migration assertion + test |
 | NFR-212 | **PII scrubbed before leaving South Africa** (Sentry, logs, any AI feature) | Code requirement + test, not a settings checkbox |
 | NFR-213 | CSP with no `unsafe-inline`, no `unsafe-eval` | Header test in CI |
-| NFR-214 | Penetration test before public launch | External, scheduled Phase 5 |
+| NFR-214 | Penetration test before public launch | External, scheduled Phase 7 |
 | NFR-215 | Local SQLite contains no unencrypted ID numbers or banking details | Code review + test |
 
 **NFR-215 deserves a note.** A stolen phone with an unencrypted local database containing 40 workers' ID numbers is a POPIA breach with a notification obligation. Sensitive fields must be either server-only (never synced) or encrypted before they reach the device. Decide per field, and document the decision in the schema.

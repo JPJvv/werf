@@ -69,12 +69,32 @@ export function Field({
  * — the frontend rules allow exactly one per view, which is why this component exists
  * rather than a `variant` prop that would make two easy to write by accident.
  */
-export function PrimaryButton({ busy, label }: { busy: boolean; label: string }) {
+export function PrimaryButton({
+  busy,
+  label,
+  /**
+   * Render as a bordered action rather than the filled ochre one.
+   *
+   * For the screen that offers TWO ways to do the same thing — sign in with a passkey, or type a
+   * code — where the ochre budget is one per screen (frontend rules) and it belongs to the
+   * preferred route. Two ochre buttons would say both are the answer, which is the state the rule
+   * exists to prevent.
+   */
+  secondary = false,
+}: {
+  busy: boolean;
+  label: string;
+  secondary?: boolean;
+}) {
   return (
     <button
       type="submit"
       disabled={busy}
-      className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
+      className={
+        secondary
+          ? 'min-h-touch-min w-full rounded border border-soil-200 bg-sand-100 px-4 font-ui text-body text-soil-900 disabled:opacity-60'
+          : 'min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60'
+      }
     >
       {label}
     </button>

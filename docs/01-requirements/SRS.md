@@ -226,10 +226,12 @@ Functional requirements are catalogued separately in [functional-requirements.md
 
 **SRS-34.** Import supports CSV with column mapping, and named importers for BenguFarm, Farmbrite, SA Stud Book (Logix), and generic Excel.
 
-> Migration-in is a growth feature and migration-out is a trust feature. Both are Phase 5. A product that traps data does not get recommended at a farmers' day.
+> Migration-in is a growth feature and migration-out is a trust feature. Both are Phase 7. A product that traps data does not get recommended at a farmers' day.
 
 ---
 
 ## 4. Verification
 
-Every requirement in this SRS and in the FR/NFR catalogues must be traceable to at least one automated test. The traceability matrix lives in [testing-strategy.md](../04-delivery/testing-strategy.md) and is generated, not maintained by hand — `pnpm test:trace` fails the build if an FR has no covering test.
+Every requirement in this SRS and in the FR/NFR catalogues must be traceable to at least one automated test. `pnpm test:trace` (`scripts/test-trace.mjs`) reports which FRs are named by a test title; see [testing-strategy.md](../04-delivery/testing-strategy.md).
+
+> **⚠️ It does not fail the build**, and this sentence used to say it did. It is report-only unless `--strict` is passed, and it measures naming rather than coverage. The obligation above is still the obligation; it is enforced by review, not by a gate.

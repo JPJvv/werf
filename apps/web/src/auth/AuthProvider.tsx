@@ -45,15 +45,33 @@ export interface AuthContextValue {
    */
   signIn(input: schemas.LoginRequest): Promise<schemas.LoginResponse>;
   completeSecondFactor(input: schemas.VerifySecondFactorRequest): Promise<void>;
+  /**
+   * Satisfies the second factor with a PASSKEY (FR-014, ADR-0007). Separate from
+   * `completeSecondFactor` because it is a different exchange, not a different code: the server
+   * issues a challenge, the device signs it, and the signature — never a secret the person typed —
+   * comes back. It adopts the session through the same path, so there is one place a session
+   * becomes the live one however it was earned.
+   */
+  completeSecondFactorWithPasskey(input: schemas.PasskeyAuthenticationRequest): Promise<void>;
   signOut(): Promise<void>;
   /** FR-004: switch the farm the shell is showing, without re-authenticating. */
   setActiveFarm(farmId: string): void;
+  /** FR-004: add another farm to this business. Needs a connection — see the implementation. */
+  addFarm(input: schemas.CreateFarmRequest): Promise<void>;
   /**
-   * Re-reads the session from the server. Used after enrolling a second factor, where the
-   * account's posture changes server-side and the cached copy would otherwise still say
-   * the farmer owes an enrolment they have just completed.
+   * Re-reads the session from the server and returns the new access token (null when there is
+   * no refresh token to spend). Used after enrolling a second factor, where the account's
+   * posture changes server-side; and by the capture flush to recover a fresh access token when
+   * a queued POST is refused with a 401 after a long spell offline.
    */
-  refreshSession(): Promise<void>;
+  refreshSession(): Promise<string | null>;
+  /**
+   * Writes the account's language back to the user row (FR-008) and patches the cached session so
+   * the next cold start re-adopts the NEW locale instead of reverting. Resolves false when the
+   * change could not be persisted (no signal, no session) — the caller has already applied it to
+   * the device, so this reports whether it followed the person or only the phone.
+   */
+  saveLocale(locale: string): Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -126,6 +144,13 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     [adopt],
   );
 
+  const completeSecondFactorWithPasskey = useCallback(
+    async (input: schemas.PasskeyAuthenticationRequest) => {
+      adopt(await authApi.passkeyVerify(input));
+    },
+    [adopt],
+  );
+
   const signOut = useCallback(async () => {
     const refreshToken = session?.refreshToken;
     // Local state is cleared FIRST and regardless. A farmer who taps "sign out" with no
@@ -144,26 +169,102 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     }
   }, [session, sessions]);
 
+  /**
+   * FR-004. The DEVICE switches first and unconditionally; the server is told afterwards, and a
+   * failure to tell it changes nothing about what the farmer sees.
+   *
+   * That order is the whole design. Which farm you are looking at is a view decision, and a farmer
+   * standing in a camp with no signal must be able to change it — making the switch await a POST
+   * would put the network in front of an action that needs no network. The server-side session
+   * still matters (another device, and the next refresh, should agree), so it is told, best-effort,
+   * and it catches up on its own the next time the app is opened in range.
+   */
   const setActiveFarm = useCallback(
     (farmId: string) => {
+      let token: string | undefined;
       setSession((current) => {
         if (!current || !current.farms.some((farm) => farm.id === farmId)) return current;
+        token = current.accessToken;
         const next = { ...current, activeFarmId: farmId };
         sessions.write(next);
         return next;
       });
+      if (token) {
+        void authApi.switchActiveFarm(token, farmId).catch(() => {
+          // No signal, or a stale token. The device is already showing the right farm, which is
+          // what the farmer asked for; nothing is lost and nothing needs saying.
+        });
+      }
     },
     [sessions],
   );
 
-  const refreshSession = useCallback(async () => {
+  /**
+   * FR-004: add another farm to the business. Unlike a capture this genuinely NEEDS the network —
+   * a farm is a tenancy root with RLS and memberships behind it, and inventing one offline would
+   * create a farm no server has agreed to. So this is one of the few places the app is honest about
+   * requiring a connection, and it says so rather than queuing something it cannot honour.
+   */
+  const addFarm = useCallback(
+    async (input: schemas.CreateFarmRequest): Promise<void> => {
+      const token = session?.accessToken;
+      if (!token) throw new Error('Adding a farm needs a signed-in session');
+      const farm = await authApi.createFarm(token, input);
+      setSession((current) => {
+        if (!current) return current;
+        // Switched to immediately: someone who just created a farm wants to be in it.
+        const next = { ...current, farms: [...current.farms, farm], activeFarmId: farm.id };
+        sessions.write(next);
+        return next;
+      });
+    },
+    [session, sessions],
+  );
+
+  const refreshSession = useCallback(async (): Promise<string | null> => {
     const refreshToken = session?.refreshToken;
-    if (!refreshToken) return;
+    if (!refreshToken) return null;
     // Rotation is single-use, so the response carries a NEW refresh token — adopting the
     // whole session rather than patching a field is what keeps the stored token the live
     // one. Patching would leave a spent token cached and log the farmer out on next use.
-    adopt(await authApi.refresh(refreshToken));
+    const next = await authApi.refresh(refreshToken);
+    adopt(next);
+    return next.accessToken;
   }, [session, adopt]);
+
+  /**
+   * FR-008 write-back. The language change has already been applied to the running app by the
+   * locale provider — this makes it stick to the PERSON.
+   *
+   * Failure is not an error to shout about: the farmer's app is already in the language they asked
+   * for, and the only loss is that a different device (or the next cold start) will not know yet.
+   * So it resolves false rather than throwing, and the screen says what that means. Nothing is
+   * queued for retry: a preference is not a capture, and the write-queue rule exists to protect a
+   * farmer's WORK, not their last tap on a radio button.
+   */
+  const saveLocale = useCallback(
+    async (locale: string): Promise<boolean> => {
+      const token = session?.accessToken;
+      if (!token) return false;
+      try {
+        const user = await authApi.updateProfile(token, {
+          locale: locale as schemas.UpdateProfileRequest['locale'],
+        });
+        // Patch the CACHED session too, or the next cold start re-adopts the old locale from it
+        // and silently undoes what the server has just accepted.
+        setSession((current) => {
+          if (!current) return current;
+          const next = { ...current, user };
+          sessions.write(next);
+          return next;
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [session, sessions],
+  );
 
   const value = useMemo<AuthContextValue>(() => {
     const activeFarm =
@@ -177,11 +278,25 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
       register,
       signIn,
       completeSecondFactor,
+      completeSecondFactorWithPasskey,
       signOut,
       setActiveFarm,
+      addFarm,
       refreshSession,
+      saveLocale,
     };
-  }, [session, register, signIn, completeSecondFactor, signOut, setActiveFarm, refreshSession]);
+  }, [
+    session,
+    register,
+    signIn,
+    completeSecondFactor,
+    completeSecondFactorWithPasskey,
+    signOut,
+    setActiveFarm,
+    addFarm,
+    refreshSession,
+    saveLocale,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

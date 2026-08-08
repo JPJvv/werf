@@ -357,11 +357,25 @@ Counter handling is split deliberately: **rollback** (the cloned-credential sign
 | **No `helmet`, no CORS policy, no CSP** on the API | Default Express headers | Before deployment |
 | **No client passkey enrolment.** The API ceremonies are complete and tested; the client enrols TOTP only | A farmer satisfies FR-014 with an authenticator app, never with the fingerprint ADR-0007 prefers. The enrolment-rate risk the ADR names as its own falsification condition is untested in the field | Passkey client slice |
 | **Session tokens are in `localStorage`** (via the `packages/sync` adapter) | Readable by any script that achieves XSS on the origin. Mitigated today by there being no user-generated HTML anywhere in the app and no third-party scripts, but a CSP is still absent (row above) and the refresh token is a 30-day credential | Revisit with the CSP; consider a worker-held token or httpOnly cookies for the refresh token |
-| **Invitation delivery does not exist.** Acceptance is API-only; no email/SMS is sent | An invited person has no way to learn they were invited | Client onboarding slice |
+| ~~**Invitation delivery does not exist.**~~ **CLOSED.** An invitation by email is now delivered through the `Mailer` port (`apps/api/src/mail`), configured by `SMTP_*` env vars. A PHONE-ONLY invitation still reaches nobody, deliberately: SMS is ruled out for the same SIM-swap reason it is ruled out as a second factor, and an invitation link is a credential-shaped thing | A phone-only invitation is handed over in person. The email is best-effort — the pending membership is the durable fact and survives a failed relay | Phone invitations need a channel decision, not a fallback to SMS |
 | **JWT signing is a single HS256 secret** with no rotation story | Key rotation requires invalidating every live access token | Before launch |
 | **`AuthContext.activeFarmId` is advisory**, not re-checked against membership at guard time | Safe today because every `FarmsService` method re-checks membership under RLS. It *looks* authoritative, and the next feature to trust it introduces a hole | Intersect with `app_user_farm_ids()` at the guard, or rename it |
 
 ### 10.3 Deployment note
+
+**Outbound mail (`SMTP_*`) is OPTIONAL and off by default.** With no `SMTP_HOST` the API boots with
+a logging adapter that records what it *would* have sent — which is what development and tests use,
+and which is deliberate: requiring a mail server to work on livestock capture would tax every
+developer, and an API that silently sent nothing would make a missing invitation impossible to
+diagnose. Configure `SMTP_HOST`, `SMTP_FROM` and optionally `SMTP_PORT` (default 587), `SMTP_SECURE`
+(`true` for implicit TLS on 465), `SMTP_USER` and `SMTP_PASSWORD`. It is SMTP rather than a provider
+SDK so the provider stays a deployment decision — SES in af-south-1, Postmark, or a relay on the same
+box — for the same data-residency reason ADR-0002 gives for not reaching for a hosted platform.
+Half-configuring it (a host with no from-address) fails at boot rather than silently falling back.
+
+Mail is **best-effort by contract**: `Mailer.send` never rejects, and no operation is rolled back
+because delivery failed. An invitation's durable fact is the pending membership row.
+
 
 `PII_ENCRYPTION_KEY` is now required at boot: 32 bytes, base64, and it must not be the same material as `JWT_SECRET`. Generate it with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. **Losing it makes every enrolled TOTP seed undecryptable**, which locks out every user who has no recovery codes left — back it up separately from the database, or the separation that makes a stolen dump useless also makes a lost key unrecoverable. It is deliberately not derivable from anything else in the config.
 

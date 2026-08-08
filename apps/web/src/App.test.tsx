@@ -103,8 +103,10 @@ describe('arriving signed in, with no signal', () => {
       farms: [
         {
           id: '0190f3a0-0000-7000-8000-0000000000f2',
+          businessId: null,
           name: 'Vinkel Lande',
           enterpriseTypes: ['vineyards'],
+          enterprises: [],
           role: 'owner',
         },
       ],
@@ -123,7 +125,7 @@ describe('arriving signed in, with no signal', () => {
 
     // The regression this pins: the guide used to re-derive the land word and told a
     // mixed farm to "add your first camp" directly beneath a tile labelled "Blocks".
-    // Both now come from `landTerm`, so a mixed farm says "block" in both places.
+    // Both now come from the terminology layer, so a mixed farm says "block" in both places.
     expect(screen.getByRole('link', { name: /blocks/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /add your first block/i })).toBeTruthy();
     expect(screen.queryByRole('link', { name: /add your first camp/i })).toBeNull();
@@ -139,8 +141,10 @@ describe('arriving signed in, with no signal', () => {
       farms: [
         {
           id: '0190f3a0-0000-7000-8000-0000000000f3',
+          businessId: null,
           name: 'Kudu Ranch',
           enterpriseTypes: ['beef_cattle'],
+          enterprises: [],
           role: 'owner',
         },
       ],

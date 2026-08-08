@@ -47,6 +47,50 @@ const ENTERPRISES = [
   ['01900000-0000-7000-8000-000000000046', ID.farmCrop, 'Stone fruit', 'orchards'],
 ];
 
+// Veterinary products — regulated REFERENCE data (FR-131), the withdrawal-period source the health
+// slice injects FROM (never a number typed into code). Reference data is exactly where these figures
+// belong. The names are recognisably synthetic and the withdrawal values are ILLUSTRATIVE — a real
+// deployment loads registered products from a maintained source, and every figure has an expiry
+// (legal-compliance.md § 0). Shape: [id, name, actives[], species[], meatDays, milkHours, route].
+const VET_PRODUCTS = [
+  [
+    '01900000-0000-7000-8000-000000000051',
+    'Synthamycin LA (synthetic)',
+    ['oxytetracycline'],
+    ['cattle', 'sheep', 'goat'],
+    28,
+    96,
+    'injection_im',
+  ],
+  [
+    '01900000-0000-7000-8000-000000000052',
+    'Fictipour Pour-On (synthetic)',
+    ['ivermectin'],
+    ['cattle'],
+    14,
+    null, // not registered for lactating dairy → no milk withdrawal figure
+    'topical',
+  ],
+  [
+    '01900000-0000-7000-8000-000000000053',
+    'Mockvax Clostridial (synthetic)',
+    ['clostridial toxoids'],
+    ['cattle', 'sheep', 'goat'],
+    null, // a zero-withdrawal vaccine
+    null,
+    'injection_sc',
+  ],
+  [
+    '01900000-0000-7000-8000-000000000054',
+    'Tickaway Dip (synthetic)',
+    ['amitraz'],
+    ['cattle'],
+    3,
+    null,
+    'topical',
+  ],
+];
+
 const pool = new pg.Pool({ connectionString: url });
 const client = await pool.connect();
 try {
@@ -69,6 +113,10 @@ try {
        VALUES ($1, $2, $3, $4, $5::enterprise_type[]) ON CONFLICT (id) DO NOTHING`,
       [id, ID.business, name, province, types],
     );
+    // Every farm gets its own events partition — this is the provisioning path the doc names
+    // (database-schema.md § 5). Without it a farm's events would fall to the default partition;
+    // it works, but dev data should mirror how a real farm is provisioned. Idempotent.
+    await client.query('SELECT create_farm_partition($1::uuid)', [id]);
   }
 
   for (const [id, farmId] of MEMBERSHIPS) {
@@ -90,8 +138,22 @@ try {
     );
   }
 
+  for (const [id, name, actives, species, meatDays, milkHours, route] of VET_PRODUCTS) {
+    await client.query(
+      `INSERT INTO veterinary_products
+         (id, jurisdiction, name, active_ingredients, species,
+          meat_withdrawal_days, milk_withdrawal_hours, route, effective_from)
+       VALUES ($1, 'ZA', $2, $3::text[], $4::text[], $5, $6, $7, '2020-01-01')
+       ON CONFLICT (id) DO NOTHING`,
+      [id, name, actives, species, meatDays, milkHours, route],
+    );
+  }
+
   await client.query('COMMIT');
-  console.log('[@werf/db] seeded 1 business, 3 farms (livestock/crop/mixed), 1 owner ✓');
+  console.log(
+    '[@werf/db] seeded 1 business, 3 farms (livestock/crop/mixed), 1 owner, ' +
+      `${VET_PRODUCTS.length} veterinary products ✓`,
+  );
 } catch (err) {
   await client.query('ROLLBACK');
   console.error('[@werf/db] seed failed:', err);

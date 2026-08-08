@@ -4,6 +4,11 @@
 
 Read this before touching anything in `packages/sync`.
 
+> **Implementation status (2026-08-07):** Phase 2 has durable browser-local capture stores and an
+> explicit outbox behind `@werf/sync`. It does not yet have the PowerSync SDK, SQLite/OPFS domain
+> tables or cross-device replication described below. Phase 3 implements this contract and migrates
+> existing queued captures; the document is normative design, not a claim that the engine is live.
+
 ---
 
 ## 1. The premise
@@ -51,6 +56,24 @@ They differ by **weeks**. A manager records a calving on 1 March, stays offline 
 | **Never** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items` | ✗ | Money, health, audit. A stolen phone must not contain 40 workers' payslips (NFR-215). |
 
 **The retention window.** A farm with 50,000 animals and ten years of events will not fit in OPFS on a mid-range phone. Sync rules bound the client to a rolling window (default 24 months of events; all live animals; all reference data). The window is configurable per farm and degrades the *read* set only — **the write queue is never bounded and never evicted.**
+
+### 3.1 Attachment blobs are local facts before they are objects
+
+Approved for Phase 3 on 2026-08-08: animal photos and every later document use one attachment
+pipeline. The metadata is a normal farm-scoped, client-UUIDv7, soft-deleted sync row; the binary is
+written to OPFS before capture reports success. The network is not in that commit path.
+
+The binary queue has the same durability rule as the write queue: it is never evicted while pending.
+A browser restart resumes it; quota pressure may evict replaceable read data, never an unacknowledged
+blob. Upload is idempotent by attachment id and checksum. A successful HTTP upload alone is not an
+acknowledgement—the server must durably finalise matching size/checksum metadata before the device
+may release its local binary.
+
+The API first authorises membership of the attachment's `farm_id`, then issues a short-lived
+presigned request for a server-derived object key. Clients never choose bucket paths and never store
+presigned URLs. Production objects stay in S3 `af-south-1`; development and integration tests use
+MinIO through the same S3-compatible adapter. Cross-farm upload/read attempts, checksum mismatch,
+retry after an ambiguous response, browser kill, migration and quota pressure are required tests.
 
 ---
 
@@ -135,7 +158,48 @@ stateDiagram-v2
 
 1. A queued write survives app close, browser kill, and device reboot. Tested by chaos test, not by hope.
 2. A queued write is **never** discarded by the system. Only a human, explicitly, after review.
-3. The queue drains in `occurred_at` order.
+3. ⛔ **The queue does NOT drain in `occurred_at` order, and must not.** It drains in an order
+   that puts the EVIDENCE a server-side guard reads ahead of the thing that guard judges. This
+   invariant used to read "drains in `occurred_at` order"; that was never what the code did and it
+   is the shape of a SEV-1 this repo has already shipped and fixed. The rules, in the order the
+   flush applies them (`apps/web/src/sync/Outbox.tsx`):
+   1. **The foreign-key graph first** — a row cannot insert before the row it references.
+   2. **Evidence before the act it is judged against.** A dose creates a withholding; a move
+      decides which mob an animal stood in. Both must reach the server BEFORE any disposal
+      (`sale`, `slaughter`) that the server's withdrawal guard will judge against them. The guard
+      is a point-in-time query and cannot refuse what it has not received: dip a flock Monday
+      offline, tally forty to the abattoir Tuesday, reconnect Friday, and an `occurred_at` drain
+      posts the tally first and gets a **201** for meat inside an active withholding.
+   3. **Capture order for everything else, because capture order is CAUSAL.** It is what makes a
+      departure precede its own arrival and an increase precede the departure it funds. The sort
+      is stable, so what is left is the farmer's own order.
+   4. ⛔ **A departure is pulled forward only to just before its OWN arrival — never to the front.**
+      Hoisting every departure breaks a chained move A→B→C: `out_B` posts before `in_B` has landed,
+      the server sees no head in B, and refuses a valid capture. That refusal is worse than a
+      retry, because `/not-sent` tells the farmer to record it again and a recount RESETS.
+   5. **A refused or held capture taints what depends on it.** An item declares `provides` for what
+      it establishes and `guardedBy` for what it needs; anything whose subject was tainted this
+      round is HELD (pending, not refused), so it cannot reach a server that never heard of the
+      thing it depended on. Three namespaces, and they are deliberately disjoint: bare animal/mob
+      ids for a **withholding**, a batch id for the **two halves of a move**, `mobrow:<id>` for the
+      **mob row itself**. Sharing one namespace across two questions is how a fix for a false pass
+      became a false refusal — see 6.
+   6. ⛔ **Head availability is ARITHMETIC, not a subject.** A decrease is held only when the
+      device's own fold — `projectHeadCount` over the baseline and the captures the server actually
+      holds, cut at `(occurred_at, id)` — says the server would refuse it. This is the same
+      projection `deriveHeadCount` runs, so the two sides cannot disagree **as long as the device
+      holds the whole log**. ⛔ That qualifier is load-bearing and is not yet true by construction:
+      "the captures the server actually holds" is really "the captures this device sent", and the
+      two part company the moment Phase 3 hydrates from the server. See the 3e hydration tripwire
+      in `phase-checklists.md` — under-counting there holds a valid decrease for ever. It was briefly a
+      `head:<mobId>` subject, which held any decrease whenever any increase on that mob was tainted:
+      three deaths in a camp of a hundred, stranded for ever behind an unrelated refused purchase.
+   7. **A held capture is REPORTED.** `/not-sent` lists it under "waiting on one of the above" and
+      the strip counts it in the pending total. A hold nobody can see is a lost record — the strip
+      used to return early on the refusal count, so three held captures read as "1 not sent".
+
+   `occurred_at` remains what REPORTS are ordered by, and the total order for any projection is
+   `(occurred_at, id)` on both sides. Neither is the send order.
 4. A dropped connection resumes from the last acknowledged checkpoint. **Never restarts.** On EDGE, a restart means it never completes.
 5. **An expired refresh token holds the queue; it does not clear it.** (UC-050 A2.1)
 6. The queue is never evicted for storage pressure. Degrade the read set instead.

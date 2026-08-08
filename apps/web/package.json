@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && vite build && node scripts/check-bundle-size.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
     "@werf/core": "workspace:*",
+    "@werf/domain": "workspace:*",
     "@werf/sync": "workspace:*",
     "@werf/ui": "workspace:*",
     "react": "^19.0.0",

@@ -1,6 +1,8 @@
 # Functional Requirements
 
-Numbered catalogue. Every FR is a build target and must have a covering automated test. `P` = priority: **1** = MVP (Phase 1–3), **2** = launch (Phase 4–5), **3** = post-launch (Phase 6+).
+Numbered catalogue. Every FR is a build target and must have a covering automated test. `P` =
+priority: **1** = MVP, **2** = launch, **3** = post-launch. Priority is a product commitment, not a
+phase number; the authoritative build sequence is the delivery roadmap.
 
 Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online only) · 🇿🇦 = South-Africa-specific differentiator
 
@@ -53,6 +55,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-110 | 📶 Pedigree: sire/dam links, ancestor tree, automatic breed-percentage calculation | 2 |
 | FR-111 | 📶 Record weaning with weight and age | 1 |
 | FR-112 | 📶 Batch operations: apply an event to a selected group in one action | 1 |
+| FR-113 | 📶 Every event is scoped to the herd it concerns — the enterprise/species (cattle, sheep, pigs, poultry) or the specific animal/mob it applies to — so a mixed farm files and filters events by the right herd. Capture requires a herd/species selection when the event is not already tied to one animal | 1 |
 
 ### Breeding
 
@@ -115,7 +118,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-210 | 📶 Crop rotation history per block; warn on rotation-rule violation | 2 |
 | FR-211 | 🇿🇦 Auditor-ready spray history report per block, per season | 1 |
 | FR-212 | Weather integration: current, forecast, rainfall record per farm | 2 |
-| FR-213 | 📶 Manual rainfall capture per rain gauge | 1 |
+| FR-213 | 📶 Manual rainfall capture per rain gauge: how much (mm) and when. Modelled as a farm/land-scoped `rainfall` event (not animal-scoped), so grazing and cropping both read it. Cross-cutting — relevant to livestock too | 1 |
 | FR-214 | Packhouse intake-to-dispatch tracking with traceability to block | 3 |
 | FR-215 | Satellite/NDVI block health imagery | 3 |
 | FR-216 | 📶 Irrigation event record with volume | 2 |
@@ -242,7 +245,9 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 
 ## Traceability
 
-Every FR maps to ≥1 user story and ≥1 automated test. The matrix is **generated** — `pnpm test:trace` fails CI if a P1 or P2 FR has no covering test. See [testing-strategy.md](../04-delivery/testing-strategy.md).
+Every FR maps to ≥1 user story and ≥1 automated test. `pnpm test:trace` (`scripts/test-trace.mjs`) reports which FRs are named by a test title.
+
+> **⚠️ It does NOT fail CI, and this line used to claim it did.** It is report-only and exits 0; `--strict` makes it exit 1, and nothing in CI passes `--strict`. It also measures only whether a test *names* an FR, not whether it exercises one. Baseline at the end of Phase 2 is 40 of 146 — mostly phases 3–7, which are unbuilt. See [testing-strategy.md](../04-delivery/testing-strategy.md).
 
 **Count:** 125 FRs. P1: 66 · P2: 43 · P3: 16.
 

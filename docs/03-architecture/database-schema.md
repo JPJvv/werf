@@ -255,7 +255,10 @@ CREATE TABLE mobs (
   name          text NOT NULL,
   species       text NOT NULL,
   land_unit_id  uuid REFERENCES land_units(id),
-  head_count    integer,                 -- for group-only management (FR-102)
+  head_count    integer,                 -- for group-only management (FR-102). DENORMALISED:
+                                         -- the current value re-derived from the `tally` log.
+  initial_head_count integer,            -- migration 0018. ⛔ The IMMUTABLE baseline the tally
+                                         -- log folds over. Never updated after creation.
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz
@@ -275,7 +278,14 @@ CREATE TYPE event_type AS ENUM (
   'birth','death','weight','treatment','vaccination','dip','move','sale','purchase',
   'weaning','mating','pregnancy_test','condition_score','missing','recovered',
   'planting','spray','fertiliser','irrigation','harvest','scouting','soil_test',
-  'attendance','piece_work','task_complete'
+  'attendance','piece_work','task_complete',
+  -- ⭐ Appended by migration, never inserted mid-list. `ALTER TYPE … ADD VALUE` rewrites nothing
+  -- and rehashes nothing; reordering would take an exclusive lock across every farm's partition.
+  'rainfall',        -- migration 0014 (FR-705). The exception that proves the "enumerate it all
+                     -- up front" rule: it was not foreseen, so it cost a migration.
+  'tally',           -- migration 0017 (FR-102). A group-only mob's head count changes by an
+                     -- append-only DELTA or an absolute RECOUNT — never by editing head_count.
+  'boundary_walk'    -- migration 0020 (FR-150). A camp's fence as walked on the ground.
 );
 
 CREATE TABLE events (
@@ -337,6 +347,20 @@ attendance:{ startAt, endAt, breakMin, pin, gps? }
 ```
 
 **Why withdrawal and PHI dates are stored, not computed on read:** the animal is sold two years later and the product's registered withdrawal period has since changed. The rule that applied is the rule *at the time of treatment*. Computing on read would apply today's rule to yesterday's event — the same class of bug that [ADR-0005](adr/ADR-0005-regulatory-rates.md) exists to prevent.
+
+**Herd/species scoping on every event (FR-113) — implemented, and stamped rather than joined.** A mixed farm runs cattle *and* sheep *and* pigs; an event must file under the herd it concerns or the capture screen has "nowhere to mark it correctly." The mechanism is the `enterprise_id` column *already on `events`*: an enterprise is species-specific (a "Beef cattle" enterprise is `beef_cattle`, a "Dorper flock" is `sheep`), so tagging the event with `enterprise_id` gives it a herd. No schema change was needed. Three parts, all in place:
+
+- **Nothing enters the log unfiled.** `assertHerdScoped` (@werf/domain) refuses an event that names neither an `animal_id`, a `mob_id`, nor an `enterprise_id`, and it is called inside the single shared `insertEvent` helper — so a capture added in a later phase cannot skip it. The one class of exception is a fact about the FARM rather than a herd, and it is a closed list: `FARM_SCOPED_EVENT_TYPES` in `@werf/core` (`rainfall` and `boundary_walk`). A new event type is herd-scoped by default and has to be named there to escape the rule.
+- **⭐ For an animal/mob event the herd is STAMPED at capture, not derived by joining to the subject on read.** This note previously said derivable-from-`animal_id`, and that was a mistake worth correcting: an animal can be moved between herds, so a report that joined to the animal's *current* enterprise would quietly re-file last season's dosing under the herd the animal is in today. The server reads the herd off the subject's own row at capture time and writes it onto the event — the same reasoning that stores withdrawal dates instead of recomputing them ([ADR-0005](adr/ADR-0005-regulatory-rates.md)). It is derived server-side and never taken from the request body, so a client cannot file a cow's weight under the sheep flock, and a capture composed by an older client still files itself correctly on arrival.
+- **Capture asks for the herd, once.** An animal is filed under a herd when it is created, so every later event on it inherits one without asking again. The picker replaces the species picker rather than joining it — the herd answers both, so a sheep cannot be filed under the cattle enterprise, and two herds of the *same* species ("Bonsmara cows", "Feedlot") can be told apart, which a species never could. A farm with one herd is asked nothing and shown where the animal went. The animals read model takes an optional herd filter; the whole-farm total never filters, so an animal with no herd yet is never hidden.
+
+**`rainfall` event type (FR-213) — implemented (migration 0014).** Environmental, **not** species-scoped: a `rainfall` event is farm/`land_unit`-scoped (`animal_id`/`mob_id`/`enterprise_id` all null), payload `{ mm: number, gauge?: string }`, `occurred_at` = the day the gauge was read. `mm` is non-negative rather than positive, because a dry gauge is a real reading. Added by one additive `ALTER TYPE ... ADD VALUE` (which is why the enum is enumerated) with the value appended last so the Postgres enum and `EVENT_TYPES` stay in the same order. Both grazing (rest/rotation) and cropping read it, so it is cross-cutting, not crop-only — and it is why `FARM_SCOPED_EVENT_TYPES` exists.
+
+**`boundary_walk` event type (FR-150) — implemented (migration 0020).** A camp or block's fence as WALKED on the ground with a GPS. Farm-scoped like `rainfall` and for the same reason: a camp is ground, and the same camp carries cattle this winter and sheep next, so filing its shape under one enterprise would hide it from the other side of a mixed farm. Payload `{ boundaryGeojson, corners: [{lon, lat, accuracyM}], areaHectares }` — the ring AND the fixes behind it, because a boundary walked at 40 m accuracy under trees and one walked at 4 m in the open are the same polygon and are not the same claim. Added by one additive `ALTER TYPE ... ADD VALUE`, appended last.
+
+⭐ **`land_units.boundary` is the denormalised CURRENT value of this log, re-derived rather than stepped** — the same relationship `mobs.head_count` has to `tally` and `animals.land_unit_id` has to `move`. A boundary is an ABSOLUTE THAT RESETS (a recount of a shape), so the current one is the newest walk by the total order `(occurred_at, id)`, re-selected from the whole log after every insert. Arrival order is not `occurred_at` order: two phones offline in the same week can both walk one camp, and a server that wrote each arrival straight onto the column would leave the boundary at whichever phone reconnected last. The superseded walk is kept — it is a true fact about a fence that really was there. The device runs the identical cut, so the two sides cannot drift.
+
+The wire carries the CORNERS and never the ring: the server rebuilds the polygon from the fixes with the same `@werf/domain` function the device ran, so a shape and its own evidence cannot disagree (the same discipline as a projected due date never crossing the wire). `land_units.hectares` is untouched by a walk — it is the farmer's declared figure, often off a title deed, and a walk that clipped a corner must never silently replace it.
 
 ---
 
@@ -500,8 +524,8 @@ CREATE TABLE theft_incidents (
   last_seen_location_geojson text,
   land_unit_id  uuid REFERENCES land_units(id),
   head_count    integer NOT NULL,
-  saps_case_number text,
-  saps_station  text,
+  case_number   text,                            -- ZA copy: "SAPS case number" (ADR-0006: neutral column)
+  reporting_station text,                        -- ZA copy: "SAPS station"
   status        text NOT NULL DEFAULT 'open',   -- 'open','recovered','closed'
   observations  text,                            -- facts only
   evidence_pack_key text,
@@ -551,6 +575,32 @@ CREATE TABLE veterinary_products (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+-- Migration 0019 (FR-120). Reference data for the breeding projection, and the ONE table on this
+-- page that is global rather than farm-scoped — gestation is biology, not tenancy, so it carries
+-- no `farm_id`. It is safe because it is read-only to the app: `GRANT SELECT` only, RLS FORCEd
+-- with a `USING (true)` read policy, and classified `reference-global` in the sync rules. The
+-- seeding INSERT works because the migration role is BYPASSRLS.
+CREATE TABLE species_gestation (
+  id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+  species       text NOT NULL,           -- UNIQUE index; matches animals.species
+  gestation_days integer NOT NULL,       -- CHECK > 0 AND <= 730
+  source        text NOT NULL,           -- ⭐ the citation, not a comment. Merck Veterinary
+                                         -- Manual species means, with the range stated.
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+```
+
+⛔ **A species with no row here refuses the PROJECTION and keeps the FACT.** Seeded for cattle,
+sheep, goat and pig only. `poultry` incubates rather than gestates, and `game` spans a hundred days
+between a springbok and a kudu — so there is no honest mean to store. The server records the
+pregnancy diagnosis with a `warning` and no due date rather than falling back to a nearby species:
+that fallback is the same defect class as hardcoding a regulated number. The screen says plainly why
+no date could be worked out. ⚠️ It is also absent from the truncate list in `packages/db/src/testing.ts`
+**on purpose** — the migration seeds it and no farm writes it, so "completing" that list would empty
+the table and redden every projection for a reason that looks nothing like the cause.
+
+```sql
 CREATE TABLE compliance_checklists (
   id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
   farm_id       uuid NOT NULL REFERENCES farms(id),

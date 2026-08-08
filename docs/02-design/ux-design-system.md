@@ -187,7 +187,7 @@ Not a stylistic tic. A farmer scanning a column of weights is doing a *compariso
 --dur-base: 200ms;   /* transition */
 ```
 
-State feedback only — a write committed, a sync completed. Never page entry, never delight. It costs frames on a Galaxy A15, and a person capturing their 140th weight of the afternoon does not want to be delighted; they want to be finished.
+State feedback only — a write committed, records sent. Never page entry, never delight. It costs frames on a Galaxy A15, and a person capturing their 140th weight of the afternoon does not want to be delighted; they want to be finished.
 
 `prefers-reduced-motion: reduce` disables all of it. Non-negotiable.
 
@@ -199,7 +199,7 @@ State feedback only — a write committed, a sync completed. Never page entry, n
 
 ```
 ┌──────────────────────────────┐
-│ ⌁ Offline — your work is saved│  ← sync strip, 32px, never modal
+│ ⌁ Offline — your work is saved│  ← save-status strip, 32px, never modal
 ├──────────────────────────────┤
 │  Rietfontein          ☀ 28°  │
 ├───────────────┬──────────────┤
@@ -255,7 +255,7 @@ Tiles are **generated from `farm.enterprise_types`** ([FR-002](../01-requirement
 | Beef + Maize | Herd · Blocks · Health · Sprays · Labour · Money · Compliance |
 | Sheep + Goats | Flock · Camps · Health · Labour · Money · Compliance |
 
-**A cattle farmer never sees a Sprays tile. Ever.** A vineyard owner never sees Herd. The word is "camp" for cattle and "block" for vines, from the terminology table — never hardcoded.
+**A cattle farmer never sees a Sprays tile. Ever.** A vineyard owner never sees Herd. The word is "camp" for cattle and "block" for vines, from the terminology layer — never hardcoded, and never decided twice. That layer is `apps/web/src/i18n/terminology.ts`: it answers which TERM a farm uses (`camp` / `block`, `herd` / `flock` / `livestock`) and the dictionaries hold the word for that term in each language, so a tile label is translatable and the grid and the first-run guide cannot disagree. It becomes a lookup against a terminology TABLE, read through the sync adapter, when the vocabulary outgrows a closed set of tokens — a farm that says "paddock", or a second jurisdiction with its own words. Callers do not change when it does: they already ask the layer instead of deciding for themselves.
 
 If you find yourself writing a static array of tiles, stop. That array is the bug.
 
@@ -294,11 +294,11 @@ Persistent, 32px, top. **Never modal, never blocking** (SRS-7).
 
 | State | Appearance |
 |---|---|
-| Synced | `--aloe-100` · ✓ · "Synced 2 min ago" |
+| Saved and sent | `--aloe-100` · ✓ · "Saved and sent" |
 | Pending | `--dam-100` · ↑ · "3 to send" |
-| Syncing | `--dam-100` · animated ↑ · "Sending 2 of 3" |
+| Sending | `--dam-100` · animated ↑ · "Sending…" (no progress count — a count that stalls at "2 of 3" reads as a fault) |
 | Offline | `--soil-100` · ⌁ · **"Offline — your work is saved"** |
-| Error | `--klei-100` · ! · "2 need attention" → tappable |
+| Error | `--klei-100` · ! · "2 not sent — needs your attention · 3 to send" + a separate **See what** link. ⛔ The sentence is NOT tappable; the link beside it is |
 
 **The offline copy matters more than the icon.** "Offline — your work is saved" does the single most important job in this product: it tells a person the thing they just did is not lost. "No connection" would be accurate and would cause a farmer to write it on paper as well — and the moment they keep a paper backup, the app is extra work and will be abandoned, correctly.
 
@@ -379,7 +379,7 @@ Note the difference in voice between ⚠ and ⛔. The warning says what happened
 
 ```
 ┌─────────────────────────┐
-│ ▓▓ Sync ▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │  ← status, 32px, never modal
+│ ▓▓ Save status ▓▓▓▓▓▓▓▓▓ │  ← 32px, never modal
 ├─────────────────────────┤
 │                         │
 │      CONTEXT            │  ← what am I looking at
@@ -455,15 +455,26 @@ Building for a person with low vision and building for a person in direct sunlig
 
 ---
 
-## 10. Screen inventory (v1)
+## 10. Screen inventory
 
-**Home:** the grid (enterprise-adaptive)
+This inventory separates what a farmer can open now from roadmap surfaces. Mixing them previously
+made unbuilt crop and payroll screens read like implemented design.
 
-**Capture:** Herd/Flock list · Animal detail · Birth · Death · Treatment · Weight · Weigh session · Move · Sale · Mob detail · Camp list/detail · Block list/detail · Spray · Harvest · Tasks · Attendance · Piece work · Search · Sync review
+**Built through Phase 2:** enterprise-adaptive home · sign-in · registration · second-factor choice,
+enrolment and recovery · herd list · add animal · record loss · tag session · create/count/move a
+mob · mating · pregnancy · birth · weaning · treatment/dip · weigh session · theft incident list and
+capture · land list/create/walk boundary · rainfall · residue attention · not-sent/refused queue ·
+Settings → appearance/language/farms/security.
 
-**Office:** Herd table · Breeding · Health · Blocks · Sprays · Employees · Attendance · **Payroll run** · Leave · Finance · Enterprise P&L · Inventory · Equipment · **Compliance** (Animal ID · Stock theft · GlobalGAP · SIZA · Obligations) · Reports · Users · Farm settings · Regulatory rates admin
+**Phase 3 infrastructure:** no new farmer vocabulary by default. Migration and queue diagnostics
+must preserve the existing save-status, attention and not-sent patterns.
 
-**Shared:** Login · **2FA enrol / verify / recovery codes** · Onboarding (5 steps) · **Settings → Appearance** · Empty states · Error states · Offline states
+**Planned field capture:** crop blocks · planting · fertiliser · spray/PHI · harvest · grazing/feed ·
+employees · attendance · piece work · leave and worker self-view.
+
+**Planned office:** herd analytics · crop reports · payroll run · payslips/contracts · finance ·
+enterprise P&L · inventory/equipment · Animal ID/stock-theft/GlobalGAP/SIZA obligations · regulatory
+rates admin · reports and exports.
 
 ---
 

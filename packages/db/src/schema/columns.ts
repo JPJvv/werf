@@ -26,6 +26,24 @@ export const citext = customType<{ data: string; driverData: string }>({
 });
 
 /**
+ * PostGIS `geometry`. The CANONICAL boundary lives here for spatial queries; a denormalised
+ * GeoJSON `text` mirror lives alongside it for the client, because SQLite on the device has
+ * no PostGIS (offline-sync.md, .claude/rules/db.md). The two are kept consistent by the
+ * `sync_geojson` trigger, never by convention. App code does not read this column through
+ * drizzle — spatial work is raw SQL in the API — so the TS type is a placeholder string
+ * (WKT/EWKB), present only so migrations emit the column with its type and SRID.
+ */
+export const geometry = customType<{
+  data: string;
+  driverData: string;
+  config: { type: string; srid: number };
+}>({
+  dataType(config) {
+    return `geometry(${config!.type},${config!.srid})`;
+  },
+});
+
+/**
  * Client-generated UUIDv7 primary key. The DB `uuid_generate_v7()` default is a
  * server-side fallback (seed rows); the offline client always supplies its own id,
  * because it cannot ask a sequence for one. v7 (not v4) keeps index locality.

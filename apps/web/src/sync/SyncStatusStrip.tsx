@@ -1,11 +1,22 @@
+import { Link } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
-import { useSyncStatus, type SyncState, type SyncStatus } from './useSyncStatus';
+import type { SyncState, SyncStatus } from './useSyncStatus';
+import { useSyncState } from './Outbox';
 
 /**
  * A persistent, non-modal strip that always says whether work is saved and sent (FR-009).
  * Meaning is never in colour alone — the words carry it, colour only reinforces (NFR-411) —
  * and it is a polite live region so a screen reader announces a change without interrupting.
+ *
+ * ⭐ When — and only when — the server has REFUSED something, the strip also carries a way to go
+ * and see what. "3 need your attention" with nowhere to look is a worry rather than a task. The
+ * link is rendered conditionally rather than always, which is also what keeps this component
+ * usable outside a router: with nothing refused there is no `<Link>` to resolve, and its unit test
+ * renders it on its own.
+ *
+ * The link sits OUTSIDE the live region. Inside it, every re-announcement would drag the control
+ * along with it, and a polite region that keeps re-reading a link is the opposite of polite.
  */
 
 const STATUS_TEXT_KEY: Record<Exclude<SyncStatus, 'pending'>, TranslationKey> = {
@@ -24,23 +35,43 @@ const STATUS_COLOR: Record<SyncStatus, string> = {
 };
 
 function statusText(state: SyncState, t: (key: TranslationKey) => string): string {
+  // A refusal outranks the generic error: "will retry" is true of a dropped signal and false of a
+  // record the server has rejected on its merits, and the farmer needs to know which one they have.
+  //
+  // ⛔ IT DOES NOT OUTRANK THE PENDING TOTAL, and returning here as though it did was how held
+  // captures became invisible. `pendingCount` INCLUDES the refused and the held, so dropping the
+  // line meant a farmer with one refused move and three deaths stranded behind it read "1 not
+  // sent" — the three had no surface anywhere in the product. Both numbers, always, when both are
+  // real: what needs them, and what is simply not sent yet.
+  if (state.blockedCount > 0) {
+    const attention = `${state.blockedCount} ${t('sync.blocked')}`;
+    const rest = state.pendingCount - state.blockedCount;
+    return rest > 0 ? `${attention} · ${rest} ${t('sync.toSend')}` : attention;
+  }
   if (state.status === 'pending') return `${state.pendingCount} ${t('sync.toSend')}`;
   return t(STATUS_TEXT_KEY[state.status]);
 }
 
 export function SyncStatusStrip() {
-  const state = useSyncStatus();
+  const state = useSyncState();
   const { t } = useTranslation();
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-label={t('sync.status.label')}
-      className={`flex items-center gap-2 border-b border-soil-200 bg-sand-100 px-4 py-2 text-body ${STATUS_COLOR[state.status]}`}
-    >
-      <span aria-hidden="true">⌁</span>
-      <span>{statusText(state, t)}</span>
+    <div className="flex items-center justify-between gap-2 border-b border-soil-200 bg-sand-100 px-4 py-2">
+      <div
+        role="status"
+        aria-live="polite"
+        aria-label={t('sync.status.label')}
+        className={`flex items-center gap-2 text-body ${STATUS_COLOR[state.status]}`}
+      >
+        <span aria-hidden="true">⌁</span>
+        <span>{statusText(state, t)}</span>
+      </div>
+      {(state.blockedCount > 0 || state.waitingCount > 0) && (
+        <Link to="/not-sent" className="shrink-0 text-body text-dam-700">
+          {t('sync.blocked.see')}
+        </Link>
+      )}
     </div>
   );
 }

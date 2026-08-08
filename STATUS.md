@@ -52,17 +52,13 @@
    whether it is estimated, and the actual acquisition day. A back-dated purchase carries that day
    on both the animal and its event; it is no longer silently dated to the day the phone was used.
 
-## 3. Owner decision
+## 3. Owner decisions
 
-**Awaiting owner — object storage:** FR-108 animal photographs and persisted evidence-pack PDFs need
-an S3/MinIO tier with local-first metadata and deferred uploads. Choose one:
-
-- Add the storage foundation to Phase 3 so later crop, grievance-document and evidence-pack work all
-  use one offline upload path; or
-- Defer it explicitly, keeping photo/evidence features partial and preventing UI or PDFs from
-  claiming an attachment exists.
-
-No storage implementation should begin until this is answered.
+**Resolved 2026-08-08 — object storage belongs in Phase 3.** The owner approved one shared
+local-first attachment foundation for animal photos, later crop/grievance documents and generated
+packs: OPFS blobs + SQLite metadata/queue on the device, an S3-compatible boundary with MinIO in
+development/tests, and S3 in `af-south-1` in production. Phase 2 remains honest: it stores no photo
+and claims none until that Phase 3 slice lands.
 
 ## 4. Verification
 
@@ -77,11 +73,9 @@ No storage implementation should begin until this is answered.
 
 ## 5. Next executable steps
 
-1. Owner decides whether the shared local-first object-storage/upload foundation belongs in Phase 3
-   (recommended) or is explicitly deferred further. No Phase 2 attachment claim depends on it.
-2. When ready, owner triggers the Phase 2 reviewer, sync-auditor and compliance-checker passes. This
+1. When ready, owner triggers the Phase 2 reviewer, sync-auditor and compliance-checker passes. This
    work touches regulated livestock/stock-theft logic; green automation is not legal clearance.
-3. Close findings, re-run both gates, push, and read both CI lanes before changing draft PR #3 to
+2. Close findings, re-run both gates, push, and read both CI lanes before changing draft PR #3 to
    ready. Start Phase 3 from the offline-sync checklist; do not begin payroll on local adapters.
 
 ## 6. Standing decisions
@@ -95,3 +89,5 @@ No storage implementation should begin until this is answered.
   domain mechanics.
 - Phone-only invitations are handed over in person; SMS is not a second factor or credential path.
 - SAFEX/red-meat licence conversations begin in the later integration/compliance work, not now.
+- Attachment storage is a Phase 3 shared foundation: OPFS + SQLite locally, MinIO in dev/test, S3 in
+  `af-south-1` in production; uploads are deferred and never block capture.

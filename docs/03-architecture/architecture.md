@@ -147,7 +147,7 @@ This is the load-bearing idea in the architecture.
 | ORM | **Drizzle** | SQL-first, real PostGIS support, migrations that are readable diffs. Prisma's PostGIS story is `Unsupported()` — a non-starter when boundaries are a core entity. |
 | DB | **Postgres 16 + PostGIS** | PostGIS is required (camps, blocks, GPS). RDS Multi-AZ in af-south-1. |
 | Queue | BullMQ + Redis | PDFs, exports, imports, the scheduled compliance jobs. |
-| Objects | S3 (af-south-1) | Photos, generated packs. Presigned, direct-from-client upload. |
+| Objects | S3 (af-south-1); MinIO in dev/test | Phase 3 shared attachment path: OPFS-first capture, synced farm-scoped metadata, then presigned direct upload through one S3-compatible adapter. |
 | Auth | Custom JWT in the API | Not Auth0/Clerk: offline sessions (30-day) and per-farm RBAC are not their model, and the data must stay in SA. |
 | Monorepo | pnpm workspaces + Turborepo | |
 | Tests | Vitest · Playwright · Testcontainers | Real Postgres in tests. Never mock the database. |

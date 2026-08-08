@@ -57,6 +57,24 @@ They differ by **weeks**. A manager records a calving on 1 March, stays offline 
 
 **The retention window.** A farm with 50,000 animals and ten years of events will not fit in OPFS on a mid-range phone. Sync rules bound the client to a rolling window (default 24 months of events; all live animals; all reference data). The window is configurable per farm and degrades the *read* set only — **the write queue is never bounded and never evicted.**
 
+### 3.1 Attachment blobs are local facts before they are objects
+
+Approved for Phase 3 on 2026-08-08: animal photos and every later document use one attachment
+pipeline. The metadata is a normal farm-scoped, client-UUIDv7, soft-deleted sync row; the binary is
+written to OPFS before capture reports success. The network is not in that commit path.
+
+The binary queue has the same durability rule as the write queue: it is never evicted while pending.
+A browser restart resumes it; quota pressure may evict replaceable read data, never an unacknowledged
+blob. Upload is idempotent by attachment id and checksum. A successful HTTP upload alone is not an
+acknowledgement—the server must durably finalise matching size/checksum metadata before the device
+may release its local binary.
+
+The API first authorises membership of the attachment's `farm_id`, then issues a short-lived
+presigned request for a server-derived object key. Clients never choose bucket paths and never store
+presigned URLs. Production objects stay in S3 `af-south-1`; development and integration tests use
+MinIO through the same S3-compatible adapter. Cross-farm upload/read attempts, checksum mismatch,
+retry after an ambiguous response, browser kill, migration and quota pressure are required tests.
+
 ---
 
 ## 4. Conflict resolution

@@ -250,7 +250,7 @@ Core animal records (apps/api + @werf/core + @werf/db, integration-tested on rea
   screen too, and a bought animal asks for the actual acquisition day: that day is stored on the
   animal AND timestamps the purchase event, rather than quietly substituting the day the phone was
   used. DOB stays a YYYY-MM-DD string, never a coerced Date (off-by-one guard). Still ◐ because
-  FR-101 also promises a photo, which remains behind the unresolved FR-108 object-storage decision;
+  FR-101 also promises a photo, which remains behind the approved Phase 3 FR-108 storage slice;
   visual/EID identifiers use the dedicated crush tagging action, and dam/sire are captured where
   they can be known honestly (birth/service) rather than demanded for every animal
 ☑ Create a mob/flock and manage it by head_count without individual rows (FR-102) — create ACTION
@@ -756,7 +756,8 @@ compliance-checker passes. The PR remains draft until their findings are closed.
 **What Phase 2 still leaves, named rather than hidden in review history:**
 
 - **FR-108 photos:** `photo_key` exists, but there is no object-storage tier or upload endpoint.
-  STATUS carries the owner decision. Until it is built, no screen or PDF may claim an image exists.
+  The owner assigned the shared local-first attachment foundation to Phase 3. Until it is built, no
+  screen or PDF may claim an image exists.
 - **FR-132 due/overdue:** needs a vaccination-programme model and dated reference schedule.
 - **FR-602 unmarked-past-window flag:** the pure function exists, but the prescribed period is not
   yet stored as verified dated reference data. Do not replace the missing row with a literal.
@@ -775,7 +776,8 @@ livestock is offline-first through the ADR-0003 seam, not through live sync.
 ## Phase 3 — Offline sync
 
 Goal: replace the Phase 2 browser-local adapters with the SQLite/OPFS + PowerSync replication layer
-accepted in ADR-0003, without changing the domain-facing store contracts or losing a queued capture.
+accepted in ADR-0003, without changing the domain-facing store contracts or losing a queued capture;
+add the one shared local-first attachment path approved on 2026-08-08.
 
 ```
 ☐ 3a PowerSync web SDK is owned by `@werf/sync`; components never import it directly
@@ -796,13 +798,22 @@ accepted in ADR-0003, without changing the domain-facing store contracts or losi
 ☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
 ☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
 ☐ 3h Sync health reports queue depth/failure per farm without PII
+☐ 3i Attachment metadata is farm-scoped, client-UUIDv7, soft-deleted and synced through SQLite;
+  the binary stays in OPFS until its checksum-confirmed server acknowledgement is durable
+☐ 3i Animal photos and later crop/grievance documents use one deferred queue: capture commits
+  locally with no signal, browser kill/reload loses neither metadata nor blob, and retry is idempotent
+☐ 3i The API authorises the farm before issuing a short-lived presigned upload; object keys are
+  server-derived, never arbitrary client paths, and another farm can neither upload nor read them
+☐ 3i One S3-compatible adapter uses MinIO in development/integration tests and S3 in `af-south-1`
+  in production; tests cover checksum/size refusal, quota pressure, retry and orphan cleanup
+☐ 3i Existing Phase 2 `photo_key` rows migrate without inventing an attachment; null remains none
 ☐ Offline matrix in testing-strategy.md runs against real Postgres and the real adapter
 ☐ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed
 ```
 
 **Exit gate:** six weeks of offline captures reach another device with every `occurred_at` intact;
-a deliberately permissive sync rule fails tenancy tests; no queue record is lost on retry, refusal,
-refresh expiry, schema upgrade or quota pressure.
+a deliberately permissive sync rule fails tenancy tests; no queue record or queued attachment is
+lost on retry, refusal, refresh expiry, schema upgrade, browser restart or quota pressure.
 
 ---
 

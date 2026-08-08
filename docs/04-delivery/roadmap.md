@@ -63,13 +63,16 @@ owner-triggered compliance pass clears regulated livestock, animal-ID and stock-
 check: a livestock farmer records work in the crush and can explain every count and warning.
 
 **Not in this phase:** crop blocks, plantings, sprays, PHI and harvest. They are Phase 4. Object
-storage is also not implied by a `photo_key`; its phase is an explicit owner decision in STATUS.
+storage is not implied by a `photo_key`; the owner assigned its shared local-first foundation to
+Phase 3 on 2026-08-08.
 
 ## Phase 3 — Offline sync
 
 **Ships:** the architecture ADR-0003 promises: React reads and writes local SQLite through the sync
 adapter; PowerSync moves deltas to Postgres; RLS and sync rules agree; the outbox survives old
-clients, retries and long offline periods without data loss.
+clients, retries and long offline periods without data loss. The same phase adds the approved shared
+attachment foundation: OPFS blobs, synced metadata, deferred S3-compatible uploads and tenant-safe
+reads, with MinIO in development/tests and S3 in `af-south-1` in production.
 
 | Slice | Content | Evidence |
 |---|---|---|
@@ -81,6 +84,7 @@ clients, retries and long offline periods without data loss.
 | 3f | Retention/read-set degradation; queue never evicted | quota test |
 | 3g | Old-client compatibility and additive migrations | 12-month client-window test |
 | 3h | Sync health/observability without PII | per-farm diagnostics |
+| 3i | Shared local-first attachment queue and S3-compatible object boundary | offline/restart/quota, checksum, idempotency and cross-farm tests |
 
 **Gate:** the required matrix in [testing-strategy.md](testing-strategy.md) passes against real
 Postgres and the real sync adapter. A six-week offline write set reaches another device with every

@@ -134,7 +134,7 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
 | Review agents | ✅ **Tenth pass run 2026-08-08 at owner request over `17891f0..HEAD`.** `sync-auditor`: APPROVABLE. `compliance-checker`: APPROVABLE — **withdraws its standing NOT APPROVABLE**. `reviewer`: NOT APPROVABLE, carried solely by the exit-gate line "owner-triggered passes still open", which this pass closed. **No SEV-1 and no SEV-2 from any agent** |
 | `pnpm verify` (2026-08-09, membership expiry bridge) | ✅ Uncached: 97 test files / 1,020 tests; 7/7 builds; bundle 151.67 KB gz ≤ 250 KB. Real-Postgres proof: elapsed accepted + pending grants tombstoned, future/permanent untouched, existing tombstone preserved, second sweep changed 0 rows |
 | Manual — real service, real per-user delivery (2026-08-09) | ✅ A freshly registered test farm's row reached the client through a real `.connect()` against the self-hosted service: `buckets: 16`, `operations_synced: 6`, client read back exactly its own farm — the rung config-validation/replication-log evidence alone could not prove; see phase-checklists.md 3b |
-| `pnpm verify` (2026-08-09, capture-store SQLite migration, 3c) | ✅ Uncached: 99 test files / 1,037 tests, 12/12 typecheck, 7/7 builds; bundle 153.34 KB gz ≤ 250 KB interactive-path budget (195.86 KB gz precached engine, reported separately, not gated) |
+| `pnpm verify` (2026-08-09, capture-store SQLite migration, 3c + deterministic gate test) | ✅ Uncached: 99 test files / 1,038 tests, 12/12 typecheck, 7/7 builds; bundle 153.34 KB gz ≤ 250 KB interactive-path budget (195.86 KB gz precached engine, reported separately, not gated) |
 | `pnpm test:e2e` (2026-08-09, capture-store SQLite migration, 3c) | ✅ 30/30 Chromium journeys passed (incl. 2 new `capture-migration.spec.ts` cases: clean migration + order preserved + localStorage untouched, and a second cold start as a no-op), re-run 3× on the sync-critical specs with no flakes |
 
 ## 5. Next executable steps
@@ -216,7 +216,15 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
    closed the same way. Bundle-budget decision (precache the engine, exclude it from the
    interactive-path sum) made and recorded in §3. Full account:
    `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`. `uploadData` (per-table routing)
-   remains 3d, unstarted.
+   remains 3d, unstarted. ⭐ **Follow-up done same day:** the three dose-before-disposal tests that
+   caught the `allSettled` regression proved it once, by going red-to-green, but nothing in the
+   committed suite would have failed again if the gate were later deleted — the fake database's
+   promise interleaving happened to make the race timing-dependent, not pinned. Closed with
+   `FakeLocalDatabase.holdHydrationFor(storeKey)` (`packages/sync/src/testing.ts`) and a new
+   `Outbox.test.tsx` case that holds `health` open on demand while every other seeded store settles
+   for real, asserts nothing posts, releases it, and asserts the correct order — verified to
+   actually fail (mob/tallies/moves posted ahead of the still-held dose) when the gate is stripped
+   from `Outbox.tsx`, then to pass again once restored.
 9. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
    `landed()` breaks the day mobs/tallies come down from the server.
 10. Do not begin payroll on local adapters.

@@ -49,10 +49,20 @@ function toTable(def: LocalTableDef): Table {
 export type LocalSchema = Schema;
 
 /**
+ * The raw `Table` instances, keyed by name — exported separately from `localSchema` because
+ * `Schema`'s constructor consumes each `Table` via `copyWithName` and stores the RESOLVED result
+ * (a `ResolvedTable`, which has no `copyWithName` of its own) on `localSchema.props`. Anything
+ * that needs to build a SECOND `Schema` merging these tables with others — `local-database.ts`,
+ * merging in `capture-schema.ts`'s local-only tables — must start from these original `Table`
+ * instances, not from an already-constructed `Schema`'s `.props`.
+ */
+export const localSchemaTables: Readonly<Record<string, Table>> = Object.fromEntries(
+  LOCAL_SCHEMA_TABLES.map((table) => [table.name, toTable(table)]),
+);
+
+/**
  * One table per non-`server-only` entry in `TENANCY`. A `server-only` table (payroll,
  * sessions, WebAuthn secrets) never appears here — the same posture the sync rules enforce,
  * from the same registry, so the two cannot say different things about what a device may hold.
  */
-export const localSchema: LocalSchema = new Schema(
-  Object.fromEntries(LOCAL_SCHEMA_TABLES.map((table) => [table.name, toTable(table)])),
-);
+export const localSchema: LocalSchema = new Schema(localSchemaTables);

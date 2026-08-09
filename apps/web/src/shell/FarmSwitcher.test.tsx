@@ -122,13 +122,15 @@ describe('switching farms (FR-004)', () => {
     render(<App />);
 
     // The breed sits alongside the sex in one line, so it is matched as a substring.
-    expect(screen.getByText(/Bonsmara/)).toBeTruthy();
+    expect(await screen.findByText(/Bonsmara/)).toBeTruthy();
 
     await user.selectOptions(screen.getByRole('combobox', { name: /farm/i }), FARM_B);
 
     // The other farm's herd, and ONLY the other farm's herd. A store that leaked across the
-    // boundary here would be the client's version of a broken RLS policy.
-    expect(screen.getByText(/Nguni/)).toBeTruthy();
+    // boundary here would be the client's version of a broken RLS policy. findByText: switching
+    // farms constructs a fresh set of capture stores that hydrate asynchronously
+    // (phase-checklists.md 3c), same as a cold start does.
+    expect(await screen.findByText(/Nguni/)).toBeTruthy();
     expect(screen.queryByText(/Bonsmara/)).toBeNull();
   });
 

@@ -17,7 +17,7 @@
  * is right about.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 describe('the herd by class (FR-705)', () => {
-  it('shows the groups a farmer thinks in, not a flat head count', () => {
+  it('shows the groups a farmer thinks in, not a flat head count', async () => {
     cachedSession();
     window.localStorage.setItem(
       HERD_KEY,
@@ -120,14 +120,15 @@ describe('the herd by class (FR-705)', () => {
     window.history.pushState({}, '', '/animals');
     render(<App />);
 
-    const breakdown = screen.getByRole('list', { name: /cattle by class/i });
+    // The seeded herd hydrates asynchronously (phase-checklists.md 3c) even on this first render.
+    const breakdown = await screen.findByRole('list', { name: /cattle by class/i });
     expect(within(breakdown).getByText('2')).toBeTruthy();
     expect(within(breakdown).getByText(/cows/i)).toBeTruthy();
     expect(within(breakdown).getByText(/weaners/i)).toBeTruthy();
     expect(within(breakdown).getByText(/steers/i)).toBeTruthy();
   });
 
-  it('names the animals it cannot age instead of quietly counting them as cows', () => {
+  it('names the animals it cannot age instead of quietly counting them as cows', async () => {
     // On an extensive farm a large part of the herd genuinely has no recorded birth date. Sorting
     // them into "cow" would invent the number the farmer opened the screen to check.
     cachedSession();
@@ -135,10 +136,10 @@ describe('the herd by class (FR-705)', () => {
     window.history.pushState({}, '', '/animals');
     render(<App />);
 
-    expect(screen.getByText(/no age recorded/i)).toBeTruthy();
+    expect(await screen.findByText(/no age recorded/i)).toBeTruthy();
   });
 
-  it('survives a stored animal from an older app version that has no dob field at all', () => {
+  it('survives a stored animal from an older app version that has no dob field at all', async () => {
     // An offline-first app has to expect rows composed by a client six weeks behind an update. A
     // read model that threw would take the whole screen down, offline, with no way out.
     cachedSession();
@@ -149,12 +150,12 @@ describe('the herd by class (FR-705)', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: /animals/i })).toBeTruthy();
-    expect(screen.getByText(/no age recorded/i)).toBeTruthy();
+    expect(await screen.findByText(/no age recorded/i)).toBeTruthy();
   });
 });
 
 describe('the home grid as an instrument (FR-017)', () => {
-  it('badges the Health tile with the animals that may not be sold yet', () => {
+  it('badges the Health tile with the animals that may not be sold yet', async () => {
     cachedSession();
     const id = uuidv7();
     window.localStorage.setItem(HERD_KEY, JSON.stringify([animal(id, 'female', 900)]));
@@ -191,13 +192,17 @@ describe('the home grid as an instrument (FR-017)', () => {
 
     // A dot AND a number AND a word — never colour alone (NFR-411). Read off the tile itself,
     // because the animals tile is also carrying a 1 (one head), and asserting a bare "1" on the
-    // page would pass whichever tile it came from.
+    // page would pass whichever tile it came from. The tile itself is generated from session data
+    // (fixed grid), but its badge depends on the herd/health captures, which hydrate
+    // asynchronously — wait for the badge to land.
     const healthTile = screen.getByRole('link', { name: /health/i });
-    expect(within(healthTile).getByText(/withholding/i)).toBeTruthy();
-    expect(within(healthTile).getByText('1')).toBeTruthy();
+    await waitFor(() => {
+      expect(within(healthTile).getByText(/withholding/i)).toBeTruthy();
+      expect(within(healthTile).getByText('1')).toBeTruthy();
+    });
   });
 
-  it('shows the season rainfall on the home screen, so it is not a screen away', () => {
+  it('shows the season rainfall on the home screen, so it is not a screen away', async () => {
     cachedSession();
     // Readings in the CURRENT season, whichever side of 1 January today falls.
     const now = new Date();
@@ -229,13 +234,13 @@ describe('the home grid as an instrument (FR-017)', () => {
     );
     render(<App />);
 
-    expect(screen.getByText('42')).toBeTruthy();
+    expect(await screen.findByText('42')).toBeTruthy();
     expect(screen.getByText(/this season/i)).toBeTruthy();
   });
 });
 
 describe('head per camp (FR-705)', () => {
-  it('shows what is standing in each camp, counting groups as well as animals', () => {
+  it('shows what is standing in each camp, counting groups as well as animals', async () => {
     // `summariseHerd` has computed `byLandUnit` and been unit-tested since the read-model slice,
     // and nothing rendered it. A number the app knows and does not show is the same as a number it
     // does not have — and "how many are in that camp" is the question asked standing at a gate.
@@ -275,12 +280,16 @@ describe('head per camp (FR-705)', () => {
     window.history.pushState({}, '', '/land');
     render(<App />);
 
-    const camps = screen.getAllByRole('listitem');
-    expect(within(camps[0]!).getByText('2')).toBeTruthy();
-    expect(within(camps[1]!).getByText('300')).toBeTruthy();
+    // Land/herd/mob captures all hydrate asynchronously, so wait for the whole projection to
+    // settle rather than reading the list the instant it first appears.
+    await waitFor(() => {
+      const camps = screen.getAllByRole('listitem');
+      expect(within(camps[0]!).getByText('2')).toBeTruthy();
+      expect(within(camps[1]!).getByText('300')).toBeTruthy();
+    });
   });
 
-  it('says zero for empty ground rather than leaving it blank', () => {
+  it('says zero for empty ground rather than leaving it blank', async () => {
     // A blank would read as "not known" on the one screen where empty ground is the whole point.
     cachedSession();
     window.localStorage.setItem(
@@ -299,6 +308,8 @@ describe('head per camp (FR-705)', () => {
     window.history.pushState({}, '', '/land');
     render(<App />);
 
-    expect(within(screen.getAllByRole('listitem')[0]!).getByText('0')).toBeTruthy();
+    await waitFor(() => {
+      expect(within(screen.getAllByRole('listitem')[0]!).getByText('0')).toBeTruthy();
+    });
   });
 });

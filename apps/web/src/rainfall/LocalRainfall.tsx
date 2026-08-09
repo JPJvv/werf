@@ -18,9 +18,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordRainfall } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** A gauge reading as held locally. `occurredAt` is an ISO string (JSON-safe across a cold start). */
 export interface StoredRainfall {
@@ -49,7 +50,11 @@ export type RainfallStore = CaptureStore<StoredRainfall>;
 export type RainfallStoreFactory = (key: string) => RainfallStore;
 
 const defaultFactory: RainfallStoreFactory = (key) =>
-  createCaptureStore<StoredRainfall>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredRainfall>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const RainfallStoreContext = createContext<RainfallStore | null>(null);
 
@@ -79,6 +84,13 @@ function useRainfallStore(): RainfallStore {
 export function useRainfall(): readonly StoredRainfall[] {
   const store = useRainfallStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useRainfall()` until this is true. */
+export function useRainfallSettled(): boolean {
+  const store = useRainfallStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /**

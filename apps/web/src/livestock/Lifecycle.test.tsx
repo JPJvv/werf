@@ -20,12 +20,13 @@
  * is right about.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
 import { farmDay } from '../farmTime';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -109,16 +110,12 @@ function seedHerd(...animals: ReturnType<typeof animal>[]): void {
   window.localStorage.setItem(HERD_KEY, JSON.stringify(animals));
 }
 
-function storedAnimals(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(HERD_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedAnimals(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(HERD_KEY);
 }
 
-function storedEvents(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(EVENTS_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedEvents(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(EVENTS_KEY);
 }
 
 /** A phone that gives a fix, or refuses to. */
@@ -159,14 +156,16 @@ describe('recording a birth (FR-104)', () => {
     window.history.pushState({}, '', '/animals/birth');
     render(<App />);
 
-    await user.selectOptions(screen.getByLabelText(/which cow calved/i), damId);
+    await user.selectOptions(await screen.findByLabelText(/which cow calved/i), damId);
     await user.click(screen.getByRole('button', { name: /how hard was it\? 3/i }));
     await user.type(screen.getByLabelText(/birth weight/i), '34');
     await user.click(screen.getByRole('button', { name: /record the birth/i }));
 
     // Two records, one action.
-    const animals = storedAnimals();
-    expect(animals).toHaveLength(2);
+    await waitFor(async () => {
+      expect(await storedAnimals()).toHaveLength(2);
+    });
+    const animals = await storedAnimals();
     const calf = animals.find((a) => a['damId'] === damId);
     expect(calf).toMatchObject({
       species: 'cattle',
@@ -178,7 +177,7 @@ describe('recording a birth (FR-104)', () => {
     expect(calf!['dob']).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
     // The calving is filed against the DAM, not the calf — her timeline is where it belongs.
-    const [birth] = storedEvents();
+    const [birth] = await storedEvents();
     expect(birth).toMatchObject({
       type: 'birth',
       animalId: damId,
@@ -202,7 +201,7 @@ describe('recording a birth (FR-104)', () => {
     window.history.pushState({}, '', '/animals/birth');
     render(<App />);
 
-    await user.selectOptions(screen.getByLabelText(/which cow calved/i), ewe);
+    await user.selectOptions(await screen.findByLabelText(/which cow calved/i), ewe);
     await user.selectOptions(screen.getByLabelText(/how many born/i), '2');
     await user.click(screen.getByRole('button', { name: /how hard was it\? 2/i }));
 
@@ -218,13 +217,15 @@ describe('recording a birth (FR-104)', () => {
     await user.click(screen.getByRole('button', { name: /record the birth/i }));
 
     // The ewe plus two lambs — the head count a farmer would get walking the camp.
-    const lambs = storedAnimals().filter((a) => a['damId'] === ewe);
-    expect(lambs).toHaveLength(2);
+    await waitFor(async () => {
+      expect((await storedAnimals()).filter((a) => a['damId'] === ewe)).toHaveLength(2);
+    });
+    const lambs = (await storedAnimals()).filter((a) => a['damId'] === ewe);
     expect(lambs.map((l) => l['sex']).sort()).toEqual(['female', 'male']);
 
     // One event per lamb, each naming its own lamb and each recording that it was one of two —
     // so the herd rows and the events agree about how many were born.
-    const births = storedEvents().filter((e) => e['type'] === 'birth');
+    const births = (await storedEvents()).filter((e) => e['type'] === 'birth');
     expect(births).toHaveLength(2);
     expect(births.every((b) => b['animalId'] === ewe && b['multiples'] === 2)).toBe(true);
     expect(births.map((b) => b['calfId']).sort()).toEqual(lambs.map((l) => l['id']).sort());
@@ -241,7 +242,7 @@ describe('recording a birth (FR-104)', () => {
     window.history.pushState({}, '', '/animals/birth');
     render(<App />);
 
-    await user.selectOptions(screen.getByLabelText(/which cow calved/i), ewe);
+    await user.selectOptions(await screen.findByLabelText(/which cow calved/i), ewe);
     await user.type(screen.getByLabelText(/birth weight/i), '4.1');
     await user.selectOptions(screen.getByLabelText(/how many born/i), '2');
 
@@ -268,11 +269,16 @@ describe('reporting an animal missing (FR-605)', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    // findAllByRole: the loss screen's live-herd list is only populated once its capture stores
+    // finish hydrating (phase-checklists.md 3c).
+    await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^missing$/i }));
     await user.click(screen.getByRole('button', { name: /report it missing/i }));
 
-    const [report] = storedEvents();
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    const [report] = await storedEvents();
     expect(report).toMatchObject({ type: 'missing', status: 'missing', animalId: id });
     // GeoJSON is [longitude, latitude] — the opposite of how it is said out loud. Getting this
     // backwards would put a Free State camp in Somalia.
@@ -281,10 +287,11 @@ describe('reporting an animal missing (FR-605)', () => {
       coordinates: [26.21, -29.12],
     });
 
-    // And it is out of the live herd.
+    // And it is out of the live herd. findAllByText: a fresh render's stores hydrate
+    // asynchronously (phase-checklists.md 3c), even against the same in-memory data.
     window.history.pushState({}, '', '/animals');
     render(<App />);
-    expect(screen.getAllByText(/missing/i).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/missing/i)).length).toBeGreaterThan(0);
   });
 
   it('refuses to save without a fix, and says what to do about it', async () => {
@@ -295,13 +302,15 @@ describe('reporting an animal missing (FR-605)', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    // findAllByRole: the loss screen's live-herd list is only populated once its capture stores
+    // finish hydrating (phase-checklists.md 3c).
+    await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^missing$/i }));
     await user.click(screen.getByRole('button', { name: /report it missing/i }));
 
     // A record with no point is of little use to the Stock Theft Unit, so it is not written —
     // and the message is about the PERMISSION, not about being offline.
-    expect(storedEvents()).toHaveLength(0);
+    expect(await storedEvents()).toHaveLength(0);
     expect(screen.getByText(/not allowing the app to use its location/i)).toBeTruthy();
   });
 });
@@ -320,13 +329,16 @@ describe('buying an animal (FR-106)', () => {
     await user.type(screen.getByLabelText(/price paid/i), '18450');
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
-    const [bought] = storedAnimals();
+    await waitFor(async () => {
+      expect(await storedAnimals()).toHaveLength(1);
+    });
+    const [bought] = await storedAnimals();
     // Where it came from lives on the ANIMAL too: an evidence pack reads source/acquired_at
     // rather than trawling the event log (FR-603).
     expect(bought).toMatchObject({ source: 'Bloem Vleismark' });
     expect(bought!['acquiredAt']).toBe('2026-06-12');
 
-    const [purchase] = storedEvents();
+    const [purchase] = await storedEvents();
     expect(purchase).toMatchObject({
       type: 'purchase',
       counterparty: 'Bloem Vleismark',
@@ -348,7 +360,7 @@ describe('buying an animal (FR-106)', () => {
     expect(screen.getByRole('button', { name: /save animal/i }).hasAttribute('disabled')).toBe(
       true,
     );
-    expect(storedAnimals()).toHaveLength(0);
+    expect(await storedAnimals()).toHaveLength(0);
   });
 });
 
@@ -365,12 +377,17 @@ describe('the weaning session (FR-111)', () => {
     render(<App />);
 
     // Only the calf is in the queue: its mother has no dam on file, so she was never a calf here.
-    expect(screen.getByText(/1 of 1/i)).toBeTruthy();
+    // findByText: the session's queue is fixed only once its stores finish hydrating
+    // (phase-checklists.md 3c), so the screen shows a brief "Reading the herd…" state first.
+    expect(await screen.findByText(/1 of 1/i)).toBeTruthy();
 
     await user.type(screen.getByLabelText(/weaning weight/i), '210');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
 
-    const [weaning] = storedEvents();
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    const [weaning] = await storedEvents();
     expect(weaning).toMatchObject({
       type: 'weaning',
       animalId: calfId,
@@ -390,9 +407,14 @@ describe('the weaning session (FR-111)', () => {
     window.history.pushState({}, '', '/animals/wean');
     render(<App />);
 
-    await user.type(screen.getByLabelText(/weaning weight/i), '198');
+    // findByLabelText: the session's queue is fixed only once its stores finish hydrating
+    // (phase-checklists.md 3c), so the screen shows a brief "Reading the herd…" state first.
+    await user.type(await screen.findByLabelText(/weaning weight/i), '198');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
 
-    expect(storedEvents()[0]).not.toHaveProperty('ageDays');
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    expect((await storedEvents())[0]).not.toHaveProperty('ageDays');
   });
 });

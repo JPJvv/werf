@@ -41,22 +41,35 @@ import { projectHeadCount } from '@werf/domain';
 import { createSentLog, type SentLog } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
-import { useBoundaryWalks, useLandUnits } from '../land/LocalLand';
+import {
+  useBoundaryWalks,
+  useBoundaryWalksSettled,
+  useLandUnits,
+  useLandUnitsSettled,
+} from '../land/LocalLand';
 import { landApi } from '../land/landApi';
-import { useAnimals } from '../livestock/LocalHerd';
-import { useMobs } from '../livestock/LocalMobs';
-import { useTallies, type StoredTally } from '../livestock/LocalTallies';
-import { useAnimalLabels, useIdentifiers } from '../livestock/LocalIdentifiers';
-import { useWeights } from '../livestock/LocalWeights';
-import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
-import { useMoves } from '../livestock/LocalMoves';
+import { useAnimals, useAnimalsSettled } from '../livestock/LocalHerd';
+import { useMobs, useMobsSettled } from '../livestock/LocalMobs';
+import { useTallies, useTalliesSettled, type StoredTally } from '../livestock/LocalTallies';
+import {
+  useAnimalLabels,
+  useIdentifiers,
+  useIdentifiersSettled,
+} from '../livestock/LocalIdentifiers';
+import { useWeights, useWeightsSettled } from '../livestock/LocalWeights';
+import {
+  useLifecycleEvents,
+  useLifecycleEventsSettled,
+  type StoredLifecycleEvent,
+} from '../livestock/LocalLifecycle';
+import { useMoves, useMovesSettled } from '../livestock/LocalMoves';
 import { animalDisposalSubjects, mobDisposalSubjects } from '../livestock/withdrawal';
 import { farmDay } from '../farmTime';
-import { useHealthEvents } from '../livestock/LocalHealth';
-import { useBreedingEvents } from '../livestock/LocalBreeding';
-import { useTheftIncidents } from '../livestock/LocalTheft';
+import { useHealthEvents, useHealthEventsSettled } from '../livestock/LocalHealth';
+import { useBreedingEvents, useBreedingEventsSettled } from '../livestock/LocalBreeding';
+import { useTheftIncidents, useTheftIncidentsSettled } from '../livestock/LocalTheft';
 import { livestockApi } from '../livestock/livestockApi';
-import { useRainfall } from '../rainfall/LocalRainfall';
+import { useRainfall, useRainfallSettled } from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
 
@@ -376,6 +389,51 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
   const rainfall = useRainfall();
+
+  // ⭐ EVERY STORE THIS QUEUE READS, SETTLED, BEFORE ANY OF IT IS TRUSTED. Each of the 13 stores
+  // above hydrates independently and asynchronously (phase-checklists.md 3c) — the SQLite-backed
+  // capture stores start empty and fill in on their own schedule, not necessarily together. An
+  // unhydrated store's `all()` is `[]`, which is INDISTINGUISHABLE from "this farm genuinely has
+  // none of these" to every FK/`guardedBy`/`needsHead` check below: a dip that has not hydrated
+  // yet cannot taint the tally it is meant to guard, because from this queue's point of view the
+  // dip simply does not exist. A real regression this way: the tallies store hydrating first, on
+  // its own, produced a queue with no dose to hold a slaughter behind — the slaughter posted, the
+  // dip posted six entries later, and a server-side guard that exists specifically to stop meat
+  // leaving inside a withdrawal was never given the chance to run. Gating the flush (below) and
+  // "synced" itself (in `state`, below) on every one of these settling closes it: an unhydrated
+  // store reads as "still finding out", never as "confirmed empty".
+  //
+  // ⛔ Every hook called UNCONDITIONALLY, one per line, before the `&&` chain — combining them
+  // with `useX() && useY()` directly would short-circuit and skip calling useY() the moment useX()
+  // is false, which changes how many hooks this component calls between renders and breaks React
+  // outright (the Rules of Hooks), not just this feature.
+  const landUnitsSettled = useLandUnitsSettled();
+  const boundaryWalksSettled = useBoundaryWalksSettled();
+  const mobsSettled = useMobsSettled();
+  const talliesSettled = useTalliesSettled();
+  const animalsSettled = useAnimalsSettled();
+  const identifiersSettled = useIdentifiersSettled();
+  const weightsSettled = useWeightsSettled();
+  const eventsSettled = useLifecycleEventsSettled();
+  const movesSettled = useMovesSettled();
+  const healthSettled = useHealthEventsSettled();
+  const breedingSettled = useBreedingEventsSettled();
+  const theftSettled = useTheftIncidentsSettled();
+  const rainfallSettled = useRainfallSettled();
+  const allSettled =
+    landUnitsSettled &&
+    boundaryWalksSettled &&
+    mobsSettled &&
+    talliesSettled &&
+    animalsSettled &&
+    identifiersSettled &&
+    weightsSettled &&
+    eventsSettled &&
+    movesSettled &&
+    healthSettled &&
+    breedingSettled &&
+    theftSettled &&
+    rainfallSettled;
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
   const online = useSyncStatus().status !== 'offline';
@@ -927,9 +985,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // Flush whenever there is something to send and a way to send it. `pendingCount` in the deps
   // makes a new capture (or a reconnect) trigger a fresh attempt; a server error does not change
   // the deps, so a stuck queue does not spin — it waits for the next capture or reconnect.
+  //
+  // ⭐ `allSettled` gates this exactly as `online` does — a flush must not read a queue built from
+  // stores that have not finished saying what they hold. `pendingCount` climbing from 0 as stores
+  // settle one at a time re-fires this effect on its own, so the flush simply waits for the last
+  // store rather than needing a separate "now everything is ready" signal.
   useEffect(() => {
-    if (online && pendingCount > 0) void flush();
-  }, [online, pendingCount, flush]);
+    if (online && allSettled && pendingCount > 0) void flush();
+  }, [online, allSettled, pendingCount, flush]);
 
   // Only refusals that are still queued count. One the farmer resolved another way — or that the
   // server accepted on a later round — leaves the queue and stops being reported.
@@ -965,9 +1028,16 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const waitingCount = waiting.length;
 
   const state = useMemo<SyncState>(() => {
+    // ⭐ `!allSettled` is checked BEFORE the empty-queue fallthrough reaches 'synced'. Before every
+    // store has hydrated, `pendingCount` reads 0 not because the farm has nothing pending but
+    // because nothing has finished saying what it holds yet — reaching 'synced' here is the
+    // farmer-visible half of the same bug the flush gate above closes: "Saved and sent" on ground
+    // this device has not actually finished checking. There is no dedicated status for "still
+    // finding out" (`SyncStatus` has no loading state); 'syncing' is the closest honest word and
+    // it self-corrects within the same render pass once the last store settles.
     const status: SyncState['status'] = !online
       ? 'offline'
-      : flushing
+      : !allSettled || flushing
         ? 'syncing'
         : (errored || blockedCount > 0) && pendingCount > 0
           ? 'error'
@@ -975,7 +1045,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             ? 'pending'
             : 'synced';
     return { status, pendingCount, blockedCount, waitingCount };
-  }, [online, flushing, errored, pendingCount, blockedCount, waitingCount]);
+  }, [online, allSettled, flushing, errored, pendingCount, blockedCount, waitingCount]);
 
   return (
     <OutboxContext.Provider value={state}>

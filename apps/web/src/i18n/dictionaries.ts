@@ -506,6 +506,9 @@ const en = {
   'wean.saved': 'Weaned',
   'wean.done.count': 'weaned',
   'wean.empty': 'Nothing to wean — no animals with a recorded mother are still unweaned.',
+  // Shown only in the moment before this device has finished reading its own local herd back —
+  // never confused with wean.empty, which claims something true only once that read is done.
+  'wean.loading': 'Reading the herd…',
   'animals.move': 'Move animals',
   // Moving (FR-103) and the first real batch action (FR-112). A farmer opens a gate and a camp
   // empties — selection is the primary interaction, and a single-animal move is a group of one.
@@ -611,6 +614,9 @@ const en = {
   'tag.skip': 'Skip this one',
   'tag.back': 'Back to animals',
   'tag.empty': 'Every animal already has a number.',
+  // Shown only in the moment before this device has finished reading its own local herd back —
+  // never confused with tag.empty, which claims something true only once that read is done.
+  'tag.loading': 'Reading the herd…',
   'tag.done.count': 'tagged',
   'tag.done.link': 'Done',
   // Caught before it is saved: in a crush the cause is nearly always a misread digit, so the
@@ -1237,6 +1243,7 @@ const af: Record<TranslationKey, string> = {
   'wean.done.count': 'gespeen',
   'wean.empty':
     'Niks om te speen nie — geen diere met ’n aangetekende moeder is nog ongespeen nie.',
+  'wean.loading': 'Lees die kudde…',
   'animals.move': 'Skuif diere',
   'move.title.camp': 'Skuif diere',
   'move.title.block': 'Skuif diere',
@@ -1323,6 +1330,7 @@ const af: Record<TranslationKey, string> = {
   'tag.skip': 'Slaan hierdie een oor',
   'tag.back': 'Terug na diere',
   'tag.empty': 'Elke dier het reeds ’n nommer.',
+  'tag.loading': 'Lees die kudde…',
   'tag.done.count': 'gemerk',
   'tag.done.link': 'Klaar',
   'tag.taken': 'Daardie nommer is reeds op ’n ander dier. Lees dit weer, of gebruik ’n ander een.',

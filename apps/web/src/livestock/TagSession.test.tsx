@@ -9,11 +9,12 @@
  * drain days later.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -90,10 +91,8 @@ function seedHerd(count: number): string[] {
   return ids;
 }
 
-function storedIdentifiers(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(IDENTIFIERS_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedIdentifiers(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(IDENTIFIERS_KEY);
 }
 
 beforeEach(() => {
@@ -113,7 +112,7 @@ describe('tagging animals (FR-109)', () => {
     window.history.pushState({}, '', '/animals/tag');
     render(<App />);
 
-    expect(screen.getByText(/1 of 2/i)).toBeTruthy();
+    expect(await screen.findByText(/1 of 2/i)).toBeTruthy();
 
     await user.type(screen.getByLabelText(/number/i), '4021');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
@@ -128,8 +127,10 @@ describe('tagging animals (FR-109)', () => {
     expect(screen.getByText('tagged')).toBeTruthy();
     expect(screen.getByText('2')).toBeTruthy();
 
-    const saved = storedIdentifiers();
-    expect(saved).toHaveLength(2);
+    await waitFor(async () => {
+      expect(await storedIdentifiers()).toHaveLength(2);
+    });
+    const saved = await storedIdentifiers();
     expect(saved.map((i) => i['value'])).toEqual(['4021', '4022']);
     // The first number an animal gets is the one it will be called by.
     expect(saved.every((i) => i['isPrimary'] === true)).toBe(true);
@@ -142,7 +143,7 @@ describe('tagging animals (FR-109)', () => {
     window.history.pushState({}, '', '/animals/tag');
     render(<App />);
 
-    await user.type(screen.getByLabelText(/number/i), '4021');
+    await user.type(await screen.findByLabelText(/number/i), '4021');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
 
     // The same number on the next animal — a misread digit, caught here rather than in a queue.
@@ -152,7 +153,9 @@ describe('tagging animals (FR-109)', () => {
       true,
     );
 
-    expect(storedIdentifiers()).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedIdentifiers()).toHaveLength(1);
+    });
   });
 
   it('makes the number the animal’s name on the list, and survives a cold start', async () => {
@@ -162,7 +165,7 @@ describe('tagging animals (FR-109)', () => {
     window.history.pushState({}, '', '/animals/tag');
     const { unmount } = render(<App />);
 
-    await user.type(screen.getByLabelText(/number/i), '4021');
+    await user.type(await screen.findByLabelText(/number/i), '4021');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
 
     // Closed and reopened, on the animals list: the animal is now called 4021, not "Cattle".
@@ -170,7 +173,9 @@ describe('tagging animals (FR-109)', () => {
     window.history.pushState({}, '', '/animals');
     render(<App />);
 
-    const row = within(screen.getByRole('list', { name: /^animals$/i })).getByRole('listitem');
+    const row = within(await screen.findByRole('list', { name: /^animals$/i })).getByRole(
+      'listitem',
+    );
     expect(within(row).getByText('4021')).toBeTruthy();
   });
 
@@ -181,7 +186,7 @@ describe('tagging animals (FR-109)', () => {
     render(<App />);
 
     // "Which ones still need tagging" is a real question a farmer asks before opening the race.
-    expect(screen.getByText(/without a number/i)).toBeTruthy();
+    expect(await screen.findByText(/without a number/i)).toBeTruthy();
   });
 
   it('says so plainly when there is nothing left to tag', async () => {
@@ -204,6 +209,6 @@ describe('tagging animals (FR-109)', () => {
     window.history.pushState({}, '', '/animals/tag');
     render(<App />);
 
-    expect(screen.getByText(/every animal already has a number/i)).toBeTruthy();
+    expect(await screen.findByText(/every animal already has a number/i)).toBeTruthy();
   });
 });

@@ -6,7 +6,7 @@
 **Last updated:** 2026-08-09
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
-commit only, awaiting the owner's go-ahead to push/open a PR.
+commits only, awaiting the owner's go-ahead to push/open a PR.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge
 
@@ -17,7 +17,7 @@ commit only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b done, unmerged | `phase-3/powersync-foundation`: local SQLite schema + self-hosted PowerSync service + Sync Streams + `PowerSyncBackendConnector`, all empirically validated end-to-end including real per-user delivery. See §4/§5. `uploadData`, offline queue durability and hydration are 3c/3d/3e, not yet started |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c done, unmerged | `phase-3/powersync-foundation`: local SQLite schema + self-hosted PowerSync service + Sync Streams + `PowerSyncBackendConnector` + all 12 capture stores migrated from localStorage to SQLite/OPFS, all empirically validated end-to-end. See §4/§5. `uploadData` (per-table upload routing), offline queue durability and down-sync hydration are 3d/3e, not yet started |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -115,24 +115,27 @@ packs: OPFS blobs + SQLite metadata/queue on the device, an S3-compatible bounda
 development/tests, and S3 in `af-south-1` in production. Phase 2 remains honest: it stores no photo
 and claims none until that Phase 3 slice lands.
 
+**Resolved 2026-08-09 — the PowerSync engine is precached, not counted against NFR-009's
+interactive-path budget.** Wiring the main app to `createLocalDatabase()` (all 12 capture stores,
+3c) forced a real choice: the SDK's WASM engine (~2.7MB gz across four VFS variants) blows both
+Workbox's 2MiB precache ceiling and the 250KB interactive-path budget if left uncategorised. Owner
+chose precache-not-runtime-cache: a farmer must never hit an evicted runtime-cache miss for the
+engine with a migration marker already committed, and Workbox only activates a build once its full
+precache list has downloaded, which is also the cleanest 12-month-offline story. `check-bundle-size.mjs`
+now excludes a named, closed set of engine chunks from the JS-gz sum and reports them separately;
+`vite.config.ts` raises the Workbox ceiling to 4MiB. Full evidence:
+`docs/04-delivery/phase-3-capture-migration-2026-08-09.md`.
+
 ## 4. Verification
 
 | Check | Latest result |
 |---|---|
-| `pnpm test:e2e` (2026-08-09, `phase-3/powersync-foundation`) | 27/27 passed in 49.7s, including the production-worker offline journey — re-run deliberately after `apps/web/vite.config.ts`'s `worker: { format: 'es' }` change, which alters how every worker in the build is emitted, not just the SDK's |
-| `pnpm verify` | Uncached: 84 test files / 953 tests, 7/7 builds; bundle 148.04 KB gz ≤ 250 KB |
 | `pnpm project:check` | Green. ⚠️ Unanswered owner decisions are now a WARNING, not a failure — the old exit-1 made "ask, do not guess" break the definition of done. `--strict` restores the hard failure and **nothing invokes it yet**; that is a deliberate, informed weakening, not an oversight |
-| FR-101 focused tests | 22/22 green (`AddAnimal` + `Lifecycle`) |
-| CI | Both PR lanes green at `a3894e6`: main gate 4m0s; E2E/axe 1m46s |
 | Review agents | ✅ **Tenth pass run 2026-08-08 at owner request over `17891f0..HEAD`.** `sync-auditor`: APPROVABLE. `compliance-checker`: APPROVABLE — **withdraws its standing NOT APPROVABLE**. `reviewer`: NOT APPROVABLE, carried solely by the exit-gate line "owner-triggered passes still open", which this pass closed. **No SEV-1 and no SEV-2 from any agent** |
-| `pnpm verify` (2026-08-09, `phase-3/powersync-foundation`) | Uncached: 86 test files / 965 tests, 7/7 builds; bundle 151.17 KB gz ≤ 250 KB (was 148.04 KB — the honest cost of the pure schema code, not the SDK's WASM engine, which is deliberately kept out of the bundle; see §5) |
-| `pnpm verify` (2026-08-09, consolidation/auth hardening) | ✅ Uncached: project check + lint/format + 12/12 typecheck tasks; 89 test files / 975 tests; 7/7 builds; bundle 151.69 KB gz ≤ 250 KB |
-| `pnpm test:e2e` (2026-08-09, consolidation/auth hardening) | ✅ 27/27 Chromium journeys passed in 56.0s, including axe in both themes and the production-worker offline capture/reload/reconnect path |
-| `pnpm verify` (2026-08-09, Phase 3 slice 4 — PowerSyncBackendConnector) | ✅ Uncached: 96 test files / 1017 tests, 12/12 typecheck, 7/7 builds; bundle 151.67 KB gz ≤ 250 KB |
-| `pnpm test:e2e` (2026-08-09, Phase 3 slice 4) | ✅ 28/28 Chromium journeys passed in 46.1s — re-run after `apps/web/vite.config.ts`'s `preview.proxy` addition; confirmed inert (existing specs intercept `/api` browser-side before the proxy) |
-| `pnpm verify` (2026-08-09, membership expiry bridge) | ✅ Uncached: project check + lint/format + 12/12 typecheck tasks; 97 test files / 1,020 tests; 7/7 builds; bundle 151.67 KB gz ≤ 250 KB. Includes real-Postgres proof: elapsed accepted + pending grants tombstoned, future/permanent untouched, existing tombstone preserved, second sweep changed 0 rows |
-| `pnpm test:e2e` (2026-08-09, membership expiry bridge) | ✅ 28/28 Chromium journeys passed in 59.1s, including real SQLite/OPFS persistence and production-worker offline capture/reload/reconnect |
-| Manual — real service, real per-user delivery (2026-08-09) | ✅ A freshly registered test farm's row reached the client through a real `.connect()` against the self-hosted service: `buckets: 16`, `operations_synced: 6`, client read back exactly its own farm. This is the rung the config-validation and replication-log evidence above could not prove by itself — see phase-checklists.md 3b |
+| `pnpm verify` (2026-08-09, membership expiry bridge) | ✅ Uncached: 97 test files / 1,020 tests; 7/7 builds; bundle 151.67 KB gz ≤ 250 KB. Real-Postgres proof: elapsed accepted + pending grants tombstoned, future/permanent untouched, existing tombstone preserved, second sweep changed 0 rows |
+| Manual — real service, real per-user delivery (2026-08-09) | ✅ A freshly registered test farm's row reached the client through a real `.connect()` against the self-hosted service: `buckets: 16`, `operations_synced: 6`, client read back exactly its own farm — the rung config-validation/replication-log evidence alone could not prove; see phase-checklists.md 3b |
+| `pnpm verify` (2026-08-09, capture-store SQLite migration, 3c) | ✅ Uncached: 99 test files / 1,037 tests, 12/12 typecheck, 7/7 builds; bundle 153.34 KB gz ≤ 250 KB interactive-path budget (195.86 KB gz precached engine, reported separately, not gated) |
+| `pnpm test:e2e` (2026-08-09, capture-store SQLite migration, 3c) | ✅ 30/30 Chromium journeys passed (incl. 2 new `capture-migration.spec.ts` cases: clean migration + order preserved + localStorage untouched, and a second cold start as a no-op), re-run 3× on the sync-critical specs with no flakes |
 
 ## 5. Next executable steps
 
@@ -200,11 +203,25 @@ and claims none until that Phase 3 slice lands.
    `diagnostics.html`, never the app shell, so no real read path calls it yet and tripwire 3e does
    not fire. The moment 3c/3d wires a real screen to `.connect()`, the `landed()` hydration fix
    must land in the SAME slice, not after.
-8. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
+8. ✅ Done 2026-08-09: **Phase 3 slice 3c — all 12 capture stores migrated from localStorage to
+   SQLite/OPFS** (unpushed, same owner-triggered-`sync-auditor` caveat as every sync-touching
+   commit on this branch). `createSqliteCaptureStore` + a generic `localOnly` `capture_records`
+   table, atomic per-key migration proven under real interruption (unit) and end-to-end against
+   the real engine (`apps/web/e2e/capture-migration.spec.ts`). ⭐ Two regressions found and closed
+   in the same slice, neither anticipated going in: (1) the Outbox could flush against a
+   partially-hydrated world — a tally posting before the dose meant to guard it, a live wire-order
+   violation, closed by widening `CaptureStore<T>` with `settled()` and gating the flush + the
+   `'synced'` status on every one of the 13 stores settling; (2) `TagSessionScreen`/
+   `WeaningSessionScreen` froze their work queue on a mount-time snapshot of pre-hydration data,
+   closed the same way. Bundle-budget decision (precache the engine, exclude it from the
+   interactive-path sum) made and recorded in §3. Full account:
+   `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`. `uploadData` (per-table routing)
+   remains 3d, unstarted.
+9. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
    `landed()` breaks the day mobs/tallies come down from the server.
-9. Do not begin payroll on local adapters.
-10. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
-    this was flagged last session and NOT done this session (stayed scoped to 3a/3b). Rebase it
+10. Do not begin payroll on local adapters.
+11. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
+    this was flagged last session and NOT done this session (stayed scoped to 3c). Rebase it
     onto `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway

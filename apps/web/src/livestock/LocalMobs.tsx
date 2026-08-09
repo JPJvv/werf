@@ -16,9 +16,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** What the register holds: mobs composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredMob = schemas.NewMob;
@@ -28,7 +29,11 @@ export type MobStore = CaptureStore<StoredMob>;
 export type MobStoreFactory = (key: string) => MobStore;
 
 const defaultFactory: MobStoreFactory = (key) =>
-  createCaptureStore<StoredMob>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredMob>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const MobStoreContext = createContext<MobStore | null>(null);
 
@@ -55,6 +60,13 @@ function useMobStore(): MobStore {
 export function useMobs(): readonly StoredMob[] {
   const store = useMobStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useMobs()` until this is true. */
+export function useMobsSettled(): boolean {
+  const store = useMobStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /** Commit a mob to the local register. Synchronous; never awaits the network (NFR-007). */

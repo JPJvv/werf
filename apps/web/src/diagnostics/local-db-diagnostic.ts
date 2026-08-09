@@ -39,11 +39,34 @@ async function run(): Promise<void> {
 
     const { createLocalDatabase } = await import('@werf/sync/local-database');
     const db = createLocalDatabase({
-      dbFilename: mode === 'connect' ? 'diagnostic-connect.db' : 'diagnostic.db',
+      // read-capture deliberately opens the REAL app's default filename ('werf.db', the
+      // createLocalDatabase() default apps/web/src/sync/local-db.ts also uses with no override)
+      // — the whole point is to read back what the app itself wrote to OPFS, not an isolated
+      // diagnostic file. Every other mode stays on its own file so a diagnostic run never
+      // contaminates real app state.
+      dbFilename:
+        mode === 'connect'
+          ? 'diagnostic-connect.db'
+          : mode === 'read-capture'
+            ? 'werf.db'
+            : 'diagnostic.db',
     });
     await db.init();
 
-    if (mode === 'write') {
+    if (mode === 'read-capture') {
+      // phase-checklists.md 3c — reads capture_records back for one store_key, in append order,
+      // the same query createSqliteCaptureStore's own hydration runs. Proves what actually landed
+      // in OPFS after a real migration, from a fresh navigation — not the in-memory illusion a
+      // page.evaluate() against the still-open app tab would be one step short of proving.
+      const key = params.get('key');
+      if (!key) throw new Error('mode=read-capture requires ?key=');
+      const rows = await db.getAll<{ payload_json: string }>(
+        'SELECT payload_json FROM capture_records WHERE store_key = ? ORDER BY seq ASC',
+        [key],
+      );
+      resultEl.textContent = `ok:${JSON.stringify(rows.map((r) => JSON.parse(r.payload_json)))}`;
+      resultEl.dataset.status = 'ok';
+    } else if (mode === 'write') {
       const id = uuidv7();
       await db.execute('INSERT INTO farms (id, name, jurisdiction) VALUES (?, ?, ?)', [
         id,

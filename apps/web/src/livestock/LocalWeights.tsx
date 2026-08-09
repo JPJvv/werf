@@ -20,9 +20,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordWeight, type WeightMethod } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** A weight reading as held locally. `occurredAt` is an ISO string (JSON-safe across a cold start). */
 export interface StoredWeight {
@@ -52,7 +53,11 @@ export type WeightStore = CaptureStore<StoredWeight>;
 export type WeightStoreFactory = (key: string) => WeightStore;
 
 const defaultFactory: WeightStoreFactory = (key) =>
-  createCaptureStore<StoredWeight>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredWeight>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const WeightStoreContext = createContext<WeightStore | null>(null);
 
@@ -82,6 +87,13 @@ function useWeightStore(): WeightStore {
 export function useWeights(): readonly StoredWeight[] {
   const store = useWeightStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useWeights()` until this is true. */
+export function useWeightsSettled(): boolean {
+  const store = useWeightStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /** The readings for one animal, in capture order. */

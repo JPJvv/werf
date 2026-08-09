@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { FARM_ID, seed } from './session';
+import { seed } from './session';
 
 /**
  * The offline cold start, on the BUILT PWA, in a real browser — the one thing the Phase 1 reviewer
@@ -15,9 +15,6 @@ import { FARM_ID, seed } from './session';
  * come back and watch the queue drain. If the service worker were not precaching the shell, step two
  * would fail here rather than in a farmer's hands.
  */
-
-const HERD_KEY = `werf-herd:${FARM_ID}`;
-const WEIGHTS_KEY = `werf-weights:${FARM_ID}`;
 
 test('captures with the network off, survives a reload, and sends when the signal returns', async ({
   page,
@@ -63,7 +60,13 @@ test('captures with the network off, survives a reload, and sends when the signa
     /offline — your work is saved/i,
   );
 
-  // The herd tile counts the animal captured while offline, read back off the device.
+  // The herd tile counts the animal captured while offline, read back off the device. This IS
+  // the "genuinely on the device" proof (not a page.evaluate() of localStorage, which no longer
+  // holds these — phase-checklists.md 3c moved captures into the SQLite/OPFS-backed store): the
+  // `page.reload()` above was a real fresh document load, the same kind of evidence
+  // local-db-diagnostic.spec.ts uses to prove OPFS survives a navigation, and every assertion
+  // from here reads a page that only just (re)booted from that storage, not one that happened to
+  // stay open since the capture.
   await page
     .getByRole('link', { name: /back to animals|^done$/i })
     .first()
@@ -71,17 +74,6 @@ test('captures with the network off, survives a reload, and sends when the signa
   await page.getByRole('link', { name: /back to home/i }).click();
   await expect(page.getByRole('heading', { name: 'Rietfontein' })).toBeVisible();
   await expect(page.getByRole('link', { name: /herd/i })).toContainText('1');
-
-  // Both captures are genuinely on the device, not in a page that happens to still be open.
-  const stored = await page.evaluate(
-    ([herdKey, weightsKey]) => ({
-      animals: JSON.parse(window.localStorage.getItem(herdKey as string) ?? '[]') as unknown[],
-      weights: JSON.parse(window.localStorage.getItem(weightsKey as string) ?? '[]') as unknown[],
-    }),
-    [HERD_KEY, WEIGHTS_KEY] as const,
-  );
-  expect(stored.animals).toHaveLength(1);
-  expect(stored.weights).toHaveLength(1);
 
   // ── The signal comes back. ──
   // ⭐ POSTs only. `sent` means "captures that went up", and every assertion below reads it that

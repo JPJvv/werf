@@ -21,11 +21,15 @@ import {
   type HerdSummary,
 } from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
-import { useAnimals, type StoredAnimal } from './LocalHerd';
-import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
+import { useAnimals, useAnimalsSettled, type StoredAnimal } from './LocalHerd';
+import {
+  useLifecycleEvents,
+  useLifecycleEventsSettled,
+  type StoredLifecycleEvent,
+} from './LocalLifecycle';
 import { useMobs, type StoredMob } from './LocalMobs';
 import { useTallies, type StoredTally } from './LocalTallies';
-import { useMoves, type StoredMove } from './LocalMoves';
+import { useMoves, useMovesSettled, type StoredMove } from './LocalMoves';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
 import { meatWithdrawalFor } from './withdrawal';
@@ -125,6 +129,19 @@ export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
     const projected = projectHerd(animals, events, moves);
     return herdId === undefined ? projected : projected.filter((a) => a.enterpriseId === herdId);
   }, [animals, events, moves, herdId]);
+}
+
+/**
+ * Whether every store `useEffectiveAnimals` folds together has finished its initial hydration
+ * attempt (`CaptureStore.settled()`). A consumer that captures a ONE-TIME snapshot of this
+ * projection — a fixed work queue for a session, most of all — must wait for this before
+ * capturing, or it freezes on whatever partial, still-hydrating world happened to exist at mount.
+ */
+export function useEffectiveAnimalsSettled(): boolean {
+  const animalsSettled = useAnimalsSettled();
+  const eventsSettled = useLifecycleEventsSettled();
+  const movesSettled = useMovesSettled();
+  return animalsSettled && eventsSettled && movesSettled;
 }
 
 /**

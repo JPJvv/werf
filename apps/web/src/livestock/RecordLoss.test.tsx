@@ -6,12 +6,13 @@
  * `localStorage` and render the real `<App/>`; nothing touches the network.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
 import { farmToday } from '../farmTime';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -65,10 +66,8 @@ function animal(id: string, extra: Record<string, unknown> = {}): Record<string,
 }
 
 /** The lifecycle log as the device holds it, read back the way a cold start would. */
-function storedEvents(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(EVENTS_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedEvents(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(EVENTS_KEY);
 }
 
 function seedHerd(...animals: Array<Record<string, unknown>>): void {
@@ -187,7 +186,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Died' }));
     await user.type(screen.getByLabelText(/cause/i), 'Snakebite');
     await user.click(screen.getByRole('button', { name: /record death/i }));
@@ -203,7 +202,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Sold' }));
     await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
     await user.type(screen.getByLabelText(/price/i), '8500');
@@ -222,14 +221,17 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Sold' }));
     await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
     await user.type(screen.getByLabelText(/^price/i), '8500');
     await user.type(screen.getByLabelText(/weight sold on/i), '412.5');
     await user.click(screen.getByRole('button', { name: /record sale/i }));
 
-    const sale = storedEvents().find((e) => e['type'] === 'sale');
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    const sale = (await storedEvents()).find((e) => e['type'] === 'sale');
     // Money stays integer cents; the weight is kilograms as a number, never a string.
     expect(sale).toMatchObject({
       counterparty: 'Vleissentraal',
@@ -245,13 +247,16 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Sold' }));
     await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
     await user.type(screen.getByLabelText(/^price/i), '8500');
     await user.click(screen.getByRole('button', { name: /record sale/i }));
 
-    const sale = storedEvents().find((e) => e['type'] === 'sale');
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    const sale = (await storedEvents()).find((e) => e['type'] === 'sale');
     expect(sale).toBeTruthy();
     expect(sale).not.toHaveProperty('weightKg');
   });
@@ -267,12 +272,15 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
     await user.click(screen.getByRole('button', { name: /record slaughter/i }));
 
     expect(screen.getByText(/slaughtered/i)).toBeTruthy();
-    const death = storedEvents().find((e) => e['type'] === 'death');
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    const death = (await storedEvents()).find((e) => e['type'] === 'death');
     expect(death).toMatchObject({ type: 'death', status: 'dead', slaughtered: true });
   });
 
@@ -287,14 +295,14 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
     expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /record slaughter/i }).hasAttribute('disabled')).toBe(
       true,
     );
-    expect(storedEvents().find((e) => e['type'] === 'death')).toBeUndefined();
+    expect((await storedEvents()).find((e) => e['type'] === 'death')).toBeUndefined();
   });
 
   it('refuses a SALE inside an active meat withdrawal, at capture', async () => {
@@ -305,7 +313,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Sold' }));
     await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
     await user.type(screen.getByLabelText(/^price/i), '8500');
@@ -332,7 +340,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Sold' }));
     await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
     await user.type(screen.getByLabelText(/^price/i), '8500');
@@ -345,7 +353,7 @@ describe('recording a loss', () => {
 
     // ...and clicking anyway must write nothing — no Invalid Date, no stranded capture.
     await user.click(screen.getByRole('button', { name: /record sale/i }));
-    expect(storedEvents()).toHaveLength(0);
+    expect(await storedEvents()).toHaveLength(0);
   });
 
   it('still lets an untreated animal be slaughtered', async () => {
@@ -358,11 +366,16 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
     await user.click(screen.getByRole('button', { name: /record slaughter/i }));
 
-    expect(storedEvents().find((e) => e['type'] === 'death')).toMatchObject({ slaughtered: true });
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    expect((await storedEvents()).find((e) => e['type'] === 'death')).toMatchObject({
+      slaughtered: true,
+    });
   });
 
   it('⭐ refuses to slaughter an animal whose MOB was dipped, though it was never dosed by name', async () => {
@@ -378,7 +391,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
     expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
@@ -412,7 +425,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
     expect(screen.queryByText(/treated and cannot be sold for slaughter yet/i)).toBeNull();
@@ -429,7 +442,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
     // The day is ASKED, and it defaults to today.
@@ -447,11 +460,14 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
     await user.click(screen.getByRole('button', { name: /record slaughter/i }));
 
-    expect(storedEvents().find((e) => e['type'] === 'death')).toMatchObject({
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    expect((await storedEvents()).find((e) => e['type'] === 'death')).toMatchObject({
       cause: 'slaughtered',
       slaughtered: true,
     });
@@ -468,7 +484,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Died' }));
 
     // The day is now ASKED for a death too, and defaults to today.
@@ -480,8 +496,11 @@ describe('recording a loss', () => {
     await user.type(screen.getByLabelText(/cause/i), 'Bloat');
     await user.click(screen.getByRole('button', { name: /record death/i }));
 
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
     // Stamped midday on the day the farmer gave, so the instant cannot slide across a zone.
-    expect(storedEvents().find((e) => e['type'] === 'death')?.['occurredAt']).toBe(
+    expect((await storedEvents()).find((e) => e['type'] === 'death')?.['occurredAt']).toBe(
       '2026-07-18T12:00:00.000Z',
     );
   });
@@ -498,7 +517,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Died' }));
     await user.type(screen.getByLabelText(/cause/i), 'Bloat');
     await user.clear(screen.getByLabelText(/what day/i));
@@ -507,7 +526,7 @@ describe('recording a loss', () => {
     expect(screen.getByRole('button', { name: /record death/i }).hasAttribute('disabled')).toBe(
       true,
     );
-    expect(storedEvents()).toHaveLength(0);
+    expect(await storedEvents()).toHaveLength(0);
   });
 
   it('⭐ records a DEATH inside a withholding — and says so rather than saying nothing', async () => {
@@ -522,7 +541,7 @@ describe('recording a loss', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /female/i }));
+    await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Died' }));
 
     expect(screen.getByText(/still inside a meat withdrawal on this day/i)).toBeTruthy();
@@ -530,31 +549,34 @@ describe('recording a loss', () => {
     // And it saves anyway — the note is not a refusal.
     await user.type(screen.getByLabelText(/cause/i), 'Tick-borne disease');
     await user.click(screen.getByRole('button', { name: /record death/i }));
-    expect(storedEvents().find((e) => e['type'] === 'death')).toBeTruthy();
+    await waitFor(async () => {
+      expect(await storedEvents()).toHaveLength(1);
+    });
+    expect((await storedEvents()).find((e) => e['type'] === 'death')).toBeTruthy();
   });
 
-  it('drops the home tile count when an animal is sold, and it survives a cold start', () => {
+  it('drops the home tile count when an animal is sold, and it survives a cold start', async () => {
     cachedSession();
     seedHerd(animal('a1'), animal('a2'));
     seedSale('a1');
     render(<App />);
 
     const herd = screen.getByRole('link', { name: /herd/i });
-    expect(within(herd).getByText('1')).toBeTruthy();
+    expect(await within(herd).findByText('1')).toBeTruthy();
   });
 
-  it('keeps the sold animal in the list marked, and the weigh session skips it', () => {
+  it('keeps the sold animal in the list marked, and the weigh session skips it', async () => {
     cachedSession();
     seedHerd(animal('a1', { sex: 'female' }), animal('a2', { sex: 'male' }));
     seedSale('a1');
 
     window.history.pushState({}, '', '/animals');
     const { unmount } = render(<App />);
-    expect(screen.getByText(/sold/i)).toBeTruthy();
+    expect(await screen.findByText(/sold/i)).toBeTruthy();
     unmount();
 
     window.history.pushState({}, '', '/weigh');
     render(<App />);
-    expect(screen.getByText('1 of 1')).toBeTruthy();
+    expect(await screen.findByText('1 of 1')).toBeTruthy();
   });
 });

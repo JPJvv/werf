@@ -8,11 +8,12 @@
  * rather than quietly clearing it.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -135,10 +136,8 @@ function seedHerd(count: number, landUnitId: string | null, mobId: string | null
   return ids;
 }
 
-function storedMoves(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(MOVES_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedMoves(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(MOVES_KEY);
 }
 
 beforeEach(() => {
@@ -159,24 +158,35 @@ describe('moving animals (FR-103)', () => {
     window.history.pushState({}, '', '/animals/move');
     const { unmount } = render(<App />);
 
-    // The real-world action: everything in Camp 3 walks to Camp 4.
-    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    // The real-world action: everything in Camp 3 walks to Camp 4. The capture stores backing
+    // this screen hydrate asynchronously even on this first render (phase-checklists.md 3c), so
+    // the first data-dependent query waits for the seeded herd to land.
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
     await user.selectOptions(screen.getByLabelText(/move to which camp/i), camp4!);
     await user.click(screen.getByRole('button', { name: /move them/i }));
 
-    const moves = storedMoves();
-    expect(moves).toHaveLength(3);
+    // append() commits to the in-memory snapshot synchronously (NFR-007), but persistence to the
+    // SQLite-backed store is fire-and-forget — wait for it to land before reading it back.
+    let moves: readonly Record<string, unknown>[] = [];
+    await waitFor(async () => {
+      moves = await storedMoves();
+      expect(moves).toHaveLength(3);
+    });
     // Per animal: its own event. As a group: one batch id, because it was one action (FR-112).
     expect(new Set(moves.map((m) => m['id'])).size).toBe(3);
     expect(new Set(moves.map((m) => m['batchId'])).size).toBe(1);
     expect(moves.every((m) => m['toLandUnitId'] === camp4)).toBe(true);
 
-    // Closed and reopened, the herd knows where they are now — no server involved.
+    // Closed and reopened, the herd knows where they are now — no server involved. A fresh
+    // render's capture stores start empty and hydrate asynchronously, so wait for the list to
+    // reach its hydrated shape before reading it.
     unmount();
     window.history.pushState({}, '', '/animals/move');
     render(<App />);
+    await waitFor(() => {
+      expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    });
     const rows = screen.getAllByRole('listitem');
-    expect(rows).toHaveLength(3);
     expect(rows.every((row) => (row.textContent ?? '').includes('Camp 4'))).toBe(true);
   });
 
@@ -189,13 +199,18 @@ describe('moving animals (FR-103)', () => {
     window.history.pushState({}, '', '/animals/move');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
     await user.selectOptions(screen.getByLabelText(/move to which camp/i), camp4!);
     await user.click(screen.getByRole('button', { name: /move them/i }));
 
     // ABSENT, not null. Sending null would turn "walk them to Camp 4" into "and take them out of
     // their group" — the exact silent data loss the omit/null distinction exists to prevent.
-    const [move] = storedMoves();
+    let moves: readonly Record<string, unknown>[] = [];
+    await waitFor(async () => {
+      moves = await storedMoves();
+      expect(moves).toHaveLength(1);
+    });
+    const [move] = moves;
     expect(move).not.toHaveProperty('toMobId');
     expect(move!['toLandUnitId']).toBe(camp4);
   });
@@ -208,15 +223,17 @@ describe('moving animals (FR-103)', () => {
     window.history.pushState({}, '', '/animals/move');
     render(<App />);
 
-    // Nothing selected yet.
-    expect(screen.getByRole('button', { name: /move them/i }).hasAttribute('disabled')).toBe(true);
+    // Nothing selected yet. The button exists once the seeded herd has hydrated.
+    expect(
+      (await screen.findByRole('button', { name: /move them/i })).hasAttribute('disabled'),
+    ).toBe(true);
 
     // Selected, but sent to the camp they are already in.
     await user.click(screen.getByRole('button', { name: /select all shown/i }));
     await user.selectOptions(screen.getByLabelText(/move to which camp/i), camp1!);
     expect(screen.getByRole('button', { name: /move them/i }).hasAttribute('disabled')).toBe(true);
 
-    expect(storedMoves()).toHaveLength(0);
+    expect(await storedMoves()).toHaveLength(0);
   });
 
   it('says there is nowhere to move to, and offers the way out', async () => {
@@ -225,8 +242,9 @@ describe('moving animals (FR-103)', () => {
     window.history.pushState({}, '', '/animals/move');
     render(<App />);
 
-    // An empty picker is a dead end; a farm with no camps needs to be told what to do next.
-    expect(screen.getByText(/no camps yet/i)).toBeTruthy();
+    // An empty picker is a dead end; a farm with no camps needs to be told what to do next. The
+    // seeded herd hydrates asynchronously, so this is the first data-dependent query in the render.
+    expect(await screen.findByText(/no camps yet/i)).toBeTruthy();
     expect(screen.getByRole('link', { name: /add a camp/i })).toBeTruthy();
   });
 });

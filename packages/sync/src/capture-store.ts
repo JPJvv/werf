@@ -35,6 +35,18 @@ export interface CaptureStore<T> {
   append(record: T): void;
   /** Subscribe to changes; returns an unsubscribe. The listener fires after each `append`. */
   subscribe(listener: () => void): () => void;
+  /**
+   * Whether the store's initial hydration ATTEMPT is over — `all()` reflects everything this
+   * store can currently account for, not a still-loading subset. True immediately and always for
+   * this synchronous, localStorage-backed store; the SQLite-backed sibling
+   * (`createSqliteCaptureStore`) starts `false` and flips `true` once its async open/migrate/read
+   * completes, on EITHER outcome (see that module's header on why success-only signalling hangs
+   * a waiter). Exists so a consumer that reads MULTIPLE stores together — `Outbox.tsx`'s flush,
+   * most of all — can wait for every one of them to have a true account of what a farmer's device
+   * holds before acting on any of them. Treating "not yet loaded" as "confirmed empty" is how a
+   * dose that has not hydrated yet stops being evidence a disposal is judged against.
+   */
+  settled(): boolean;
 }
 
 export interface CaptureStoreOptions {
@@ -68,6 +80,10 @@ export function createCaptureStore<T>(options: CaptureStoreOptions): CaptureStor
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+
+    settled(): boolean {
+      return true; // read once at construction — synchronous, so always already settled
     },
   };
 }

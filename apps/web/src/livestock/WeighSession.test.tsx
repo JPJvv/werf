@@ -91,7 +91,7 @@ describe('the weigh session', () => {
     const { unmount } = render(<App />);
 
     // First animal of two, no reading yet.
-    expect(screen.getByText('1 of 2')).toBeTruthy();
+    expect(await screen.findByText('1 of 2')).toBeTruthy();
 
     await user.type(screen.getByLabelText(/weight/i), '305');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
@@ -105,7 +105,7 @@ describe('the weigh session', () => {
     render(<App />);
 
     // Back at the first animal, its saved weight is shown as context.
-    expect(screen.getByText(/last weight/i)).toBeTruthy();
+    expect(await screen.findByText(/last weight/i)).toBeTruthy();
     expect(screen.getByText('305')).toBeTruthy();
   });
 
@@ -116,7 +116,7 @@ describe('the weigh session', () => {
     window.history.pushState({}, '', '/weigh');
     render(<App />);
 
-    await user.type(screen.getByLabelText(/weight/i), '300');
+    await user.type(await screen.findByLabelText(/weight/i), '300');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
 
     await user.type(screen.getByLabelText(/weight/i), '310');
@@ -150,7 +150,7 @@ describe('the weigh session', () => {
     render(<App />);
 
     // The prior reading is shown as crush context before the new one is taken.
-    expect(screen.getByText('300')).toBeTruthy();
+    expect(await screen.findByText('300')).toBeTruthy();
 
     await user.type(screen.getByLabelText(/weight/i), '314');
     await user.click(screen.getByRole('button', { name: /save & next/i }));

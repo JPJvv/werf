@@ -18,8 +18,9 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** A walk, as held locally. `undefined` on a destination means that dimension was left alone. */
 export interface StoredMove {
@@ -40,7 +41,11 @@ export type MoveStore = CaptureStore<StoredMove>;
 export type MoveStoreFactory = (key: string) => MoveStore;
 
 const defaultFactory: MoveStoreFactory = (key) =>
-  createCaptureStore<StoredMove>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredMove>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const MoveStoreContext = createContext<MoveStore | null>(null);
 
@@ -70,6 +75,13 @@ function useMoveStore(): MoveStore {
 export function useMoves(): readonly StoredMove[] {
   const store = useMoveStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useMoves()` until this is true. */
+export function useMovesSettled(): boolean {
+  const store = useMoveStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /**

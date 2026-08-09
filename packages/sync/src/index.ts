@@ -32,6 +32,11 @@ export {
   type SessionStoreOptions,
 } from './session-store';
 export { createCaptureStore, type CaptureStore, type CaptureStoreOptions } from './capture-store';
+// The SQLite/OPFS-backed sibling (phase-checklists.md 3c). Only `import type { LocalDatabase }`
+// crosses into local-database.ts — erased at build time — so, like connector.ts and
+// local-schema.ts above, this is safe in the eagerly-bundled barrel; it never drags in
+// `@powersync/web`'s runtime by itself.
+export { createSqliteCaptureStore, type SqliteCaptureStoreOptions } from './sqlite-capture-store';
 export { createDraftStore, type DraftStore, type DraftStoreOptions } from './draft-store';
 export { createSentLog, type SentLog, type SentLogOptions } from './sent-log';
 export {

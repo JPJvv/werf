@@ -28,7 +28,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import {
   recordBirth,
   recordDeath,
@@ -39,6 +39,7 @@ import {
 } from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** Fields every stored lifecycle event carries. `occurredAt` is an ISO string (JSON-safe). */
 interface StoredEventBase {
@@ -162,7 +163,11 @@ export type LifecycleStore = CaptureStore<StoredLifecycleEvent>;
 export type LifecycleStoreFactory = (key: string) => LifecycleStore;
 
 const defaultFactory: LifecycleStoreFactory = (key) =>
-  createCaptureStore<StoredLifecycleEvent>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredLifecycleEvent>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const LifecycleStoreContext = createContext<LifecycleStore | null>(null);
 
@@ -192,6 +197,13 @@ function useLifecycleStore(): LifecycleStore {
 export function useLifecycleEvents(): readonly StoredLifecycleEvent[] {
   const store = useLifecycleStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useLifecycleEvents()` until this is true. */
+export function useLifecycleEventsSettled(): boolean {
+  const store = useLifecycleStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /** The shared shape every recorder below hands the domain. */

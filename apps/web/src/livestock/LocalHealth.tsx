@@ -25,9 +25,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** Which of the three health captures this is. Each posts to its own endpoint. */
 export type HealthKind = 'treatment' | 'vaccination' | 'dip';
@@ -83,7 +84,11 @@ export type HealthStore = CaptureStore<StoredHealthEvent>;
 export type HealthStoreFactory = (key: string) => HealthStore;
 
 const defaultFactory: HealthStoreFactory = (key) =>
-  createCaptureStore<StoredHealthEvent>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredHealthEvent>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const HealthStoreContext = createContext<HealthStore | null>(null);
 
@@ -113,6 +118,13 @@ function useHealthStore(): HealthStore {
 export function useHealthEvents(): readonly StoredHealthEvent[] {
   const store = useHealthStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useHealthEvents()` until this is true. */
+export function useHealthEventsSettled(): boolean {
+  const store = useHealthStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /**

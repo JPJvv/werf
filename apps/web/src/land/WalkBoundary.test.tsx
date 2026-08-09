@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -121,10 +122,8 @@ function stubGpsDenied(): void {
   });
 }
 
-function storedWalks(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(WALKS_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedWalks(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(WALKS_KEY);
 }
 
 function storedDraft(): unknown[] {
@@ -138,7 +137,10 @@ function storedDraft(): unknown[] {
 async function markCorners(user: ReturnType<typeof userEvent.setup>, count: number): Promise<void> {
   const already = storedDraft().length;
   for (let i = 0; i < count; i += 1) {
-    await user.click(screen.getByRole('button', { name: /mark this corner/i }));
+    // findByRole rather than getByRole: the walk screen only renders once `units` (a SQLite-backed
+    // capture store) has hydrated — a fresh render starts with zero units and shows the "add a camp
+    // first" fallback for a moment first.
+    await user.click(await screen.findByRole('button', { name: /mark this corner/i }));
     await waitFor(() => expect(storedDraft()).toHaveLength(already + i + 1));
   }
 }
@@ -168,8 +170,12 @@ describe('walking a boundary (FR-150)', () => {
     await markCorners(user, 4);
     await user.click(screen.getByRole('button', { name: /save this camp’s boundary/i }));
 
-    const saved = storedWalks();
-    expect(saved).toHaveLength(1);
+    // append() commits to the in-memory snapshot synchronously (NFR-007), but persistence to the
+    // SQLite-backed store is fire-and-forget — wait for it to land before reading it back.
+    await waitFor(async () => {
+      expect(await storedWalks()).toHaveLength(1);
+    });
+    const saved = await storedWalks();
     expect(saved[0]).toMatchObject({ farmId: FARM_ID, landUnitId: CAMP_ID });
     // The ring is closed by the app, so five coordinates come out of four corners walked.
     const ring = JSON.parse(String(saved[0]!['boundaryGeojson'])) as {
@@ -198,8 +204,10 @@ describe('walking a boundary (FR-150)', () => {
     await user.click(save);
 
     // It saved, and it saved against the camp this device actually has.
-    const saved = storedWalks();
-    expect(saved).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedWalks()).toHaveLength(1);
+    });
+    const saved = await storedWalks();
     expect(saved[0]).toMatchObject({ farmId: FARM_ID, landUnitId: CAMP_ID });
   });
 
@@ -216,8 +224,10 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', `/land/walk?camp=${CAMP_ID}`);
     render(<App />);
 
-    // Both corners are still there — the walk resumes rather than restarting.
-    expect(screen.getByText(/2 corners/i)).toBeTruthy();
+    // Both corners are still there — the walk resumes rather than restarting. findByText rather
+    // than getByText: `units` (a SQLite-backed capture store) starts empty on a fresh render and
+    // hydrates asynchronously, so the screen shows its "add a camp first" fallback for a moment.
+    expect(await screen.findByText(/2 corners/i)).toBeTruthy();
   });
 
   it('will not save a walk that is not yet a piece of ground', async () => {
@@ -227,7 +237,13 @@ describe('walking a boundary (FR-150)', () => {
     render(<App />);
 
     const save = () => screen.getByRole('button', { name: /save this camp’s boundary/i });
-    expect(save().hasAttribute('disabled')).toBe(true);
+    // findByRole rather than getByRole: `units` starts empty on a fresh render and hydrates
+    // asynchronously, so the walk screen (and this button) is not there yet.
+    expect(
+      (await screen.findByRole('button', { name: /save this camp’s boundary/i })).hasAttribute(
+        'disabled',
+      ),
+    ).toBe(true);
 
     await markCorners(user, 2);
     expect(save().hasAttribute('disabled')).toBe(true);
@@ -235,7 +251,7 @@ describe('walking a boundary (FR-150)', () => {
 
     await markCorners(user, 1);
     expect(save().hasAttribute('disabled')).toBe(false);
-    expect(storedWalks()).toHaveLength(0);
+    expect(await storedWalks()).toHaveLength(0);
   });
 
   it('tells the farmer at the fence that the line crosses itself, not days later', async () => {
@@ -283,7 +299,9 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', `/land/walk?camp=${CAMP_ID}`);
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /mark this corner/i }));
+    // findByRole rather than getByRole: `units` starts empty on a fresh render and hydrates
+    // asynchronously, so the walk screen (and this button) is not there yet.
+    await user.click(await screen.findByRole('button', { name: /mark this corner/i }));
 
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByText(/not allowing the app to use its location/i)).toBeTruthy();
@@ -314,7 +332,9 @@ describe('walking a boundary (FR-150)', () => {
 
     // The corners are in the append-only log now. Leaving them in the draft too would let the same
     // fence be saved twice, as though it had been walked twice.
-    expect(storedWalks()).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedWalks()).toHaveLength(1);
+    });
     expect(storedDraft()).toHaveLength(0);
   });
 
@@ -322,7 +342,9 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', '/land');
     render(<App />);
 
-    expect(screen.getByText(/fence not walked yet/i)).toBeTruthy();
+    // findByText rather than getByText: `units` starts empty on a fresh render and hydrates
+    // asynchronously, so the land list shows its own empty state for a moment first.
+    expect(await screen.findByText(/fence not walked yet/i)).toBeTruthy();
   });
 
   it('⭐ tells a TYPED boundary apart from no boundary at all — three states, not two', async () => {
@@ -338,7 +360,7 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', '/land');
     render(<App />);
 
-    expect(screen.getByText(/shape on file, fence not walked/i)).toBeTruthy();
+    expect(await screen.findByText(/shape on file, fence not walked/i)).toBeTruthy();
     // And it must not ALSO claim there is nothing — the states are exclusive.
     expect(screen.queryByText(/^fence not walked yet$/i)).toBeNull();
   });
@@ -356,7 +378,7 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', '/land');
     render(<App />);
 
-    expect(screen.getByText(/walked/i)).toBeTruthy();
+    expect(await screen.findByText(/walked/i)).toBeTruthy();
     expect(screen.queryByText(/fence not walked yet/i)).toBeNull();
   });
 
@@ -379,14 +401,16 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', `/land/walk?camp=${CAMP_ID}`);
     render(<App />);
 
-    expect(screen.getByText(/saving a new walk replaces it/i)).toBeTruthy();
+    expect(await screen.findByText(/saving a new walk replaces it/i)).toBeTruthy();
 
     await markCorners(user, 4);
     await user.click(screen.getByRole('button', { name: /save this camp’s boundary/i }));
 
     // ⭐ BOTH walks are kept. The boundary is the latest one; the earlier is a true fact about a
     // fence that really was there, and an append-only log does not lose it.
-    expect(storedWalks()).toHaveLength(2);
+    await waitFor(async () => {
+      expect(await storedWalks()).toHaveLength(2);
+    });
   });
 
   it('⭐ shows the walk that HAPPENED last, not the one captured last', async () => {
@@ -420,7 +444,7 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', '/land');
     render(<App />);
 
-    expect(screen.getByText(/325\.4/)).toBeTruthy();
+    expect(await screen.findByText(/325\.4/)).toBeTruthy();
     expect(screen.queryByText(/108\.1/)).toBeNull();
   });
 
@@ -458,7 +482,7 @@ describe('walking a boundary (FR-150)', () => {
     window.history.pushState({}, '', '/land');
     render(<App />);
 
-    expect(screen.getByText(/325\.4/)).toBeTruthy();
+    expect(await screen.findByText(/325\.4/)).toBeTruthy();
   });
 
   it('points a farmer with no camps at making one first', async () => {

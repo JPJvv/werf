@@ -15,14 +15,19 @@
  * captures), and says the same thing.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { IDENTIFIER_TYPES, schemas, uuidv7, type IdentifierType } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
-import { useEffectiveAnimals } from './herd';
-import { useAnimalLabels, useRecordIdentifier, useTakenValues } from './LocalIdentifiers';
+import { useEffectiveAnimals, useEffectiveAnimalsSettled } from './herd';
+import {
+  useAnimalLabels,
+  useIdentifiersSettled,
+  useRecordIdentifier,
+  useTakenValues,
+} from './LocalIdentifiers';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 export function identifierTypeLabel(
@@ -39,12 +44,28 @@ export function TagSessionScreen() {
   const labels = useAnimalLabels();
   const taken = useTakenValues();
   const record = useRecordIdentifier();
+  // Both called unconditionally, one per line, before combining — `useX() && useY()` would
+  // short-circuit and skip calling useY() whenever useX() is false, which varies how many hooks
+  // this component calls between renders and breaks React outright (Rules of Hooks).
+  const animalsReady = useEffectiveAnimalsSettled();
+  const identifiersReady = useIdentifiersSettled();
+  const readyToOpen = animalsReady && identifiersReady;
 
-  // The queue is fixed when the session opens: animals that had no number then. Recomputing it
-  // after every save would make the list shrink under the farmer's thumb as they work down the race.
-  const [queue] = useState<readonly string[]>(() =>
-    live.filter((a) => !labels.has(a.id)).map((a) => a.id),
-  );
+  // The queue is fixed once every store it is built from has hydrated — animals that had no
+  // number THEN. Recomputing it after every save would make the list shrink under the farmer's
+  // thumb as they work down the race, so it is captured exactly once, not derived on every
+  // render (`useMemo` would do that). Capturing it at MOUNT, rather than once hydration settles,
+  // was a real regression this screen shipped with: the SQLite-backed capture stores
+  // (phase-checklists.md 3c) start empty and hydrate asynchronously, so a mount-time snapshot
+  // froze on an empty herd forever, on every cold start with a queue to work through.
+  const [queue, setQueue] = useState<readonly string[] | null>(null);
+  useEffect(() => {
+    if (readyToOpen && queue === null) {
+      setQueue(live.filter((a) => !labels.has(a.id)).map((a) => a.id));
+    }
+    // Deliberately NOT depending on `live`/`labels`: this must run exactly once, the first time
+    // `readyToOpen` becomes true, and never again — see the comment above.
+  }, [readyToOpen]);
   const byId = useMemo(() => new Map(live.map((a) => [a.id, a])), [live]);
 
   const [index, setIndex] = useState(0);
@@ -54,6 +75,15 @@ export function TagSessionScreen() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
   if (!activeFarm) return null;
+
+  if (queue === null) {
+    return (
+      <section className="mx-auto w-full max-w-3xl p-4">
+        <h1 className="mb-4 font-ui text-h1 text-soil-900">{t('tag.title')}</h1>
+        <p className="mb-6 text-body text-soil-700">{t('tag.loading')}</p>
+      </section>
+    );
+  }
 
   const animalId = queue[index];
   const animal = animalId === undefined ? undefined : byId.get(animalId);

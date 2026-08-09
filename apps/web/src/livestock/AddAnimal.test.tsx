@@ -10,13 +10,15 @@
  * needs a server, the offline promise has been broken.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
+const HERD_KEY = 'werf-herd:0190f3a0-0000-7000-8000-0000000000f1';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -122,8 +124,12 @@ describe('recording an animal', () => {
     window.history.pushState({}, '', '/');
     render(<App />);
 
-    const herd = screen.getByRole('link', { name: /herd/i });
-    expect(within(herd).getByText('1')).toBeTruthy();
+    // findByText waits out the fresh render's async hydration before this positive assertion —
+    // even against the same in-memory fake database, the read-back is a real await.
+    await waitFor(() => {
+      const herd = screen.getByRole('link', { name: /herd/i });
+      expect(within(herd).getByText('1')).toBeTruthy();
+    });
   });
 
   it('records a known or estimated birth date instead of silently leaving both blank', async () => {
@@ -136,9 +142,12 @@ describe('recording an animal', () => {
     await user.click(screen.getByRole('checkbox', { name: /date is an estimate/i }));
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
-    const [captured] = JSON.parse(
-      window.localStorage.getItem('werf-herd:0190f3a0-0000-7000-8000-0000000000f1') ?? '[]',
-    ) as Array<Record<string, unknown>>;
+    // append() commits to the in-memory snapshot synchronously (NFR-007), but persistence to the
+    // SQLite-backed store is fire-and-forget — wait for it to land before reading it back.
+    await waitFor(async () => {
+      expect(await storedCaptures<Record<string, unknown>>(HERD_KEY)).toHaveLength(1);
+    });
+    const [captured] = await storedCaptures<Record<string, unknown>>(HERD_KEY);
     expect(captured).toMatchObject({ dob: '2024-09-17', dobEstimated: true });
   });
 
@@ -165,10 +174,8 @@ describe('recording an animal', () => {
   const FLOCK = { id: '0190f3a0-0000-7000-8000-00000000e003', name: 'Dorper flock', type: 'sheep' };
 
   /** The herd the last captured animal was filed under. */
-  function capturedHerdId(): unknown {
-    const herd = JSON.parse(
-      window.localStorage.getItem('werf-herd:0190f3a0-0000-7000-8000-0000000000f1') ?? '[]',
-    ) as Array<Record<string, unknown>>;
+  async function capturedHerdId(): Promise<unknown> {
+    const herd = await storedCaptures<Record<string, unknown>>(HERD_KEY);
     return herd[0]?.['enterpriseId'];
   }
 
@@ -184,7 +191,7 @@ describe('recording an animal', () => {
     await user.selectOptions(screen.getByLabelText(/herd/i), FLOCK.id);
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
-    expect(capturedHerdId()).toBe(FLOCK.id);
+    expect(await capturedHerdId()).toBe(FLOCK.id);
     await user.click(screen.getByRole('link', { name: /done/i }));
     // Scoped to the LIST: the screen now also shows a per-species class breakdown (FR-705), so a
     // bare getByText('Sheep') would match the breakdown heading too.
@@ -203,7 +210,7 @@ describe('recording an animal', () => {
     await user.selectOptions(screen.getByLabelText(/herd/i), FEEDLOT.id);
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
-    expect(capturedHerdId()).toBe(FEEDLOT.id);
+    expect(await capturedHerdId()).toBe(FEEDLOT.id);
   });
 
   it('asks nothing on a single-herd farm, but says where the animal is filed', async () => {
@@ -217,15 +224,13 @@ describe('recording an animal', () => {
     expect(screen.getByText(/bonsmara cows/i)).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: /save animal/i }));
-    expect(capturedHerdId()).toBe(CATTLE_HERD.id);
+    expect(await capturedHerdId()).toBe(CATTLE_HERD.id);
   });
 
   // ── Species-specific attributes (FR-107) ────────────────────────────────────────────────
   /** The whole attributes record on the last captured animal. */
-  function capturedAttributes(): Record<string, unknown> {
-    const herd = JSON.parse(
-      window.localStorage.getItem('werf-herd:0190f3a0-0000-7000-8000-0000000000f1') ?? '[]',
-    ) as Array<Record<string, unknown>>;
+  async function capturedAttributes(): Promise<Record<string, unknown>> {
+    const herd = await storedCaptures<Record<string, unknown>>(HERD_KEY);
     return (herd[0]?.['attributes'] ?? {}) as Record<string, unknown>;
   }
 
@@ -242,7 +247,7 @@ describe('recording an animal', () => {
     await user.selectOptions(screen.getByLabelText(/horns/i), 'polled');
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
-    expect(capturedAttributes()).toEqual({ hornStatus: 'polled' });
+    expect(await capturedAttributes()).toEqual({ hornStatus: 'polled' });
   });
 
   it('asks a sheep farm about both, because a sheep can be horned too', async () => {
@@ -255,7 +260,7 @@ describe('recording an animal', () => {
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
     // Typed lower case, stored as the classer writes it.
-    expect(capturedAttributes()).toEqual({ woolClass: 'BFY' });
+    expect(await capturedAttributes()).toEqual({ woolClass: 'BFY' });
   });
 
   it('saves an animal with nothing said about either, which is the crush case', async () => {
@@ -266,7 +271,7 @@ describe('recording an animal', () => {
 
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
-    expect(capturedAttributes()).toEqual({});
+    expect(await capturedAttributes()).toEqual({});
   });
 
   it('refuses a wool class that is not a code, on the device rather than days later', async () => {

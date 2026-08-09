@@ -21,10 +21,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordMobTally } from '@werf/domain';
 import { ValidationError, schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /**
  * A head-count adjustment as the device holds it.
@@ -101,7 +102,11 @@ export type TallyStore = CaptureStore<StoredTally>;
 export type TallyStoreFactory = (key: string) => TallyStore;
 
 const defaultFactory: TallyStoreFactory = (key) =>
-  createCaptureStore<StoredTally>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredTally>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const TallyStoreContext = createContext<TallyStore | null>(null);
 
@@ -131,6 +136,13 @@ function useTallyStore(): TallyStore {
 export function useTallies(): readonly StoredTally[] {
   const store = useTallyStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useTallies()` until this is true. */
+export function useTalliesSettled(): boolean {
+  const store = useTallyStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /**

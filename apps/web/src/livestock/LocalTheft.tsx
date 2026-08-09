@@ -26,9 +26,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /**
  * An incident as held locally. Every timestamp is an ISO string; every optional fact is `null`
@@ -76,7 +77,11 @@ export type TheftStore = CaptureStore<StoredTheftIncident>;
 export type TheftStoreFactory = (key: string) => TheftStore;
 
 const defaultFactory: TheftStoreFactory = (key) =>
-  createCaptureStore<StoredTheftIncident>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredTheftIncident>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const TheftStoreContext = createContext<TheftStore | null>(null);
 
@@ -106,6 +111,13 @@ function useTheftStore(): TheftStore {
 export function useTheftIncidents(): readonly StoredTheftIncident[] {
   const store = useTheftStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useTheftIncidents()` until this is true. */
+export function useTheftIncidentsSettled(): boolean {
+  const store = useTheftStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /**

@@ -11,16 +11,17 @@
  * Offline-first: `save` commits locally and instantly with no network in the path (NFR-007).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { uuidv7 } from '@werf/core';
 import { calendarDaysBetween } from '@werf/domain';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { farmDay } from '../farmTime';
-import { useEffectiveAnimals } from './herd';
+import { useEffectiveAnimals, useEffectiveAnimalsSettled } from './herd';
 import { useLifecycleEvents, useRecordWeaning } from './LocalLifecycle';
 import { useAnimalLabels } from './LocalIdentifiers';
+import type { StoredAnimal } from './LocalHerd';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 export function WeaningSessionScreen() {
@@ -30,15 +31,26 @@ export function WeaningSessionScreen() {
   const events = useLifecycleEvents();
   const labels = useAnimalLabels();
   const record = useRecordWeaning();
+  const readyToOpen = useEffectiveAnimalsSettled();
 
   const alreadyWeaned = useMemo(
     () => new Set(events.filter((e) => e.type === 'weaning').map((e) => e.animalId)),
     [events],
   );
 
-  // Fixed when the session opens, like the tagging session: a queue that shrank under the farmer's
-  // thumb after each save would make working down a race impossible to follow.
-  const [queue] = useState(() => live.filter((a) => a.damId !== null && !alreadyWeaned.has(a.id)));
+  // Fixed once every store it is built from has hydrated, like the tagging session: a queue that
+  // shrank under the farmer's thumb after each save would make working down a race impossible to
+  // follow. Captured on the first render `readyToOpen` is true, not at mount — see
+  // TagSessionScreen.tsx's identical fix for why a mount-time snapshot froze on an empty herd on
+  // every cold start once the capture stores began hydrating asynchronously (phase-checklists.md 3c).
+  const [queue, setQueue] = useState<readonly StoredAnimal[] | null>(null);
+  useEffect(() => {
+    if (readyToOpen && queue === null) {
+      setQueue(live.filter((a) => a.damId !== null && !alreadyWeaned.has(a.id)));
+    }
+    // Deliberately NOT depending on `live`/`alreadyWeaned`: this must run exactly once, the first
+    // time `readyToOpen` becomes true, and never again — see the comment above.
+  }, [readyToOpen]);
 
   const [index, setIndex] = useState(0);
   const [kg, setKg] = useState('');
@@ -46,6 +58,15 @@ export function WeaningSessionScreen() {
   const [lastSaved, setLastSaved] = useState<number | null>(null);
 
   if (!activeFarm) return null;
+
+  if (queue === null) {
+    return (
+      <section className="mx-auto w-full max-w-3xl p-4">
+        <h1 className="mb-4 font-ui text-h1 text-soil-900">{t('wean.title')}</h1>
+        <p className="mb-6 text-body text-soil-700">{t('wean.loading')}</p>
+      </section>
+    );
+  }
 
   const animal = queue[index];
   const value = Number(kg);

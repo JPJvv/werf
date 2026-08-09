@@ -18,8 +18,9 @@
  * real open belongs in apps/web's Playwright suite, which runs in a real browser.
  */
 
-import { PowerSyncDatabase } from '@powersync/web';
-import { localSchema } from './local-schema';
+import { PowerSyncDatabase, Schema } from '@powersync/web';
+import { localSchemaTables } from './local-schema';
+import { CAPTURE_SCHEMA_TABLES } from './capture-schema';
 
 export type LocalDatabase = PowerSyncDatabase;
 
@@ -30,10 +31,17 @@ export interface LocalDatabaseOptions {
 
 const DEFAULT_DB_FILENAME = 'werf.db';
 
+// The real (future) sync tables plus the local-only capture-store tables (phase-checklists.md
+// 3c), merged into one `Schema`. Built from `localSchemaTables` — the raw `Table` instances —
+// not from `localSchema.props`: `Schema`'s constructor consumes each table via `copyWithName`
+// and `localSchema` has already done that once, so its `.props` hold resolved output with no
+// `copyWithName` of their own (see `local-schema.ts`'s comment on `localSchemaTables`).
+const schema = new Schema({ ...localSchemaTables, ...CAPTURE_SCHEMA_TABLES });
+
 /** Opens (creating if needed) the device's local SQLite/OPFS database. Never connects. */
 export function createLocalDatabase(options: LocalDatabaseOptions = {}): LocalDatabase {
   return new PowerSyncDatabase({
-    schema: localSchema,
+    schema,
     database: { dbFilename: options.dbFilename ?? DEFAULT_DB_FILENAME },
   });
 }

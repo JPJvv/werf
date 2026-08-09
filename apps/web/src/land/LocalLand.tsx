@@ -22,7 +22,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  createCaptureStore,
+  createSqliteCaptureStore,
   createDraftStore,
   type CaptureStore,
   type DraftStore,
@@ -30,6 +30,7 @@ import {
 import type { schemas } from '@werf/core';
 import type { WalkFix } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** What the register holds: land units composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredLandUnit = schemas.NewLandUnit;
@@ -66,11 +67,21 @@ export type BoundaryWalkStoreFactory = (key: string) => BoundaryWalkStore;
 export type WalkDraftStoreFactory = (key: string) => WalkDraftStore;
 
 const defaultFactory: LandStoreFactory = (key) =>
-  createCaptureStore<StoredLandUnit>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredLandUnit>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const defaultWalkFactory: BoundaryWalkStoreFactory = (key) =>
-  createCaptureStore<StoredBoundaryWalk>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredBoundaryWalk>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
+// Untouched — a draft is explicitly not a capture (its own header: "not a queue, nothing here is
+// ever sent"), so it stays on the localStorage-backed createDraftStore this slice.
 const defaultDraftFactory: WalkDraftStoreFactory = (key) =>
   createDraftStore<WalkFix>({ storage: window.localStorage, key });
 
@@ -130,6 +141,13 @@ export function useLandUnits(): readonly StoredLandUnit[] {
   return useSyncExternalStore(units.subscribe, units.all);
 }
 
+/** Whether the land-unit store's initial hydration attempt is over (`CaptureStore.settled()`) —
+ *  the Outbox flush must not act on `useLandUnits()` until this is true. */
+export function useLandUnitsSettled(): boolean {
+  const { units } = useLandStores();
+  return useSyncExternalStore(units.subscribe, units.settled);
+}
+
 /** Commit a camp/block to the local register. Synchronous; never awaits the network (NFR-007). */
 export function useRecordLandUnit(): (unit: StoredLandUnit) => void {
   const { units } = useLandStores();
@@ -140,6 +158,14 @@ export function useRecordLandUnit(): (unit: StoredLandUnit) => void {
 export function useBoundaryWalks(): readonly StoredBoundaryWalk[] {
   const { walks } = useLandStores();
   return useSyncExternalStore(walks.subscribe, walks.all);
+}
+
+/** Whether the boundary-walk store's initial hydration attempt is over
+ *  (`CaptureStore.settled()`) — the Outbox flush must not act on `useBoundaryWalks()` until
+ *  this is true. */
+export function useBoundaryWalksSettled(): boolean {
+  const { walks } = useLandStores();
+  return useSyncExternalStore(walks.subscribe, walks.settled);
 }
 
 /** Commit a finished walk locally. Synchronous; the outbox sends it when there is a signal. */

@@ -16,9 +16,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** What the register holds: identifiers composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredIdentifier = schemas.NewAnimalIdentifier;
@@ -28,7 +29,11 @@ export type IdentifierStore = CaptureStore<StoredIdentifier>;
 export type IdentifierStoreFactory = (key: string) => IdentifierStore;
 
 const defaultFactory: IdentifierStoreFactory = (key) =>
-  createCaptureStore<StoredIdentifier>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredIdentifier>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const IdentifierStoreContext = createContext<IdentifierStore | null>(null);
 
@@ -60,6 +65,13 @@ function useIdentifierStore(): IdentifierStore {
 export function useIdentifiers(): readonly StoredIdentifier[] {
   const store = useIdentifierStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useIdentifiers()` until this is true. */
+export function useIdentifiersSettled(): boolean {
+  const store = useIdentifierStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /**

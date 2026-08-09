@@ -19,9 +19,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /** What the local herd holds: animals composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredAnimal = schemas.NewAnimal;
@@ -31,7 +32,11 @@ export type HerdStore = CaptureStore<StoredAnimal>;
 export type HerdStoreFactory = (key: string) => HerdStore;
 
 const defaultFactory: HerdStoreFactory = (key) =>
-  createCaptureStore<StoredAnimal>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredAnimal>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const HerdStoreContext = createContext<HerdStore | null>(null);
 
@@ -61,6 +66,13 @@ function useHerdStore(): HerdStore {
 export function useAnimals(): readonly StoredAnimal[] {
   const store = useHerdStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useAnimals()` until this is true. */
+export function useAnimalsSettled(): boolean {
+  const store = useHerdStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /** Commit an animal to the local herd. Synchronous; never awaits the network (NFR-007). */

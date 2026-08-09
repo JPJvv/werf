@@ -869,9 +869,31 @@ add the one shared local-first attachment path approved on 2026-08-08.
   application read path — diagnostics-only (`apps/web/src/diagnostics/local-db-diagnostic.ts`
   `mode=connect`) — so tripwire 3e below does not fire yet; wiring a real read path to `.connect()`
   is 3c/3d territory and must pull the `landed()` hydration fix forward when it happens, not after.
-☐ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
-  at every step leaves either the old readable store or the complete new one, never half of each
-☐ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months
+☑ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
+  at every step leaves either the old readable store or the complete new one, never half of each.
+  All 12 `Local*.tsx` capture stores now back onto `createSqliteCaptureStore`
+  (`packages/sync/src/sqlite-capture-store.ts`), one generic `localOnly` `capture_records` table
+  plus a `capture_migrations` marker (`capture-schema.ts`) — `localOnly` keeps every row out of
+  the CRUD upload queue, so the existing `Outbox.tsx` stays the sole uploader this slice. Migration
+  is per-`store_key`, inside one `writeTransaction`, with the marker re-checked INSIDE the
+  transaction (closing a `StrictMode`-driven TOCTOU race outside it would miss) — proven atomic
+  under a real interruption in `sqlite-capture-store.spec.ts` and end-to-end against the real
+  engine in `apps/web/e2e/capture-migration.spec.ts`. localStorage is read-only throughout, never
+  cleared. ⭐ Found and closed in the same slice, not anticipated by the plan: the Outbox could
+  flush against a partially-hydrated world (each store hydrates independently and
+  asynchronously), producing a real wire-order violation — a tally posting before the dose it must
+  be guarded by. Fixed by widening `CaptureStore<T>` with `settled()` and gating the flush AND the
+  `'synced'` status on every store settling. A second, related bug (`TagSessionScreen`/
+  `WeaningSessionScreen` freezing their work queue on a mount-time snapshot of pre-hydration data)
+  was found by the same investigation and closed the same way. Full account:
+  `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`.
+☑ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months —
+  same doc: a device that never completes an SW install for this build never runs the migration at
+  all (Workbox only activates once its full precache list, including the now-precached PowerSync
+  engine, has downloaded), and localStorage is never deleted, so manual recovery remains possible
+  indefinitely. NFR-009's bundle gate now excludes the precached engine from the interactive-path
+  JS sum (owner-confirmed decision, 2026-08-09) — `apps/web/scripts/check-bundle-size.mjs`,
+  `apps/web/vite.config.ts`.
 ☐ 3d Queue is durable across browser kill, reboot and quota pressure; read data may be evicted,
   queued writes may not
 ☐ 3d 4xx records are retained and set aside while the round continues; 5xx/unrecognised failures

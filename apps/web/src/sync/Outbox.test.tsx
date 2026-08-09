@@ -17,6 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -161,6 +162,18 @@ function seedDoseThenDisposal(): void {
   );
 }
 
+/**
+ * `capture_records` no longer lives in `window.localStorage` — captures persist through the
+ * SQLite-backed store (`packages/sync/src/sqlite-capture-store.ts`, phase-checklists.md 3c), via
+ * the fake `test-setup.ts` mocks `getLocalDatabase()` to. This reproduces the OLD
+ * `window.localStorage.getItem(key)` value exactly (the same JSON-array-of-records shape), so
+ * every `.toContain(id)` / `.toBe(before)` assertion below keeps its original meaning; only the
+ * source of the string changes, and every call site is now `await`ed.
+ */
+async function storedBlob(key: string): Promise<string> {
+  return JSON.stringify(await storedCaptures(key));
+}
+
 /** A fetch that always accepts (201). Returns the mock so a test can inspect the calls. */
 function acceptingFetch() {
   return vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -297,7 +310,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     // Nothing discarded: the tally is still on the device and absent from the sent-log, so the next
     // reconnect sends it once the dose lands or the farmer clears the refusal.
-    expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+    expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(TALLY_ID);
     expect(sent).not.toContain(DIP_ID);
@@ -498,7 +511,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(TALLY_ID);
     expect(sent).not.toContain(TRANSFER_ID);
     // And the capture is KEPT, never dropped: a 4xx sets it aside for a later round.
-    expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+    expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
   });
 
   it('⭐ holds the arrival — and the slaughter behind it — when the DEPARTURE was refused', async () => {
@@ -604,7 +617,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(TALLY_ID);
     // Every capture kept. A 4xx sets the departure aside for a later round; the two behind it are
     // simply still pending, and the next reconnect sends them once the source is repaired.
-    const stored = window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '';
+    const stored = await storedBlob(`werf-tallies:${FARM_ID}`);
     expect(stored).toContain(OUT_ID);
     expect(stored).toContain(IN_ID);
     expect(stored).toContain(TALLY_ID);
@@ -746,7 +759,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(IN_C);
 
     // And nothing was dropped — the queue keeps every capture for the next round.
-    const stored = window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '';
+    const stored = await storedBlob(`werf-tallies:${FARM_ID}`);
     for (const id of [OUT_A, IN_B, OUT_B, IN_C]) expect(stored).toContain(id);
   });
 
@@ -1176,7 +1189,12 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
         },
       ]),
     );
-    const before = window.localStorage.getItem(`werf-tallies:${FARM_ID}`);
+    // The seeded ground truth. What migrates into the SQLite-backed store below must match this
+    // structurally — window.localStorage itself is never touched again, so comparing against it
+    // directly after render would trivially always pass and stop testing anything.
+    const before = JSON.parse(
+      window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '[]',
+    ) as unknown[];
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const unauthorised = {
@@ -1192,10 +1210,10 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     render(<App />);
     await screen.findByText(/not sent|to send|sending/i);
 
-    // The capture store is byte-identical, nothing joined the sent-log, and the session was not
-    // cleared out from under the queue.
-    await waitFor(() => {
-      expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toBe(before);
+    // The capture store is structurally identical, nothing joined the sent-log, and the session
+    // was not cleared out from under the queue.
+    await waitFor(async () => {
+      expect(await storedCaptures(`werf-tallies:${FARM_ID}`)).toEqual(before);
     });
     expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '').not.toContain(TALLY_ID);
     expect(window.localStorage.getItem('werf-session')).toBeTruthy();
@@ -1241,8 +1259,8 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     // The captures are untouched on the device, and NOTHING was recorded as sent — so the next
     // reconnect retries the lot. The queue is never discarded to make an error go away.
-    expect(window.localStorage.getItem(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
-    expect(window.localStorage.getItem(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
+    expect(await storedBlob(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
+    expect(await storedBlob(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
     expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`)).toBeNull();
   });
 
@@ -1276,7 +1294,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     // Nothing was discarded to achieve that: the refused weight is still on the device and still
     // absent from the sent-log, so it is re-tested on every future round.
-    expect(window.localStorage.getItem(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
+    expect(await storedBlob(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).toContain(ANIMAL_ID);
     expect(sent).toContain(DEATH_ID);
@@ -1326,7 +1344,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(screen.getByText(/nothing here is lost/i)).toBeTruthy();
     // ⛔ The queue is never discarded — not by the system, and not by a farmer on a bad afternoon.
     expect(screen.queryByRole('button', { name: /delete|discard|remove/i })).toBeNull();
-    expect(window.localStorage.getItem(`werf-identifiers:${FARM_ID}`)).toContain('0417');
+    expect(await storedBlob(`werf-identifiers:${FARM_ID}`)).toContain('0417');
   });
 
   it('holds everything locally while offline and sends nothing', async () => {
@@ -1341,7 +1359,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     // The reassurance that keeps a farmer from reaching for a paper backup.
     expect(await screen.findByText('Offline — your work is saved')).toBeTruthy();
     expect(fetchMock.mock.calls.length).toBe(0);
-    expect(window.localStorage.getItem(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
+    expect(await storedBlob(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
   });
 
   it('shows how many captures are still waiting to be sent', async () => {

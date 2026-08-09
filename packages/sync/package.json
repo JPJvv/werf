@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./local-database": "./src/local-database.ts"
+    "./local-database": "./src/local-database.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -26,9 +26,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
 
 /**
  * The vocabularies come FROM the payload schemas rather than being written out again here. A
@@ -90,7 +91,11 @@ export type BreedingStore = CaptureStore<StoredBreedingEvent>;
 export type BreedingStoreFactory = (key: string) => BreedingStore;
 
 const defaultFactory: BreedingStoreFactory = (key) =>
-  createCaptureStore<StoredBreedingEvent>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredBreedingEvent>({
+    database: getLocalDatabase(),
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const BreedingStoreContext = createContext<BreedingStore | null>(null);
 
@@ -120,6 +125,13 @@ function useBreedingStore(): BreedingStore {
 export function useBreedingEvents(): readonly StoredBreedingEvent[] {
   const store = useBreedingStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useBreedingEvents()` until this is true. */
+export function useBreedingEventsSettled(): boolean {
+  const store = useBreedingStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
 }
 
 /**

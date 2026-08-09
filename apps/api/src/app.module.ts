@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule, minutes, seconds } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { DbModule } from './db/db.module';
@@ -14,6 +15,7 @@ import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       // Broad API abuse protection. Authentication routes override both named windows with the
       // tighter budgets in security/rate-limits.ts.

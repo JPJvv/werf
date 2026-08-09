@@ -19,8 +19,10 @@
  *   - `EXISTS (...)` does NOT validate — "Unknown function" — even non-correlated. Every
  *     predicate here uses `IN` instead, which does the same job.
  *   - `now()` does NOT validate — "Unknown function" — so `farm_users.expires_at` cannot be
- *     enforced here either, the same gap classic Sync Rules had. RLS still enforces it at the
- *     API; see this module's `FARM_MEMBERSHIP_PREDICATE` for the exact clause omitted and why.
+ *     evaluated here, the same ceiling classic Sync Rules had. RLS enforces it immediately at the
+ *     API, while `apps/api/src/sync/membership-expiry.service.ts` converts elapsed grants into the
+ *     `deleted_at` tombstone every stream already evaluates, bounding the replication gap to its
+ *     one-minute sweep cadence plus processing/propagation time.
  *   - A single stream that fails to validate makes the ENTIRE sync config fail to load — there
  *     is no partial-success mode. `derive-sync-streams.ts`'s `NOT_YET_EXPRESSIBLE`/
  *     `NO_SURROGATE_ID` exclusions exist because of this: a wrong guess for one table would break

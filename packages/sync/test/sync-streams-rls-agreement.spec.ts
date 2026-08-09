@@ -18,6 +18,9 @@ import { deriveSyncStreams } from '../scripts/derive-sync-streams';
 import { TENANCY, type SyncedTable } from '../src/tenancy';
 
 const migrationsDir = fileURLToPath(new URL('../../db/migrations', import.meta.url));
+const expirySweepPath = fileURLToPath(
+  new URL('../../../apps/api/src/sync/membership-expiry.service.ts', import.meta.url),
+);
 
 function allMigrationsText(): string {
   return readdirSync(migrationsDir)
@@ -76,8 +79,10 @@ describe('sync streams agree with RLS — reference data is openly readable, not
   );
 });
 
-describe('sync streams agree with RLS — the documented expires_at gap', () => {
+describe('sync streams agree with RLS — expires_at is bridged through the shared tombstone', () => {
   const migrations = allMigrationsText();
+  const expirySweep = readFileSync(expirySweepPath, 'utf-8');
+  const streams = deriveSyncStreams();
 
   it('RLS enforces farm_users.expires_at — proving the gap below is real, not assumed', () => {
     // 0004_membership_acceptance.sql's CREATE OR REPLACE is the LIVE definition of
@@ -85,13 +90,34 @@ describe('sync streams agree with RLS — the documented expires_at gap', () => 
     expect(migrations).toMatch(/expires_at IS NULL OR expires_at > now\(\)/);
   });
 
-  it('⛔ no generated stream enforces expires_at — empirically confirmed now() does not validate', () => {
-    const yaml = renderSyncStreamsYaml(deriveSyncStreams());
+  it('no generated stream sends now() to PowerSync, whose validator rejects it', () => {
+    const yaml = renderSyncStreamsYaml(streams);
     expect(
       yaml,
       'a stream started checking expires_at — either the self-hosted service gained a ' +
         'deterministic way to express it (update this test and derive-sync-streams.ts together, ' +
         'and re-confirm against a real instance), or this assertion should not have passed',
     ).not.toContain('expires_at IS NULL OR expires_at >');
+  });
+
+  it('every stream consumes the deleted_at tombstone the expiry sweep produces', () => {
+    for (const stream of streams) {
+      expect(
+        stream.whereSql,
+        `${stream.table}'s stream no longer consumes the membership tombstone`,
+      ).toContain('deleted_at IS NULL');
+    }
+
+    // This intentionally reads the checked-in job just as the tests above read checked-in
+    // migrations. The real-Postgres integration test proves its behaviour; this assertion proves
+    // the two separately implemented security artifacts still meet on the same exact signal.
+    expect(expirySweep).toMatch(/isNull\(farmUsers\.deletedAt\)/);
+    expect(expirySweep).toMatch(/isNotNull\(farmUsers\.expiresAt\)/);
+    expect(expirySweep).toMatch(/lte\(farmUsers\.expiresAt, sql`now\(\)`\)/);
+    expect(expirySweep).toMatch(/deletedAt: sql`now\(\)`/);
+  });
+
+  it('bounds the expiry bridge to a one-minute sweep cadence', () => {
+    expect(expirySweep).toContain("MEMBERSHIP_EXPIRY_SWEEP_CRON = '0 * * * * *'");
   });
 });

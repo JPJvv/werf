@@ -836,12 +836,12 @@ add the one shared local-first attachment path approved on 2026-08-08.
   running it, not from docs: `EXISTS` does not validate under Streams either ("Unknown
   function") — every predicate uses `IN (SELECT ...)` instead, which does the same job — and a
   single invalid stream fails the ENTIRE sync config, no partial-success mode.
-  ⛔ **Remaining known gap, format-independent, not an oversight:** the rule cannot enforce
-  `farm_users.expires_at` — `now()` is rejected under classic Rules AND Streams. RLS still
-  enforces it at the API, so nothing already on-device becomes wrongly readable, but a
-  not-yet-downloaded row keeps landing after RLS would refuse it. Open owner question in
-  STATUS.md §3 Q4: build the expiry-sweep job (soft-delete on expiry, making `deleted_at` the one
-  shared revocation signal), or defer.
+  ☑ **Expiry ceiling closed with a bounded bridge:** the rule cannot evaluate
+  `farm_users.expires_at` — `now()` is rejected under classic Rules AND Streams — and RLS does
+  not protect the replication connection. `MembershipExpiryService` now runs every minute and
+  soft-deletes elapsed grants using database `now()`, making `deleted_at` the revocation signal
+  RLS and every stream share. A real-Postgres integration test proves only elapsed live rows are
+  tombstoned and a cross-artifact test proves every stream consumes that tombstone.
 ☑ 3b `PowerSyncBackendConnector` implemented (`packages/sync/src/connector.ts`) and `.connect()`
   EMPIRICALLY PROVEN end-to-end against the real self-hosted service, not just unit-tested:
   `fetchCredentials` calls a new `GET /api/sync/token` (`apps/api/src/sync/`), which mints a

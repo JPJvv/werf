@@ -7,7 +7,8 @@
  *
  * Every predicate below is built on `farm_users`, mirroring `app_user_farm_ids()`
  * (0004_membership_acceptance.sql) MINUS its `expires_at` clause — see sync-streams.ts's header
- * for why (`now()` does not validate; empirically confirmed, not assumed).
+ * for why (`now()` does not validate; empirically confirmed, not assumed) and the API's
+ * `MembershipExpiryService`, which bridges elapsed expiry into the shared `deleted_at` signal.
  */
 
 import { getTableColumns, getTableName, is } from 'drizzle-orm';
@@ -22,7 +23,8 @@ import type { SyncStreamDef } from '../src/sync-streams';
 const NO_SURROGATE_ID: ReadonlySet<SyncedTable> = new Set(['theft_incident_animals']);
 
 /** The membership predicate every stream below is built on: `farm_users` rows for the connected
- * user, alive and accepted. Deliberately omits `expires_at` — see sync-streams.ts's header.
+ * user, alive and accepted. Deliberately omits `expires_at` — see sync-streams.ts's header and
+ * `MembershipExpiryService`, which tombstones elapsed grants once per minute.
  * `select` is the projection (`farm_id` to list the user's farms, `1` for an existence check —
  * `EXISTS` itself does not validate, empirically confirmed, so this is how that gets expressed). */
 function membershipSubquery(select: 'farm_id' | '1'): string {

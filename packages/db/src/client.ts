@@ -10,7 +10,9 @@
  * - `ElevatedDb` bypasses RLS. It exists for the handful of operations that legitimately
  *   precede a membership: registering a business, creating its first farm, and reading
  *   `user_sessions` on the refresh path (a refresh must find the session BEFORE it knows
- *   whose it is). Everything else belongs on `AppDb`.
+ *   whose it is). The membership-expiry sweep is the one lifecycle exception: it must
+ *   tombstone rows the RLS clock condition has already hidden. Everything else belongs on
+ *   `AppDb`.
  *
  * Reaching for `ElevatedDb` in a feature module is the thing to be suspicious of in review.
  */
@@ -49,7 +51,7 @@ export interface AppDb {
   close(): Promise<void>;
 }
 
-/** The RLS-bypassing connection. Provisioning and auth only. */
+/** The RLS-bypassing connection. Provisioning, auth and explicit lifecycle maintenance only. */
 export interface ElevatedDb {
   readonly db: WerfDb;
   close(): Promise<void>;

@@ -75,17 +75,30 @@ inconsistently across fetches earlier in this same investigation. Evidence trail
    `id = self OR co-member-of-a-shared-farm` shape, written with `IN` (⚠️ `EXISTS` does NOT
    validate under Streams either — "Unknown function", confirmed empirically — so this uses the
    same `IN (SELECT ...)` pattern as Q2, not the more natural `EXISTS`). Validated and replicated.
-4. **OPEN — `farm_users.expires_at` still cannot be enforced by any generated stream.**
+4. ✅ **Resolved 2026-08-09 — bridge `farm_users.expires_at` through the shared tombstone.**
    Confirmed empirically: a stream using `now()` fails validation ("Unknown function") under
    Streams exactly as it did under classic Rules — this gap is format-independent, not a Streams
    limitation that might later close. ⚠️ Also newly learned: **a single invalid stream fails the
    ENTIRE sync config**, not just that stream — there is no partial-success mode, so a future
    wrong guess for one table breaks replication for all of them, not just the one that was wrong.
-   RLS already refuses an expired-but-not-deleted membership at the API, so nothing already
-   on-device becomes wrongly readable, but a not-yet-downloaded row keeps landing after RLS says
-   no. Closing it needs a scheduled job that soft-deletes expired memberships, making
-   `deleted_at` the one revocation signal both systems share. Wanted for 3b, or deferred?
-   → _Answer:_
+   ⚠️ **Corrected 2026-08-09 by `sync-auditor` — the line below was too optimistic; do not repeat
+   it.** ~~RLS already refuses an expired-but-not-deleted membership at the API, so nothing
+   already on-device becomes wrongly readable, but a not-yet-downloaded row keeps landing after
+   RLS says no.~~ RLS does not cover the replication path at all (`db.md`: "sync rules are NOT
+   RLS... replication bypasses the query path RLS protects") — an already-connected device with an
+   expired-but-not-deleted grant keeps receiving *live* replicated writes for that farm, not just
+   a stale cached copy, for as long as `.connect()` runs. Currently latent (no write path sets
+   `expires_at` to non-null yet — see full report), not live in production today, but real the
+   moment the planned external-grant invite (FR-005) ships an expiry. Option A is now implemented:
+   `MembershipExpiryService` runs every minute in the API and uses database `now()` to soft-delete
+   elapsed live rows, updating `updated_at` in the same statement. Every stream already requires
+   `deleted_at IS NULL`, so the formerly unbounded live-replication exposure is bounded to one
+   minute plus execution/propagation time; RLS still refuses API access immediately. The update is
+   idempotent across API replicas. A real-Postgres test proves elapsed/future/permanent/already-
+   deleted cases and a cross-artifact test proves every stream consumes the tombstone. No
+   `revoked_reason` column is added until a product surface needs the distinction. Option B remains
+   future defence-in-depth with the time-boxed-grant UI; C remains UX only. Full decision and
+   evidence: `docs/04-delivery/phase-3-sync-expiry-enforcement-gap-2026-08-09.md`.
 
 **Resolved 2026-08-09 — Werf absorbs Voorman's planning discipline; Voorman is archived, not
 merged.** The comparative audit found Werf has the stronger requirements, legal, offline, tenancy
@@ -117,6 +130,8 @@ and claims none until that Phase 3 slice lands.
 | `pnpm test:e2e` (2026-08-09, consolidation/auth hardening) | ✅ 27/27 Chromium journeys passed in 56.0s, including axe in both themes and the production-worker offline capture/reload/reconnect path |
 | `pnpm verify` (2026-08-09, Phase 3 slice 4 — PowerSyncBackendConnector) | ✅ Uncached: 96 test files / 1017 tests, 12/12 typecheck, 7/7 builds; bundle 151.67 KB gz ≤ 250 KB |
 | `pnpm test:e2e` (2026-08-09, Phase 3 slice 4) | ✅ 28/28 Chromium journeys passed in 46.1s — re-run after `apps/web/vite.config.ts`'s `preview.proxy` addition; confirmed inert (existing specs intercept `/api` browser-side before the proxy) |
+| `pnpm verify` (2026-08-09, membership expiry bridge) | ✅ Uncached: project check + lint/format + 12/12 typecheck tasks; 97 test files / 1,020 tests; 7/7 builds; bundle 151.67 KB gz ≤ 250 KB. Includes real-Postgres proof: elapsed accepted + pending grants tombstoned, future/permanent untouched, existing tombstone preserved, second sweep changed 0 rows |
+| `pnpm test:e2e` (2026-08-09, membership expiry bridge) | ✅ 28/28 Chromium journeys passed in 59.1s, including real SQLite/OPFS persistence and production-worker offline capture/reload/reconnect |
 | Manual — real service, real per-user delivery (2026-08-09) | ✅ A freshly registered test farm's row reached the client through a real `.connect()` against the self-hosted service: `buckets: 16`, `operations_synced: 6`, client read back exactly its own farm. This is the rung the config-validation and replication-log evidence above could not prove by itself — see phase-checklists.md 3b |
 
 ## 5. Next executable steps
@@ -167,8 +182,8 @@ and claims none until that Phase 3 slice lands.
    migrations off disk and proves tenant-scoped tables are built on `app_user_farm_ids()` and
    reference tables are `FOR SELECT USING (true)`, matching each stream's shape. Empirically
    confirmed a permissive hand-edit fails the freshness test (tampered a `WHERE` clause away,
-   watched it fail, reverted). ⛔ One open owner question remains — §3 Q4, `expires_at`,
-   confirmed format-independent, not Streams-specific. Dev-only RS256 keypair for
+   watched it fail, reverted). The format-independent `expires_at` ceiling is closed by the
+   one-minute tombstone bridge in §3 Q4. Dev-only RS256 keypair for
    `client_auth.jwks` generated to scratchpad, NOT committed (only the public JWK is in
    `service.yaml`) — production key custody is ADR-0011/task-4 territory, not decided here.
 7. ✅ Done 2026-08-09: **Phase 3 slice 4 — `PowerSyncBackendConnector` implemented, `.connect()`

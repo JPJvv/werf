@@ -77,6 +77,15 @@ export interface FakeLocalDatabase {
   /** The NEXT writeTransaction's callback runs to completion, then the "commit" throws instead —
    *  simulating a browser kill after every insert but before the transaction lands. */
   failNextTransactionAfterInserts(): void;
+  /**
+   * Suspends every getOptional()/getAll() call naming this store_key until the returned function
+   * is called — lets a test pin ONE capture store's hydration open on demand while every other
+   * store on the same fake db hydrates and settles normally, instead of relying on whatever
+   * interleaving `Promise.resolve()` microtask ordering happens to produce for a given legacy-data
+   * shape (see `apps/web/src/sync/Outbox.test.tsx`'s "the flush waits for every store" test, which
+   * exists precisely because that natural ordering is not a promise, only an observation).
+   */
+  holdHydrationFor(storeKey: string): () => void;
 }
 
 /**
@@ -88,6 +97,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
   let records = new Map<string, FakeRecordRow>();
   let migrations = new Map<string, FakeMigrationRow>();
   let failNext = false;
+  const held = new Map<string, Promise<void>>();
   // A real writeLock is exclusive — concurrent writeTransaction callers queue, they never
   // interleave. Emulated here by chaining onto the tail of a promise queue, so a test that
   // constructs two stores "at once" (React StrictMode's double-invoked useMemo, in practice)
@@ -101,6 +111,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     async getOptional(sql: string, params: readonly unknown[] = []) {
       if (sql.startsWith('SELECT id FROM capture_migrations')) {
         const [key] = params as [string];
+        await held.get(key);
         return migrations.get(key) ?? null;
       }
       throw new Error(`fake database: unrecognized getOptional() — ${sql}`);
@@ -109,6 +120,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     async getAll(sql: string, params: readonly unknown[] = []) {
       if (sql.startsWith('SELECT payload_json FROM capture_records')) {
         const [key] = params as [string];
+        await held.get(key);
         return [...records.values()]
           .filter((row) => row.store_key === key)
           .sort((a, b) => a.seq - b.seq)
@@ -158,6 +170,20 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
 
     failNextTransactionAfterInserts(): void {
       failNext = true;
+    },
+
+    holdHydrationFor(storeKey: string): () => void {
+      let release!: () => void;
+      held.set(
+        storeKey,
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      return () => {
+        release();
+        held.delete(storeKey);
+      };
     },
   };
 

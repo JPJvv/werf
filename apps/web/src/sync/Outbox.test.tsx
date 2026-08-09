@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
 import { App } from '../App';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -276,6 +276,46 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     // And the foreign-key rule still holds underneath it.
     expect(at('/livestock/mobs')).toBeLessThan(at('/livestock/dips'));
     expect(at('/livestock/animals')).toBeLessThan(at('/livestock/moves'));
+  });
+
+  it('⭐ waits for a slow-hydrating store before flushing ANY store, not just the slow one', async () => {
+    // Pins the `allSettled` gate (Outbox.tsx) deterministically rather than relying on however
+    // the fake database's promises happen to interleave — the ORIGINAL regression this gate fixed
+    // (docs/04-delivery/phase-3-capture-migration-2026-08-09.md, "regression 1") was that `tallies`
+    // hydrated and made `pendingCount > 0` while `health` was still mid-hydration, so the tally
+    // posted BEFORE the dose it must be judged against, because an unhydrated store's empty
+    // `all()` reads as "this farm has none of these" rather than "still finding out". Without the
+    // gate, that same defect would resurface here: `health` is deliberately held open while every
+    // OTHER seeded store (tallies, mobs, moves, herd, weights, events) hydrates and settles for
+    // real — proven by reading `capture_records` back directly, not by trusting a UI label that
+    // can only ever say "Sending…" while ungated. If the gate is gone, the tally goes up in that
+    // window; if the gate holds, nothing does until `health` is released too.
+    cachedSession();
+    seedDoseThenDisposal();
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = await getCurrentFakeLocalDatabase();
+    const release = db.holdHydrationFor(`werf-health:${FARM_ID}`);
+
+    render(<App />);
+
+    // Every OTHER seeded store has actually finished hydrating and committed its migrated rows —
+    // not just "some time has passed" — while `health` is still held.
+    await waitFor(async () => {
+      expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+      expect(await storedBlob(`werf-moves:${FARM_ID}`)).toContain(MOVE_ID);
+    });
+    expect(postedPaths(fetchMock)).toEqual([]);
+    expect(screen.queryByText('Saved and sent')).toBeNull();
+
+    release();
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    const at = (suffix: string) => paths.findIndex((p) => p.endsWith(suffix));
+    expect(at('/livestock/dips')).toBeGreaterThanOrEqual(0);
+    expect(at('/livestock/dips')).toBeLessThan(at('/livestock/mob-tallies'));
   });
 
   it('⭐ holds the disposal back when the dose it is judged against is refused this round', async () => {

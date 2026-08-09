@@ -169,11 +169,9 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
    not an in-memory illusion of it. `apps/web/e2e/local-db-diagnostic.spec.ts` proves it; `pnpm
    test:e2e` now builds this entry first. The postinstall 404 was a non-issue: the static WASM
    assets ship inside `@journeyapps/wa-sqlite`'s own package (confirmed on disk) regardless.
-5. ✅ Done 2026-08-09, **superseded same day by item 6** — first attempt generated classic
-   `bucket_definitions` sync rules from `TENANCY`. Kept only as git history: three tables could
-   not be expressed at all (no JOINs/subqueries in that format) and the YAML was never validated
-   against a real service. Do not resurrect this shape; item 6 is the current, empirically
-   confirmed state.
+5. Superseded same day by item 6, kept only as git history: a first attempt generated classic
+   `bucket_definitions` sync rules — three tables couldn't be expressed (no JOINs/subqueries) and
+   it was never validated live. Do not resurrect; item 6 is the current, confirmed state.
 6. ✅ Done 2026-08-09: **self-hosted PowerSync service stood up (docker-compose) and PowerSync
    Sync Streams generated from `TENANCY`, both empirically validated together** —
    `journeyapps/powersync-service:1.23.3` (`infra/powersync/`, Postgres storage backend on the
@@ -234,21 +232,18 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
     this was flagged last session and NOT done this session (stayed scoped to 3c). Rebase it
     onto `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
 12. ✅ Done 2026-08-09: **owner-triggered `sync-auditor` pass over the full branch, two findings
-    fixed same day.** (1) MEDIUM/HIGH: a single corrupt DB-resident row failed a store's WHOLE
-    hydration permanently (the migration marker already existed, so every future boot re-threw on
-    the identical row) — new captures after that point silently stopped being durable, and a
-    poisoned `health` store would have let the FR-131 disposal guard read "no dose outstanding"
-    when it genuinely could not tell. Fixed: hydration now tolerates one corrupt row (skips it,
-    keeps the rest), and `CaptureStore<T>` gained `hydrationFailed()` — distinct from `settled()`
-    — so `Outbox.tsx` holds the WHOLE queue, not just the failed store's own captures, on a
-    genuine failure. (2) MEDIUM: the global per-IP rate limiter (`app.module.ts`) has no capture
-    exemption, and a large offline backlog draining on reconnect is the case most likely to trip
-    it; a 429-aborted round had NO autonomous retry — the strip said "will retry" with nothing
-    scheduled to. Fixed: a bounded 90s retry while errored and online. Every fix watched to FAIL
-    first (git-stashed / temporarily neutered, confirmed red, restored, confirmed green). One LOW
-    finding (stale `generate:sync-rules` script name) left open, cosmetic only, not yet fixed.
-    Still not merge-ready — this was one pass over one slice's worth of findings, not a fresh
-    clearance of the whole branch; the sync-auditor has not re-run since.
+    fixed same day.** (1) MEDIUM/HIGH: one corrupt DB-resident row failed a store's WHOLE
+    hydration PERMANENTLY (the migration marker already existed, so every future boot re-threw) —
+    new captures stopped being durable, and a poisoned `health` store would have let the FR-131
+    disposal guard read "no dose outstanding" when it genuinely could not tell. Fixed: hydration
+    tolerates one corrupt row now, and `CaptureStore<T>` gained `hydrationFailed()` — distinct
+    from `settled()` — so `Outbox.tsx` holds the WHOLE queue, not just the failed store's own
+    captures, on genuine failure. (2) MEDIUM: the global per-IP throttle (`app.module.ts`) exempts
+    no capture endpoint, and a large offline backlog draining on reconnect is the likeliest thing
+    to trip it; a 429-aborted round had NO autonomous retry. Fixed: a bounded 90s retry while
+    errored and online. Every fix watched to FAIL first. One LOW finding (stale
+    `generate:sync-rules` script name) left open, cosmetic, not fixed. Still not merge-ready — one
+    pass over one slice, not a fresh clearance of the whole branch.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

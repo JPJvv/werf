@@ -818,6 +818,17 @@ add the one shared local-first attachment path approved on 2026-08-08.
   unit-tested; a real open belongs in Playwright, once a later slice gives it a call site.
 ☐ 3b PowerSync sync rules and Postgres RLS agree for every farm-scoped table; the cross-farm
   tenancy test fails when either side is deliberately made permissive
+  PARTIAL, 2026-08-09: `packages/sync/scripts/derive-sync-rules.ts` generates
+  `sync-rules.generated.yaml` from `TENANCY`, drift-checked by `test/sync-rules-freshness.spec.ts`.
+  `test/sync-rules-rls-agreement.spec.ts` reads the real RLS migrations off disk and proves every
+  synced table's policy is built on `app_user_farm_ids()`; empirically confirmed a hand-tampered
+  permissive YAML fails the freshness test. ⛔ NOT every farm-scoped table yet — three gaps, each
+  because classic PowerSync Sync Rules forbid JOINs/subqueries in Parameter and Data Queries:
+  `businesses`/`regulatory_rates`/`veterinary_products` have no bucket at all (need a two-hop
+  resolution through `farm_users` → `farms`); `users` syncs only the connected user's own row, not
+  a co-member's (RLS grants both); the rule cannot enforce `farm_users.expires_at` (no `now()` in
+  supported SQL). All three are open owner questions in STATUS.md §3, not silent gaps. The YAML
+  itself is still unvalidated against a running PowerSync service — that is the next slice.
 ☐ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
   at every step leaves either the old readable store or the complete new one, never half of each
 ☐ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months

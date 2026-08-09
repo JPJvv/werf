@@ -1,0 +1,35 @@
+# GENERATED FILE — do not hand-edit.
+# Run `pnpm --filter @werf/sync generate:sync-rules` to regenerate from the Postgres schema and
+# the TENANCY registry (scripts/derive-sync-rules.ts). test/sync-rules-freshness.spec.ts fails the
+# build if this drifts from what that derivation produces.
+#
+# KNOWN GAPS — deliberate, tracked in STATUS.md's owner decisions, not oversights:
+#   - businesses, regulatory_rates, veterinary_products sync to NO device: their tenancy
+#     predicate needs a two-hop JOIN (user -> farm_users -> farms -> business_id/jurisdiction)
+#     that classic PowerSync Sync Rules cannot express (no JOINs/subqueries in Parameter or Data
+#     Queries). See derive-sync-rules.ts's header.
+#   - users: only the connected user's OWN row syncs. RLS additionally grants a co-member's row
+#     through the same two-hop shape; that half is not expressed here. Narrower than RLS, so
+#     nothing leaks, but it is a real gap from what TENANCY declares.
+#   - by_farm's parameter query omits farm_users.expires_at (supported SQL has no now() or any
+#     time-based function). A membership with a past expires_at that has not been soft-deleted
+#     keeps syncing here after RLS would already refuse it. See sync-rules.ts's header.
+bucket_definitions:
+  by_farm:
+    parameters: SELECT farm_id FROM farm_users WHERE user_id = request.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL
+    data:
+      - SELECT animal_id, applied_at, created_at, created_by, deleted_at, farm_id, id, is_primary, type, updated_at, updated_by, value FROM animal_identifiers WHERE farm_id = bucket.farm_id
+      - SELECT acquired_at, attributes, brand_applied_at, brand_id, breed, created_at, created_by, dam_id, deleted_at, dob, dob_estimated, enterprise_id, farm_id, id, land_unit_id, mob_id, photo_key, sex, sire_id, source, species, status, status_at, updated_at, updated_by FROM animals WHERE farm_id = bucket.farm_id
+      - SELECT body_position, certificate_reference, created_at, created_by, deleted_at, farm_id, id, jurisdiction, mark, mark_type, registered_at, species, updated_at, updated_by FROM branding_registers WHERE farm_id = bucket.farm_id
+      - SELECT active, created_at, deleted_at, farm_id, id, name, type, updated_at FROM enterprises WHERE farm_id = bucket.farm_id
+      - SELECT animal_id, batch_id, created_at, created_by, deleted_at, employee_id, enterprise_id, farm_id, id, land_unit_id, location_geojson, mob_id, notes, occurred_at, payload, synced_at, type, updated_at FROM events WHERE farm_id = bucket.farm_id
+      - SELECT accepted_at, created_at, deleted_at, expires_at, farm_id, id, invited_at, role, scope, updated_at, user_id FROM farm_users WHERE farm_id = bucket.farm_id
+      - SELECT business_id, created_at, deleted_at, district, enterprise_types, hectares, id, jurisdiction, name, province, timezone, updated_at FROM farms WHERE id = bucket.farm_id
+      - SELECT attributes, boundary_geojson, carrying_capacity_lsu, code, created_at, created_by, deleted_at, enterprise_id, farm_id, hectares, id, irrigation, kind, name, parent_id, soil_type, updated_at, updated_by FROM land_units WHERE farm_id = bucket.farm_id
+      - SELECT created_at, created_by, deleted_at, enterprise_id, farm_id, head_count, id, initial_head_count, land_unit_id, name, species, updated_at, updated_by FROM mobs WHERE farm_id = bucket.farm_id
+      - SELECT case_number, created_at, created_by, deleted_at, discovered_at, evidence_pack_key, farm_id, head_count, id, land_unit_id, last_seen_at, last_seen_location_geojson, observations, reporting_station, status, updated_at, updated_by FROM theft_incidents WHERE farm_id = bucket.farm_id
+      - SELECT created_at, gestation_days, id, source, species, updated_at FROM species_gestation
+  self:
+    parameters: SELECT request.user_id() as user_id
+    data:
+      - SELECT created_at, deleted_at, email, full_name, id, last_seen_at, locale, phone, theme, updated_at FROM users WHERE id = bucket.user_id

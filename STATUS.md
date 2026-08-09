@@ -55,6 +55,45 @@ commit only, awaiting the owner's go-ahead to push/open a PR.
 
 ## 3. Owner decisions
 
+**Four questions from generating real PowerSync sync rules (3b), asked 2026-08-09.** Evidence
+trail: `packages/sync/scripts/derive-sync-rules.ts`'s header, `sync-rules.generated.yaml`.
+
+1. **Classic Sync Rules (`bucket_definitions`, what this slice generated) or Sync Streams
+   (`edition: 3`, JOIN-capable)?** PowerSync's own docs show the CURRENT self-hosted
+   docker-compose default running Streams, not classic rules, and Streams reportedly "support
+   everything Sync Rules do, plus more expressive queries (including JOIN support)" — which would
+   dissolve questions 2–3 below without the migration they propose. ⚠️ This is a doc-summary
+   paraphrase, not a verified quote or a running service — the same channel fabricated a
+   plausible-looking farm-domain example earlier this session when asked for something unrelated.
+   Task 3 (docker-compose) answers this empirically against the pinned image; the generator
+   re-targets if needed (TENANCY and the deriver's expressibility/column-exclusion logic carry
+   over either way — a re-target, not a redo).
+   → _Answer:_
+2. **`businesses`, `regulatory_rates`, `veterinary_products` sync to NO device under classic Sync
+   Rules** — each needs a two-hop resolution (`request.user_id()` → `farm_users` → `farms` →
+   `business_id`/`jurisdiction`) a single-table query cannot express. If Q1 confirms Streams, this
+   likely resolves with a JOIN and no migration is needed. Otherwise the fix is a migration
+   denormalising the hop onto `farm_users` (this repo's dual-write precedent — `boundary_geojson`,
+   `location_geojson`) — confirm it's wanted, and whether `veterinary_products`/`regulatory_rates`
+   staying unsynced blocks the FR-131 withdrawal check offline before treating this as
+   non-blocking.
+   → _Answer:_
+3. **`users`: only the connected user's own row syncs, not a co-member's, under classic Sync
+   Rules** — same two-hop shape as Q2, same "may dissolve under Streams" caveat. Narrower than RLS
+   is safe meanwhile (nothing leaks) but is a real behaviour change from what `TENANCY` declares
+   (`via-membership`). Does any offline screen read a co-member's name/locale? If yes this blocks,
+   regardless of which format lands.
+   → _Answer:_
+4. **The generated sync rule cannot enforce `farm_users.expires_at`** — supported SQL has no
+   `now()` or any time-based function, so the rule keeps syncing a membership past its
+   `expires_at` until something else soft-deletes the row (RLS already refuses it at the API by
+   then, so nothing already on-device becomes wrongly readable, but a not-yet-downloaded row keeps
+   landing after RLS says no). Closing it needs a scheduled job that soft-deletes expired
+   memberships, making `deleted_at` the one revocation signal both systems share. Likely survives
+   either sync-rules format — confirm against the real service rather than a doc summary. Wanted
+   for 3b, or deferred?
+   → _Answer:_
+
 **Resolved 2026-08-09 — Werf absorbs Voorman's planning discipline; Voorman is archived, not
 merged.** The comparative audit found Werf has the stronger requirements, legal, offline, tenancy
 and implementation foundation. Keep React/NestJS/Postgres/PostGIS/PowerSync and `af-south-1`;
@@ -106,19 +145,41 @@ and claims none until that Phase 3 slice lands.
    header/CSP baselines, 15-character new-password floor and the first accessible semantic skeleton
    are implemented. Application throttling is not the production perimeter: shared Redis limits,
    WAF/account-aware delay and Google OIDC/account linking remain explicit ADR-0011 work.
-4. Next slice: **3b**, PowerSync sync rules from `TENANCY` + a self-hosted PowerSync service +
-   a `PowerSyncBackendConnector` (auth + upload queue) so `createLocalDatabase` can actually
-   `.connect()`. That is also where `enableMultiTabs`/worker config choices need revisiting for
-   real device use, not just the build-succeeds check this slice did. ⚠️ `@journeyapps/wa-sqlite`'s
-   postinstall (dynamic WASM core download) 404'd during this slice's `pnpm install` — it claims
-   the static build still works, but nothing in 3a opens a database, so that claim is unverified.
-   Confirm the static core actually opens in a browser before spending time on anything else in 3b.
-5. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
+4. ✅ Done 2026-08-09: **confirmed the static WASM core actually opens in a browser** — the
+   check §5 item 4 required before any other 3b work. A diagnostics-only Vite entry
+   (`apps/web/diagnostics.html`, own build, own `dist/diagnostics/` output, never in the main
+   bundle/precache) dynamic-imports `@werf/sync/local-database`, opens a real `PowerSyncDatabase`
+   in Chromium, and round-trips a write that survives a fresh navigation — real OPFS persistence,
+   not an in-memory illusion of it. `apps/web/e2e/local-db-diagnostic.spec.ts` proves it; `pnpm
+   test:e2e` now builds this entry first. The postinstall 404 was a non-issue: the static WASM
+   assets ship inside `@journeyapps/wa-sqlite`'s own package (confirmed on disk) regardless.
+5. ✅ Done 2026-08-09: **PowerSync sync rules generated from `TENANCY`** (`packages/sync/
+   scripts/derive-sync-rules.ts` → `sync-rules.generated.yaml`, `pnpm --filter @werf/sync
+   generate:sync-rules`, drift-checked by `sync-rules-freshness.spec.ts`). Two buckets: `by_farm`
+   (parameters from `farm_users`, filtered by `deleted_at`/`accepted_at`) and `self` (the
+   connected user's own row). `sync-rules-rls-agreement.spec.ts` reads the real RLS migrations off
+   disk and proves each synced table's policy is built on `app_user_farm_ids()` — not just that
+   the abstract `TENANCY` predicate says so. Empirically confirmed a permissive hand-edit of the
+   checked-in YAML fails the freshness test (tampered a `WHERE` clause away, watched it fail,
+   reverted). ⛔ **Three tables/behaviours are NOT expressible in classic PowerSync Sync Rules**
+   (no JOINs/subqueries) and are documented gaps, not oversights — see §3's three new OPEN owner
+   questions before this is called done: `businesses`/`regulatory_rates`/`veterinary_products`
+   sync to no device, `users` syncs only the viewer's own row, and `expires_at` is unenforced by
+   the rule (RLS still enforces it at the API). The YAML is unvalidated against a real service —
+   task 3's docker-compose slice is the empirical check.
+6. Next: stand up a self-hosted PowerSync service (docker-compose, Postgres logical replication)
+   pointed at `sync-rules.generated.yaml` — this is the empirical check the YAML has never had.
+   Then a `PowerSyncBackendConnector` (`fetchCredentials` mints a short-lived PowerSync JWT
+   against the HttpOnly session cookie; `uploadData` drains the local write queue) so
+   `createLocalDatabase` can actually `.connect()`. ⚠️ The moment a real `.connect()` feeds any
+   app read path, tripwire 3e (below) fires — decide explicitly whether that slice's connect stays
+   e2e-only or pulls the `landed()` fix forward, and write the decision here.
+7. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
    `landed()` breaks the day mobs/tallies come down from the server.
-6. Do not begin payroll on local adapters.
-7. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
-   this was flagged last session and NOT done this session (stayed scoped to 3a). Rebase it onto
-   `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
+8. Do not begin payroll on local adapters.
+9. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
+   this was flagged last session and NOT done this session (stayed scoped to 3a/3b). Rebase it
+   onto `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json",
-    "generate:schema": "tsx scripts/generate-local-schema.ts"
+    "generate:schema": "tsx scripts/generate-local-schema.ts",
+    "generate:sync-rules": "tsx scripts/generate-sync-rules.ts"
   },
   "dependencies": {
     "@powersync/common": "^2.0.0",

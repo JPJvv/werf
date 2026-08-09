@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build && node scripts/check-bundle-size.mjs",
+    "build:diagnostics": "vite build --config vite.diagnostics.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json"
   },

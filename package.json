@@ -13,7 +13,7 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "test": "vitest run",
-    "test:e2e": "turbo build --filter @werf/web && playwright test",
+    "test:e2e": "turbo build --filter @werf/web && pnpm --filter @werf/web build:diagnostics && playwright test",
     "test:trace": "node scripts/test-trace.mjs",
     "project:check": "node scripts/check-project-state.mjs",
     "lint": "eslint . && prettier --check .",

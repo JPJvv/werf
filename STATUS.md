@@ -65,7 +65,7 @@ and claims none until that Phase 3 slice lands.
 
 | Check | Latest result |
 |---|---|
-| `pnpm test:e2e` | 27/27 passed in 1.2 minutes, including all Phase 2 capture screens in both themes and the production-worker offline journey |
+| `pnpm test:e2e` (2026-08-09, `phase-3/powersync-foundation`) | 27/27 passed in 49.7s, including the production-worker offline journey — re-run deliberately after `apps/web/vite.config.ts`'s `worker: { format: 'es' }` change, which alters how every worker in the build is emitted, not just the SDK's |
 | `pnpm verify` | Uncached: 84 test files / 953 tests, 7/7 builds; bundle 148.04 KB gz ≤ 250 KB |
 | `pnpm project:check` | Green. ⚠️ Unanswered owner decisions are now a WARNING, not a failure — the old exit-1 made "ask, do not guess" break the definition of done. `--strict` restores the hard failure and **nothing invokes it yet**; that is a deliberate, informed weakening, not an oversight |
 | FR-101 focused tests | 22/22 green (`AddAnimal` + `Lifecycle`) |
@@ -92,7 +92,10 @@ and claims none until that Phase 3 slice lands.
 3. Next slice: **3b**, PowerSync sync rules from `TENANCY` + a self-hosted PowerSync service +
    a `PowerSyncBackendConnector` (auth + upload queue) so `createLocalDatabase` can actually
    `.connect()`. That is also where `enableMultiTabs`/worker config choices need revisiting for
-   real device use, not just the build-succeeds check this slice did.
+   real device use, not just the build-succeeds check this slice did. ⚠️ `@journeyapps/wa-sqlite`'s
+   postinstall (dynamic WASM core download) 404'd during this slice's `pnpm install` — it claims
+   the static build still works, but nothing in 3a opens a database, so that claim is unverified.
+   Confirm the static core actually opens in a browser before spending time on anything else in 3b.
 4. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
    `landed()` breaks the day mobs/tallies come down from the server.
 5. Do not begin payroll on local adapters.

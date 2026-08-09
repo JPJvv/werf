@@ -842,6 +842,33 @@ add the one shared local-first attachment path approved on 2026-08-08.
   not-yet-downloaded row keeps landing after RLS would refuse it. Open owner question in
   STATUS.md §3 Q4: build the expiry-sweep job (soft-delete on expiry, making `deleted_at` the one
   shared revocation signal), or defer.
+☑ 3b `PowerSyncBackendConnector` implemented (`packages/sync/src/connector.ts`) and `.connect()`
+  EMPIRICALLY PROVEN end-to-end against the real self-hosted service, not just unit-tested:
+  `fetchCredentials` calls a new `GET /api/sync/token` (`apps/api/src/sync/`), which mints a
+  short-lived RS256 JWT (`TokenService.signPowerSyncToken`) from the caller's own session —
+  deliberately minimal claims (`sub` only, no farm list), because farm membership is resolved by
+  the sync stream's own `farm_users` lookup at replication time, not baked into the token; a
+  revoked membership stops syncing on the next replicated write rather than waiting out the
+  token's 15-minute TTL.
+  ⛔ **Found empirically, 2026-08-09: config validating and rows replicating into the service's
+  own storage is NOT the same claim as a connected client receiving them.** A real `.connect()` +
+  `waitForFirstSync()` completed with no error and `operations_synced: 0` — every stream in
+  `sync-config.yaml` needed `auto_subscribe: true`, which nothing had set, because Sync Streams
+  are an opt-in subscription model and nothing in this repo ever subscribed. Fixed in the
+  generator (`sync-streams.ts`'s `renderStream`), regenerated, and re-verified against the live
+  service: a fresh test farm registered via the real `/api/auth/register` reached the client's
+  local `farms` table with exactly its own row (`buckets: 16`, `operations_synced: 6` in the
+  service log) — the per-user delivery rung this repo's own validation ladder needed (config
+  accepted → rows replicated → parameters indexed → **rows delivered per user**, only the last of
+  which this proves). This is now the standing posture: every stream auto-subscribes, matching
+  offline-first's premise that a device holds its whole farm by default.
+  `uploadData` deliberately THROWS on any queued write rather than draining it silently — db.md's
+  "the write queue is never discarded by the system" — because no per-table upload route exists
+  yet (3c/3d). Proven directly: `connector.spec.ts`'s throw-on-nonempty-queue test asserts
+  `complete()` is never called for an unroutable write. This connector is not wired into any
+  application read path — diagnostics-only (`apps/web/src/diagnostics/local-db-diagnostic.ts`
+  `mode=connect`) — so tripwire 3e below does not fire yet; wiring a real read path to `.connect()`
+  is 3c/3d territory and must pull the `landed()` hydration fix forward when it happens, not after.
 ☐ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
   at every step leaves either the old readable store or the complete new one, never half of each
 ☐ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months

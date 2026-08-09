@@ -1,4 +1,5 @@
 import { uuidv7 } from '@werf/core';
+import { createSyncConnector } from '@werf/sync';
 
 /**
  * NOT part of the app. This is the browser-open proof STATUS.md's Phase 3 next-steps demanded
@@ -16,6 +17,12 @@ import { uuidv7 } from '@werf/core';
  * `createLocalDatabase` (it hangs forever under Node — see local-database.ts):
  * 1. The real `PowerSyncDatabase` opens — OPFS + Worker + WASM all exist and cooperate.
  * 2. A write survives a reload — OPFS persistence, not an in-memory illusion of it.
+ *
+ * Run against the BUILT preview (`vite preview`), not `vite dev` — `@powersync/web`'s inline
+ * module worker fails to init under `vite dev`'s transform pipeline; only a real build has a real
+ * worker chunk. `mode=connect` additionally requires a real access token minted by a signed-in,
+ * 2FA-enrolled session (`?accessToken=`) — dev-only, hand-supplied; never something this page
+ * mints or stores itself.
  */
 
 const RESULT_ELEMENT_ID = 'local-db-diagnostic-result';
@@ -27,12 +34,14 @@ async function run(): Promise<void> {
   }
 
   try {
-    const { createLocalDatabase } = await import('@werf/sync/local-database');
-    const db = createLocalDatabase({ dbFilename: 'diagnostic.db' });
-    await db.init();
-
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('mode') ?? 'write';
+
+    const { createLocalDatabase } = await import('@werf/sync/local-database');
+    const db = createLocalDatabase({
+      dbFilename: mode === 'connect' ? 'diagnostic-connect.db' : 'diagnostic.db',
+    });
+    await db.init();
 
     if (mode === 'write') {
       const id = uuidv7();
@@ -43,7 +52,7 @@ async function run(): Promise<void> {
       ]);
       resultEl.textContent = `ok:${id}`;
       resultEl.dataset.status = 'ok';
-    } else {
+    } else if (mode === 'read') {
       const id = params.get('id');
       const row = await db.get<{ name: string; jurisdiction: string }>(
         'SELECT name, jurisdiction FROM farms WHERE id = ?',
@@ -51,6 +60,30 @@ async function run(): Promise<void> {
       );
       resultEl.textContent = `ok:${row.name}:${row.jurisdiction}`;
       resultEl.dataset.status = 'ok';
+    } else if (mode === 'connect') {
+      // Phase 3 slice 4: the download half of .connect() (packages/sync/src/connector.ts).
+      // Deliberately read-only — no local INSERT here, so the CRUD queue stays empty and
+      // uploadData is never invoked (connector.ts's own header: that half has no route to a
+      // domain endpoint yet). Proves a row seeded server-side reaches THIS device through the
+      // real self-hosted service, for the right user — the empirical close on the two-hop
+      // Sync Streams predicates task 3 validated at the service, now proven at the client.
+      const accessToken = params.get('accessToken');
+      if (!accessToken) throw new Error('mode=connect requires ?accessToken=');
+
+      const connector = createSyncConnector({
+        apiBaseUrl: params.get('apiBase') ?? '/api',
+        getAccessToken: async () => accessToken,
+      });
+      await db.connect(connector);
+      await db.waitForFirstSync();
+
+      const rows = await db.getAll<{ id: string; name: string }>(
+        'SELECT id, name FROM farms ORDER BY name',
+      );
+      resultEl.textContent = `ok:${rows.length}:${rows.map((r) => r.name).join(',')}`;
+      resultEl.dataset.status = 'ok';
+    } else {
+      throw new Error(`unknown mode "${mode}"`);
     }
   } catch (error) {
     resultEl.textContent = `error:${error instanceof Error ? error.message : String(error)}`;

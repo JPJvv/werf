@@ -17,7 +17,7 @@ commit only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a done, unmerged | `phase-3/powersync-foundation`: `@powersync/web`/`@powersync/common` installed behind the `@werf/sync` seam; local SQLite schema derived from `TENANCY` + the real Postgres schema. See §4/§5. Not yet connected to a service — that's 3b |
+| 3 — Offline sync | 🔶 In progress — 3a/3b done, unmerged | `phase-3/powersync-foundation`: local SQLite schema + self-hosted PowerSync service + Sync Streams + `PowerSyncBackendConnector`, all empirically validated end-to-end including real per-user delivery. See §4/§5. `uploadData`, offline queue durability and hydration are 3c/3d/3e, not yet started |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -115,6 +115,9 @@ and claims none until that Phase 3 slice lands.
 | `pnpm verify` (2026-08-09, `phase-3/powersync-foundation`) | Uncached: 86 test files / 965 tests, 7/7 builds; bundle 151.17 KB gz ≤ 250 KB (was 148.04 KB — the honest cost of the pure schema code, not the SDK's WASM engine, which is deliberately kept out of the bundle; see §5) |
 | `pnpm verify` (2026-08-09, consolidation/auth hardening) | ✅ Uncached: project check + lint/format + 12/12 typecheck tasks; 89 test files / 975 tests; 7/7 builds; bundle 151.69 KB gz ≤ 250 KB |
 | `pnpm test:e2e` (2026-08-09, consolidation/auth hardening) | ✅ 27/27 Chromium journeys passed in 56.0s, including axe in both themes and the production-worker offline capture/reload/reconnect path |
+| `pnpm verify` (2026-08-09, Phase 3 slice 4 — PowerSyncBackendConnector) | ✅ Uncached: 96 test files / 1017 tests, 12/12 typecheck, 7/7 builds; bundle 151.67 KB gz ≤ 250 KB |
+| `pnpm test:e2e` (2026-08-09, Phase 3 slice 4) | ✅ 28/28 Chromium journeys passed in 46.1s — re-run after `apps/web/vite.config.ts`'s `preview.proxy` addition; confirmed inert (existing specs intercept `/api` browser-side before the proxy) |
+| Manual — real service, real per-user delivery (2026-08-09) | ✅ A freshly registered test farm's row reached the client through a real `.connect()` against the self-hosted service: `buckets: 16`, `operations_synced: 6`, client read back exactly its own farm. This is the rung the config-validation and replication-log evidence above could not prove by itself — see phase-checklists.md 3b |
 
 ## 5. Next executable steps
 
@@ -168,11 +171,20 @@ and claims none until that Phase 3 slice lands.
    confirmed format-independent, not Streams-specific. Dev-only RS256 keypair for
    `client_auth.jwks` generated to scratchpad, NOT committed (only the public JWK is in
    `service.yaml`) — production key custody is ADR-0011/task-4 territory, not decided here.
-7. Next: a `PowerSyncBackendConnector` (`fetchCredentials` mints a short-lived PowerSync JWT
-   against the HttpOnly session cookie; `uploadData` drains the local write queue) so
-   `createLocalDatabase` can actually `.connect()`. ⚠️ The moment a real `.connect()` feeds any
-   app read path, tripwire 3e (below) fires — decide explicitly whether that slice's connect stays
-   e2e-only or pulls the `landed()` fix forward, and write the decision here.
+7. ✅ Done 2026-08-09: **Phase 3 slice 4 — `PowerSyncBackendConnector` implemented, `.connect()`
+   empirically proven end-to-end against the real service** (`packages/sync/src/connector.ts`;
+   `GET /api/sync/token` mints a short-lived RS256 JWT from the caller's session). Real finding:
+   config validating and rows landing in the service's own storage is NOT the same claim as a
+   connected client receiving them — a real `.connect()` completed with `operations_synced: 0`
+   until every stream got `auto_subscribe: true` (Sync Streams are opt-in; nothing had subscribed).
+   Fixed in the generator, regenerated, re-verified: a fresh test farm's row reached the client
+   (`buckets: 16`, `operations_synced: 6`). `uploadData` deliberately throws on any queued write —
+   no per-table upload route exists yet, that's 3c/3d — proven by a test asserting `complete()` is
+   never called. Full detail in `phase-checklists.md` 3b. **Decision on the tripwire-3e question
+   below: `.connect()` stays diagnostics-only this slice** — `mode=connect` is reachable only from
+   `diagnostics.html`, never the app shell, so no real read path calls it yet and tripwire 3e does
+   not fire. The moment 3c/3d wires a real screen to `.connect()`, the `landed()` hydration fix
+   must land in the SAME slice, not after.
 8. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
    `landed()` breaks the day mobs/tallies come down from the server.
 9. Do not begin payroll on local adapters.

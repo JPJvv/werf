@@ -14,59 +14,74 @@ streams:
     query: |
       SELECT animal_id, applied_at, created_at, created_by, deleted_at, farm_id, id, is_primary, type, updated_at, updated_by, value FROM animal_identifiers
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   animals:
     query: |
       SELECT acquired_at, attributes, brand_applied_at, brand_id, breed, created_at, created_by, dam_id, deleted_at, dob, dob_estimated, enterprise_id, farm_id, id, land_unit_id, mob_id, photo_key, sex, sire_id, source, species, status, status_at, updated_at, updated_by FROM animals
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   branding_registers:
     query: |
       SELECT body_position, certificate_reference, created_at, created_by, deleted_at, farm_id, id, jurisdiction, mark, mark_type, registered_at, species, updated_at, updated_by FROM branding_registers
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   businesses:
     query: |
       SELECT created_at, deleted_at, id, name, registration_number, updated_at, vat_number FROM businesses
       WHERE id IN (SELECT business_id FROM farms WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL))
+    auto_subscribe: true
   enterprises:
     query: |
       SELECT active, created_at, deleted_at, farm_id, id, name, type, updated_at FROM enterprises
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   events:
     query: |
       SELECT animal_id, batch_id, created_at, created_by, deleted_at, employee_id, enterprise_id, farm_id, id, land_unit_id, location_geojson, mob_id, notes, occurred_at, payload, synced_at, type, updated_at FROM events
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   farm_users:
     query: |
       SELECT accepted_at, created_at, deleted_at, expires_at, farm_id, id, invited_at, role, scope, updated_at, user_id FROM farm_users
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   farms:
     query: |
       SELECT business_id, created_at, deleted_at, district, enterprise_types, hectares, id, jurisdiction, name, province, timezone, updated_at FROM farms
       WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   land_units:
     query: |
       SELECT attributes, boundary_geojson, carrying_capacity_lsu, code, created_at, created_by, deleted_at, enterprise_id, farm_id, hectares, id, irrigation, kind, name, parent_id, soil_type, updated_at, updated_by FROM land_units
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   mobs:
     query: |
       SELECT created_at, created_by, deleted_at, enterprise_id, farm_id, head_count, id, initial_head_count, land_unit_id, name, species, updated_at, updated_by FROM mobs
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   regulatory_rates:
     query: |
       SELECT code, created_at, effective_from, effective_to, gazette_reference, id, jurisdiction, notes, unit, value FROM regulatory_rates
       WHERE jurisdiction IN (SELECT jurisdiction FROM farms WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL))
+    auto_subscribe: true
   species_gestation:
     query: |
       SELECT created_at, gestation_days, id, source, species, updated_at FROM species_gestation
       WHERE 1 IN (SELECT 1 FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   theft_incidents:
     query: |
       SELECT case_number, created_at, created_by, deleted_at, discovered_at, evidence_pack_key, farm_id, head_count, id, land_unit_id, last_seen_at, last_seen_location_geojson, observations, reporting_station, status, updated_at, updated_by FROM theft_incidents
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   users:
     query: |
       SELECT created_at, deleted_at, email, full_name, id, last_seen_at, locale, phone, theme, updated_at FROM users
       WHERE id = auth.user_id() OR id IN (SELECT user_id FROM farm_users WHERE deleted_at IS NULL AND accepted_at IS NOT NULL AND farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL))
+    auto_subscribe: true
   veterinary_products:
     query: |
       SELECT active_ingredients, created_at, dose_per_kg, effective_from, effective_to, id, jurisdiction, meat_withdrawal_days, milk_withdrawal_hours, name, registration_number, route, species, version FROM veterinary_products
       WHERE jurisdiction IN (SELECT jurisdiction FROM farms WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL))
+    auto_subscribe: true

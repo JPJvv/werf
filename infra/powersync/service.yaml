@@ -33,7 +33,7 @@ client_auth:
   jwks:
     keys:
       - kty: 'RSA'
-        n: '2M8RX3wcZvAFFmyjFZHr-6QZxZ0ZFx7krcP-K3w7sqaR8V515T5tXVDMW6l0qskOSf0kOo3FqhwHqmCSdwPchELwAk7rUvNXxItN-gEO1ZpH5czpwAZfTgQWuorz29cSfOWWHYFoJUhC1qQR2ZAmdsgi0JI-BLMWIspyC_-37HeyRvc57X69jWoMIwvgXPGx02_J5cpX7eBDyBv0XZ2jm-ZWonbkthLzlOvSkpXCwQLAkkmGOE3aYDZrHlKwSYBlFUGYxoA1KxlWspr06nKzl36gL6NraEPqt6m4JjE5BwPFj3YGHw5jRbnwEx9hy-_e7KjcMXn3Dv_mn6vhW3Ra6Q'
+        n: '9e0NfI7V3y6JPTQ4fbcVVUUJ8il0e7cqyEoElY6XHy-qqSuKUFKCodYPA1N6xCAduEsW1FA4WXq3871hLtt3GRnFGo6LV1kPPvth1vsmGnJ5cwutc6Wa59QnRknB--WkR9VMtgGc3tDxu2dTgB0WvFzwOmt-A8WGRGS6R4y84AsK5aZzYG3-5MJAM4aWJH0a3F3eFnAsavkNxvNN-s-kfNYHrzBFKFhVy6ZBD9qPysKF-_vx3Wzwn0EdHuBDwyytd1hNrs31FbOz136Vulu08arfG0AATWI1OEKiCBK98sjzn6TrIoTx1zpRiEjtppCOqC4hx--EuUwWedWZKoz0zQ'
         e: 'AQAB'
         alg: 'RS256'
         kid: 'werf-dev-1'

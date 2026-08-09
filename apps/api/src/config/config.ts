@@ -4,6 +4,7 @@
  * parsed here and the process dies loudly if the environment is wrong.
  */
 
+import { createPrivateKey } from 'node:crypto';
 import { z } from 'zod';
 import { keysAreIdentical, parsePiiKey } from '../auth/pii-crypto';
 
@@ -33,6 +34,15 @@ export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
  * for a month (ADR-0007).
  */
 export const SECOND_FACTOR_CHALLENGE_TTL_SECONDS = 5 * 60;
+
+/**
+ * PowerSync connection token lifetime. Matches `ACCESS_TOKEN_TTL_SECONDS`: this token is a
+ * cache of the same authorisation decision (a live, 2FA-satisfied session), handed to a
+ * different verifier (the self-hosted PowerSync service, not this API), so there is no reason
+ * for it to outlive the token it is minted alongside. The SDK re-fetches on expiry
+ * (`PowerSyncBackendConnector.fetchCredentials`'s own contract).
+ */
+export const POWERSYNC_TOKEN_TTL_SECONDS = 15 * 60;
 
 /**
  * The outbound mail relay (FR-005). Entirely optional: with no host configured the API boots with
@@ -96,6 +106,39 @@ const configSchema = z.object({
     .refine((value) => Buffer.from(value, 'base64').length === 32, 'must be 32 base64 bytes'),
 
   /**
+   * PEM-encoded RS256 private key the API signs PowerSync connection tokens with
+   * (`TokenService.signPowerSyncToken`). No default — unlike the dev fallbacks below, a
+   * missing signing key must fail loudly rather than let `/sync/token` boot into a broken
+   * state. The matching PUBLIC half lives in `infra/powersync/service.yaml`'s
+   * `client_auth.jwks`, kept in step by `scripts/generate-dev-powersync-key.mjs` for local
+   * dev; production key custody is an open ADR-0011 question (STATUS.md), not decided here.
+   * Validated as an actual parseable RSA private key, not just non-empty text, for the same
+   * reason `piiEncryptionKey` checks shape before length: a malformed key should fail at boot,
+   * not on the first sync connection six months from now.
+   */
+  powerSyncJwtPrivateKey: z.string().refine((value) => {
+    try {
+      createPrivateKey(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'must be a PEM-encoded private key'),
+
+  /** Must match the `kid` PowerSync's `service.yaml` expects to find the verifying key under. */
+  powerSyncJwtKid: z.string().min(1).default('werf-dev-1'),
+
+  /** Must match `service.yaml`'s `client_auth.audience` — a mismatch is a silent 401 at connect time. */
+  powerSyncAudience: z.string().min(1).default('werf-dev'),
+
+  /**
+   * The self-hosted PowerSync service's own URL, told to the CLIENT via `fetchCredentials`'s
+   * `endpoint` field so it knows where to connect. Not this API's own address — a separate
+   * service (docker-compose.yml's `powersync`) the client talks to directly.
+   */
+  powerSyncUrl: z.string().url().default('http://localhost:8080'),
+
+  /**
    * The WebAuthn Relying Party ID: the registrable domain a passkey is bound to, e.g.
    * `werf.co.za`. A credential created under one RP ID cannot be used under another —
    * that binding IS the phishing resistance, and it is enforced by the authenticator on
@@ -136,6 +179,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseElevatedUrl: env.DATABASE_ELEVATED_URL ?? env.DATABASE_URL,
     jwtSecret: env.JWT_SECRET,
     piiEncryptionKey: env.PII_ENCRYPTION_KEY,
+    powerSyncJwtPrivateKey: env.POWERSYNC_JWT_PRIVATE_KEY,
+    powerSyncJwtKid: env.POWERSYNC_JWT_KID,
+    powerSyncAudience: env.POWERSYNC_AUDIENCE,
+    powerSyncUrl: env.POWERSYNC_URL,
     webauthnRpId: env.WEBAUTHN_RP_ID,
     webauthnRpName: env.WEBAUTHN_RP_NAME,
     webauthnOrigin: env.WEBAUTHN_ORIGIN,

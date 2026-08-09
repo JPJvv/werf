@@ -7,8 +7,18 @@ import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
-import { ACCESS_TOKEN_TTL_SECONDS, type AppConfig } from '../config/config';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  POWERSYNC_TOKEN_TTL_SECONDS,
+  type AppConfig,
+} from '../config/config';
 import { APP_CONFIG } from '../db/db.module';
+
+/** What `signPowerSyncToken` hands the self-hosted PowerSync service to verify. */
+export interface PowerSyncToken {
+  readonly token: string;
+  readonly expiresAt: Date;
+}
 
 /**
  * Claims in the access token. Small on purpose: a JWT is a cache of an authorisation
@@ -59,6 +69,33 @@ export class TokenService {
 
   async verifyAccessToken(token: string): Promise<AccessTokenClaims> {
     return this.jwt.verifyAsync<AccessTokenClaims>(token, { secret: this.config.jwtSecret });
+  }
+
+  /**
+   * Mints a short-lived RS256 token for the self-hosted PowerSync service to verify against
+   * `service.yaml`'s `client_auth.jwks` (Phase 3 slice 3b/4, ADR-0003's `.connect()` half).
+   *
+   * Claims are deliberately minimal — `sub` only, no farm list. Farm membership is resolved
+   * by the sync stream's own `farm_users` lookup at replication time (packages/sync's
+   * `derive-sync-streams.ts`), not baked into the token: a membership revoked mid-session
+   * must stop syncing on the NEXT replicated write, not wait 15 minutes for this token to
+   * expire and be re-minted. Same posture `AccessTokenClaims`'s own doc comment states for
+   * roles — a JWT is a cache of an authorisation decision, and this one is deliberately cached
+   * as little as possible.
+   */
+  async signPowerSyncToken(userId: string): Promise<PowerSyncToken> {
+    const expiresAt = new Date(Date.now() + POWERSYNC_TOKEN_TTL_SECONDS * 1000);
+    const token = await this.jwt.signAsync(
+      { sub: userId },
+      {
+        privateKey: this.config.powerSyncJwtPrivateKey,
+        algorithm: 'RS256',
+        keyid: this.config.powerSyncJwtKid,
+        audience: this.config.powerSyncAudience,
+        expiresIn: POWERSYNC_TOKEN_TTL_SECONDS,
+      },
+    );
+    return { token, expiresAt };
   }
 
   /**

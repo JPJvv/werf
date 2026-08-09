@@ -9,6 +9,7 @@ import { LivestockModule } from './livestock/livestock.module';
 import { RainfallModule } from './rainfall/rainfall.module';
 import { ReferenceModule } from './reference/reference.module';
 import { MailModule } from './mail/mail.module';
+import { SyncModule } from './sync/sync.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -39,6 +40,7 @@ import { HealthController } from './health/health.controller';
     LivestockModule,
     RainfallModule,
     ReferenceModule,
+    SyncModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -23,6 +23,17 @@ export default defineConfig({
       '/api': { target: 'http://localhost:3000', changeOrigin: true },
     },
   },
+  // Same proxy, for `vite preview` — the built PWA e2e/manual-verification runs against
+  // (offline-capture.spec.ts's own header explains why: only a build has real worker chunks and
+  // a real service worker). Without this, a diagnostic exercising a REAL `/api` call under
+  // preview hits CORS (the API deliberately has none — main.ts's own comment: same-origin in
+  // both dev and production means "we never need a CORS policy" — adding one there to work
+  // around a local-only preview gap would be the wrong fix, applied to the wrong side).
+  preview: {
+    proxy: {
+      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+    },
+  },
   // @powersync/web (ADR-0003, via @werf/sync) ships an inline ES module worker for its SQLite
   // engine. Rollup's default 'iife' worker format cannot be code-split and fails the build the
   // moment anything imports it — not a hypothetical, this is the error PowerSync's own build

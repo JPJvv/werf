@@ -25,6 +25,13 @@
  *     is no partial-success mode. `derive-sync-streams.ts`'s `NOT_YET_EXPRESSIBLE`/
  *     `NO_SURROGATE_ID` exclusions exist because of this: a wrong guess for one table would break
  *     replication for every table, not just the one that was wrong.
+ *   - Config validating and rows landing in the service's own storage (`powersync.current_data`,
+ *     `powersync.bucket_parameters`) is NOT the same claim as a connected client receiving those
+ *     rows. Streams are an opt-in subscription model: without `auto_subscribe: true`, a real
+ *     `.connect()` completes cleanly with `operations_synced: 0` — no error, no warning — because
+ *     the client never subscribed to anything. Every stream below sets it. This product's whole
+ *     premise is a device holding its farm by default; per-stream on-demand subscription is a
+ *     bandwidth optimisation a later phase can opt into, not the default.
  */
 
 export interface SyncStreamDef {
@@ -40,7 +47,13 @@ export interface SyncStreamDef {
 
 function renderStream(s: SyncStreamDef): string {
   const cols = s.columns.join(', ');
-  return `  ${s.name}:\n    query: |\n      SELECT ${cols} FROM ${s.table}\n      WHERE ${s.whereSql}`;
+  // auto_subscribe: streams are an opt-in subscription model — without this, a connected client
+  // receives nothing until it explicitly subscribes to each stream, which nothing in this repo
+  // does yet (empirically found 2026-08-09: a real .connect() completed with operations_synced: 0
+  // against a service confirmed to hold correctly-indexed bucket_parameters for the connecting
+  // user). Offline-first means a device holds its whole farm by default; per-stream on-demand
+  // subscription is a bandwidth optimisation a later phase can opt back into, not the default.
+  return `  ${s.name}:\n    query: |\n      SELECT ${cols} FROM ${s.table}\n      WHERE ${s.whereSql}\n    auto_subscribe: true`;
 }
 
 /** Renders a complete `config: {edition: 3}` + `streams:` document. Callers own the header comment. */

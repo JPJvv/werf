@@ -47,6 +47,11 @@ export {
 export { LOCAL_SCHEMA_TABLES } from './local-schema-tables.generated';
 export { localSchema, type LocalSchema } from './local-schema';
 
+// The PowerSyncBackendConnector (Phase 3 slice 3b/4). Only `@powersync/common` TYPES cross
+// this file's import boundary (see connector.ts's header) — erased at build time, so this is
+// as safe to export eagerly as local-schema.ts's `Schema` usage above, unlike local-database.ts.
+export { createSyncConnector, type SyncConnectorOptions } from './connector';
+
 // `createLocalDatabase` (local-database.ts) is deliberately NOT re-exported here. It pulls in
 // `@powersync/web`'s SQLite/OPFS engine — multiple megabytes of WASM — and apps/web consumes
 // this package as source with no pre-build step (vite.config.ts), so anything reachable from

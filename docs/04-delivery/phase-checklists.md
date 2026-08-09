@@ -783,8 +783,39 @@ accepted in ADR-0003, without changing the domain-facing store contracts or losi
 add the one shared local-first attachment path approved on 2026-08-08.
 
 ```
-☐ 3a PowerSync web SDK is owned by `@werf/sync`; components never import it directly
-☐ 3a Local SQLite/OPFS schema represents every Phase 2 syncable table and reference cache
+☑ 3a PowerSync web SDK is owned by `@werf/sync`; components never import it directly.
+  `local-database.ts` is the only file allowed to import `@powersync/web`, enforced by an
+  eslint `no-restricted-imports` rule (not just convention) scoped to everywhere outside
+  `packages/sync`. `createLocalDatabase`/`LocalDatabase` are deliberately NOT re-exported from
+  the package's main barrel yet: building it in showed the SDK's WASM engine (1–2.5MB) gets
+  bundled into apps/web's initial chunk even unused, blowing NFR-009's 250KB budget and
+  breaking the PWA precache manifest outright. It is reachable via `@werf/sync/local-database`
+  for the slice that actually opens a connection (behind a dynamic import, code-split) —
+  nothing calls it yet, which is correct: 3a is schema + factory, not a wired-up connection.
+  `apps/web/vite.config.ts` also needed `worker: { format: 'es' }` — Rollup's default iife
+  worker format cannot code-split and fails the build the moment anything imports the SDK.
+☑ 3a Local SQLite/OPFS schema represents every Phase 2 syncable table and reference cache.
+  DERIVED, not hand-written: `packages/sync/scripts/derive-local-schema.ts` reads the real
+  Postgres schema (`@werf/db`) and the `TENANCY` registry (`packages/sync/src/tenancy.ts`,
+  the same registry sync rules/RLS are derived from) and
+  `pnpm --filter @werf/sync generate:schema` writes `local-schema-tables.generated.ts`;
+  `test/local-schema-freshness.spec.ts` fails CI if the checked-in file drifts. The derivation
+  module lives under `scripts/`, never `src/`, because it imports `@werf/db` → `pg`, which
+  cannot resolve in a browser bundle and apps/web consumes `@werf/sync` as source with no
+  pre-build step — confirmed by testing that `pg`-in-the-bundle failure directly during this
+  slice. `test/local-schema.spec.ts` proves every non-`server-only` `TENANCY` table gets a
+  local table, every `neverSyncColumns` entry (secrets, PostGIS geometry) is excluded, and the
+  result builds a real `@powersync/common` `Schema` that passes `.validate()`.
+  ⛔ **Known gap, not an oversight:** `theft_incident_animals` has a composite primary key
+  (`incident_id`, `animal_id`) and no surrogate `id` column — the one table in this schema that
+  already breaks db.md's "UUIDv7 primary key on every table" rule, independent of PowerSync.
+  PowerSync requires one TEXT `id` per synced row, so this table cannot be represented locally
+  yet; it is excluded from the generated schema with a test that fails loudly if the exclusion
+  goes stale or a new table hits the same gap silently. Tracked as issue #10 (additive migration
+  adding the surrogate id). Constructing the real `PowerSyncDatabase` (`local-database.ts`) was
+  also confirmed, empirically, to hang forever under plain Node — it opens real OPFS/Worker/WASM
+  machinery that only exists in a browser — which is why that file is typechecked but never
+  unit-tested; a real open belongs in Playwright, once a later slice gives it a call site.
 ☐ 3b PowerSync sync rules and Postgres RLS agree for every farm-scoped table; the cross-farm
   tenancy test fails when either side is deliberately made permissive
 ☐ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption

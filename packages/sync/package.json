@@ -6,17 +6,23 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./local-database": "./src/local-database.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "generate:schema": "tsx scripts/generate-local-schema.ts"
   },
   "dependencies": {
+    "@powersync/common": "^2.0.0",
+    "@powersync/web": "^2.1.1",
     "@werf/core": "workspace:*"
   },
   "devDependencies": {
     "@werf/db": "workspace:*",
+    "drizzle-orm": "^0.38.3",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

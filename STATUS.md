@@ -3,11 +3,12 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 
-**Active branch:** `phase-2/livestock`, including the FR-101 capture closure
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
+commit only, awaiting the owner's go-ahead to push/open a PR.
 
-**Remote state:** everything through the tenth-pass closure is pushed to PR #3; both CI lanes green
+**Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge
 
 ## 1. Delivery position
 
@@ -15,8 +16,8 @@
 |---|---|---|
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
-| 2 — Livestock | ✅ Merge-ready | The owner-triggered tenth pass ran and **cleared** — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`, which withdrew its standing NOT APPROVABLE (§4, §6). Uncached `pnpm verify` and e2e green. MED/LOW fixed under §6 clause 3 or filed as issues #4–#8 |
-| 3 — Offline sync | Not started | The current browser stores are local adapters. The PowerSync/SQLite replication described by ADR-0003 is not installed or implemented and must precede another large offline domain |
+| 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
+| 3 — Offline sync | 🔶 In progress — 3a done, unmerged | `phase-3/powersync-foundation`: `@powersync/web`/`@powersync/common` installed behind the `@werf/sync` seam; local SQLite schema derived from `TENANCY` + the real Postgres schema. See §4/§5. Not yet connected to a service — that's 3b |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -70,20 +71,34 @@ and claims none until that Phase 3 slice lands.
 | FR-101 focused tests | 22/22 green (`AddAnimal` + `Lifecycle`) |
 | CI | Both PR lanes green at `a3894e6`: main gate 4m0s; E2E/axe 1m46s |
 | Review agents | ✅ **Tenth pass run 2026-08-08 at owner request over `17891f0..HEAD`.** `sync-auditor`: APPROVABLE. `compliance-checker`: APPROVABLE — **withdraws its standing NOT APPROVABLE**. `reviewer`: NOT APPROVABLE, carried solely by the exit-gate line "owner-triggered passes still open", which this pass closed. **No SEV-1 and no SEV-2 from any agent** |
+| `pnpm verify` (2026-08-09, `phase-3/powersync-foundation`) | Uncached: 86 test files / 965 tests, 7/7 builds; bundle 151.17 KB gz ≤ 250 KB (was 148.04 KB — the honest cost of the pure schema code, not the SDK's WASM engine, which is deliberately kept out of the bundle; see §5) |
 
 ## 5. Next executable steps
 
-1. ✅ Done 2026-08-08: the owner-triggered tenth pass ran; see §4 and §6. MED/LOW findings were
+1. ✅ Done 2026-08-08: the owner-triggered tenth pass ran; see §6. MED/LOW findings were
    fixed under clause 3 (both code fixes carry a test watched to FAIL first) or filed on `main` as
    **#4** (a refused animal taints nothing), **#5** (`dobEstimated` read by nothing), **#6** (an
    aborted round wipes the hold display), **#7** (`/not-sent` says "record it again" for a tally,
-   and a recount RESETS), **#8** (⛔ Phase 3 blocker — `landed()` breaks on hydration).
-2. Flip draft PR #3 to ready and merge once both CI lanes are green at the fix commit.
-3. Start Phase 3 from the offline-sync checklist — **read tripwire 3e before writing any hydration
-   code.** Do not begin payroll on local adapters.
-4. ⚠️ `docs/phase-3-6-scope` is stacked on `phase-2/livestock`, not on `main`. Once PR #3 merges it
-   carries merged history; **rebase it onto `main` before Phase 3 work starts**, rather than leaving
-   the next session to discover it.
+   and a recount RESETS), **#8** (⛔ Phase 3 blocker — `landed()` breaks on hydration), **#9**
+   (stale STATUS.md section pointers, low/docs-only).
+2. ✅ Done 2026-08-09: **Phase 3 slice 3a** on `phase-3/powersync-foundation` (unpushed —
+   this touches sync and awaits an owner-triggered `sync-auditor` pass before it can be called
+   merge-ready). `@powersync/web`/`@powersync/common` installed behind `@werf/sync`; local
+   SQLite schema derived from `TENANCY` + `@werf/db` via `pnpm --filter @werf/sync
+   generate:schema`, drift-checked in CI. Full detail and two real findings from building it
+   (the WASM-in-bundle trap, the `theft_incident_animals` surrogate-id gap → **#10**) are in
+   `docs/04-delivery/phase-checklists.md` under 3a. `createLocalDatabase` exists
+   (`@werf/sync/local-database`) but is not wired to anything yet — no call site until 3b.
+3. Next slice: **3b**, PowerSync sync rules from `TENANCY` + a self-hosted PowerSync service +
+   a `PowerSyncBackendConnector` (auth + upload queue) so `createLocalDatabase` can actually
+   `.connect()`. That is also where `enableMultiTabs`/worker config choices need revisiting for
+   real device use, not just the build-succeeds check this slice did.
+4. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
+   `landed()` breaks the day mobs/tallies come down from the server.
+5. Do not begin payroll on local adapters.
+6. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
+   this was flagged last session and NOT done this session (stayed scoped to 3a). Rebase it onto
+   `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

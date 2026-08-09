@@ -23,6 +23,14 @@ export default defineConfig({
       '/api': { target: 'http://localhost:3000', changeOrigin: true },
     },
   },
+  // @powersync/web (ADR-0003, via @werf/sync) ships an inline ES module worker for its SQLite
+  // engine. Rollup's default 'iife' worker format cannot be code-split and fails the build the
+  // moment anything imports it — not a hypothetical, this is the error PowerSync's own build
+  // hits under Vite without this. 'es' is fine for our target browsers: NFR-009's throttled
+  // Galaxy A15 baseline and every evergreen browser support module workers.
+  worker: {
+    format: 'es',
+  },
   plugins: [
     react(),
     VitePWA({

@@ -69,6 +69,14 @@ export function useMobsSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useMobs()` as
+ *  confirmed empty, when this is true. */
+export function useMobsHydrationFailed(): boolean {
+  const store = useMobStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /** Commit a mob to the local register. Synchronous; never awaits the network (NFR-007). */
 export function useRecordMob(): (mob: StoredMob) => void {
   const store = useMobStore();

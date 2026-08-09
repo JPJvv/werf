@@ -136,6 +136,12 @@ export function createSqliteCaptureStore<T extends { id: string }>(
   // an unhydrated store's empty `all()` is indistinguishable from a confirmed-empty one without
   // it, and the difference is exactly the evidence a safety ordering is judged against.
   let hasSettled = false;
+  // `hydrationFailed()`'s backing flag. Distinct from a corrupt ROW (tolerated below, never sets
+  // this) — this is for when the hydration ATTEMPT itself could not complete: the database would
+  // not open, the migration transaction genuinely threw, or the SELECT itself failed. `all()`
+  // being `[]` in that case is not "confirmed empty"; a consumer reading several stores together
+  // (Outbox.tsx's flush) must treat it as "cannot currently verify", never as evidence.
+  let didHydrationFail = false;
   const listeners = new Set<() => void>();
 
   const notify = (): void => {
@@ -161,7 +167,20 @@ export function createSqliteCaptureStore<T extends { id: string }>(
         'SELECT payload_json FROM capture_records WHERE store_key = ? ORDER BY seq ASC',
         [key],
       );
-      const fromDb = rows.map((row) => JSON.parse(row.payload_json) as T);
+      // Tolerant per row, matching parseLegacyArray's philosophy — a single malformed row (e.g.
+      // written by a future schema version this build does not understand) must not fail the
+      // WHOLE hydration. It used to: one bad row threw here, the catch block below caught it, and
+      // because the migration marker was already committed, EVERY future boot re-threw on the
+      // same row forever — a permanent read failure a farmer could never recover from, and every
+      // append() made after that point silently stopped being durable (resolvedDb never got set).
+      // Skipping just the bad row keeps hydration succeeding for everything else that IS readable.
+      const fromDb = rows.flatMap((row) => {
+        try {
+          return [JSON.parse(row.payload_json) as T];
+        } catch {
+          return [];
+        }
+      });
 
       // Merge, never replace — see this module's header.
       snapshot = [...fromDb, ...pendingAppends];
@@ -170,12 +189,17 @@ export function createSqliteCaptureStore<T extends { id: string }>(
       pendingAppends.length = 0;
       resolvedDb = db;
     } catch {
-      // Migration or the initial read failed (e.g. a malformed row from a future schema
-      // version). Anything appended before or during this window is still correct in
-      // `snapshot` — append() updates it unconditionally, independent of hydration succeeding —
-      // only the DB-backed history is missing until a future boot's retry succeeds. Never
-      // rethrown: an unhandled rejection must not crash a screen that already has the farmer's
-      // in-memory capture on it.
+      // The database would not open, or migration/the SELECT itself threw for a reason a corrupt
+      // row can no longer be (that is tolerated above, per-row, without reaching here). Anything
+      // appended before or during this window is still correct in `snapshot` — append() updates
+      // it unconditionally, independent of hydration succeeding — only the DB-backed history is
+      // missing until a future boot's retry succeeds. Never rethrown: an unhandled rejection must
+      // not crash a screen that already has the farmer's in-memory capture on it.
+      //
+      // `didHydrationFail = true` is the load-bearing part: `all()` reading `[]` here is NOT
+      // "this store confirmed it holds nothing" the way it is on a genuinely empty, successful
+      // hydration — a consumer must be able to tell the two apart (Outbox.tsx's flush does).
+      didHydrationFail = true;
     } finally {
       // Fires on BOTH outcomes — a subscriber (React's useSyncExternalStore, or a test awaiting
       // this store's own settle) needs to know the hydration ATTEMPT is over, whether or not it
@@ -207,6 +231,10 @@ export function createSqliteCaptureStore<T extends { id: string }>(
 
     settled(): boolean {
       return hasSettled;
+    },
+
+    hydrationFailed(): boolean {
+      return didHydrationFail;
     },
   };
 }

@@ -86,6 +86,16 @@ export interface FakeLocalDatabase {
    * exists precisely because that natural ordering is not a promise, only an observation).
    */
   holdHydrationFor(storeKey: string): () => void;
+  /**
+   * Every getOptional()/getAll() call naming this store_key throws from this point on —
+   * simulating the database genuinely refusing to open or read this ONE store's rows (not the
+   * whole fake db), the way a real corrupted OPFS file or a schema the running build cannot read
+   * would. Lets a test target `sqlite-capture-store.ts`'s `hydrationFailed()` signal at a single
+   * store while every OTHER store on the same fake db hydrates and settles normally (see
+   * `apps/web/src/sync/Outbox.test.tsx`'s hydration-failure tests) — a targeted failure a test
+   * cannot get by overriding `getOptional`/`getAll` wholesale, which would fail every store.
+   */
+  failHydrationFor(storeKey: string): void;
 }
 
 /**
@@ -98,6 +108,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
   let migrations = new Map<string, FakeMigrationRow>();
   let failNext = false;
   const held = new Map<string, Promise<void>>();
+  const failing = new Set<string>();
   // A real writeLock is exclusive — concurrent writeTransaction callers queue, they never
   // interleave. Emulated here by chaining onto the tail of a promise queue, so a test that
   // constructs two stores "at once" (React StrictMode's double-invoked useMemo, in practice)
@@ -111,6 +122,9 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     async getOptional(sql: string, params: readonly unknown[] = []) {
       if (sql.startsWith('SELECT id FROM capture_migrations')) {
         const [key] = params as [string];
+        if (failing.has(key)) {
+          throw new Error(`fake database: simulated hydration failure for "${key}"`);
+        }
         await held.get(key);
         return migrations.get(key) ?? null;
       }
@@ -120,6 +134,9 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     async getAll(sql: string, params: readonly unknown[] = []) {
       if (sql.startsWith('SELECT payload_json FROM capture_records')) {
         const [key] = params as [string];
+        if (failing.has(key)) {
+          throw new Error(`fake database: simulated hydration failure for "${key}"`);
+        }
         await held.get(key);
         return [...records.values()]
           .filter((row) => row.store_key === key)
@@ -184,6 +201,10 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
         release();
         held.delete(storeKey);
       };
+    },
+
+    failHydrationFor(storeKey: string): void {
+      failing.add(storeKey);
     },
   };
 

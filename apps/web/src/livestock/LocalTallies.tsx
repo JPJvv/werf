@@ -145,6 +145,14 @@ export function useTalliesSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useTallies()` as
+ *  confirmed empty, when this is true. */
+export function useTalliesHydrationFailed(): boolean {
+  const store = useTallyStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Commit a head-count adjustment locally (FR-102). Synchronous; never awaits the network (NFR-007).
  *

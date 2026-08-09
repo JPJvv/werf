@@ -131,6 +131,59 @@ describe('the SQLite-backed capture store', () => {
     expect(rows.map((row) => (JSON.parse(row.payload_json) as Animal).id)).toEqual(['1', '2']);
   });
 
+  it('skips one corrupt DB-resident row rather than failing the whole hydration (sync-auditor Finding 1, 2026-08-09)', async () => {
+    // Distinct from the legacy-localStorage corruption case below: this is a row ALREADY IN
+    // capture_records (e.g. written by a future schema version this build cannot parse), found
+    // on a boot where the migration marker is already committed — so before this fix, the ONE bad
+    // row threw inside the hydration IIFE, the store's `catch` swallowed it as a "failure", and
+    // because the marker already existed, EVERY future boot re-threw on the identical row,
+    // forever: a permanent, unrecoverable read, and every append() made after it silently stopped
+    // being durable (resolvedDb never got set). Tolerating the one bad row, like
+    // parseLegacyArray() already tolerates a corrupt legacy value, keeps hydration succeeding for
+    // everything else that IS readable, and keeps the store writable afterward.
+    const db = createFakeLocalDatabase() as unknown as LocalDatabase;
+    await db.execute(
+      'INSERT INTO capture_migrations (id, migrated_at, record_count) VALUES (?, ?, ?)',
+      ['herd:farm-a', new Date(0).toISOString(), 2],
+    );
+    await db.execute(
+      'INSERT OR REPLACE INTO capture_records (id, store_key, farm_id, seq, payload_json) VALUES (?, ?, ?, ?, ?)',
+      ['corrupt-1', 'herd:farm-a', 'farm-a', 0, '{ not valid json'],
+    );
+    await db.execute(
+      'INSERT OR REPLACE INTO capture_records (id, store_key, farm_id, seq, payload_json) VALUES (?, ?, ?, ?, ?)',
+      ['good-1', 'herd:farm-a', 'farm-a', 1, JSON.stringify({ id: 'good-1', species: 'cattle' })],
+    );
+
+    const store = createSqliteCaptureStore<Animal>({
+      database: Promise.resolve(db),
+      key: 'herd:farm-a',
+      legacyStorage: memoryStorage(),
+    });
+    await waitForHydration(store);
+
+    // The good row survived; the corrupt one was skipped, not thrown over the whole hydration.
+    expect(store.all()).toEqual([{ id: 'good-1', species: 'cattle' }]);
+    // And — the load-bearing part — this was NOT treated as a hydration failure: `resolvedDb` got
+    // set, so the store is durable going forward, and a consumer reading multiple stores together
+    // (Outbox.tsx) can trust this store's `all()` as a real, confirmed account.
+    expect(store.hydrationFailed()).toBe(false);
+    expect(store.settled()).toBe(true);
+
+    // Proof the store is actually writable afterward, not merely reporting success: a fresh
+    // append reaches the database, not just the in-memory snapshot.
+    store.append({ id: 'new-1', species: 'sheep' });
+    await Promise.resolve();
+    await Promise.resolve();
+    const rows = await db.getAll<{ payload_json: string }>(
+      'SELECT payload_json FROM capture_records WHERE store_key = ? ORDER BY seq ASC',
+      ['herd:farm-a'],
+    );
+    expect(rows.map((row) => row.payload_json)).toContain(
+      JSON.stringify({ id: 'new-1', species: 'sheep' }),
+    );
+  });
+
   it('migrates a corrupt or missing legacy value as zero rows plus a committed marker, not a crash', async () => {
     const db = createFakeLocalDatabase() as unknown as LocalDatabase;
     const legacyStorage = memoryStorage({ 'herd:farm-a': '{ not json' });
@@ -274,6 +327,19 @@ describe('the SQLite-backed capture store', () => {
     expect(store.settled()).toBe(true);
   });
 
+  it('hydrationFailed() stays false on a normal, successful hydration', async () => {
+    const store = createSqliteCaptureStore<Animal>({
+      database: Promise.resolve(createFakeLocalDatabase() as unknown as LocalDatabase),
+      key: 'herd:farm-a',
+      legacyStorage: memoryStorage(),
+    });
+
+    expect(store.hydrationFailed()).toBe(false); // false before settling too — never a false alarm
+    await waitForHydration(store);
+
+    expect(store.hydrationFailed()).toBe(false);
+  });
+
   it('settled() also flips true on a FAILED hydration — a waiter must not hang forever', async () => {
     // A consumer waiting on settled() to decide whether it is safe to act on this store's `all()`
     // (Outbox.tsx's flush, most of all) must eventually get an answer even when hydration itself
@@ -294,5 +360,9 @@ describe('the SQLite-backed capture store', () => {
 
     expect(store.settled()).toBe(true);
     expect(store.all()).toEqual([]); // no DB-backed history was ever confirmed
+    // ⭐ sync-auditor Finding 1 (2026-08-09): settled-but-empty here must be distinguishable from
+    // settled-and-CONFIRMED-empty — a consumer reading `hydrationFailed()` (Outbox.tsx's flush,
+    // most of all) must not treat this store's `[]` as evidence the farm holds none of these.
+    expect(store.hydrationFailed()).toBe(true);
   });
 });

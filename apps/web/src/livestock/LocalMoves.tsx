@@ -84,6 +84,14 @@ export function useMovesSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useMoves()` as
+ *  confirmed empty, when this is true. */
+export function useMovesHydrationFailed(): boolean {
+  const store = useMoveStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Record a walk for each animal in a group, under ONE batch id (FR-112). Synchronous; never awaits
  * the network (NFR-007). A farmer walks a mob, not an animal, so the group is the unit here and a

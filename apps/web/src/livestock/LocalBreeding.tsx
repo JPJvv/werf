@@ -134,6 +134,14 @@ export function useBreedingEventsSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useBreedingEvents()` as confirmed empty, when this is true. */
+export function useBreedingEventsHydrationFailed(): boolean {
+  const store = useBreedingStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Record one breeding capture. Synchronous; never awaits the network (NFR-007).
  *

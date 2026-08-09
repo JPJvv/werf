@@ -112,6 +112,11 @@ describe('the local capture store', () => {
     expect(store.settled()).toBe(true);
   });
 
+  it('never reports a hydration failure — load() below tolerates corruption, it never throws', () => {
+    const store = createCaptureStore<Animal>({ storage: memoryStorage(), key: 'herd:farm-a' });
+    expect(store.hydrationFailed()).toBe(false);
+  });
+
   it('does not lose the in-memory capture when storage refuses to persist it', () => {
     // Private browsing / quota exceeded: setItem throws. The farmer tapped Save and must see
     // it land; it simply may not survive a cold start. Failing the capture would be worse.

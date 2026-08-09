@@ -43,33 +43,62 @@ import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
 import {
   useBoundaryWalks,
+  useBoundaryWalksHydrationFailed,
   useBoundaryWalksSettled,
   useLandUnits,
+  useLandUnitsHydrationFailed,
   useLandUnitsSettled,
 } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
-import { useAnimals, useAnimalsSettled } from '../livestock/LocalHerd';
-import { useMobs, useMobsSettled } from '../livestock/LocalMobs';
-import { useTallies, useTalliesSettled, type StoredTally } from '../livestock/LocalTallies';
+import { useAnimals, useAnimalsHydrationFailed, useAnimalsSettled } from '../livestock/LocalHerd';
+import { useMobs, useMobsHydrationFailed, useMobsSettled } from '../livestock/LocalMobs';
+import {
+  useTallies,
+  useTalliesHydrationFailed,
+  useTalliesSettled,
+  type StoredTally,
+} from '../livestock/LocalTallies';
 import {
   useAnimalLabels,
   useIdentifiers,
+  useIdentifiersHydrationFailed,
   useIdentifiersSettled,
 } from '../livestock/LocalIdentifiers';
-import { useWeights, useWeightsSettled } from '../livestock/LocalWeights';
+import {
+  useWeights,
+  useWeightsHydrationFailed,
+  useWeightsSettled,
+} from '../livestock/LocalWeights';
 import {
   useLifecycleEvents,
+  useLifecycleEventsHydrationFailed,
   useLifecycleEventsSettled,
   type StoredLifecycleEvent,
 } from '../livestock/LocalLifecycle';
-import { useMoves, useMovesSettled } from '../livestock/LocalMoves';
+import { useMoves, useMovesHydrationFailed, useMovesSettled } from '../livestock/LocalMoves';
 import { animalDisposalSubjects, mobDisposalSubjects } from '../livestock/withdrawal';
 import { farmDay } from '../farmTime';
-import { useHealthEvents, useHealthEventsSettled } from '../livestock/LocalHealth';
-import { useBreedingEvents, useBreedingEventsSettled } from '../livestock/LocalBreeding';
-import { useTheftIncidents, useTheftIncidentsSettled } from '../livestock/LocalTheft';
+import {
+  useHealthEvents,
+  useHealthEventsHydrationFailed,
+  useHealthEventsSettled,
+} from '../livestock/LocalHealth';
+import {
+  useBreedingEvents,
+  useBreedingEventsHydrationFailed,
+  useBreedingEventsSettled,
+} from '../livestock/LocalBreeding';
+import {
+  useTheftIncidents,
+  useTheftIncidentsHydrationFailed,
+  useTheftIncidentsSettled,
+} from '../livestock/LocalTheft';
 import { livestockApi } from '../livestock/livestockApi';
-import { useRainfall, useRainfallSettled } from '../rainfall/LocalRainfall';
+import {
+  useRainfall,
+  useRainfallHydrationFailed,
+  useRainfallSettled,
+} from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
 
@@ -326,6 +355,10 @@ function orderTallies(tallies: readonly StoredTally[]): readonly StoredTally[] {
 /** Injectable so tests can back the sent-log with in-memory storage instead of localStorage. */
 export type SentLogFactory = (key: string) => SentLog;
 
+// See the "FINDING 2" comment at this constant's one use site (the errored-retry effect) for
+// why 90s and not something shorter or unbounded.
+const RETRY_INTERVAL_MS = 90_000;
+
 const defaultSentLogFactory: SentLogFactory = (key) =>
   createSentLog({ storage: window.localStorage, key });
 
@@ -434,6 +467,44 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     breedingSettled &&
     theftSettled &&
     rainfallSettled;
+
+  // ⭐ FINDING 1 (sync-auditor, 2026-08-09): `settled()` flips true on EITHER outcome, by design
+  // (a store that can never open must not strand every other store's flush forever) — but that
+  // means a store whose hydration genuinely FAILED (the database would not open, or reading it
+  // back threw) also reports `all() === []` once `allSettled` is true, and nothing above told
+  // `allSettled` apart from a store that hydrated successfully and confirmed it holds nothing. A
+  // failed `health` read is the sharp case: the FR-131 disposal guard would read it as "no dose
+  // outstanding" and wave a slaughter through that a dose this device cannot currently verify
+  // should have held. `hydrationFailed()` is the second signal that closes this — same
+  // unconditional-hook-call discipline as the settled flags above, for the same Rules-of-Hooks
+  // reason.
+  const landUnitsHydrationFailed = useLandUnitsHydrationFailed();
+  const boundaryWalksHydrationFailed = useBoundaryWalksHydrationFailed();
+  const mobsHydrationFailed = useMobsHydrationFailed();
+  const talliesHydrationFailed = useTalliesHydrationFailed();
+  const animalsHydrationFailed = useAnimalsHydrationFailed();
+  const identifiersHydrationFailed = useIdentifiersHydrationFailed();
+  const weightsHydrationFailed = useWeightsHydrationFailed();
+  const eventsHydrationFailed = useLifecycleEventsHydrationFailed();
+  const movesHydrationFailed = useMovesHydrationFailed();
+  const healthHydrationFailed = useHealthEventsHydrationFailed();
+  const breedingHydrationFailed = useBreedingEventsHydrationFailed();
+  const theftHydrationFailed = useTheftIncidentsHydrationFailed();
+  const rainfallHydrationFailed = useRainfallHydrationFailed();
+  const anyHydrationFailed =
+    landUnitsHydrationFailed ||
+    boundaryWalksHydrationFailed ||
+    mobsHydrationFailed ||
+    talliesHydrationFailed ||
+    animalsHydrationFailed ||
+    identifiersHydrationFailed ||
+    weightsHydrationFailed ||
+    eventsHydrationFailed ||
+    movesHydrationFailed ||
+    healthHydrationFailed ||
+    breedingHydrationFailed ||
+    theftHydrationFailed ||
+    rainfallHydrationFailed;
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
   const online = useSyncStatus().status !== 'offline';
@@ -990,9 +1061,35 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // stores that have not finished saying what they hold. `pendingCount` climbing from 0 as stores
   // settle one at a time re-fires this effect on its own, so the flush simply waits for the last
   // store rather than needing a separate "now everything is ready" signal.
+  //
+  // ⭐ `!anyHydrationFailed` (Finding 1, sync-auditor 2026-08-09): `allSettled` alone cannot tell a
+  // store that hydrated successfully and confirmed it holds nothing apart from one whose hydration
+  // ATTEMPT ended (so it counts as settled) but genuinely FAILED — and the FK/`guardedBy`/
+  // `needsHead` checks the flush runs need that distinction to stay conservative. Holding the
+  // whole flush, not just the failed store's own captures, matches db.md's "an expired refresh
+  // token HOLDS the queue" — an unverifiable state is held, never treated as evidence of absence.
   useEffect(() => {
-    if (online && allSettled && pendingCount > 0) void flush();
-  }, [online, allSettled, pendingCount, flush]);
+    if (online && allSettled && !anyHydrationFailed && pendingCount > 0) void flush();
+  }, [online, allSettled, anyHydrationFailed, pendingCount, flush]);
+
+  // ⭐ FINDING 2 (sync-auditor, 2026-08-09): an aborted round previously had NO autonomous
+  // retry. `errored` only ever changes inside `flush()` itself, and nothing besides `online`/
+  // `pendingCount` changing re-triggers the effect above — a farmer's device syncing weeks of
+  // offline captures at once is exactly the case most likely to exceed the global per-IP
+  // request budget (app.module.ts's `ThrottlerModule`: 30/sec burst, 300/min sustained), which
+  // aborts the round as an unrecognised 4xx (`isRefusal` deliberately excludes 429 — db.md's
+  // "a 5xx is transient" rule applies to it too) and leaves the strip reading "Not sent — will
+  // retry" with nothing actually scheduled to retry it, until the farmer captured something new
+  // or restarted the app. `RETRY_INTERVAL_MS` is chosen to comfortably outlast every
+  // `blockDuration` in `app.module.ts`'s throttler config (10s burst, 60s sustained) and every
+  // budget in `security/rate-limits.ts`, so a throttle block has always cleared server-side by
+  // the time the next attempt lands. Uncapped and indefinite, matching the promise the copy
+  // already makes and db.md's "the queue is never discarded... only a human, explicitly."
+  useEffect(() => {
+    if (!errored || !online) return;
+    const timer = setInterval(() => void flush(), RETRY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [errored, online, flush]);
 
   // Only refusals that are still queued count. One the farmer resolved another way — or that the
   // server accepted on a later round — leaves the queue and stops being reported.
@@ -1035,17 +1132,35 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // this device has not actually finished checking. There is no dedicated status for "still
     // finding out" (`SyncStatus` has no loading state); 'syncing' is the closest honest word and
     // it self-corrects within the same render pass once the last store settles.
+    // ⭐ `anyHydrationFailed` (Finding 1, sync-auditor 2026-08-09) is checked right after the
+    // still-settling branch, before any pendingCount-based status: once every store's hydration
+    // ATTEMPT is over (`allSettled` is true even for a store that failed), a failed one must not
+    // fall through to 'synced' (a lie — this device does not actually know it holds nothing) or
+    // silently to 'pending' (undercounts — the failed store's own captures are invisible to
+    // `pendingCount`, not merely unsent). 'error' is the honest word already in the vocabulary:
+    // "Not sent — will retry" is true here in the same sense it is true of a dropped signal.
     const status: SyncState['status'] = !online
       ? 'offline'
       : !allSettled || flushing
         ? 'syncing'
-        : (errored || blockedCount > 0) && pendingCount > 0
+        : anyHydrationFailed
           ? 'error'
-          : pendingCount > 0
-            ? 'pending'
-            : 'synced';
+          : (errored || blockedCount > 0) && pendingCount > 0
+            ? 'error'
+            : pendingCount > 0
+              ? 'pending'
+              : 'synced';
     return { status, pendingCount, blockedCount, waitingCount };
-  }, [online, allSettled, flushing, errored, pendingCount, blockedCount, waitingCount]);
+  }, [
+    online,
+    allSettled,
+    flushing,
+    anyHydrationFailed,
+    errored,
+    pendingCount,
+    blockedCount,
+    waitingCount,
+  ]);
 
   return (
     <OutboxContext.Provider value={state}>

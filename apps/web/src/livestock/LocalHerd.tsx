@@ -75,6 +75,14 @@ export function useAnimalsSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useAnimals()` as
+ *  confirmed empty, when this is true. */
+export function useAnimalsHydrationFailed(): boolean {
+  const store = useHerdStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /** Commit an animal to the local herd. Synchronous; never awaits the network (NFR-007). */
 export function useRecordAnimal(): (animal: StoredAnimal) => void {
   const store = useHerdStore();

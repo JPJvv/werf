@@ -12,7 +12,7 @@
  * nothing at all leaves the device while offline.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
@@ -209,6 +209,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
   // Restore connectivity for the next test (one test forces it off).
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+  // Restore real timers unconditionally — a no-op if the test never faked them, but essential
+  // for the one that does (the retry-interval test below): leaked fake timers would otherwise
+  // silently break every subsequent test's own timing.
+  vi.useRealTimers();
 });
 
 describe('sending queued captures once there is a signal (FR-009)', () => {
@@ -316,6 +320,39 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     const at = (suffix: string) => paths.findIndex((p) => p.endsWith(suffix));
     expect(at('/livestock/dips')).toBeGreaterThanOrEqual(0);
     expect(at('/livestock/dips')).toBeLessThan(at('/livestock/mob-tallies'));
+  });
+
+  it('⭐ holds EVERYTHING, not just its own captures, when a store fails to hydrate (sync-auditor Finding 1, 2026-08-09)', async () => {
+    // The FAILURE counterpart to the test above: `health` does not merely hydrate slowly here, it
+    // never hydrates at all — the fake database throws on every read for this one key, the way a
+    // corrupted OPFS file or a row a future schema version wrote would. `settled()` alone cannot
+    // tell this apart from "confirmed empty": the store still settles (on the failure), `all()`
+    // still reads `[]`. Before `hydrationFailed()` existed, the flush would have gone ahead
+    // believing no dose was outstanding — waving the tally through a guard that never actually
+    // ran, exactly the SEV-1 shape the FK/`guardedBy` ordering exists to prevent. `anyHydrationFailed`
+    // (Outbox.tsx) holds the WHOLE queue, not only what health's own captures would have been,
+    // because an unverifiable store poisons every guard that reads it, not just its own kind.
+    cachedSession();
+    seedDoseThenDisposal();
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = await getCurrentFakeLocalDatabase();
+    db.failHydrationFor(`werf-health:${FARM_ID}`);
+
+    render(<App />);
+
+    // Every OTHER seeded store hydrated and settled for real, not just "some time has passed".
+    await waitFor(async () => {
+      expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+      expect(await storedBlob(`werf-moves:${FARM_ID}`)).toContain(MOVE_ID);
+    });
+    // The strip tells the truth about a device that cannot currently verify what it holds — not
+    // "sent" (a lie), and not silently "N to send" either (an undercount: health's own dip is
+    // invisible to `pendingCount` too, same as everything else this store cannot confirm).
+    expect(await screen.findByText('Not sent — will retry')).toBeTruthy();
+    expect(screen.queryByText('Saved and sent')).toBeNull();
+    expect(postedPaths(fetchMock)).toEqual([]);
   });
 
   it('⭐ holds the disposal back when the dose it is judged against is refused this round', async () => {
@@ -1417,5 +1454,62 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/auth/refresh'))).toBe(
       true,
     );
+  });
+
+  it('⭐ schedules a bounded retry after an aborted round, and the retry itself resumes the flush (sync-auditor Finding 2, 2026-08-09)', async () => {
+    // A round aborts as transient whenever the server refuses in a way `isRefusal` does not treat
+    // as a merits refusal — a 429 from the global per-IP throttle (app.module.ts's
+    // `ThrottlerModule`) is the realistic case a large offline backlog draining at once can hit,
+    // and db.md's "a 5xx is transient" rule is written to cover it too. Before this fix, NOTHING
+    // re-triggered a flush after that: `errored` only changes inside `flush()` itself, so the
+    // strip said "Not sent — will retry" with nothing actually scheduled to retry it, until the
+    // farmer captured something new or restarted the app.
+    //
+    // Real timers throughout — `vi.useFakeTimers()` was tried here first and made React's own
+    // scheduling hang under jsdom (no real `MessageChannel`/`requestIdleCallback` fallback to
+    // fake against), so instead of simulating 90 real seconds passing, this captures the EXACT
+    // callback `window.setInterval` was given and invokes it directly — proving both that a
+    // bounded retry is genuinely scheduled AND that firing it resumes the flush for real, without
+    // needing time itself to move.
+    cachedSession();
+    seedCaptures();
+    let throttled = true;
+    const fetchMock = vi.fn(async () =>
+      throttled
+        ? ({
+            ok: false,
+            status: 429,
+            json: async () => ({ code: 'THROTTLED', message: 'too many requests' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+
+    render(<App />);
+
+    expect(await screen.findByText('Not sent — will retry')).toBeTruthy();
+    const attemptsBeforeRetry = fetchMock.mock.calls.length;
+    expect(attemptsBeforeRetry).toBeGreaterThan(0);
+
+    // A retry IS scheduled, at a bound (90s) that comfortably outlasts every `blockDuration` in
+    // app.module.ts's throttler config and security/rate-limits.ts, so a throttle block has
+    // always cleared server-side by the time a real device's timer fires.
+    await waitFor(() => {
+      expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 90_000)).toBe(true);
+    });
+    const scheduled = setIntervalSpy.mock.calls.find(([, delay]) => delay === 90_000);
+    const retryCallback = scheduled?.[0] as (() => void) | undefined;
+    expect(retryCallback).toBeDefined();
+
+    // The throttle has cleared server-side; firing the exact scheduled callback must resume the
+    // flush and actually send the backlog, with no new capture and no app restart in between.
+    throttled = false;
+    await act(async () => {
+      retryCallback?.();
+    });
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(attemptsBeforeRetry);
   });
 });

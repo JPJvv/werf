@@ -120,6 +120,14 @@ export function useTheftIncidentsSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useTheftIncidents()` as confirmed empty, when this is true. */
+export function useTheftIncidentsHydrationFailed(): boolean {
+  const store = useTheftStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * File a stock-theft incident locally. Synchronous; never awaits the network (NFR-007).
  *

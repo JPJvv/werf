@@ -96,6 +96,14 @@ export function useWeightsSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useWeights()` as
+ *  confirmed empty, when this is true. */
+export function useWeightsHydrationFailed(): boolean {
+  const store = useWeightStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /** The readings for one animal, in capture order. */
 export function useAnimalWeights(animalId: string): readonly StoredWeight[] {
   const all = useWeights();

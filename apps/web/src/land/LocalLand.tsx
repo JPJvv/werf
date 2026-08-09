@@ -148,6 +148,14 @@ export function useLandUnitsSettled(): boolean {
   return useSyncExternalStore(units.subscribe, units.settled);
 }
 
+/** Whether the land-unit store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useLandUnits()`
+ *  as confirmed empty, when this is true. */
+export function useLandUnitsHydrationFailed(): boolean {
+  const { units } = useLandStores();
+  return useSyncExternalStore(units.subscribe, units.hydrationFailed);
+}
+
 /** Commit a camp/block to the local register. Synchronous; never awaits the network (NFR-007). */
 export function useRecordLandUnit(): (unit: StoredLandUnit) => void {
   const { units } = useLandStores();
@@ -166,6 +174,14 @@ export function useBoundaryWalks(): readonly StoredBoundaryWalk[] {
 export function useBoundaryWalksSettled(): boolean {
   const { walks } = useLandStores();
   return useSyncExternalStore(walks.subscribe, walks.settled);
+}
+
+/** Whether the boundary-walk store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useBoundaryWalks()` as confirmed empty, when this is true. */
+export function useBoundaryWalksHydrationFailed(): boolean {
+  const { walks } = useLandStores();
+  return useSyncExternalStore(walks.subscribe, walks.hydrationFailed);
 }
 
 /** Commit a finished walk locally. Synchronous; the outbox sends it when there is a signal. */

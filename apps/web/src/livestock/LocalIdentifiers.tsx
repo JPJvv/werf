@@ -74,6 +74,14 @@ export function useIdentifiersSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useIdentifiers()` as confirmed empty, when this is true. */
+export function useIdentifiersHydrationFailed(): boolean {
+  const store = useIdentifierStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * The number to CALL each animal by, keyed by animal id.
  *

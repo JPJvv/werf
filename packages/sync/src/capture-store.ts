@@ -47,6 +47,17 @@ export interface CaptureStore<T> {
    * dose that has not hydrated yet stops being evidence a disposal is judged against.
    */
   settled(): boolean;
+  /**
+   * Whether the hydration attempt `settled()` reports as over ended in a genuine failure (the
+   * database would not open, or reading it back threw) rather than a clean read. Always `false`
+   * for this synchronous, localStorage-backed store. The SQLite-backed sibling
+   * (`createSqliteCaptureStore`) can flip this `true`: unlike a single corrupt row (tolerated —
+   * skipped, not fatal), an unopenable database means `all()` for this store is NOT a trustworthy
+   * "confirmed empty" the moment `settled()` is true, and a consumer that reads multiple stores
+   * together (`Outbox.tsx`'s flush, most of all) must not treat it as one — a disposal guarded by
+   * a store that failed to hydrate must be held, not waved through as if the guard read nothing.
+   */
+  hydrationFailed(): boolean;
 }
 
 export interface CaptureStoreOptions {
@@ -84,6 +95,10 @@ export function createCaptureStore<T>(options: CaptureStoreOptions): CaptureStor
 
     settled(): boolean {
       return true; // read once at construction — synchronous, so always already settled
+    },
+
+    hydrationFailed(): boolean {
+      return false; // load() below never throws — a corrupt value reads as [], not a failure
     },
   };
 }

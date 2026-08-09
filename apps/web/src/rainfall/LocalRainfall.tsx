@@ -93,6 +93,14 @@ export function useRainfallSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useRainfall()` as
+ *  confirmed empty, when this is true. */
+export function useRainfallHydrationFailed(): boolean {
+  const store = useRainfallStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Commit a gauge reading to the local log. Synchronous; never awaits the network (NFR-007). The
  * capture is validated through the domain rule first — a millimetre reading of zero or more — so a

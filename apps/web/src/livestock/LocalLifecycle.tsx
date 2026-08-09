@@ -206,6 +206,14 @@ export function useLifecycleEventsSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useLifecycleEvents()` as confirmed empty, when this is true. */
+export function useLifecycleEventsHydrationFailed(): boolean {
+  const store = useLifecycleStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /** The shared shape every recorder below hands the domain. */
 function domainBase(capture: CaptureBase) {
   return {

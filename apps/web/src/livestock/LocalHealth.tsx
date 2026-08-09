@@ -127,6 +127,16 @@ export function useHealthEventsSettled(): boolean {
   return useSyncExternalStore(store.subscribe, store.settled);
 }
 
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useHealthEvents()` as confirmed empty, when this is true. A failed health-events hydration
+ *  is the sharpest case there is: it is what the FR-131 disposal guard reads to decide whether a
+ *  slaughter/sale must be held behind a dose this device cannot currently verify. */
+export function useHealthEventsHydrationFailed(): boolean {
+  const store = useHealthStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Record one health event per animal in a dosing run, under ONE batch id (FR-112). Synchronous;
  * never awaits the network (NFR-007). A dosing run is a batch by nature — nobody doses one animal

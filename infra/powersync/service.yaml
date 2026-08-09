@@ -1,0 +1,40 @@
+# Self-hosted PowerSync service config — LOCAL DEV ONLY. Shape confirmed against
+# docs.powersync.com/tools/local-development (verbatim-quoted, not paraphrased). Production
+# config (af-south-1, real secrets) is not this file — see ADR-0011 for the auth boundary and
+# the ⛔ known-gaps note in sync-config.yaml before treating this as deployable.
+#
+# Reuses the SAME Postgres server (`postgres`, this repo's docker-compose.yml) for both the
+# replication source (the `werf` app database) and PowerSync's own bucket storage (a SEPARATE
+# database, `werf_powersync_storage` — no schema-selection key is documented for the storage
+# URI, so a second database is the unambiguous choice; see infra/postgres/init-powersync-storage.sql).
+# Confirmed workable for Postgres 14+ sharing a server between the two roles.
+
+replication:
+  connections:
+    - type: postgresql
+      uri: postgresql://werf:werf@postgres:5432/werf
+      sslmode: disable
+
+storage:
+  type: postgresql
+  uri: postgresql://werf:werf@postgres:5432/werf_powersync_storage
+  sslmode: disable
+
+port: 8080
+
+sync_config:
+  path: sync-config.yaml
+
+client_auth:
+  # No Supabase Auth in this product (ADR-0002/self-hosted af-south-1). A dev-only RS256 keypair
+  # signs the token used to exercise .connect() locally; the PRIVATE key is never committed (see
+  # scratchpad note in STATUS.md/commit message) — only the public JWK below, which discloses
+  # nothing. Production key custody is ADR-0011 / task 4 territory, not decided here.
+  jwks:
+    keys:
+      - kty: 'RSA'
+        n: '2M8RX3wcZvAFFmyjFZHr-6QZxZ0ZFx7krcP-K3w7sqaR8V515T5tXVDMW6l0qskOSf0kOo3FqhwHqmCSdwPchELwAk7rUvNXxItN-gEO1ZpH5czpwAZfTgQWuorz29cSfOWWHYFoJUhC1qQR2ZAmdsgi0JI-BLMWIspyC_-37HeyRvc57X69jWoMIwvgXPGx02_J5cpX7eBDyBv0XZ2jm-ZWonbkthLzlOvSkpXCwQLAkkmGOE3aYDZrHlKwSYBlFUGYxoA1KxlWspr06nKzl36gL6NraEPqt6m4JjE5BwPFj3YGHw5jRbnwEx9hy-_e7KjcMXn3Dv_mn6vhW3Ra6Q'
+        e: 'AQAB'
+        alg: 'RS256'
+        kid: 'werf-dev-1'
+  audience: ['werf-dev']

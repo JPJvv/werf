@@ -7,6 +7,12 @@ services:
   postgres:
     image: postgis/postgis:16-3.4
     container_name: werf-postgres
+    # wal_level=logical, added for Phase 3 slice 3b: the self-hosted PowerSync service below
+    # replicates off this database, which Postgres's default `replica` level cannot support.
+    # ⚠️ Changing this on an EXISTING dev volume requires the container to recreate
+    # (`docker compose up -d`), which the running container will do automatically — data
+    # survives (it lives in the `werf_pg` volume), but the running process restarts.
+    command: ['postgres', '-c', 'wal_level=logical']
     environment:
       POSTGRES_USER: werf
       POSTGRES_PASSWORD: werf
@@ -20,11 +26,37 @@ services:
       - '127.0.0.1:5432:5432'
     volumes:
       - werf_pg:/var/lib/postgresql/data
+      # Only runs against a FRESH volume (Postgres only executes initdb.d scripts once, on an
+      # empty data directory) — see the script's own header for the one-time manual command an
+      # EXISTING dev volume needs instead.
+      - ./infra/postgres:/docker-entrypoint-initdb.d
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U werf -d werf']
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # Self-hosted PowerSync service (Phase 3 slice 3b, ADR-0003). LOCAL DEV ONLY — production is
+  # its own af-south-1 deployment, not this compose file. Config lives in infra/powersync/;
+  # see service.yaml's header for why storage reuses this same Postgres server as a second
+  # database rather than MongoDB (the docs' own default), and for the dev-only JWT keypair.
+  powersync:
+    image: journeyapps/powersync-service:1.23.3
+    container_name: werf-powersync
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['start', '-r', 'unified']
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+    volumes:
+      - ./infra/powersync/service.yaml:/config/service.yaml
+      - ./infra/powersync/sync-config.yaml:/config/sync-config.yaml
+    ports:
+      # Loopback only, same reasoning as postgres above — nothing needs this off-box for local
+      # dev, and it would otherwise publish a database-adjacent service to the laptop's Wi-Fi.
+      - '127.0.0.1:8080:8080'
 
 volumes:
   werf_pg:

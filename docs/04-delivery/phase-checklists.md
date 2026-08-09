@@ -816,19 +816,32 @@ add the one shared local-first attachment path approved on 2026-08-08.
   also confirmed, empirically, to hang forever under plain Node — it opens real OPFS/Worker/WASM
   machinery that only exists in a browser — which is why that file is typechecked but never
   unit-tested; a real open belongs in Playwright, once a later slice gives it a call site.
-☐ 3b PowerSync sync rules and Postgres RLS agree for every farm-scoped table; the cross-farm
+☑ 3b PowerSync sync rules and Postgres RLS agree for every farm-scoped table; the cross-farm
   tenancy test fails when either side is deliberately made permissive
-  PARTIAL, 2026-08-09: `packages/sync/scripts/derive-sync-rules.ts` generates
-  `sync-rules.generated.yaml` from `TENANCY`, drift-checked by `test/sync-rules-freshness.spec.ts`.
-  `test/sync-rules-rls-agreement.spec.ts` reads the real RLS migrations off disk and proves every
-  synced table's policy is built on `app_user_farm_ids()`; empirically confirmed a hand-tampered
-  permissive YAML fails the freshness test. ⛔ NOT every farm-scoped table yet — three gaps, each
-  because classic PowerSync Sync Rules forbid JOINs/subqueries in Parameter and Data Queries:
-  `businesses`/`regulatory_rates`/`veterinary_products` have no bucket at all (need a two-hop
-  resolution through `farm_users` → `farms`); `users` syncs only the connected user's own row, not
-  a co-member's (RLS grants both); the rule cannot enforce `farm_users.expires_at` (no `now()` in
-  supported SQL). All three are open owner questions in STATUS.md §3, not silent gaps. The YAML
-  itself is still unvalidated against a running PowerSync service — that is the next slice.
+  2026-08-09: first attempt targeted classic `bucket_definitions` Sync Rules and hit a real
+  ceiling — that format forbids JOINs/subqueries in both Parameter and Data Queries, which blocks
+  `businesses`/`regulatory_rates`/`veterinary_products` (no bucket at all) and `users` (only the
+  connected user's own row, not a co-member's) outright. Re-targeted to PowerSync Sync Streams
+  (`edition: 3`), which supports `IN (SELECT ...)` subqueries. `packages/sync/scripts/
+  derive-sync-streams.ts` generates `infra/powersync/sync-config.yaml` from `TENANCY`
+  (`pnpm --filter @werf/sync generate:sync-rules`), drift-checked by
+  `test/sync-streams-freshness.spec.ts`. `test/sync-streams-rls-agreement.spec.ts` reads the real
+  RLS migrations off disk and proves tenant-scoped tables are built on `app_user_farm_ids()` and
+  reference tables are `FOR SELECT USING (true)`, matching each stream. Empirically confirmed a
+  hand-tampered permissive config fails the freshness test.
+  ⭐ VALIDATED AGAINST A REAL SERVICE, not just config-parsed: `journeyapps/powersync-service:
+  1.23.3` (`infra/powersync/`, Postgres storage backend, self-hosted via docker-compose) booted,
+  accepted the generated config with zero errors, and REPLICATED REAL ROWS from all 15 synced
+  tables — confirmed by reading the container's own replication log. Two things learned only by
+  running it, not from docs: `EXISTS` does not validate under Streams either ("Unknown
+  function") — every predicate uses `IN (SELECT ...)` instead, which does the same job — and a
+  single invalid stream fails the ENTIRE sync config, no partial-success mode.
+  ⛔ **Remaining known gap, format-independent, not an oversight:** the rule cannot enforce
+  `farm_users.expires_at` — `now()` is rejected under classic Rules AND Streams. RLS still
+  enforces it at the API, so nothing already on-device becomes wrongly readable, but a
+  not-yet-downloaded row keeps landing after RLS would refuse it. Open owner question in
+  STATUS.md §3 Q4: build the expiry-sweep job (soft-delete on expiry, making `deleted_at` the one
+  shared revocation signal), or defer.
 ☐ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
   at every step leaves either the old readable store or the complete new one, never half of each
 ☐ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months

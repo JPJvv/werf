@@ -18,6 +18,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-004 | Create multiple farms under one business; switch active farm without re-login | 1 |
 | FR-005 | Invite users by email or phone; assign per-farm role | 1 |
 | FR-006 | 📶 Authenticate; session persists offline for a configurable window (default 30 days) | 1 |
+| FR-006a | Google OpenID Connect is the primary connected sign-in. Provider/session refresh credentials remain server-side or in an HttpOnly host cookie; no session credential is stored in localStorage/IndexedDB/SQLite. Passkey remains the phishing-resistant alternative and step-up path. See [ADR-0011](../03-architecture/adr/ADR-0011-google-first-bff-authentication.md) | 1 |
 | FR-007 | 📶 Install as a PWA from the browser with an install prompt at the right moment (not on first paint) | 1 |
 | FR-008 | Switch language between English and Afrikaans per user | 1 |
 | FR-016 | **Light / dark / match-my-phone theme, per user.** Default **light**; does NOT follow `prefers-color-scheme` unless chosen — a dark surface under midday sun is a mirror | 1 |

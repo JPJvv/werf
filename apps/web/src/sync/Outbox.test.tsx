@@ -177,9 +177,13 @@ function acceptingFetch() {
  * the implementation rather than the behaviour.
  */
 function postedPaths(fetchMock: ReturnType<typeof vi.fn>): string[] {
-  return fetchMock.mock.calls
-    .filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
-    .map((call) => String(call[0]));
+  return (
+    fetchMock.mock.calls
+      .filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
+      .map((call) => String(call[0]))
+      // Refresh is session maintenance, not a capture being re-sent.
+      .filter((path) => !path.endsWith('/auth/refresh'))
+  );
 }
 
 beforeEach(() => {
@@ -1351,6 +1355,9 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     render(<App />);
 
     expect(await screen.findByText('3 to send')).toBeTruthy();
-    expect(fetchMock.mock.calls.length).toBe(0);
+    expect(postedPaths(fetchMock)).toHaveLength(0);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/auth/refresh'))).toBe(
+      true,
+    );
   });
 });

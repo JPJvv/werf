@@ -88,26 +88,33 @@ String, not float. `241.84` as a JSON number is a float somewhere downstream, an
 ## 3. Auth
 
 ```
-POST   /v1/auth/register          → 201 { userId }
-POST   /v1/auth/verify-otp        → 200 { accessToken, refreshToken, expiresIn }
-POST   /v1/auth/login             → 200 { accessToken, refreshToken, expiresIn }
-POST   /v1/auth/refresh           → 200 { accessToken, refreshToken }
-POST   /v1/auth/logout            → 204
+GET    /v1/auth/google            → 302 Google authorization (target, ADR-0011)
+GET    /v1/auth/google/callback   → 302 app; sets hardened session cookie (target)
+POST   /v1/auth/register          → 201 browser-safe session; sets session cookie (migration)
+POST   /v1/auth/login             → 200 browser-safe session or 2FA challenge; sets cookie
+POST   /v1/auth/refresh           → 200 browser-safe session; rotates HttpOnly cookie
+POST   /v1/auth/logout            → 204; clears cookie
 POST   /v1/auth/totp/enrol        → 200 { secret, qrCode }
 POST   /v1/auth/totp/verify       → 204
 POST   /v1/auth/passkey/register/options   → 200 { WebAuthn creation options }
 POST   /v1/auth/passkey/register           → 201 { credentialId, deviceLabel }
 POST   /v1/auth/passkey/auth/options       → 200 { WebAuthn request options }
-POST   /v1/auth/passkey/auth               → 200 { accessToken, refreshToken }
+POST   /v1/auth/passkey/auth               → 200 browser-safe session; sets cookie
 DELETE /v1/auth/passkey/{credentialId}     → 204
 POST   /v1/auth/recovery-codes             → 200 { codes: [10] }   # shown ONCE
 POST   /v1/auth/2fa/reset-request          → 202 { availableAt }   # 48h delay
 ```
 
 **Token policy:**
-- Access: 15 min. Contains `sub`, `farms: [{farmId, role}]`, `exp`.
-- Refresh: **30 days**, rotating, single-use.
+- Access during BFF migration: 15 min, returned to the SPA and held in memory only. Contains
+  `sub`, farm context and `exp`; server/RLS authorization remains authoritative.
+- Refresh/session: **30 days**, rotating, single-use, hashed server-side and transported only by a
+  host-only HttpOnly Secure SameSite cookie. It is never serialized into the browser response.
+- Auth responses use `Cache-Control: no-store`. Refresh and logout carry no token request body.
 - The 30 days is the offline session window (FR-006). A farmer offline for three weeks must not be locked out of their own data.
+
+Google OIDC and the cookie-only BFF end state are defined in ADR-0011. Until that migration is
+complete, the password endpoints are compatibility routes, not the desired onboarding direction.
 
 **The rule that matters:** if a refresh token has expired and the client has a pending write queue, **the queue is held, not discarded** (UC-050 A2.1). Prompt for login, then upload. Discarding a farmer's month of work because a token expired is the single worst thing this system could do, and it is a two-line mistake to make.
 

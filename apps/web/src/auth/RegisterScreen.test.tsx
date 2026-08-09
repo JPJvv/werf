@@ -170,6 +170,13 @@ describe('registering a farm business', () => {
     expect(screen.getByRole('link', { name: /herd/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /blocks/i })).toBeTruthy();
 
+    // Even this deliberately legacy-shaped fixture contains both tokens. The production cache
+    // must strip them before writing the offline identity projection.
+    const persisted = window.localStorage.getItem('werf-session') ?? '';
+    expect(persisted).not.toContain('access-token');
+    expect(persisted).not.toContain('refresh-complete');
+    expect(persisted).not.toContain('refresh-required');
+
     // The enterprise choice really was sent, not just rendered locally.
     expect(calls[0]!.body).toMatchObject({
       farm: { enterpriseTypes: ['beef_cattle', 'row_crops'] },

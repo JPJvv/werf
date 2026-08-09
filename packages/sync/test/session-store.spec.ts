@@ -105,6 +105,35 @@ describe('the cached session', () => {
       createSessionStore<Payload>({ storage, windowDays: 7, now: () => day10 }).read(),
     ).toBeNull();
   });
+
+  it('sanitises a legacy payload without extending its offline confirmation window', () => {
+    const confirmedAt = '2026-07-01T08:00:00.000Z';
+    const storage = memoryStorage({
+      'werf-session': JSON.stringify({
+        payload: { ...PAYLOAD, refreshToken: 'must-leave-storage' },
+        confirmedAt,
+      }),
+    });
+    const store = createSessionStore<Payload>({
+      storage,
+      now: () => new Date('2026-07-02T08:00:00.000Z'),
+      sanitizePersisted: (payload) => {
+        const { refreshToken: _refreshToken, ...safe } = payload as Payload & {
+          refreshToken?: string;
+        };
+        return safe;
+      },
+    });
+
+    // The current tab may migrate from the old value once, but persistence is clean immediately.
+    expect(store.read()?.payload).toHaveProperty('refreshToken', 'must-leave-storage');
+    const persisted = JSON.parse(storage.dump()['werf-session'] ?? '{}') as {
+      payload: Record<string, unknown>;
+      confirmedAt: string;
+    };
+    expect(persisted.payload).not.toHaveProperty('refreshToken');
+    expect(persisted.confirmedAt).toBe(confirmedAt);
+  });
 });
 
 describe('a session store that finds rubbish', () => {

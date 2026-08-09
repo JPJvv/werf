@@ -185,7 +185,7 @@ const en = {
   'onboarding.haveAccount': 'Already registered?',
   'onboarding.emailTaken': 'That email address already has an account. Sign in instead.',
   'onboarding.needEnterprise': 'Choose at least one — the app adapts to what you farm.',
-  'onboarding.passwordTooShort': 'Use at least 12 characters. Length matters more than symbols.',
+  'onboarding.passwordTooShort': 'Use at least 15 characters. Length matters more than symbols.',
   // Mandatory second-factor enrolment (FR-014).
   'security.enrol.title': 'Protect this account',
   'security.enrol.body':
@@ -961,7 +961,7 @@ const af: Record<TranslationKey, string> = {
   'onboarding.haveAccount': 'Reeds geregistreer?',
   'onboarding.emailTaken': 'Daardie e-posadres het reeds ’n rekening. Meld eerder aan.',
   'onboarding.needEnterprise': 'Kies ten minste een — die app pas aan by wat jy boer.',
-  'onboarding.passwordTooShort': 'Gebruik ten minste 12 karakters. Lengte tel meer as simbole.',
+  'onboarding.passwordTooShort': 'Gebruik ten minste 15 karakters. Lengte tel meer as simbole.',
   'security.enrol.title': 'Beskerm hierdie rekening',
   'security.enrol.body':
     'Jy besit hierdie besigheid, so hierdie rekening het ’n tweede stap by aanmelding nodig. Dit werk sonder sein.',

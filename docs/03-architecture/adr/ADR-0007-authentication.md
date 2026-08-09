@@ -1,6 +1,8 @@
 # ADR-0007 · Passkeys and TOTP. Never SMS as a second factor.
 
-**Status:** Accepted · **Date:** 2026-07 · **Deciders:** Tech lead
+**Status:** Partially superseded by [ADR-0011](ADR-0011-google-first-bff-authentication.md) for
+primary login and browser session transport. Passkey/TOTP/recovery/no-SMS decisions remain active.
+**Date:** 2026-07 · **Deciders:** Tech lead
 
 ## Context
 

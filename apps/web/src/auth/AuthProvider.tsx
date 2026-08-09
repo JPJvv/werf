@@ -30,7 +30,7 @@ import { authApi } from './api';
 import { useTranslation } from '../i18n/LocaleProvider';
 
 export interface AuthContextValue {
-  readonly session: schemas.AuthSession | null;
+  readonly session: ClientSession | null;
   /** The farm the shell is currently showing. Null before a farm exists. */
   readonly activeFarm: schemas.SessionFarm | null;
   readonly isAuthenticated: boolean;
@@ -43,7 +43,9 @@ export interface AuthContextValue {
    * complete with a second factor. The screen branches on this rather than the provider
    * guessing.
    */
-  signIn(input: schemas.LoginRequest): Promise<schemas.LoginResponse>;
+  signIn(
+    input: schemas.LoginRequest,
+  ): Promise<schemas.BrowserAuthSession | schemas.SecondFactorRequired>;
   completeSecondFactor(input: schemas.VerifySecondFactorRequest): Promise<void>;
   /**
    * Satisfies the second factor with a PASSKEY (FR-014, ADR-0007). Separate from
@@ -79,21 +81,39 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export interface AuthProviderProps {
   children: ReactNode;
   /** Injected in tests; defaults to the real local store. */
-  store?: SessionStore<schemas.AuthSession>;
+  store?: SessionStore<schemas.OfflineSession>;
 }
+
+/** A live browser session, or an offline identity with no bearer credential in memory. */
+type ClientSession = schemas.OfflineSession & {
+  readonly accessToken: string | null;
+  readonly expiresIn: number;
+};
 
 export function AuthProvider({ children, store }: AuthProviderProps) {
   // `useRef` with a lazy initialiser, not `useMemo`: this must be created exactly once and
   // must not be re-created by a re-render, because reading the store is how boot works.
-  const storeRef = useRef<SessionStore<schemas.AuthSession> | null>(null);
+  const storeRef = useRef<SessionStore<schemas.OfflineSession> | null>(null);
+  const bootRefreshAttempted = useRef(false);
   storeRef.current ??= store ?? defaultStore();
   const sessions = storeRef.current;
 
   // Hydrated during the first render, from local storage. This is the line that makes an
   // offline cold start work.
-  const [session, setSession] = useState<schemas.AuthSession | null>(
-    () => sessions.read()?.payload ?? null,
-  );
+  const [session, setSession] = useState<ClientSession | null>(() => {
+    const cached = sessions.read()?.payload;
+    if (!cached) return null;
+    // `sanitizePersisted` has already removed these fields from storage. A pre-migration
+    // short-lived access token may enter memory once so an in-field app upgrade does not stop a
+    // running capture session; the rotating credential is deliberately never adopted.
+    const legacy = cached as schemas.OfflineSession &
+      Partial<Pick<schemas.BrowserAuthSession, 'accessToken' | 'expiresIn'>>;
+    return {
+      ...cached,
+      accessToken: typeof legacy.accessToken === 'string' ? legacy.accessToken : null,
+      expiresIn: typeof legacy.expiresIn === 'number' ? legacy.expiresIn : 0,
+    };
+  });
 
   const { adoptUserLocale } = useTranslation();
 
@@ -111,12 +131,46 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
   }, [session, adoptUserLocale]);
 
   const adopt = useCallback(
-    (next: schemas.AuthSession) => {
-      sessions.write(next);
+    (next: schemas.BrowserAuthSession): boolean => {
+      // The network boundary is untrusted even when TypeScript says otherwise. An invalid response
+      // must not replace a valid offline identity with `{}` and crash the shell.
+      if (
+        typeof next?.accessToken !== 'string' ||
+        !next.user ||
+        !Array.isArray(next.farms) ||
+        !('secondFactor' in next)
+      ) {
+        return false;
+      }
+      // Identity and farm context may survive a reload. The bearer access token remains in React
+      // memory, and the rotating refresh credential never reaches JavaScript at all.
+      cacheOffline(sessions, next);
       setSession(next);
+      return true;
     },
     [sessions],
   );
+
+  useEffect(() => {
+    if (bootRefreshAttempted.current || !session || session.accessToken) return;
+
+    const restoreFromCookie = () => {
+      if (bootRefreshAttempted.current) return;
+      bootRefreshAttempted.current = true;
+      // Do not put a loading wall in front of the cached farm. The cookie quietly restores an
+      // in-memory token when a signal exists; offline work remains held until the browser's real
+      // `online` event gives this effect a reason to try.
+      void authApi
+        .refresh()
+        .then(adopt)
+        .catch(() => undefined);
+    };
+
+    if (navigator.onLine) restoreFromCookie();
+    else window.addEventListener('online', restoreFromCookie, { once: true });
+
+    return () => window.removeEventListener('online', restoreFromCookie);
+  }, [session, adopt]);
 
   const register = useCallback(
     async (input: schemas.RegisterRequest) => {
@@ -126,7 +180,9 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
   );
 
   const signIn = useCallback(
-    async (input: schemas.LoginRequest): Promise<schemas.LoginResponse> => {
+    async (
+      input: schemas.LoginRequest,
+    ): Promise<schemas.BrowserAuthSession | schemas.SecondFactorRequired> => {
       const result = await authApi.login(input);
       // A second-factor challenge is NOT a session and must never be cached as one. The
       // response shape cannot hold tokens, so this check is belt and braces on a contract
@@ -152,7 +208,6 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
   );
 
   const signOut = useCallback(async () => {
-    const refreshToken = session?.refreshToken;
     // Local state is cleared FIRST and regardless. A farmer who taps "sign out" with no
     // signal must end up signed out on this device; leaving them signed in because the
     // server was unreachable is the wrong failure direction for a phone that may have
@@ -160,14 +215,12 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     sessions.clear();
     setSession(null);
 
-    if (refreshToken) {
-      try {
-        await authApi.logout(refreshToken);
-      } catch {
-        // The server will expire the family on its own. Nothing useful to say here.
-      }
+    try {
+      await authApi.logout();
+    } catch {
+      // The server will expire the family on its own. Nothing useful to say here.
     }
-  }, [session, sessions]);
+  }, [sessions]);
 
   /**
    * FR-004. The DEVICE switches first and unconditionally; the server is told afterwards, and a
@@ -184,9 +237,9 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
       let token: string | undefined;
       setSession((current) => {
         if (!current || !current.farms.some((farm) => farm.id === farmId)) return current;
-        token = current.accessToken;
+        token = current.accessToken ?? undefined;
         const next = { ...current, activeFarmId: farmId };
-        sessions.write(next);
+        cacheOffline(sessions, next);
         return next;
       });
       if (token) {
@@ -214,7 +267,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
         if (!current) return current;
         // Switched to immediately: someone who just created a farm wants to be in it.
         const next = { ...current, farms: [...current.farms, farm], activeFarmId: farm.id };
-        sessions.write(next);
+        cacheOffline(sessions, next);
         return next;
       });
     },
@@ -222,14 +275,11 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
   );
 
   const refreshSession = useCallback(async (): Promise<string | null> => {
-    const refreshToken = session?.refreshToken;
-    if (!refreshToken) return null;
-    // Rotation is single-use, so the response carries a NEW refresh token — adopting the
-    // whole session rather than patching a field is what keeps the stored token the live
-    // one. Patching would leave a spent token cached and log the farmer out on next use.
-    const next = await authApi.refresh(refreshToken);
-    adopt(next);
-    return next.accessToken;
+    if (!session) return null;
+    // The rotating credential remains in the HttpOnly cookie. Only the short-lived access token
+    // enters React memory, while the durable cache receives the non-secret identity projection.
+    const next = await authApi.refresh();
+    return adopt(next) ? next.accessToken : null;
   }, [session, adopt]);
 
   /**
@@ -255,7 +305,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
         setSession((current) => {
           if (!current) return current;
           const next = { ...current, user };
-          sessions.write(next);
+          cacheOffline(sessions, next);
           return next;
         });
         return true;
@@ -307,6 +357,43 @@ export function useAuth(): AuthContextValue {
   return context;
 }
 
-function defaultStore(): SessionStore<schemas.AuthSession> {
-  return createSessionStore<schemas.AuthSession>({ storage: window.localStorage });
+function defaultStore(): SessionStore<schemas.OfflineSession> {
+  return createSessionStore<schemas.OfflineSession>({
+    storage: window.localStorage,
+    sanitizePersisted: sanitizeOfflineSession,
+  });
+}
+
+function cacheOffline(
+  sessions: SessionStore<schemas.OfflineSession>,
+  session: ClientSession | schemas.BrowserAuthSession,
+): void {
+  // Strip the legacy fields defensively too. A stale service worker or an accidentally old API
+  // response must not be able to reintroduce a long-lived credential into browser storage.
+  const candidate = session as typeof session &
+    Partial<Pick<schemas.AuthSession, 'refreshToken' | 'refreshExpiresAt'>>;
+  const {
+    accessToken: _accessToken,
+    expiresIn: _expiresIn,
+    refreshToken: _refreshToken,
+    refreshExpiresAt: _refreshExpiresAt,
+    ...offline
+  } = candidate;
+  sessions.write(offline);
+}
+
+function sanitizeOfflineSession(payload: unknown): schemas.OfflineSession {
+  if (typeof payload !== 'object' || payload === null) throw new TypeError('Invalid session cache');
+  const candidate = payload as Record<string, unknown>;
+  const {
+    accessToken: _accessToken,
+    expiresIn: _expiresIn,
+    refreshToken: _refreshToken,
+    refreshExpiresAt: _refreshExpiresAt,
+    ...offline
+  } = candidate;
+  if (!offline['user'] || !Array.isArray(offline['farms'])) {
+    throw new TypeError('Invalid session identity cache');
+  }
+  return offline as schemas.OfflineSession;
 }

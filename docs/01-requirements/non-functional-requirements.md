@@ -61,18 +61,19 @@ Full threat model and controls: [security.md](../05-operations/security.md).
 | NFR-201 | TLS 1.3 minimum; HSTS with preload | SSL Labs A+, checked in CI |
 | NFR-202 | All data encrypted at rest (AES-256) | Infrastructure assertion |
 | NFR-203 | **SA ID numbers and banking details encrypted at the column level** with a key separate from the DB key | Code review + test |
-| NFR-204 | Passwords: Argon2id | Code review |
-| NFR-205 | Sessions: short-lived JWT (15 min) + rotating refresh token | Test |
+| NFR-204 | Google OIDC/passkeys preferred. Any migration password uses Argon2id, compromised-password screening and modern length rules; no new password-only onboarding | Code review + auth journey tests |
+| NFR-205 | Rotating session credential is server-managed and delivered only in a host-only HttpOnly Secure SameSite cookie; durable browser storage contains no bearer/session token. Interim 15-minute access JWT is memory-only until the BFF migration completes | Contract, browser-storage and cookie tests |
 | NFR-206 | **Tenancy enforced in three independent layers**: PowerSync sync rules, Postgres RLS, API guards | Automated tenancy test suite; **must include a test that proves a permissive sync rule cannot leak across farms even if RLS is correct** |
 | NFR-207 | No secrets in source. Ever. | `gitleaks` in CI, pre-commit hook |
 | NFR-208 | Dependencies scanned; no known critical CVE in production | `pnpm audit` + Dependabot; blocks release |
 | NFR-209 | OWASP Top 10 addressed and documented | Security review per phase |
-| NFR-210 | Rate limiting: 100 req/min/user, 1000/min/farm | Test |
+| NFR-210 | Layered rate limiting: global API budget plus tighter auth/ceremony budgets; production counters shared across replicas; account-aware delay and edge/WAF controls | Unit + distributed integration/load test |
 | NFR-211 | Audit log immutable — no UPDATE/DELETE grant at the database level | Migration assertion + test |
 | NFR-212 | **PII scrubbed before leaving South Africa** (Sentry, logs, any AI feature) | Code requirement + test, not a settings checkbox |
 | NFR-213 | CSP with no `unsafe-inline`, no `unsafe-eval` | Header test in CI |
 | NFR-214 | Penetration test before public launch | External, scheduled Phase 7 |
 | NFR-215 | Local SQLite contains no unencrypted ID numbers or banking details | Code review + test |
+| NFR-216 | Every farm-role or platform-admin decision is enforced by a default-deny server policy and database scope. Client roles may hide controls but never authorize an action | Negative API integration + RLS tests |
 
 **NFR-215 deserves a note.** A stolen phone with an unencrypted local database containing 40 workers' ID numbers is a POPIA breach with a notification obligation. Sensitive fields must be either server-only (never synced) or encrypted before they reach the device. Decide per field, and document the decision in the schema.
 

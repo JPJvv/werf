@@ -57,6 +57,9 @@ async function send<T>(
   try {
     response = await fetch(`${API_BASE}${path}`, {
       method,
+      // The persistent credential is a same-origin HttpOnly cookie. Keep this explicit so a
+      // future API URL change cannot silently alter whether the browser sends it.
+      credentials: 'same-origin',
       headers: {
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -84,20 +87,22 @@ async function send<T>(
 
 export const authApi = {
   /** FR-001/FR-002: business, first farm, its enterprise types, and the owner, in one call. */
-  register: (input: schemas.RegisterRequest): Promise<schemas.AuthSession> =>
+  register: (input: schemas.RegisterRequest): Promise<schemas.BrowserAuthSession> =>
     post('/auth/register', input),
 
-  login: (input: schemas.LoginRequest): Promise<schemas.LoginResponse> =>
+  login: (
+    input: schemas.LoginRequest,
+  ): Promise<schemas.BrowserAuthSession | schemas.SecondFactorRequired> =>
     post('/auth/login', input),
 
   /** Completes a login that stopped at the second factor, with a typed code (FR-014). */
-  verifySecondFactor: (input: schemas.VerifySecondFactorRequest): Promise<schemas.AuthSession> =>
-    post('/auth/2fa/verify', input),
+  verifySecondFactor: (
+    input: schemas.VerifySecondFactorRequest,
+  ): Promise<schemas.BrowserAuthSession> => post('/auth/2fa/verify', input),
 
-  refresh: (refreshToken: string): Promise<schemas.AuthSession> =>
-    post('/auth/refresh', { refreshToken }),
+  refresh: (): Promise<schemas.BrowserAuthSession> => post('/auth/refresh', {}),
 
-  logout: (refreshToken: string): Promise<void> => post('/auth/logout', { refreshToken }),
+  logout: (): Promise<void> => post('/auth/logout', {}),
 
   /** Starts TOTP enrolment. The response carries the seed — the only one that ever does. */
   beginTotpEnrolment: (accessToken: string): Promise<schemas.TotpEnrolmentStartResponse> =>
@@ -143,8 +148,9 @@ export const authApi = {
     post('/auth/2fa/passkey/challenge', { challengeToken }),
 
   /** Completes a passkey login, returning the real session. */
-  passkeyVerify: (input: schemas.PasskeyAuthenticationRequest): Promise<schemas.AuthSession> =>
-    post('/auth/2fa/passkey/verify', input),
+  passkeyVerify: (
+    input: schemas.PasskeyAuthenticationRequest,
+  ): Promise<schemas.BrowserAuthSession> => post('/auth/2fa/passkey/verify', input),
 
   /**
    * Writes a preference back to the ACCOUNT (FR-008), returning the account as it now stands.

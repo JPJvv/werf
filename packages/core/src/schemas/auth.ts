@@ -19,7 +19,14 @@ import { localeSchema, themeSchema, userSchema } from './entities';
  * The ceiling is not a policy — argon2id and most KDFs have input limits, and an unbounded
  * password field is a cheap denial-of-service (hash a 10MB "password", repeatedly).
  */
-export const passwordSchema = z.string().min(12).max(256);
+export const passwordSchema = z.string().min(15).max(256);
+
+/**
+ * Sign-in accepts any bounded non-empty legacy password. Raising the creation policy must not
+ * make an existing shorter credential impossible to present; successful users are migrated to
+ * Google/passkey under ADR-0011 instead.
+ */
+export const passwordInputSchema = z.string().min(1).max(256);
 
 /**
  * Registering a business is the one call that creates a whole tenant at once: the account
@@ -53,16 +60,11 @@ export type RegisterRequest = z.infer<typeof registerRequestSchema>;
 
 export const loginRequestSchema = z.object({
   email: z.string().email(),
-  password: passwordSchema,
+  password: passwordInputSchema,
   /** "Samsung A15" — shown later so a person can end a session they don't recognise. */
   deviceLabel: z.string().min(1).nullable().default(null),
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
-
-export const refreshRequestSchema = z.object({
-  refreshToken: z.string().min(1),
-});
-export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
 
 /**
  * Update the signed-in account's own preferences (FR-008). The user is the AUTHENTICATED caller —
@@ -154,6 +156,27 @@ export const authSessionSchema = z.object({
   secondFactor: secondFactorStatusSchema,
 });
 export type AuthSession = z.infer<typeof authSessionSchema>;
+
+/**
+ * The session shape a browser is allowed to receive.
+ *
+ * The rotating refresh credential is deliberately absent: the API places it in a host-only,
+ * Secure, HttpOnly, SameSite cookie, so application JavaScript cannot read or exfiltrate it. The
+ * access token is short-lived and memory-only; it is removed again by `offlineSessionSchema`
+ * before any profile/farm state is persisted for an offline cold start.
+ */
+export const browserAuthSessionSchema = authSessionSchema.omit({
+  refreshToken: true,
+  refreshExpiresAt: true,
+});
+export type BrowserAuthSession = z.infer<typeof browserAuthSessionSchema>;
+
+/** Non-secret identity and farm context that may be cached for an offline launch. */
+export const offlineSessionSchema = browserAuthSessionSchema.omit({
+  accessToken: true,
+  expiresIn: true,
+});
+export type OfflineSession = z.infer<typeof offlineSessionSchema>;
 
 /**
  * Login succeeded on the first factor but the account has a second factor enrolled.

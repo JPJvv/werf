@@ -55,6 +55,15 @@ commit only, awaiting the owner's go-ahead to push/open a PR.
 
 ## 3. Owner decisions
 
+**Resolved 2026-08-09 — Werf absorbs Voorman's planning discipline; Voorman is archived, not
+merged.** The comparative audit found Werf has the stronger requirements, legal, offline, tenancy
+and implementation foundation. Keep React/NestJS/Postgres/PostGIS/PowerSync and `af-south-1`;
+adopt Voorman's authority index, rule ownership and readiness hygiene. Google OIDC becomes the
+primary connected sign-in through the ADR-0011 server BFF. Passkeys remain the phishing-resistant
+alternative/step-up path; no new password-only onboarding and never SMS. Claude Code owns canonical
+workflow guidance; Codex is a support adapter and cannot override it. Full evidence and remaining
+boundaries: `docs/04-delivery/werf-voorman-consolidation-audit-2026-08-09.md`.
+
 **Resolved 2026-08-08 — object storage belongs in Phase 3.** The owner approved one shared
 local-first attachment foundation for animal photos, later crop/grievance documents and generated
 packs: OPFS blobs + SQLite metadata/queue on the device, an S3-compatible boundary with MinIO in
@@ -72,6 +81,8 @@ and claims none until that Phase 3 slice lands.
 | CI | Both PR lanes green at `a3894e6`: main gate 4m0s; E2E/axe 1m46s |
 | Review agents | ✅ **Tenth pass run 2026-08-08 at owner request over `17891f0..HEAD`.** `sync-auditor`: APPROVABLE. `compliance-checker`: APPROVABLE — **withdraws its standing NOT APPROVABLE**. `reviewer`: NOT APPROVABLE, carried solely by the exit-gate line "owner-triggered passes still open", which this pass closed. **No SEV-1 and no SEV-2 from any agent** |
 | `pnpm verify` (2026-08-09, `phase-3/powersync-foundation`) | Uncached: 86 test files / 965 tests, 7/7 builds; bundle 151.17 KB gz ≤ 250 KB (was 148.04 KB — the honest cost of the pure schema code, not the SDK's WASM engine, which is deliberately kept out of the bundle; see §5) |
+| `pnpm verify` (2026-08-09, consolidation/auth hardening) | ✅ Uncached: project check + lint/format + 12/12 typecheck tasks; 89 test files / 975 tests; 7/7 builds; bundle 151.69 KB gz ≤ 250 KB |
+| `pnpm test:e2e` (2026-08-09, consolidation/auth hardening) | ✅ 27/27 Chromium journeys passed in 56.0s, including axe in both themes and the production-worker offline capture/reload/reconnect path |
 
 ## 5. Next executable steps
 
@@ -89,17 +100,23 @@ and claims none until that Phase 3 slice lands.
    (the WASM-in-bundle trap, the `theft_incident_animals` surrogate-id gap → **#10**) are in
    `docs/04-delivery/phase-checklists.md` under 3a. `createLocalDatabase` exists
    (`@werf/sync/local-database`) but is not wired to anything yet — no call site until 3b.
-3. Next slice: **3b**, PowerSync sync rules from `TENANCY` + a self-hosted PowerSync service +
+3. ✅ Done 2026-08-09: **Werf/Voorman consolidation and immediate auth/UI hardening.** Rotating
+   session credentials moved to a host-only HttpOnly cookie; durable browser storage now holds only
+   the non-secret offline identity/farm projection; auth-sensitive application throttles, strict
+   header/CSP baselines, 15-character new-password floor and the first accessible semantic skeleton
+   are implemented. Application throttling is not the production perimeter: shared Redis limits,
+   WAF/account-aware delay and Google OIDC/account linking remain explicit ADR-0011 work.
+4. Next slice: **3b**, PowerSync sync rules from `TENANCY` + a self-hosted PowerSync service +
    a `PowerSyncBackendConnector` (auth + upload queue) so `createLocalDatabase` can actually
    `.connect()`. That is also where `enableMultiTabs`/worker config choices need revisiting for
    real device use, not just the build-succeeds check this slice did. ⚠️ `@journeyapps/wa-sqlite`'s
    postinstall (dynamic WASM core download) 404'd during this slice's `pnpm install` — it claims
    the static build still works, but nothing in 3a opens a database, so that claim is unverified.
    Confirm the static core actually opens in a browser before spending time on anything else in 3b.
-4. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
+5. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
    `landed()` breaks the day mobs/tallies come down from the server.
-5. Do not begin payroll on local adapters.
-6. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
+6. Do not begin payroll on local adapters.
+7. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
    this was flagged last session and NOT done this session (stayed scoped to 3a). Rebase it onto
    `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
 

@@ -54,8 +54,6 @@ function session(secondFactor: string): Record<string, unknown> {
   return {
     accessToken: 'access-token',
     expiresIn: 900,
-    refreshToken: 'refresh-token',
-    refreshExpiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
     user: USER,
     farms: FARMS,
     activeFarmId: FARMS[0]!.id,
@@ -99,6 +97,13 @@ function stubFetch(routes: Route[]) {
       const route =
         routes.find((r) => r.match.test(url) && (r.method ?? method) === method) ??
         routes.find((r) => r.match.test(url));
+      if (/\/auth\/refresh$/.test(url) && method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(session('complete')),
+        } as Response);
+      }
       if (!route) throw new Error(`No stubbed response for ${method} ${url}`);
       return Promise.resolve({
         ok: route.status < 400,
@@ -121,9 +126,10 @@ function deviceCanDoPasskeys(can: boolean): void {
 }
 
 function cacheSession(secondFactor: string): void {
+  const { accessToken: _accessToken, expiresIn: _expiresIn, ...offline } = session(secondFactor);
   window.localStorage.setItem(
     'werf-session',
-    JSON.stringify({ payload: session(secondFactor), confirmedAt: new Date().toISOString() }),
+    JSON.stringify({ payload: offline, confirmedAt: new Date().toISOString() }),
   );
 }
 
@@ -328,6 +334,40 @@ describe('managing the keys that can open this account (FR-014c)', () => {
     lastUsedAt: new Date('2026-07-20T05:30:00Z').toISOString(),
   };
 
+  it('announces a reduced-motion-safe skeleton while the device list is loading', async () => {
+    cacheSession('complete');
+    let finish!: (response: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (/\/auth\/refresh$/.test(url)) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(session('complete')),
+          } as Response);
+        }
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }),
+    );
+
+    renderAt('/settings/security', <SecuritySettings />);
+
+    const loading = screen.getByRole('status');
+    expect(loading.getAttribute('aria-busy')).toBe('true');
+    expect(loading.textContent).toMatch(/reading your keys/i);
+
+    await waitFor(() => expect(typeof finish).toBe('function'));
+    finish({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([KEY]),
+    } as Response);
+    expect(await screen.findByText('iPhone')).toBeTruthy();
+  });
+
   it('lists the devices by their label and when each was last used', async () => {
     cacheSession('complete');
     stubFetch([{ match: /2fa\/passkey$/, status: 200, body: [KEY] }]);
@@ -383,6 +423,13 @@ describe('managing the keys that can open this account (FR-014c)', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string, init: RequestInit = {}) => {
+        if (/\/auth\/refresh$/.test(url)) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(session('complete')),
+          } as Response);
+        }
         if ((init.method ?? 'GET') === 'GET') {
           return Promise.resolve({
             ok: true,

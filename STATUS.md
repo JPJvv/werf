@@ -136,6 +136,8 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
 | Manual — real service, real per-user delivery (2026-08-09) | ✅ A freshly registered test farm's row reached the client through a real `.connect()` against the self-hosted service: `buckets: 16`, `operations_synced: 6`, client read back exactly its own farm — the rung config-validation/replication-log evidence alone could not prove; see phase-checklists.md 3b |
 | `pnpm verify` (2026-08-09, capture-store SQLite migration, 3c + deterministic gate test) | ✅ Uncached: 99 test files / 1,038 tests, 12/12 typecheck, 7/7 builds; bundle 153.34 KB gz ≤ 250 KB interactive-path budget (195.86 KB gz precached engine, reported separately, not gated) |
 | `pnpm test:e2e` (2026-08-09, capture-store SQLite migration, 3c) | ✅ 30/30 Chromium journeys passed (incl. 2 new `capture-migration.spec.ts` cases: clean migration + order preserved + localStorage untouched, and a second cold start as a no-op), re-run 3× on the sync-critical specs with no flakes |
+| `sync-auditor` (2026-08-09, owner-triggered, full branch `13a0d46..HEAD`) | ⚠️ **First pass over this entire branch (11 commits).** Two real findings, both fixed same day (below); everything else — sync-stream/RLS agreement (hand-verified against real migrations, not just the test's existence), the `expires_at` sweep, `writeTransaction` atomicity/TOCTOU, `allSettled` coverage, no hard deletes, tenancy completeness — checked and sound. One LOW/cosmetic finding (stale `generate:sync-rules` script name, superseded by Sync Streams) left open, not yet fixed |
+| `pnpm verify` (2026-08-09, sync-auditor Findings 1 & 2 fixed) | ✅ Uncached: 99 test files / 1,043 tests, 7/7 builds; bundle 153.68 KB gz ≤ 250 KB interactive-path (unchanged budget). Every new/extended test watched to FAIL first (git-stashed or temporarily neutered the fix, confirmed red, restored, confirmed green) |
 
 ## 5. Next executable steps
 
@@ -231,6 +233,22 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
 11. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
     this was flagged last session and NOT done this session (stayed scoped to 3c). Rebase it
     onto `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
+12. ✅ Done 2026-08-09: **owner-triggered `sync-auditor` pass over the full branch, two findings
+    fixed same day.** (1) MEDIUM/HIGH: a single corrupt DB-resident row failed a store's WHOLE
+    hydration permanently (the migration marker already existed, so every future boot re-threw on
+    the identical row) — new captures after that point silently stopped being durable, and a
+    poisoned `health` store would have let the FR-131 disposal guard read "no dose outstanding"
+    when it genuinely could not tell. Fixed: hydration now tolerates one corrupt row (skips it,
+    keeps the rest), and `CaptureStore<T>` gained `hydrationFailed()` — distinct from `settled()`
+    — so `Outbox.tsx` holds the WHOLE queue, not just the failed store's own captures, on a
+    genuine failure. (2) MEDIUM: the global per-IP rate limiter (`app.module.ts`) has no capture
+    exemption, and a large offline backlog draining on reconnect is the case most likely to trip
+    it; a 429-aborted round had NO autonomous retry — the strip said "will retry" with nothing
+    scheduled to. Fixed: a bounded 90s retry while errored and online. Every fix watched to FAIL
+    first (git-stashed / temporarily neutered, confirmed red, restored, confirmed green). One LOW
+    finding (stale `generate:sync-rules` script name) left open, cosmetic only, not yet fixed.
+    Still not merge-ready — this was one pass over one slice's worth of findings, not a fresh
+    clearance of the whole branch; the sync-auditor has not re-run since.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

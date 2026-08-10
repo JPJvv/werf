@@ -1034,6 +1034,31 @@ add the one shared local-first attachment path approved on 2026-08-08.
     `SQLWatchOptions.signal`) and a `useEffect` (not `useMemo` — a memo's return has no cleanup hook)
     keyed on the store value, closing on farm switch/unmount. Fail-first test:
     `hydrated-table-store.spec.ts`, "close() stops watching".
+✅ **`sync-auditor` RE-PASS, 2026-08-10, over `fc3d9e2..dd49a20` (the fix commit above).** Confirmed
+  Finding 1's three call sites genuinely fixed and consistent, no fourth call site missed, the
+  `Outbox.test.tsx` timing was correct (hydrates before `render()`), and the LOW fix matched the
+  real SDK. Two things it found, both fixed same day (`HydratedLivestock.tsx`,
+  `farms.integration.test.ts` — both within the files the findings name, both fail-first tested, so
+  per STATUS.md §6 clause 3 this did not require ANOTHER pass):
+  - **MEDIUM — genuinely new, introduced by the LOW fix itself.** The `useEffect` cleanup and the
+    `useMemo`-built store pair were not symmetric under React 18 StrictMode: mount → run the effect
+    → immediately simulate an unmount (run the cleanup) → remount (re-run the effect), all against
+    the SAME memoized pair since `farmId` never changed across that synthetic cycle.
+    `AbortController.abort()` has no undo, so hydration died PERMANENTLY after the first mount in
+    `pnpm dev` (`main.tsx` wraps `&lt;App/&gt;` in `&lt;StrictMode&gt;`) — invisible to every
+    existing test and to `pnpm test:e2e` (a production build strips the double-invoke). Fixed by
+    moving construction INSIDE the effect, mirroring `SyncConnection.tsx`'s already-established
+    shape for exactly this class of resource — the effect's setup and cleanup are now symmetric, so
+    a StrictMode cycle closes one pair and builds a fresh one, same as a real farm switch. First
+    paint reads a permanently-unsettled, subscription-free placeholder (`settled()` already started
+    `false` by design — one more tick of a state every consumer already tolerated). Fail-first test:
+    `AdjustMob.test.tsx`, "a StrictMode double-invoke does not permanently kill hydration" — renders
+    `&lt;StrictMode&gt;&lt;App/&gt;&lt;/StrictMode&gt;` and asserts a pre-hydrated birth is still
+    visible after mount.
+  - **Test-coverage gap in Finding 2's tripwire.** The original tripwire only exercised
+    `AuthService.register`'s own direct farm insert, not `FarmsService.createFarm` — the exact
+    function Finding 2's text names, and a genuinely SEPARATE insert path (confirmed: `register`
+    does not call `createFarm`). Strengthened to assert BOTH paths land in `events_default`.
 ☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
 ☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
 ☐ 3h Sync health reports queue depth/failure per farm without PII

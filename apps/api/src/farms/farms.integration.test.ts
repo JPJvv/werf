@@ -185,31 +185,48 @@ describe('farm management', () => {
     it('⭐ never gives a REAL onboarding farm its own events partition (sync-auditor Finding 2, 2026-08-10)', async () => {
       // packages/sync/scripts/derive-sync-streams.ts's PARTITIONED_SOURCE_TABLE hand-maps the
       // `events` down-sync stream to the single `events_default` partition — see
-      // powersync-partitioned-table-gotcha. That mapping is correct ONLY because nothing on the
-      // path an actual farmer takes (`register` → `createFarm`) calls `create_farm_partition`;
-      // `packages/db/scripts/seed.mjs` and `events.integration.test.ts`'s own fixtures DO call it,
-      // and events for THOSE farms already silently fail to down-sync today. This is a TRIPWIRE for
-      // that fact, not a fix for it — see STATUS.md §3 for the open owner decision (wire
-      // `create_farm_partition` into `FarmsService.createFarm` and teach the generator to read
-      // partitions dynamically, or retire per-farm partitioning). If this goes red, PowerSync's
-      // down-sync of every event type (tallies, moves, treatments, doses, births, deaths, sales)
-      // has silently broken for every farm created this way, and the generator's hand-maintained
-      // map is the reason nothing else would have caught it.
-      const a = await tenant('Alpha');
-      const [created] = await elevated.db
-        .insert(events)
-        .values({
-          farmId: a.farmId,
-          type: 'weight',
-          occurredAt: new Date('2026-07-20T06:00:00Z'),
-          payload: { kg: 400, method: 'scale' },
-        })
-        .returning();
+      // powersync-partitioned-table-gotcha. That mapping is correct ONLY because NEITHER real path a
+      // farmer's own actions can reach calls `create_farm_partition` — confirmed as two genuinely
+      // separate insert paths, not one calling the other: `AuthService.register` has its own direct
+      // `.insert(farms)` (`auth.service.ts`), and `FarmsService.createFarm` (below) is a second,
+      // independent one for "add another farm to my business". `packages/db/scripts/seed.mjs` and
+      // `events.integration.test.ts`'s own fixtures DO call `create_farm_partition`, and events for
+      // THOSE farms already silently fail to down-sync today. This is a TRIPWIRE for that fact, not
+      // a fix for it — see STATUS.md §3 for the open owner decision (wire `create_farm_partition`
+      // into onboarding and teach the generator to read partitions dynamically, or retire per-farm
+      // partitioning). If either half goes red, PowerSync's down-sync of every event type (tallies,
+      // moves, treatments, doses, births, deaths, sales) has silently broken for farms created that
+      // way, and the generator's hand-maintained map is the reason nothing else would have caught it.
+      async function assertDefaultPartition(farmId: string): Promise<void> {
+        const [created] = await elevated.db
+          .insert(events)
+          .values({
+            farmId,
+            type: 'weight',
+            occurredAt: new Date('2026-07-20T06:00:00Z'),
+            payload: { kg: 400, method: 'scale' },
+          })
+          .returning();
+        const rows = await elevated.db.execute(
+          sql`SELECT tableoid::regclass::text AS partition FROM events WHERE id = ${created!.id}`,
+        );
+        expect((rows.rows[0] as { partition: string }).partition).toBe('events_default');
+      }
 
-      const rows = await elevated.db.execute(
-        sql`SELECT tableoid::regclass::text AS partition FROM events WHERE id = ${created!.id}`,
-      );
-      expect((rows.rows[0] as { partition: string }).partition).toBe('events_default');
+      // Path 1: registration's own direct farm insert.
+      const a = await tenant('Alpha');
+      await assertDefaultPartition(a.farmId);
+
+      // Path 2: FarmsService.createFarm — a SEPARATE insert, not reachable from registration, and
+      // the exact function Finding 2's own text names.
+      const second = await service.createFarm(a.userId, {
+        businessId: a.businessId,
+        name: 'Kudu Ranch',
+        province: 'Northern Cape',
+        district: null,
+        enterpriseTypes: ['sheep'],
+      });
+      await assertDefaultPartition(second.id);
     });
 
     it('refuses to add a farm to somebody else’s business', async () => {

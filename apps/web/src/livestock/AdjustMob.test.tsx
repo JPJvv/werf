@@ -8,6 +8,7 @@
  * created on day one was a 300-head flock forever, through a lambing, a drought and an abattoir run.
  */
 
+import { StrictMode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -782,5 +783,42 @@ describe('changing a group’s numbers (FR-102)', () => {
     await waitFor(() => {
       expect(screen.queryByRole('link', { name: /change a group’s numbers/i })).toBeNull();
     });
+  });
+
+  it('⭐ a StrictMode double-invoke does not permanently kill hydration (sync-auditor re-pass, 2026-08-10)', async () => {
+    // The LOW fix's `close()`/`useEffect` cleanup and the store-construction `useMemo` were not
+    // symmetric: React 18 StrictMode mounts, runs the effect, immediately simulates an unmount (runs
+    // the cleanup), then remounts (re-runs the effect) — all against the SAME `useMemo`'d store pair,
+    // since `farmId` never changed across that synthetic cycle. The cleanup closed it; nothing
+    // reconstructed it; `AbortController.abort()` has no undo. Production strips StrictMode's
+    // double-invoke, so this was invisible to every existing test and to `pnpm test:e2e` (a
+    // production build) — only `pnpm dev` (which `main.tsx` wraps in `<StrictMode>`) would ever see
+    // hydration die silently after the very first mount.
+    cachedSession();
+    seedFlock();
+
+    const fake = await getCurrentFakeLocalDatabase();
+    fake.hydrateRow('events', {
+      id: '0190f3a0-0000-7000-8000-00000000c006',
+      farm_id: FARM_ID,
+      mob_id: MOB_ID,
+      type: 'tally',
+      occurred_at: '2026-07-20T12:00:00.000Z',
+      payload: JSON.stringify({ reason: 'birth', delta: 40 }),
+    });
+
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
+
+    // 300 (the flock's baseline) + 40 (the hydrated birth) — only visible if the hydrated store
+    // survived StrictMode's synthetic mount→cleanup→remount cycle.
+    expect(await screen.findByText('340')).toBeTruthy();
   });
 });

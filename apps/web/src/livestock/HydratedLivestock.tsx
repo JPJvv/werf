@@ -21,7 +21,7 @@ import {
   createContext,
   useContext,
   useEffect,
-  useMemo,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
@@ -136,13 +136,47 @@ interface HydratedLivestockValue {
   readonly tallies: HydratedTableStore<TallyRecord>;
 }
 
+/** Permanently unsettled, no subscription to close — safe to construct during render (StrictMode's
+ *  render-phase double-invoke is harmless against pure, side-effect-free code, unlike
+ *  `createHydratedTableStore` itself, which fires a real `db.watch()`). Exists only for the single
+ *  render before the effect below constructs the real pair — `settled()` already starts `false` by
+ *  design, so this is one more tick of a state every consumer already tolerates, not a new one.
+ *  `all()` returns the SAME empty array every call — `useSyncExternalStore` compares snapshots by
+ *  reference, so a fresh `[]` literal per call reads as "always changed" and warns/loops. */
+function emptyHydratedTableStore<T>(): HydratedTableStore<T> {
+  const empty: readonly T[] = [];
+  return {
+    all: () => empty,
+    subscribe: () => () => {},
+    settled: () => false,
+    hydrationFailed: () => false,
+    close: () => {},
+  };
+}
+
 const HydratedLivestockContext = createContext<HydratedLivestockValue | null>(null);
 
 export function HydratedLivestockProvider({ children }: { children: ReactNode }) {
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
-  const value = useMemo<HydratedLivestockValue>(
-    () => ({
+  const [value, setValue] = useState<HydratedLivestockValue>(() => ({
+    mobs: emptyHydratedTableStore<StoredMob>(),
+    tallies: emptyHydratedTableStore<TallyRecord>(),
+  }));
+
+  // ⭐ sync-auditor re-pass (2026-08-10): the store pair used to be built in a `useMemo` above this
+  // effect, whose cleanup closed it. That is NOT symmetric under React 18 StrictMode: mount → run
+  // this effect → immediately simulate an unmount (run the cleanup) → remount (re-run the effect) —
+  // all against the SAME memoized pair, since `farmId` never changed across that synthetic cycle.
+  // The cleanup closed it; nothing reconstructed it; `AbortController.abort()` has no undo — down-
+  // sync hydration died permanently after the FIRST real mount in `pnpm dev` (`main.tsx` wraps
+  // `<App/>` in `<StrictMode>`), invisibly, because production strips the double-invoke and every
+  // existing test rendered without it. Fixed by moving construction INSIDE the effect, mirroring
+  // `SyncConnection.tsx`'s already-established shape for exactly this class of resource: this
+  // effect's own setup and cleanup are now symmetric, so a StrictMode synthetic cycle closes one
+  // pair and builds a fresh one, precisely as it does for a real farm switch or unmount.
+  useEffect(() => {
+    const pair: HydratedLivestockValue = {
       mobs: createHydratedTableStore({
         database: getLocalDatabase(),
         sql: MOBS_SQL,
@@ -155,19 +189,13 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
         params: [farmId],
         mapRow: mapHydratedTally,
       }),
-    }),
-    [farmId],
-  );
-  // ⭐ sync-auditor LOW (2026-08-10): a fresh store pair is built per farm switch, and without this
-  // the PREVIOUS farm's `db.watch()` subscription was never released — closed here rather than in
-  // the `useMemo` above, because a memo's return value has no cleanup hook; the effect's own
-  // dependency (`value`) changes on exactly the same farm-switch/unmount schedule.
-  useEffect(() => {
-    return () => {
-      value.mobs.close();
-      value.tallies.close();
     };
-  }, [value]);
+    setValue(pair);
+    return () => {
+      pair.mobs.close();
+      pair.tallies.close();
+    };
+  }, [farmId]);
   return (
     <HydratedLivestockContext.Provider value={value}>{children}</HydratedLivestockContext.Provider>
   );

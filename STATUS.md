@@ -3,7 +3,7 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-10 (Part 3: sync-auditor pass over 3e — 2 SEV-2 + 1 LOW, all fixed, re-pass next)
+**Last updated:** 2026-08-10 (Part 3: sync-auditor pass + re-pass over 3e, all code findings closed; Finding 2 + compliance-checker remain open)
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -17,7 +17,7 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ⚠️ First `sync-auditor` pass over 3e found 2 SEV-2 + 1 LOW, all fixed same day — pass did NOT clear, a re-pass over the fix diff is queued. Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ⚠️ `sync-auditor` pass + re-pass over 3e: every CODE finding closed (2 SEV-2, 1 MEDIUM, 1 LOW, 1 test-coverage gap); Finding 2 itself is an open owner decision (§3), and this slice needs an owner-triggered `compliance-checker` pass before merge-ready (FR-131 touched). Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -75,6 +75,23 @@ architecture decision. **LOW:** `hydrated-table-store.ts`'s `db.watch()` leaked 
 across farm switches (resource leak, never a cross-farm DATA leak — farm-scoping in the query was
 always correct); fixed with `close()` + a `useEffect` cleanup. Full detail:
 `phase-checklists.md` 3e.
+
+⭐ **Closed 2026-08-10 — `sync-auditor` RE-PASS over `fc3d9e2..dd49a20` (the fix commit above).**
+Confirmed Finding 1's three call sites genuinely fixed, no fourth call site missed, the new
+`Outbox.test.tsx` test's timing was correct, and the LOW fix matched the real SDK. Found two things,
+both fixed same day and both qualifying for STATUS.md §6 clause 3's no-further-pass-needed terminal
+condition (mechanical, confined to the files the findings name, fail-first tested): **(1) MEDIUM,
+genuinely new** — the LOW fix's `useEffect` cleanup and its `useMemo`-built store pair were not
+symmetric under React 18 StrictMode (mount → run effect → simulate unmount, run cleanup →
+remount, re-run effect, all against the SAME memoized pair), so `AbortController.abort()` permanently
+killed hydration after the first mount in `pnpm dev` — invisible to every test and to `pnpm test:e2e`
+(a production build strips the double-invoke). Fixed by moving store construction inside the effect,
+mirroring `SyncConnection.tsx`'s already-established pattern for this exact class of resource.
+**(2) Finding 2's tripwire only covered `AuthService.register`'s own direct farm insert, not
+`FarmsService.createFarm`** — the function Finding 2's text actually names, and a genuinely separate
+insert path. Strengthened to assert both. **Still does not fully clear**: Finding 2 itself (SEV-2)
+remains open pending the owner decision above — no amount of further review resolves that, only an
+answer does.
 
 ⭐ **Found and fixed 2026-08-10 — PowerSync silently replicates ZERO rows for a partitioned source
 table, with no error anywhere.** `events` (migration 0010) is Postgres-partitioned, one partition
@@ -141,9 +158,10 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
 | `pnpm verify` (2026-08-10, Phase 3 slice 3e — mobs/tallies hydration) | ✅ Uncached: 101 test files / 1,059 tests, 7/7 builds; bundle 155.19 KB gz ≤ 250 KB. Includes the new `HydratedTableStore`/`HydratedLivestock`/`SyncConnection` code and the `Outbox.tsx`/`AdjustMobScreen.tsx` tripwire-3e changes, all watched to FAIL first via a temporary revert |
 | `pnpm test:e2e` (2026-08-10, same slice) | ✅ 30 passed / 1 skipped (the new `real-sync-hydration.spec.ts`, gated behind `WERF_REAL_STACK=1`, correctly absent from the default lane) |
 | Manual — real service, two-device issue #8 journey (2026-08-10) | ✅ `real-sync-hydration.spec.ts` run manually against live `apps/api` + `werf-postgres` + `werf-powersync`, 3× clean (fresh `apps/api` process each run — in-memory auth-throttle counters reset — no flakes): real REST-landed birth tally → real second login → real `.connect()` → real SQLite hydration → real capture UI → real send → real Postgres row-count confirmation → real `page.reload()` preserving both the projection and the (by then empty) queue. Found and fixed the partition-replication defect above in the process |
-| `sync-auditor` (2026-08-10, owner-triggered, `585ddb2..fc3d9e2`) | ⚠️ **Did NOT clear — 2 SEV-2 + 1 LOW.** Both SEV-2 and the LOW fixed same day, each with a test watched to FAIL first; see §3. Re-pass over the fix diff queued next, per §6 clause 2/3 |
-| `pnpm verify` (2026-08-10, sync-auditor Findings 1/2/LOW fixed) | ✅ Uncached: 102 test files / 1,064 tests, 7/7 builds; bundle 155.36 KB gz ≤ 250 KB. New/extended tests: `AdjustMob.test.tsx`, `Outbox.test.tsx`, `AttentionScreen.test.tsx` (new file), `hydrated-table-store.spec.ts`, `farms.integration.test.ts` — all watched to FAIL first (temporary revert or the file didn't exist yet) |
-| `pnpm test:e2e` (2026-08-10, same fixes) | ✅ 30 passed / 1 skipped, run twice back to back, no flakes |
+| `sync-auditor` (2026-08-10, owner-triggered, `585ddb2..fc3d9e2`) | ⚠️ **Did NOT clear — 2 SEV-2 + 1 LOW.** Both SEV-2 and the LOW fixed same day, each with a test watched to FAIL first; see §3 |
+| `sync-auditor` RE-PASS (2026-08-10, owner-triggered, `fc3d9e2..dd49a20`) | ⚠️ **Confirmed Finding 1/LOW's fixes sound, no fourth call site missed, test timing correct. Found 1 MEDIUM (genuinely new — StrictMode double-invoke killed hydration permanently in `pnpm dev`) + 1 test-coverage gap (Finding 2's tripwire missed `FarmsService.createFarm`).** Both fixed same day, both qualify for §6 clause 3 (mechanical, file-confined, fail-first tested) — no third pass required for them. Finding 2 itself (SEV-2) still open pending the owner decision in §3 |
+| `pnpm verify` (2026-08-10, all sync-auditor + re-pass findings closed) | ✅ Uncached: 102 test files / 1,065 tests, 12/12 typecheck, 7/7 builds; bundle 155.40 KB gz ≤ 250 KB. Every new/extended test watched to FAIL first, incl. `AdjustMob.test.tsx`'s new `<StrictMode>`-wrapped render test |
+| `pnpm test:e2e` (2026-08-10, same fixes) | ✅ 30 passed / 1 skipped, run twice back to back across both rounds of fixes, no flakes |
 
 ## 5. Next executable steps
 
@@ -202,13 +220,16 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
     partitioned-table replication defect found and fixed (§3). Issue #10
     (`theft_incident_animals` surrogate-id gap) remains untouched and tracked separately — it did
     not block this slice and was not silently folded into it.
-14. ✅ Done 2026-08-10: **owner-triggered `sync-auditor` pass over 3e, 2 SEV-2 + 1 LOW found and
-    fixed same day** (§3). ⛔ **Not merge-ready**: (a) a re-pass over the fix diff has not run yet
-    (§6 clause 2/3 — a SEV-2 fix never skips re-review), (b) Finding 1's fix touches FR-131 guard
-    behaviour, so this slice now needs an owner-triggered `compliance-checker` pass before it can be
-    called merge-ready, (c) Finding 2's actual fix is an unresolved owner architecture decision (§3).
-    Next: request the `sync-auditor` re-pass and, separately, the `compliance-checker` pass; only
-    after both close does 3e's remaining scope (animals/moves/health hydration, 3f–3i) resume.
+14. ✅ Done 2026-08-10: **owner-triggered `sync-auditor` pass + re-pass over 3e.** Pass 1: 2 SEV-2 +
+    1 LOW, fixed same day. Re-pass over the fix diff: confirmed those fixes sound, found 1 MEDIUM
+    (StrictMode double-invoke killing hydration in `pnpm dev`) + 1 test-coverage gap, both fixed
+    same day and both qualify for §6 clause 3 (no third pass required for them). Full detail: §3.
+    ⛔ **Still not merge-ready**: (a) Finding 2 itself (SEV-2) remains open — it is an owner
+    architecture decision, not something further review resolves; (b) Finding 1's fix touches FR-131
+    guard behaviour, so this slice needs an owner-triggered `compliance-checker` pass, not requested.
+    Next: JP answers Finding 2 (§3) and, separately, decides whether to request the
+    `compliance-checker` pass; only after both close does 3e's remaining scope (animals/moves/health
+    hydration, 3f–3i) resume.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

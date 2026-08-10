@@ -68,9 +68,11 @@ Phase 3 on 2026-08-08.
 
 ## Phase 3 — Offline sync
 
-**Ships:** the architecture ADR-0003 promises: React reads and writes local SQLite through the sync
-adapter; PowerSync moves deltas to Postgres; RLS and sync rules agree; the outbox survives old
-clients, retries and long offline periods without data loss. The same phase adds the approved shared
+**Ships:** the architecture ADR-0003/[ADR-0012](../03-architecture/adr/ADR-0012-upload-topology.md)
+promise: React reads and writes local SQLite through the sync adapter; `Outbox.tsx` moves deltas UP
+to Postgres via REST, PowerSync moves deltas DOWN from Postgres; RLS and sync rules agree; the
+outbox survives old clients, retries and long offline periods without data loss. The same phase adds
+the approved shared
 attachment foundation: OPFS blobs, synced metadata, deferred S3-compatible uploads and tenant-safe
 reads, with MinIO in development/tests and S3 in `af-south-1` in production.
 

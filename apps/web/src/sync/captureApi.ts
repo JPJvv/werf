@@ -5,8 +5,9 @@
  * This is emphatically NOT the capture path: a farmer's Save writes to a local store with no
  * network in it. This runs LATER, in the background, from the outbox flush — a best-effort catch-up
  * that sends what the device already holds. Nothing a farmer does ever awaits it. It is the
- * stand-in for the Phase 3 PowerSync uploader, so every endpoint it posts to is idempotent on the
- * client-generated id: the flush is at-least-once, and a re-send must be a server-side no-op.
+ * PERMANENT transport for `Outbox.tsx` (ADR-0012) — PowerSync carries no upload role in this
+ * product — so every endpoint it posts to is idempotent on the client-generated id: the flush is
+ * at-least-once, and a re-send must be a server-side no-op.
  *
  * Errors reuse the auth client's taxonomy so the flush can tell the three cases apart: a transport
  * failure (NetworkUnavailableError → still offline, leave it pending), a 401 (access token expired

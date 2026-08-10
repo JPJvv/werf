@@ -2,11 +2,12 @@
  * The local-only SQLite tables backing `createSqliteCaptureStore` (phase-checklists.md 3c).
  *
  * Deliberately NOT derived from `TENANCY`/Postgres like `local-schema.ts` — these two tables are
- * local-only device state, not the future sync target that module represents. `localOnly: true`
+ * local-only device state, not a sync target that module represents. `localOnly: true`
  * (verified against the installed `@powersync/common` SDK) keeps every row here OUT of
- * PowerSync's CRUD upload queue: this slice keeps `apps/web/src/sync/Outbox.tsx` as the sole
- * uploader, still flushing to the existing `/api/*` REST endpoints, so a capture landing here
- * must never be picked up by a future `uploadData` as if it were a queued sync write.
+ * PowerSync's CRUD upload queue PERMANENTLY (ADR-0012): `apps/web/src/sync/Outbox.tsx` is the
+ * sole uploader, flushing to the existing `/api/*` REST endpoints, so a capture landing here must
+ * never be picked up by `uploadData` as if it were a queued sync write — see that function's own
+ * header for why it throws rather than routing one.
  *
  * One GENERIC table across every capture kind, not one per kind, because that is what the
  * current `localStorage` behaviour already is: `capture-store.ts`'s `persist()` does exactly one

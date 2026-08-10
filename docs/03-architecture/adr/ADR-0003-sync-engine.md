@@ -1,6 +1,13 @@
 # ADR-0003 · PowerSync as the sync engine
 
-**Status:** Accepted · **Date:** 2026-07 · **Deciders:** Tech lead
+**Status:** Accepted, clarified by [ADR-0012](ADR-0012-upload-topology.md) · **Date:** 2026-07 ·
+**Deciders:** Tech lead
+
+> **Clarified 2026-08-10, upload-path detail only.** This ADR always said client writes "route back
+> through our API" (below) but left open *which mechanism* performs that routing — PowerSync's own
+> CRUD upload queue, or a hand-written uploader calling the same API. ADR-0012 answers that,
+> permanently: REST-up (`Outbox.tsx`) / PowerSync-down. Nothing else here changed or was rewritten;
+> this note exists so the distinction ADR-0012 needed is explicit rather than inferred.
 
 ## Context
 

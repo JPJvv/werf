@@ -1,11 +1,13 @@
 /**
- * The outbox — the best-effort flush that carries offline captures up to the server (Phase 2).
+ * The outbox — the best-effort flush that carries offline captures up to the server.
  *
  * This is the seam that finally runs the two halves of the product together: the capture screens
  * write to the local stores with no network in the path, and THIS sends what they hold once there
- * is a signal. It is the Phase-2 stand-in for the PowerSync uploader; when the real replication
- * engine lands in Phase 3 the stores and screens above this do not change — the flush is simply
- * done by PowerSync instead of by hand against the `apps/api` capture endpoints.
+ * is a signal. It is the PERMANENT durable upload queue (ADR-0012), not a Phase-2 stand-in awaiting
+ * a PowerSync CRUD-native uploader — `PowerSyncBackendConnector.uploadData`
+ * (`packages/sync/src/connector.ts`) throws by design and never drains a batch. PowerSync's role in
+ * this product is down-sync only; every capture reaches Postgres by hand, against the `apps/api`
+ * capture endpoints, through this file.
  *
  * Three rules shape it, all from .claude/rules/db.md and the offline-first promise:
  *

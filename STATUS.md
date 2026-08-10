@@ -33,92 +33,39 @@ capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
 
-⚠️ **OPEN, 2026-08-10 — was `PowerSyncBackendConnector.uploadData` ever meant to grow per-table
-CRUD routing, or is REST-up/PowerSync-down the permanent shape?** Prior STATUS/checklist wording
-("uploadData still throws — 3d", "per-table upload routing... not yet started") reads as a TODO a
-later slice fills in. Checked against the installed SDK this session: `CrudBatch`/
-`CrudTransaction.complete()` (`@powersync/common`) acknowledge a batch as a whole, with no
-per-entry completion. A 4xx capture that must be "retained and set aside while the round
-continues" (db.md, phase-checklists.md 3d) cannot be built on that primitive without either
-discarding the refused entry (forbidden) or blocking everything behind it forever (the exact
-strand-the-queue SEV-2 shape `Outbox.tsx`'s own history already fixed once). Since every capture
-table is already `Table.createLocalOnly` and `Outbox.tsx` already satisfies every 3d invariant
-against the real REST endpoints (audited this session, §4/§5 — no gap found), this session
-reframed `uploadData`'s throw as a permanent tripwire rather than building dead per-table routing
-for a CRUD queue that is empty by construction. **Ask JP:** keep this permanently (update the
-architecture docs to say so plainly), or is a CRUD-native redesign wanted — which would be ADR
-territory, not a slice, given the `complete()` semantics above.
-→ _Answer:_
+✅ **Closed 2026-08-10 — REST-up/PowerSync-down is the PERMANENT upload topology, not a Phase-3
+TODO.** `Outbox.tsx` is the authoritative durable upload queue, posting through the domain-owned
+REST endpoints; PowerSync handles down-sync only; `PowerSyncBackendConnector.uploadData` is a
+fail-loud tripwire for any unexpected native CRUD entry, not routing awaiting a later slice.
+Reasoning (checked against the installed `@powersync/common` SDK: `CrudBatch`/
+`CrudTransaction.complete()` acknowledges a batch as a whole, no per-entry completion, so 4xx
+set-aside cannot be built on it) is recorded in **[ADR-0012](docs/03-architecture/adr/ADR-0012-upload-topology.md)**,
+not repeated here; ADR-0003 is clarified (not rewritten) to point at it.
 
-**Three of four sync-rules questions RESOLVED empirically, 2026-08-09**, against a real
-`journeyapps/powersync-service:1.23.3` self-hosted instance (`docker compose up postgres
-powersync`, Postgres storage backend, `infra/powersync/`) — not from docs, which paraphrased
-inconsistently across fetches earlier in this same investigation. Evidence trail:
-`packages/sync/src/sync-streams.ts`'s header, `packages/sync/scripts/derive-sync-streams.ts`,
-`infra/powersync/sync-config.yaml`.
+**Resolved 2026-08-09 — four sync-rules questions, all empirically validated** against a real
+self-hosted `journeyapps/powersync-service:1.23.3` (not from docs, which paraphrased inconsistently
+across fetches). Sync Streams (`edition: 3`), not classic Sync Rules — the latter's JOIN/subquery
+ban blocks `businesses`/`regulatory_rates`/`veterinary_products` and cross-member `users` rows
+outright. Both now sync via `IN (SELECT ...)` predicates (⚠️ `EXISTS` does not validate under
+Streams either). `farm_users.expires_at` cannot be evaluated in any stream format (`now()` is
+rejected); closed by `MembershipExpiryService`, which soft-deletes elapsed grants every minute so
+`deleted_at IS NULL` — the predicate every stream already requires — becomes the shared revocation
+signal within a bounded window. Full evidence and the exact RLS-does-not-cover-replication
+correction from `sync-auditor`: `phase-checklists.md` 3b,
+`docs/04-delivery/phase-3-sync-expiry-enforcement-gap-2026-08-09.md`.
 
-1. ✅ **Sync Streams (`edition: 3`), not classic Sync Rules (`bucket_definitions`).** Confirmed:
-   the pinned self-hosted image validated a `streams:` config with zero errors, and classic
-   Rules' JOIN/subquery ban would have blocked questions 2–3 below permanently. The generator
-   was re-targeted (`derive-sync-streams.ts`); the classic-rules attempt is preserved in git
-   history, not the working tree.
-2. ✅ **`businesses`, `regulatory_rates`, `veterinary_products` now sync.** The two-hop predicate
-   (`auth.user_id()` → `farm_users` → `farms` → `business_id`/`jurisdiction`), written as
-   `IN (SELECT ...)`, validated and REPLICATED REAL ROWS against the running service — confirmed
-   by reading the container's replication log, not just config validation. No migration needed.
-3. ✅ **`users` now syncs a co-member's row, not just the viewer's own.** RLS's exact
-   `id = self OR co-member-of-a-shared-farm` shape, written with `IN` (⚠️ `EXISTS` does NOT
-   validate under Streams either — "Unknown function", confirmed empirically — so this uses the
-   same `IN (SELECT ...)` pattern as Q2, not the more natural `EXISTS`). Validated and replicated.
-4. ✅ **Resolved 2026-08-09 — bridge `farm_users.expires_at` through the shared tombstone.**
-   Confirmed empirically: a stream using `now()` fails validation ("Unknown function") under
-   Streams exactly as it did under classic Rules — this gap is format-independent, not a Streams
-   limitation that might later close. ⚠️ Also newly learned: **a single invalid stream fails the
-   ENTIRE sync config**, not just that stream — there is no partial-success mode, so a future
-   wrong guess for one table breaks replication for all of them, not just the one that was wrong.
-   ⚠️ **Corrected 2026-08-09 by `sync-auditor` — the line below was too optimistic; do not repeat
-   it.** ~~RLS already refuses an expired-but-not-deleted membership at the API, so nothing
-   already on-device becomes wrongly readable, but a not-yet-downloaded row keeps landing after
-   RLS says no.~~ RLS does not cover the replication path at all (`db.md`: "sync rules are NOT
-   RLS... replication bypasses the query path RLS protects") — an already-connected device with an
-   expired-but-not-deleted grant keeps receiving *live* replicated writes for that farm, not just
-   a stale cached copy, for as long as `.connect()` runs. Currently latent (no write path sets
-   `expires_at` to non-null yet — see full report), not live in production today, but real the
-   moment the planned external-grant invite (FR-005) ships an expiry. Option A is now implemented:
-   `MembershipExpiryService` runs every minute in the API and uses database `now()` to soft-delete
-   elapsed live rows, updating `updated_at` in the same statement. Every stream already requires
-   `deleted_at IS NULL`, so the formerly unbounded live-replication exposure is bounded to one
-   minute plus execution/propagation time; RLS still refuses API access immediately. The update is
-   idempotent across API replicas. A real-Postgres test proves elapsed/future/permanent/already-
-   deleted cases and a cross-artifact test proves every stream consumes the tombstone. No
-   `revoked_reason` column is added until a product surface needs the distinction. Option B remains
-   future defence-in-depth with the time-boxed-grant UI; C remains UX only. Full decision and
-   evidence: `docs/04-delivery/phase-3-sync-expiry-enforcement-gap-2026-08-09.md`.
+**Resolved 2026-08-09 — Werf absorbs Voorman's planning discipline; Voorman archived, not merged.**
+Keep React/NestJS/Postgres/PostGIS/PowerSync/`af-south-1`; adopt Voorman's authority index and rule
+ownership. Google OIDC becomes primary sign-in via the ADR-0011 BFF; passkeys remain the step-up
+path; never SMS. Full evidence: `docs/04-delivery/werf-voorman-consolidation-audit-2026-08-09.md`.
 
-**Resolved 2026-08-09 — Werf absorbs Voorman's planning discipline; Voorman is archived, not
-merged.** The comparative audit found Werf has the stronger requirements, legal, offline, tenancy
-and implementation foundation. Keep React/NestJS/Postgres/PostGIS/PowerSync and `af-south-1`;
-adopt Voorman's authority index, rule ownership and readiness hygiene. Google OIDC becomes the
-primary connected sign-in through the ADR-0011 server BFF. Passkeys remain the phishing-resistant
-alternative/step-up path; no new password-only onboarding and never SMS. Claude Code owns canonical
-workflow guidance; Codex is a support adapter and cannot override it. Full evidence and remaining
-boundaries: `docs/04-delivery/werf-voorman-consolidation-audit-2026-08-09.md`.
+**Resolved 2026-08-08 — object storage belongs in Phase 3**, one shared local-first attachment
+foundation (OPFS + SQLite metadata, MinIO dev/test, S3 `af-south-1` prod). Phase 2 stores no photo
+and claims none until that slice lands.
 
-**Resolved 2026-08-08 — object storage belongs in Phase 3.** The owner approved one shared
-local-first attachment foundation for animal photos, later crop/grievance documents and generated
-packs: OPFS blobs + SQLite metadata/queue on the device, an S3-compatible boundary with MinIO in
-development/tests, and S3 in `af-south-1` in production. Phase 2 remains honest: it stores no photo
-and claims none until that Phase 3 slice lands.
-
-**Resolved 2026-08-09 — the PowerSync engine is precached, not counted against NFR-009's
-interactive-path budget.** Wiring the main app to `createLocalDatabase()` (all 12 capture stores,
-3c) forced a real choice: the SDK's WASM engine (~2.7MB gz across four VFS variants) blows both
-Workbox's 2MiB precache ceiling and the 250KB interactive-path budget if left uncategorised. Owner
-chose precache-not-runtime-cache: a farmer must never hit an evicted runtime-cache miss for the
-engine with a migration marker already committed, and Workbox only activates a build once its full
-precache list has downloaded, which is also the cleanest 12-month-offline story. `check-bundle-size.mjs`
-now excludes a named, closed set of engine chunks from the JS-gz sum and reports them separately;
-`vite.config.ts` raises the Workbox ceiling to 4MiB. Full evidence:
+**Resolved 2026-08-09 — the PowerSync WASM engine (~2.7MB gz) is precached, not counted against
+NFR-009's 250KB interactive-path budget.** Workbox ceiling raised to 4MiB; `check-bundle-size.mjs`
+excludes the named engine chunks from the JS-gz sum. Full evidence:
 `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`.
 
 ## 4. Verification
@@ -143,111 +90,50 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
    aborted round wipes the hold display), **#7** (`/not-sent` says "record it again" for a tally,
    and a recount RESETS), **#8** (⛔ Phase 3 blocker — `landed()` breaks on hydration), **#9**
    (stale STATUS.md section pointers, low/docs-only).
-2. ✅ Done 2026-08-09: **Phase 3 slice 3a** on `phase-3/powersync-foundation` (unpushed —
-   this touches sync and awaits an owner-triggered `sync-auditor` pass before it can be called
-   merge-ready). `@powersync/web`/`@powersync/common` installed behind `@werf/sync`; local
-   SQLite schema derived from `TENANCY` + `@werf/db` via `pnpm --filter @werf/sync
-   generate:schema`, drift-checked in CI. Full detail and two real findings from building it
-   (the WASM-in-bundle trap, the `theft_incident_animals` surrogate-id gap → **#10**) are in
-   `docs/04-delivery/phase-checklists.md` under 3a. `createLocalDatabase` exists
-   (`@werf/sync/local-database`) but is not wired to anything yet — no call site until 3b.
-3. ✅ Done 2026-08-09: **Werf/Voorman consolidation and immediate auth/UI hardening.** Rotating
-   session credentials moved to a host-only HttpOnly cookie; durable browser storage now holds only
-   the non-secret offline identity/farm projection; auth-sensitive application throttles, strict
-   header/CSP baselines, 15-character new-password floor and the first accessible semantic skeleton
-   are implemented. Application throttling is not the production perimeter: shared Redis limits,
-   WAF/account-aware delay and Google OIDC/account linking remain explicit ADR-0011 work.
-4. ✅ Done 2026-08-09: **confirmed the static WASM core actually opens in a browser** — the
-   check §5 item 4 required before any other 3b work. A diagnostics-only Vite entry
-   (`apps/web/diagnostics.html`, own build, own `dist/diagnostics/` output, never in the main
-   bundle/precache) dynamic-imports `@werf/sync/local-database`, opens a real `PowerSyncDatabase`
-   in Chromium, and round-trips a write that survives a fresh navigation — real OPFS persistence,
-   not an in-memory illusion of it. `apps/web/e2e/local-db-diagnostic.spec.ts` proves it; `pnpm
-   test:e2e` now builds this entry first. The postinstall 404 was a non-issue: the static WASM
-   assets ship inside `@journeyapps/wa-sqlite`'s own package (confirmed on disk) regardless.
-5. Superseded same day by item 6, kept only as git history: a first attempt generated classic
-   `bucket_definitions` sync rules — three tables couldn't be expressed (no JOINs/subqueries) and
-   it was never validated live. Do not resurrect; item 6 is the current, confirmed state.
-6. ✅ Done 2026-08-09: **self-hosted PowerSync service stood up (docker-compose) and PowerSync
-   Sync Streams generated from `TENANCY`, both empirically validated together** —
-   `journeyapps/powersync-service:1.23.3` (`infra/powersync/`, Postgres storage backend on the
-   same server as the source DB, `wal_level=logical` added to `docker-compose.yml`'s postgres
-   service), `packages/sync/scripts/derive-sync-streams.ts` → `infra/powersync/sync-config.yaml`
-   (`pnpm --filter @werf/sync generate:sync-rules`, drift-checked by
-   `sync-streams-freshness.spec.ts`). Booted the real service, watched it validate and REPLICATE
-   REAL ROWS from every one of the 15 synced tables (confirmed in the container's own replication
-   log, not just config validation) — this is the empirical check §3's Q1 asked for, and it
-   answered Q1–Q3 outright (see §3). `sync-streams-rls-agreement.spec.ts` reads the real RLS
-   migrations off disk and proves tenant-scoped tables are built on `app_user_farm_ids()` and
-   reference tables are `FOR SELECT USING (true)`, matching each stream's shape. Empirically
-   confirmed a permissive hand-edit fails the freshness test (tampered a `WHERE` clause away,
-   watched it fail, reverted). The format-independent `expires_at` ceiling is closed by the
-   one-minute tombstone bridge in §3 Q4. Dev-only RS256 keypair for
-   `client_auth.jwks` generated to scratchpad, NOT committed (only the public JWK is in
-   `service.yaml`) — production key custody is ADR-0011/task-4 territory, not decided here.
-7. ✅ Done 2026-08-09: **Phase 3 slice 4 — `PowerSyncBackendConnector` implemented, `.connect()`
-   empirically proven end-to-end against the real service** (`packages/sync/src/connector.ts`;
-   `GET /api/sync/token` mints a short-lived RS256 JWT from the caller's session). Real finding:
-   config validating and rows landing in the service's own storage is NOT the same claim as a
-   connected client receiving them — a real `.connect()` completed with `operations_synced: 0`
-   until every stream got `auto_subscribe: true` (Sync Streams are opt-in; nothing had subscribed).
-   Fixed in the generator, regenerated, re-verified: a fresh test farm's row reached the client
-   (`buckets: 16`, `operations_synced: 6`). `uploadData` deliberately throws on any queued write —
-   no per-table upload route exists yet, that's 3c/3d — proven by a test asserting `complete()` is
-   never called. Full detail in `phase-checklists.md` 3b. **Decision on the tripwire-3e question
-   below: `.connect()` stays diagnostics-only this slice** — `mode=connect` is reachable only from
-   `diagnostics.html`, never the app shell, so no real read path calls it yet and tripwire 3e does
-   not fire. The moment 3c/3d wires a real screen to `.connect()`, the `landed()` hydration fix
-   must land in the SAME slice, not after.
-8. ✅ Done 2026-08-09: **Phase 3 slice 3c — all 12 capture stores migrated from localStorage to
-   SQLite/OPFS** (unpushed, same owner-triggered-`sync-auditor` caveat as every sync-touching
-   commit on this branch). `createSqliteCaptureStore` + a generic `localOnly` `capture_records`
-   table, atomic per-key migration proven under real interruption (unit) and end-to-end against
-   the real engine (`apps/web/e2e/capture-migration.spec.ts`). ⭐ Two regressions found and closed
-   in the same slice, neither anticipated going in: (1) the Outbox could flush against a
-   partially-hydrated world — a tally posting before the dose meant to guard it, a live wire-order
-   violation, closed by widening `CaptureStore<T>` with `settled()` and gating the flush + the
-   `'synced'` status on every one of the 13 stores settling; (2) `TagSessionScreen`/
-   `WeaningSessionScreen` froze their work queue on a mount-time snapshot of pre-hydration data,
-   closed the same way. Bundle-budget decision (precache the engine, exclude it from the
-   interactive-path sum) made and recorded in §3. Full account:
-   `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`. ⭐ **Follow-up done same day:** the three dose-before-disposal tests that
-   caught the `allSettled` regression proved it once, by going red-to-green, but nothing in the
-   committed suite would have failed again if the gate were later deleted — the fake database's
-   promise interleaving happened to make the race timing-dependent, not pinned. Closed with
-   `FakeLocalDatabase.holdHydrationFor(storeKey)` (`packages/sync/src/testing.ts`) and a new
-   `Outbox.test.tsx` case that holds `health` open on demand while every other seeded store settles
-   for real, asserts nothing posts, releases it, and asserts the correct order — verified to
-   actually fail (mob/tallies/moves posted ahead of the still-held dose) when the gate is stripped
-   from `Outbox.tsx`, then to pass again once restored.
+2. ✅ Done 2026-08-09: **3a** — `@powersync/web`/`@powersync/common` behind `@werf/sync`; local
+   SQLite schema derived from `TENANCY` + `@werf/db`, drift-checked in CI. Two real findings (the
+   WASM-in-bundle trap, the `theft_incident_animals` surrogate-id gap → **#10**): `phase-checklists.md` 3a.
+3. ✅ Done 2026-08-09: **Werf/Voorman consolidation and auth/UI hardening.** Rotating session
+   credentials moved to a host-only HttpOnly cookie; auth throttles, strict header/CSP baselines,
+   15-char password floor. Not the production perimeter yet — shared Redis limits and Google
+   OIDC/account linking remain ADR-0011 work.
+4. ✅ Done 2026-08-09: **confirmed the static WASM core opens in a real browser** — a
+   diagnostics-only Vite entry (never in the main bundle) proves real OPFS persistence across a
+   navigation. `apps/web/e2e/local-db-diagnostic.spec.ts`.
+5. Superseded by item 6, kept only as git history: a first attempt generated classic
+   `bucket_definitions` sync rules — three tables couldn't be expressed. Do not resurrect.
+6. ✅ Done 2026-08-09: **self-hosted PowerSync service + Sync Streams generated from `TENANCY`,
+   both empirically validated together** against a real `journeyapps/powersync-service:1.23.3` —
+   REPLICATED REAL ROWS from every one of the 15 synced tables, confirmed in the container's own
+   replication log. `sync-streams-rls-agreement.spec.ts` proves tenant-scoped streams match RLS
+   shape. Full detail: `phase-checklists.md` 3b, §3 above.
+7. ✅ Done 2026-08-09: **`PowerSyncBackendConnector` implemented, `.connect()` empirically proven
+   end-to-end** — a real `.connect()` initially returned `operations_synced: 0` until every stream
+   got `auto_subscribe: true` (Sync Streams are opt-in); fixed and re-verified (`buckets: 16`,
+   `operations_synced: 6`). `.connect()` stayed diagnostics-only through 3b/3c/3d — no application
+   read path called it. Full detail: `phase-checklists.md` 3b.
+8. ✅ Done 2026-08-09: **3c — all 12 capture stores migrated from localStorage to SQLite/OPFS.**
+   `createSqliteCaptureStore` + a generic `localOnly` `capture_records` table, atomic per-key
+   migration proven under real interruption and end-to-end. ⭐ Two regressions found and closed:
+   (1) the Outbox could flush against a partially-hydrated world — closed by `CaptureStore<T>.settled()`
+   gating the flush on every store; (2) two screens froze their queue on a mount-time
+   pre-hydration snapshot, closed the same way. Full account:
+   `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`.
 9. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
    `landed()` breaks the day mobs/tallies come down from the server.
 10. Do not begin payroll on local adapters.
-11. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
-    this was flagged last session and NOT done this session (stayed scoped to 3c). Rebase it
-    onto `main` before starting any Phase 3–6 scope-doc work, and before it drifts further.
-12. ✅ Done 2026-08-09: **owner-triggered `sync-auditor` pass over the full branch, two findings
+10. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
+    rebase it onto `main` before starting any Phase 3–6 scope-doc work.
+11. ✅ Done 2026-08-09: **owner-triggered `sync-auditor` pass over the full branch, two findings
     fixed same day.** (1) MEDIUM/HIGH: one corrupt DB-resident row failed a store's WHOLE
-    hydration PERMANENTLY (the migration marker already existed, so every future boot re-threw) —
-    new captures stopped being durable, and a poisoned `health` store would have let the FR-131
-    disposal guard read "no dose outstanding" when it genuinely could not tell. Fixed: hydration
-    tolerates one corrupt row now, and `CaptureStore<T>` gained `hydrationFailed()` — distinct
-    from `settled()` — so `Outbox.tsx` holds the WHOLE queue, not just the failed store's own
-    captures, on genuine failure. (2) MEDIUM: the global per-IP throttle (`app.module.ts`) exempts
-    no capture endpoint, and a large offline backlog draining on reconnect is the likeliest thing
-    to trip it; a 429-aborted round had NO autonomous retry. Fixed: a bounded 90s retry while
-    errored and online. Every fix watched to FAIL first. One LOW finding (stale
-    `generate:sync-rules` script name) left open, cosmetic, not fixed. Still not merge-ready — one
-    pass over one slice, not a fresh clearance of the whole branch.
-13. ✅ Done 2026-08-10: **Phase 3 slice 3d — audited, no code gap found; `uploadData` reframed.**
-    Every 3d invariant (idempotency-before-validation on the two state-mutating captures,
-    4xx-set-aside/5xx-abort/refresh-holds-queue, browser-kill/reboot durability) was already
-    implemented and proven — see `phase-checklists.md` 3d for citations. The one real change:
-    `uploadData`'s throw and its test were reframed from "TODO 3c/3d" to a documented permanent
-    tripwire, after confirming against the installed `@powersync/common` that
-    `CrudBatch`/`CrudTransaction.complete()` has no per-entry completion — making CRUD-native
-    routing structurally incompatible with the never-discard/4xx-set-aside invariants. Owner
-    question raised in §3, open. Tripwire 3e did not fire — no screen wired to `.connect()`.
+    hydration permanently — fixed, `CaptureStore<T>` gained `hydrationFailed()`, distinct from
+    `settled()`. (2) MEDIUM: a 429-aborted round had no autonomous retry — fixed, bounded 90s
+    retry. Every fix watched to FAIL first. One LOW (stale script name) left open, cosmetic.
+12. ✅ Done 2026-08-10: **3d — audited, no code gap found; `uploadData` reframed.** Every 3d
+    invariant (idempotency-before-validation, 4xx-set-aside/5xx-abort/refresh-holds-queue,
+    browser-kill/reboot durability) was already implemented and proven — `phase-checklists.md` 3d.
+    `uploadData`'s throw reframed from "TODO 3c/3d" to the documented permanent tripwire that
+    became **ADR-0012** the following session.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

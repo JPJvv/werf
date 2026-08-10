@@ -591,6 +591,121 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
   });
 
+  it('⭐ holds a slaughter when the transfer that withholds its flock is known only by HYDRATION', async () => {
+    // sync-auditor Finding 1 (2026-08-10), second call site. The test just above proves the taint
+    // chain-walk when THIS device captured the transfer_in itself and it was refused this round.
+    // The gap: a transfer another device captured, sent, and already landed — so it will never be
+    // refused, it is simply invisible to `mobDisposalSubjects` unless the raw local tally log is
+    // replaced with the local+hydrated fold. Here the SOURCE mob's own dip is what gets refused this
+    // round; the only thing connecting the sale mob to that dip is a transfer this device never
+    // captured. Without the fold, `mobDisposalSubjects` cannot walk from the sale mob to the dip
+    // camp, so the refused dip's taint never reaches the slaughter — 201 for meat behind a dipped
+    // transfer that arrived by down-sync rather than by this device's own capture.
+    const SOURCE = '0190f3a0-0000-7000-8000-0000000000b5';
+    const HYDRATED_TRANSFER_ID = '0190f3a0-0000-7000-8000-0000000000a8';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        { id: SOURCE, farmId: FARM_ID, name: 'Dip camp', species: 'sheep', headCount: 200 },
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Sale flock',
+          species: 'sheep',
+          headCount: 40,
+          initialHeadCount: 40,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-vet-products:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-0000000000d1',
+          name: 'Tickaway',
+          registrationNumber: 'G4321 Act 36/1947',
+          species: ['sheep'],
+          meatWithdrawalDays: 28,
+          milkWithdrawalHours: null,
+          route: 'topical',
+        },
+      ]),
+    );
+    // Local: the dip on the SOURCE mob (will be refused this round) and the slaughter on the SALE
+    // mob. Nothing local names the transfer between them — that fact lives ONLY in `events`, the way
+    // it would after arriving by down-sync rather than being captured on this device.
+    window.localStorage.setItem(
+      `werf-health:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: DIP_ID,
+          farmId: FARM_ID,
+          animalId: null,
+          mobId: SOURCE,
+          kind: 'dip',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+          productId: '0190f3a0-0000-7000-8000-0000000000d1',
+          method: 'plunge',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: TALLY_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'slaughter',
+          count: 10,
+          delta: -10,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/dips') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // ⛔ Hydrated BEFORE the first render, not injected mid-test. The retry loop only re-flushes
+    // every `RETRY_INTERVAL_MS` (90s); once the slaughter has SENT in round one it cannot be
+    // un-sent, so the transfer must already be visible to `foldTallies` on that very first attempt —
+    // exactly the state a device boots into after PowerSync has replicated it before the device was
+    // ever opened, which is the ordinary case, not a race.
+    const fake = await getCurrentFakeLocalDatabase();
+    fake.hydrateRow('events', {
+      id: HYDRATED_TRANSFER_ID,
+      farm_id: FARM_ID,
+      mob_id: MOB_ID,
+      type: 'tally',
+      occurred_at: '2026-07-22T12:00:00.000Z',
+      payload: JSON.stringify({
+        reason: 'transfer_in',
+        delta: 40,
+        counterpartMobId: SOURCE,
+        carriedWithholdUntil: '2026-08-17',
+      }),
+    });
+
+    render(<App />);
+    // Held: the refused dip's taint must reach the slaughter through the hydrated transfer link.
+    expect(await screen.findByText(/1 not sent — needs your attention/)).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(TALLY_ID);
+    expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+  });
+
   it('⭐ holds the arrival — and the slaughter behind it — when the DEPARTURE was refused', async () => {
     // §2m #1. A move is two events because a tally has one subject mob and one delta, and until the
     // batch id linked them they were two unrelated queue items. The source is short (another phone

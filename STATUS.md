@@ -3,7 +3,7 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-10 (Part 2: 3e mobs/tallies hydration slice)
+**Last updated:** 2026-08-10 (Part 3: sync-auditor pass over 3e — 2 SEV-2 + 1 LOW, all fixed, re-pass next)
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -17,7 +17,7 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ⚠️ First `sync-auditor` pass over 3e found 2 SEV-2 + 1 LOW, all fixed same day — pass did NOT clear, a re-pass over the fix diff is queued. Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -32,6 +32,49 @@ fixture, human-gated regulated verification, a false uncached-gate timeout, and 
 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+⭐ **NEW, 2026-08-10 — Finding 2's fix is an architecture decision, not a code fix, and this is the
+question.** The owner-triggered `sync-auditor` pass below found that `derive-sync-streams.ts`'s
+`PARTITIONED_SOURCE_TABLE` map (which fixed the partition-replication defect below) is correct
+TODAY only because `FarmsService.createFarm` — the real onboarding path — never calls
+`create_farm_partition`. `packages/db/scripts/seed.mjs` and `events.integration.test.ts`'s own
+fixtures DO call it, so events for THOSE farms already silently fail to down-sync, reproducibly,
+right now. A regression test now pins today's safe reality
+(`apps/api/src/farms/farms.integration.test.ts`, "never gives a REAL onboarding farm its own events
+partition") and will go red the day anyone wires partitioning into real onboarding without also
+fixing the generator — but that is a tripwire, not an answer. **Options, not a recommendation:**
+(a) wire `create_farm_partition` into `FarmsService.createFarm` AND teach the generator to read
+partitions from `pg_inherits` dynamically instead of a hand-maintained map; (b) retire per-farm
+partitioning entirely (the `events_default` catch-all becomes the only partition, ever); (c) leave
+provisioning as-is (no partition, ever, until a scale reason forces one) and delete the unused
+`create_farm_partition` path from `seed.mjs`/tests so nothing exercises a shape production never
+uses.
+→ _Answer:_
+
+⭐ **Closed 2026-08-10 — `sync-auditor` pass over the 3e slice, 2 SEV-2 + 1 LOW, all fixed same
+day.** Requested by JP ("run the necessary agents") specifically over the diff since the last
+pass's fix commit (`585ddb2..fc3d9e2`: the 3d audit, ADR-0012, the whole 3e slice). Per STATUS.md
+§6 clause 2 this pass did **not** clear — two SEV-2s — so a re-pass over the fix diff is the next
+step, not optional (clause 3's "MED/LOW merges without another pass" explicitly excludes SEV-2
+fixes). **Finding 1 (SEV-2, compliance-gated FR-131):** the withholding guard read raw local
+`tallies` at three call sites (`AdjustMobScreen.tsx`'s capture-time guard, `Outbox.tsx`'s
+`mobDisposalSubjects` taint chain-walk, `residue.ts`'s register), blind to a withholding that
+arrived only via down-sync — a mob whose entire transfer history lived in another device's
+already-sent capture previewed CLEAR on a sale the server would refuse. Root cause was two-part:
+`mapHydratedTally` silently dropped three fields the server does persist
+(`counterpartMobId`/`carriedWithholdUntil`/`declaredWithdrawalUntil`, confirmed against
+`livestock.service.ts`'s insert, not assumed from the schema alone), and all three call sites read
+raw local `tallies` instead of the `mergeById` local+hydrated fold `headAsAt` already used. Fixed
+both; each with a test watched to FAIL first (`AdjustMob.test.tsx`, `Outbox.test.tsx`,
+`AttentionScreen.test.tsx` — new). ⛔ **This means the "this diff touches no regulated code"
+framing used to justify not requesting `compliance-checker` for this slice is now stale — the fix
+touches FR-131 guard behaviour directly, and this slice is not merge-ready until an
+owner-triggered `compliance-checker` pass is requested and closes.** **Finding 2 (SEV-2):** see the
+entry above — fixed with a tripwire test, not a code fix, because the actual fix is an
+architecture decision. **LOW:** `hydrated-table-store.ts`'s `db.watch()` leaked a subscription
+across farm switches (resource leak, never a cross-farm DATA leak — farm-scoping in the query was
+always correct); fixed with `close()` + a `useEffect` cleanup. Full detail:
+`phase-checklists.md` 3e.
 
 ⭐ **Found and fixed 2026-08-10 — PowerSync silently replicates ZERO rows for a partitioned source
 table, with no error anywhere.** `events` (migration 0010) is Postgres-partitioned, one partition
@@ -98,6 +141,9 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
 | `pnpm verify` (2026-08-10, Phase 3 slice 3e — mobs/tallies hydration) | ✅ Uncached: 101 test files / 1,059 tests, 7/7 builds; bundle 155.19 KB gz ≤ 250 KB. Includes the new `HydratedTableStore`/`HydratedLivestock`/`SyncConnection` code and the `Outbox.tsx`/`AdjustMobScreen.tsx` tripwire-3e changes, all watched to FAIL first via a temporary revert |
 | `pnpm test:e2e` (2026-08-10, same slice) | ✅ 30 passed / 1 skipped (the new `real-sync-hydration.spec.ts`, gated behind `WERF_REAL_STACK=1`, correctly absent from the default lane) |
 | Manual — real service, two-device issue #8 journey (2026-08-10) | ✅ `real-sync-hydration.spec.ts` run manually against live `apps/api` + `werf-postgres` + `werf-powersync`, 3× clean (fresh `apps/api` process each run — in-memory auth-throttle counters reset — no flakes): real REST-landed birth tally → real second login → real `.connect()` → real SQLite hydration → real capture UI → real send → real Postgres row-count confirmation → real `page.reload()` preserving both the projection and the (by then empty) queue. Found and fixed the partition-replication defect above in the process |
+| `sync-auditor` (2026-08-10, owner-triggered, `585ddb2..fc3d9e2`) | ⚠️ **Did NOT clear — 2 SEV-2 + 1 LOW.** Both SEV-2 and the LOW fixed same day, each with a test watched to FAIL first; see §3. Re-pass over the fix diff queued next, per §6 clause 2/3 |
+| `pnpm verify` (2026-08-10, sync-auditor Findings 1/2/LOW fixed) | ✅ Uncached: 102 test files / 1,064 tests, 7/7 builds; bundle 155.36 KB gz ≤ 250 KB. New/extended tests: `AdjustMob.test.tsx`, `Outbox.test.tsx`, `AttentionScreen.test.tsx` (new file), `hydrated-table-store.spec.ts`, `farms.integration.test.ts` — all watched to FAIL first (temporary revert or the file didn't exist yet) |
+| `pnpm test:e2e` (2026-08-10, same fixes) | ✅ 30 passed / 1 skipped, run twice back to back, no flakes |
 
 ## 5. Next executable steps
 
@@ -153,12 +199,16 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
     became **ADR-0012** the following session.
 13. ✅ Done 2026-08-10: **3e — mobs/tallies down-sync + tripwire 3e (issue #8) closed**, real
     connection lifecycle (`SyncConnectionProvider`), and a production-blocking PowerSync
-    partitioned-table replication defect found and fixed (§3). Next: extend hydration merging to
-    animals/moves/health (the rest of the 3e conflict matrix), then 3f (quota eviction) / 3g
-    (additive-migration) / 3h (sync health) / 3i (attachments) in order. Issue #10
+    partitioned-table replication defect found and fixed (§3). Issue #10
     (`theft_incident_animals` surrogate-id gap) remains untouched and tracked separately — it did
-    not block this slice and was not silently folded into it. Branch is ready for an
-    owner-triggered `sync-auditor` pass over 3e's diff whenever JP asks for one.
+    not block this slice and was not silently folded into it.
+14. ✅ Done 2026-08-10: **owner-triggered `sync-auditor` pass over 3e, 2 SEV-2 + 1 LOW found and
+    fixed same day** (§3). ⛔ **Not merge-ready**: (a) a re-pass over the fix diff has not run yet
+    (§6 clause 2/3 — a SEV-2 fix never skips re-review), (b) Finding 1's fix touches FR-131 guard
+    behaviour, so this slice now needs an owner-triggered `compliance-checker` pass before it can be
+    called merge-ready, (c) Finding 2's actual fix is an unresolved owner architecture decision (§3).
+    Next: request the `sync-auditor` re-pass and, separately, the `compliance-checker` pass; only
+    after both close does 3e's remaining scope (animals/moves/health hydration, 3f–3i) resume.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

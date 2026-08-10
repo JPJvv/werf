@@ -995,6 +995,45 @@ add the one shared local-first attachment path approved on 2026-08-08.
   carries) silently delivers nothing to any client, forever, with a config that validates and a
   server that reports success. Found independently by `reviewer` and `sync-auditor` (issue #8
   itself); NOT a Phase 2 defect — it cannot fire in the shipped configuration.
+⚠️ **`sync-auditor` pass, 2026-08-10, over `585ddb2..fc3d9e2` (the 3d audit, ADR-0012, this whole 3e
+  slice) — did NOT clear (two SEV-2).** Per STATUS.md §6 clause 2 that is not the terminal condition;
+  both are fixed below, each with a test watched to FAIL first, and a re-pass over the fix diff is
+  the next step, not optional. The hydration TRIPWIRE above (issue #8, `landed()`) is unaffected —
+  a different bug in the same mechanism.
+  - **Finding 1 (SEV-2, compliance-gated FR-131) — FIXED.** The withholding guard read raw local
+    `tallies`, blind to a `transfer_in` this device only knows about via down-sync, at THREE call
+    sites: `AdjustMobScreen.tsx`'s capture-time guard (the SEV-2 — previewed CLEAR on a sale the
+    server would refuse), `Outbox.tsx`'s `mobDisposalSubjects` taint chain-walk (a refused dose on
+    a hydrated-only transfer's source mob held nothing), and `residue.ts`'s register (display-only,
+    LOW/MED). Root cause was two-part: `mapHydratedTally` silently dropped `counterpartMobId`/
+    `carriedWithholdUntil`/`declaredWithdrawalUntil` even though the server persists them (traced
+    to `livestock.service.ts`'s insert before trusting the schema alone), and all three call sites
+    passed raw `tallies` instead of the local+hydrated `mergeById` fold. Fixed both; all three call
+    sites now read the fold. Tests: `AdjustMob.test.tsx` (a mob whose ENTIRE arrival history is
+    hydrated refuses a slaughter), `Outbox.test.tsx` (a refused dip on a source mob holds a
+    slaughter on the destination when the connecting transfer is hydrated-only, present before the
+    FIRST flush attempt — a mid-test hydration cannot exercise this once an item has already sent),
+    `AttentionScreen.test.tsx` (the register flags the same hydrated-only case). ⛔ Per CLAUDE.md's
+    compliance gate: this slice is not merge-ready, and its PR must not be marked ready, until the
+    owner asks for a `compliance-checker` pass and it closes — the original "this diff touches no
+    regulated code" framing (used to justify not requesting one) is now stale.
+  - **Finding 2 (SEV-2) — NOT fixed; tripwired, and an owner decision is raised in STATUS.md §3.**
+    `PARTITIONED_SOURCE_TABLE` (the fix above) is a hand-maintained map, not derived from
+    `pg_inherits`, and it is correct TODAY only because `FarmsService.createFarm` — the real
+    onboarding path — never calls `create_farm_partition`. `packages/db/scripts/seed.mjs` and
+    `events.integration.test.ts`'s own fixtures DO call it, so events for THOSE farms already
+    silently fail to down-sync, reproducibly, today. A regression test
+    (`apps/api/src/farms/farms.integration.test.ts`, "never gives a REAL onboarding farm its own
+    events partition") pins today's safe reality and goes red the day anyone wires
+    `create_farm_partition` into real onboarding without also teaching the generator — the tripwire,
+    not the fix. The fix is an architecture decision (wire provisioning + make the generator read
+    partitions dynamically, vs. retire per-farm partitioning) that is JP's to make, not mine to guess.
+  - **LOW (resource leak, not a data leak) — fixed.** `hydrated-table-store.ts`'s `db.watch()` had no
+    teardown; `HydratedLivestockProvider` built a fresh store pair per farm switch and never closed
+    the previous one. Added `close()` (an internal `AbortController`, wired to the real SDK's
+    `SQLWatchOptions.signal`) and a `useEffect` (not `useMemo` — a memo's return has no cleanup hook)
+    keyed on the store value, closing on farm switch/unmount. Fail-first test:
+    `hydrated-table-store.spec.ts`, "close() stops watching".
 ☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
 ☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
 ☐ 3h Sync health reports queue depth/failure per farm without PII

@@ -123,6 +123,15 @@ export function AdjustMobScreen() {
   // animals" — the wrong refusal for a mob this device simply has not captured anything about yet.
   const hydratedMobs = useHydratedMobs();
   const hydratedTallies = useHydratedTallies();
+  // ⭐ sync-auditor Finding 1 (2026-08-10): hoisted out of `headAsAt` so the withholding guard below
+  // reads the SAME merged log the head-count fold does. It previously read raw local `tallies`,
+  // which is blind to a withholding that arrived only via down-sync (a `transfer_in` this device
+  // never captured) — the guard previewed CLEAR while the server, which sees the real transfer,
+  // would refuse the same capture days later.
+  const foldTallies = useMemo(
+    () => mergeById(tallies, hydratedTallies),
+    [tallies, hydratedTallies],
+  );
   const healthEvents = useHealthEvents();
   const products = useVetProducts();
   // A counted mob can ALSO hold individually-registered animals, and a treatment given to one of
@@ -184,7 +193,6 @@ export function AdjustMobScreen() {
   // this fold is how the two halves of one move come to disagree about a number.
   const headAsAt = useMemo(() => {
     const at = `${day}T12:00:00.000Z`;
-    const foldTallies = mergeById(tallies, hydratedTallies);
     const foldMobs = mergeById(storedMobs, hydratedMobs);
     return (mobId: string): number | null => {
       const before = foldTallies.filter((t) => t.mobId === mobId && t.occurredAt <= at);
@@ -197,7 +205,7 @@ export function AdjustMobScreen() {
             : stored.initialHeadCount;
       return projectHeadCount(baseline, before);
     };
-  }, [storedMobs, hydratedMobs, tallies, hydratedTallies, day]);
+  }, [storedMobs, hydratedMobs, foldTallies, day]);
   const currentHead = selected === null ? null : headAsAt(selected.id);
   const isRecount = reason === 'recount';
   const trade = reason === 'sale' || reason === 'purchase';
@@ -233,7 +241,7 @@ export function AdjustMobScreen() {
   const withdrawal =
     selected === null
       ? null
-      : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves, tallies);
+      : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves, foldTallies);
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
   // The reasons that are recorded rather than refused still say so — same rule as the death path.
   const noteWithdrawal =

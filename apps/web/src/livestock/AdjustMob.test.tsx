@@ -8,13 +8,13 @@
  * created on day one was a 300-head flock forever, through a lambing, a drought and an abattoir run.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
 import { farmToday } from '../farmTime';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -682,6 +682,55 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it('⭐ refuses slaughter when the withholding arrived via a HYDRATED transfer this device never captured', async () => {
+    // sync-auditor Finding 1 (2026-08-10), first call site. The local test just above proves the
+    // guard sees a transfer THIS device captured; the gap is a transfer another device captured,
+    // sent, and PowerSync has since replicated here — this device never ran a `transfer_in` capture
+    // of its own, so nothing in `LocalTallies` names the withholding. `AdjustMobScreen.tsx`'s guard
+    // read only the raw local tally log, so a mob whose entire arrival history lives in
+    // `HydratedLivestock` previewed CLEAR while the server, which sees the real transfer, would
+    // refuse — the exact "saved, refused three days later, truck already left" failure this file's
+    // guard exists to prevent.
+    const SOURCE = '0190f3a0-0000-7000-8000-00000000c001';
+    const TRANSFER_ID = '0190f3a0-0000-7000-8000-00000000c002';
+    cachedSession();
+    seedFlock();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('events', {
+        id: TRANSFER_ID,
+        farm_id: FARM_ID,
+        mob_id: MOB_ID,
+        type: 'tally',
+        occurred_at: '2026-07-20T12:00:00.000Z',
+        payload: JSON.stringify({
+          reason: 'transfer_in',
+          delta: 40,
+          counterpartMobId: SOURCE,
+          // Far enough out that no reasonable test clock ever runs past it.
+          carriedWithholdUntil: '2099-01-01',
+        }),
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '10');
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    });
+    expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(await storedTallies()).toHaveLength(0);
   });
 
   it('records a purchase with no declared withdrawal as unknown history, never a guess', async () => {

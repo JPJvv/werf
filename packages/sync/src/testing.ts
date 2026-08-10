@@ -86,6 +86,9 @@ export interface FakeLocalDatabase {
     sql: string,
     params: readonly unknown[],
     handler: { onResult: (result: unknown) => void; onError?: (error: Error) => void },
+    /** `signal`, honoured: aborting it deregisters the watcher — the fake's stand-in for the real
+     *  SDK's `SQLOnChangeOptions.signal`, so a store's `close()` is actually testable. */
+    options?: { signal?: AbortSignal },
   ): void;
   /** True after `connect()` resolves and until `disconnect()` is called. Mirrors the real SDK's
    *  `connected` getter narrowly enough for a lifecycle test to assert against. */
@@ -293,6 +296,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
       sql: string,
       params: readonly unknown[] = [],
       handler: { onResult: (result: unknown) => void; onError?: (error: Error) => void },
+      options?: { signal?: AbortSignal },
     ): void {
       const table: 'mobs' | 'events' | undefined = sql.includes('FROM mobs')
         ? 'mobs'
@@ -311,6 +315,10 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
       };
       watchers.push(watcher);
       fireWatcher(watcher);
+      options?.signal?.addEventListener('abort', () => {
+        const index = watchers.indexOf(watcher);
+        if (index !== -1) watchers.splice(index, 1);
+      });
     },
 
     get connected(): boolean {

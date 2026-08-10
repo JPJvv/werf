@@ -41,6 +41,15 @@ export interface HydratedTableStore<T> {
    * philosophy `CaptureStore.hydrationFailed()` already established for the upload side.
    */
   hydrationFailed(): boolean;
+  /**
+   * Stops watching. Idempotent, safe to call before the database has even opened (the async
+   * `db.watch()` registration below checks the same signal before firing). A caller that
+   * constructs a fresh store per farm switch (`HydratedLivestockProvider`) must call this on the
+   * OLD store when the farm changes, or the previous farm's `db.watch()` subscription is never
+   * released — a resource leak across farm switches within one session, not a cross-farm data leak
+   * (sync-auditor LOW, 2026-08-10).
+   */
+  close(): void;
 }
 
 export interface HydratedTableStoreOptions<T> {
@@ -70,6 +79,7 @@ export function createHydratedTableStore<T>(
   let hasSettled = false;
   let didFail = false;
   const listeners = new Set<() => void>();
+  const controller = new AbortController();
   const notify = (): void => {
     for (const listener of listeners) listener();
   };
@@ -86,6 +96,10 @@ export function createHydratedTableStore<T>(
       notify();
       return;
     }
+    // `close()` may already have been called while `database` was still resolving — a farm switch
+    // fast enough to unmount before the DB open completes. Registering the watch anyway would leak
+    // it forever, since nothing else holds a reference to unregister it later.
+    if (controller.signal.aborted) return;
     db.watch(
       sql,
       params as unknown[],
@@ -108,7 +122,7 @@ export function createHydratedTableStore<T>(
           notify();
         },
       },
-      { triggerImmediate: true },
+      { triggerImmediate: true, signal: controller.signal },
     );
   })();
 
@@ -125,6 +139,9 @@ export function createHydratedTableStore<T>(
     },
     hydrationFailed(): boolean {
       return didFail;
+    },
+    close(): void {
+      controller.abort();
     },
   };
 }

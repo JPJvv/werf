@@ -17,7 +17,14 @@
  * `herd.ts`'s `useEffectiveMobs` for the two places that do.
  */
 
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { createHydratedTableStore, type HydratedTableStore } from '@werf/sync';
 import type { TallyRecord } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
@@ -88,10 +95,20 @@ function mapHydratedTally(row: Record<string, unknown>): TallyRecord | null {
   try {
     const payload: unknown = JSON.parse(payloadJson);
     if (typeof payload !== 'object' || payload === null || !('reason' in payload)) return null;
-    const { reason, delta, countedHead } = payload as {
+    const {
+      reason,
+      delta,
+      countedHead,
+      counterpartMobId,
+      carriedWithholdUntil,
+      declaredWithdrawalUntil,
+    } = payload as {
       reason: unknown;
       delta?: unknown;
       countedHead?: unknown;
+      counterpartMobId?: unknown;
+      carriedWithholdUntil?: unknown;
+      declaredWithdrawalUntil?: unknown;
     };
     if (typeof reason !== 'string') return null;
     return {
@@ -101,6 +118,13 @@ function mapHydratedTally(row: Record<string, unknown>): TallyRecord | null {
       reason: reason as TallyRecord['reason'],
       ...(typeof delta === 'number' ? { delta } : {}),
       ...(typeof countedHead === 'number' ? { countedHead } : {}),
+      // ⭐ sync-auditor Finding 1 (2026-08-10): these three were parsed off local captures
+      // (`StoredTally`) but silently dropped for a HYDRATED tally, so `withdrawal.ts`'s guard was
+      // blind to a withholding that arrived only via down-sync — see `withdrawal.ts` and the two
+      // call sites that merge this store in (`AdjustMobScreen.tsx`, `Outbox.tsx`).
+      ...(typeof counterpartMobId === 'string' ? { counterpartMobId } : {}),
+      ...(typeof carriedWithholdUntil === 'string' ? { carriedWithholdUntil } : {}),
+      ...(typeof declaredWithdrawalUntil === 'string' ? { declaredWithdrawalUntil } : {}),
     };
   } catch {
     return null;
@@ -134,6 +158,16 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
     }),
     [farmId],
   );
+  // ⭐ sync-auditor LOW (2026-08-10): a fresh store pair is built per farm switch, and without this
+  // the PREVIOUS farm's `db.watch()` subscription was never released — closed here rather than in
+  // the `useMemo` above, because a memo's return value has no cleanup hook; the effect's own
+  // dependency (`value`) changes on exactly the same farm-switch/unmount schedule.
+  useEffect(() => {
+    return () => {
+      value.mobs.close();
+      value.tallies.close();
+    };
+  }, [value]);
   return (
     <HydratedLivestockContext.Provider value={value}>{children}</HydratedLivestockContext.Provider>
   );

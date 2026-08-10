@@ -106,6 +106,39 @@ describe('the hydrated table store', () => {
     expect(store.all()).toEqual([{ id: 'tally-2', mobId: 'mob-1' }]);
   });
 
+  it('⭐ close() stops watching — no notification for a delivery arriving after (sync-auditor LOW, 2026-08-10)', async () => {
+    // `HydratedLivestockProvider` builds a fresh store pair per farm switch and, before this fix,
+    // never tore down the previous farm's `db.watch()` — a resource leak across farm switches
+    // within one session (never a cross-farm DATA leak: `all()` was always farm-scoped correctly).
+    const fake = createFakeLocalDatabase();
+    const store = createHydratedTableStore({
+      database: Promise.resolve(fake as unknown as LocalDatabase),
+      sql: "SELECT id, mob_id FROM events WHERE farm_id = ? AND type = 'tally' AND deleted_at IS NULL",
+      params: ['farm-a'],
+      mapRow,
+    });
+    await waitForNotify(store);
+
+    let notifiedAfterClose = false;
+    store.subscribe(() => {
+      notifiedAfterClose = true;
+    });
+    store.close();
+    fake.hydrateRow('events', {
+      id: 'tally-after-close',
+      farm_id: 'farm-a',
+      mob_id: 'mob-1',
+      type: 'tally',
+      occurred_at: '2026-08-02T12:00:00.000Z',
+      payload: JSON.stringify({ reason: 'birth', delta: 5 }),
+    });
+
+    expect(notifiedAfterClose).toBe(false);
+    // The stale snapshot from before close() is what a caller still holding this store would
+    // read — proof the watcher, not just the notification, is gone.
+    expect(store.all()).toEqual([]);
+  });
+
   it('is sticky-failed, and distinguishable from a confirmed-empty table', async () => {
     const fake = createFakeLocalDatabase();
     fake.failWatch('events');

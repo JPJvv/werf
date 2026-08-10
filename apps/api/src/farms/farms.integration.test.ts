@@ -8,11 +8,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   createAppDb,
   createElevatedDb,
   enterprises,
+  events,
   farmUsers,
   farms,
   userSessions,
@@ -179,6 +180,36 @@ describe('farm management', () => {
         .where(eq(enterprises.farmId, second.id));
 
       expect(rows.map((r) => r.type).sort()).toEqual(['game', 'sheep']);
+    });
+
+    it('⭐ never gives a REAL onboarding farm its own events partition (sync-auditor Finding 2, 2026-08-10)', async () => {
+      // packages/sync/scripts/derive-sync-streams.ts's PARTITIONED_SOURCE_TABLE hand-maps the
+      // `events` down-sync stream to the single `events_default` partition — see
+      // powersync-partitioned-table-gotcha. That mapping is correct ONLY because nothing on the
+      // path an actual farmer takes (`register` → `createFarm`) calls `create_farm_partition`;
+      // `packages/db/scripts/seed.mjs` and `events.integration.test.ts`'s own fixtures DO call it,
+      // and events for THOSE farms already silently fail to down-sync today. This is a TRIPWIRE for
+      // that fact, not a fix for it — see STATUS.md §3 for the open owner decision (wire
+      // `create_farm_partition` into `FarmsService.createFarm` and teach the generator to read
+      // partitions dynamically, or retire per-farm partitioning). If this goes red, PowerSync's
+      // down-sync of every event type (tallies, moves, treatments, doses, births, deaths, sales)
+      // has silently broken for every farm created this way, and the generator's hand-maintained
+      // map is the reason nothing else would have caught it.
+      const a = await tenant('Alpha');
+      const [created] = await elevated.db
+        .insert(events)
+        .values({
+          farmId: a.farmId,
+          type: 'weight',
+          occurredAt: new Date('2026-07-20T06:00:00Z'),
+          payload: { kg: 400, method: 'scale' },
+        })
+        .returning();
+
+      const rows = await elevated.db.execute(
+        sql`SELECT tableoid::regclass::text AS partition FROM events WHERE id = ${created!.id}`,
+      );
+      expect((rows.rows[0] as { partition: string }).partition).toBe('events_default');
     });
 
     it('refuses to add a farm to somebody else’s business', async () => {

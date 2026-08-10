@@ -30,8 +30,9 @@ import { useHealthEvents, type StoredHealthEvent } from './LocalHealth';
 import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
 import { useMoves, type StoredMove } from './LocalMoves';
 import { useTallies, type StoredTally } from './LocalTallies';
+import { useHydratedTallies, mergeById } from './HydratedLivestock';
 import { useVetProducts, type StoredVetProduct } from './LocalVetProducts';
-import { meatWithdrawalFor, meatWithdrawalForMob } from './withdrawal';
+import { meatWithdrawalFor, meatWithdrawalForMob, type ArrivedHead } from './withdrawal';
 
 /**
  * A flagged disposal the device worked out itself. Deliberately the SERVER's shape minus the two
@@ -76,8 +77,16 @@ export function localResidueFlags(input: {
   readonly health: readonly StoredHealthEvent[];
   readonly products: readonly StoredVetProduct[];
   readonly moves: readonly StoredMove[];
+  /**
+   * ⭐ `tallies` plus whatever `HydratedLivestock` has replicated in — the same fold
+   * `AdjustMobScreen.tsx`/`Outbox.tsx` feed their withholding guard. EVIDENCE only: a hydrated row
+   * is another device's already-sent capture, so it must never itself generate a row here (the
+   * server's own register, read separately, already covers it) — only widen what a LOCAL tally is
+   * judged against. Defaults to `tallies` so a caller with nothing hydrated need not repeat itself.
+   */
+  readonly evidenceTallies?: readonly ArrivedHead[];
 }): readonly LocalResidueFlag[] {
-  const { animals, lifecycle, tallies, health, products, moves } = input;
+  const { animals, lifecycle, tallies, health, products, moves, evidenceTallies = tallies } = input;
   const byId = new Map(animals.map((a) => [a.id, a]));
   const flags: LocalResidueFlag[] = [];
 
@@ -112,11 +121,16 @@ export function localResidueFlags(input: {
   for (const tally of tallies) {
     if (!decreases(tally.reason)) continue;
     const occurredOn = farmDay(new Date(tally.occurredAt));
-    // ⭐ `tallies` is the seventh argument and it is not optional in spirit: it is the route that
-    // reads a withholding which ARRIVED WITH the head (§2.3b) rather than being given to it. Omit
-    // it and this screen answers a narrower question than the capture guard that refused the same
-    // disposal — which is the two-mechanisms-one-boundary defect the header above claims is closed.
-    // For a counted flock it is the ONLY route that can fire, because there are no `animals` rows.
+    // ⭐ The seventh argument is not optional in spirit: it is the route that reads a withholding
+    // which ARRIVED WITH the head (§2.3b) rather than being given to it. Omit it and this screen
+    // answers a narrower question than the capture guard that refused the same disposal — which is
+    // the two-mechanisms-one-boundary defect the header above claims is closed. For a counted flock
+    // it is the ONLY route that can fire, because there are no `animals` rows.
+    //
+    // ⛔ `evidenceTallies`, not `tallies` — sync-auditor Finding 1 (2026-08-10). A withholding that
+    // arrived via a transfer THIS device never captured is invisible to `tallies` alone; it exists
+    // only in what `HydratedLivestock` has replicated in. Without the fold this register said
+    // nothing needed attention for a disposal the server would refuse.
     const status = meatWithdrawalForMob(
       tally.mobId,
       occurredOn,
@@ -124,7 +138,7 @@ export function localResidueFlags(input: {
       products,
       animals,
       moves,
-      tallies,
+      evidenceTallies,
     );
     if (!status.blocked) continue;
 
@@ -149,11 +163,17 @@ export function useLocalResidueFlags(): readonly LocalResidueFlag[] {
   const animals = useAnimals();
   const lifecycle = useLifecycleEvents();
   const tallies = useTallies();
+  const hydratedTallies = useHydratedTallies();
+  const evidenceTallies = useMemo(
+    () => mergeById(tallies, hydratedTallies),
+    [tallies, hydratedTallies],
+  );
   const health = useHealthEvents();
   const products = useVetProducts();
   const moves = useMoves();
   return useMemo(
-    () => localResidueFlags({ animals, lifecycle, tallies, health, products, moves }),
-    [animals, lifecycle, tallies, health, products, moves],
+    () =>
+      localResidueFlags({ animals, lifecycle, tallies, evidenceTallies, health, products, moves }),
+    [animals, lifecycle, tallies, evidenceTallies, health, products, moves],
   );
 }

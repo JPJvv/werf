@@ -780,11 +780,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
                 farmDay(new Date(tally.occurredAt)),
                 animals,
                 moves,
-                // ⛔ The tally log, so the subject set walks the TRANSFER CHAIN the guard walks.
-                // Without it the set stopped at this mob and its members, and a refused dose on
-                // the SOURCE of an accepted transfer held nothing — 201 for meat inside an active
-                // withholding, which is the only shape in this file where meat reaches a truck.
-                tallies,
+                // ⛔ `foldTallies` — local+hydrated — not the raw local `tallies`, so the subject
+                // set walks the TRANSFER CHAIN the guard walks even when this device never
+                // captured the transfer itself. Without the fold the set stopped at this mob and
+                // its members, and a refused dose on the SOURCE of a transfer known only by
+                // down-sync held nothing — 201 for meat inside an active withholding, which is the
+                // only shape in this file where meat reaches a truck (sync-auditor Finding 1,
+                // 2026-08-10).
+                foldTallies,
               )
             : []),
           ...(tally.reason === 'transfer_in' && link !== undefined ? [link] : []),

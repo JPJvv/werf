@@ -241,6 +241,12 @@ export interface TallyRecord {
   readonly reason: schemas.TallyReason;
   readonly delta?: number | undefined;
   readonly countedHead?: number | undefined;
+  /** The mob head arrived FROM on a `transfer_in` (§2.3b). See `ArrivedHead` in `withdrawal.ts`. */
+  readonly counterpartMobId?: string | undefined;
+  /** A withholding carried onto this mob by a transfer, as a floor — see `ArrivedHead`. */
+  readonly carriedWithholdUntil?: string | undefined;
+  /** A withholding the seller declared on a purchase, as a floor — see `ArrivedHead`. */
+  readonly declaredWithdrawalUntil?: string | undefined;
 }
 
 /**

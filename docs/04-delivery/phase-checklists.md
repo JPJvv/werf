@@ -894,11 +894,48 @@ add the one shared local-first attachment path approved on 2026-08-08.
   indefinitely. NFR-009's bundle gate now excludes the precached engine from the interactive-path
   JS sum (owner-confirmed decision, 2026-08-09) — `apps/web/scripts/check-bundle-size.mjs`,
   `apps/web/vite.config.ts`.
-☐ 3d Queue is durable across browser kill, reboot and quota pressure; read data may be evicted,
-  queued writes may not
-☐ 3d 4xx records are retained and set aside while the round continues; 5xx/unrecognised failures
-  abort the round; an expired refresh token holds rather than clears the queue
-☐ 3d Every changing-state capture checks idempotency before validation on the server
+☑ 3d Queue is durable across browser kill and reboot; read data may be evicted, queued writes may
+  not. **Quota-pressure eviction is unimplemented** — no retention/eviction code exists yet, so
+  the claim is vacuously true today rather than stress-proven; that proof is 3f's job (a
+  dedicated box below), not re-claimed here. Kill/reboot itself is proven against the real
+  engine, in a real browser, on the built PWA: `apps/web/e2e/offline-capture.spec.ts` captures
+  with the network off, `page.reload()`s (a full document + worker + WASM reboot, on the capture
+  ROUTE so the service-worker navigation fallback is exercised too) still offline, and asserts
+  the record and the "Offline — your work is saved" status both survive — then lets the signal
+  return and proves the queue drains and does not re-send. `apps/web/e2e/capture-migration.spec.ts`
+  proves the same reboot shape for the 3c SQLite/OPFS store itself.
+☑ 3d 4xx records are retained and set aside while the round continues; 5xx/unrecognised failures
+  abort the round; an expired refresh token holds rather than clears the queue. Not new work —
+  this was built and proven during 3c's own follow-up (STATUS.md §5 item 12: sync-auditor Finding
+  2, the bounded 90s throttle retry) and by `Outbox.test.tsx`'s pre-existing invariant-5 test
+  ("keeps every capture when the session cannot be refreshed"), which asserts the capture store is
+  byte-identical, nothing joined the sent-log, and the session was not cleared. Audited during 3d
+  and found already correct and already covered; no code changed.
+☑ 3d Every changing-state capture checks idempotency before validation on the server. Audited
+  every mutation in `livestock.service.ts`, `land.service.ts`, `rainfall.service.ts` against
+  `event-capture.ts`'s `findEvent` rule: the two captures that overwrite state their own
+  validation reads — `recordMobTally` (head count) and `recordMove` (animal position) — both
+  check `findEvent` BEFORE validating, proven by
+  `livestock.integration.test.ts`'s "does not take the same animals off twice when the flush
+  retries" and "is idempotent on the client id even though the first move changed what it
+  validates". Every other capture is a pure append to `events` (or, for `recordBoundaryWalk`, a
+  re-derivation that is a projection rather than a validation — see that function's own comment)
+  and is idempotent via `onConflictDoNothing` alone, with no self-referential state to race.
+  Audited during 3d, no gap found, no code changed.
+
+⛔ **Not this slice — read before assuming `PowerSyncBackendConnector.uploadData` is an open
+  TODO.** `connector.ts`'s header now states the decided architecture: every capture table is
+  `Table.createLocalOnly` (`capture-schema.ts`), so PowerSync's own CRUD upload queue is empty by
+  construction and `Outbox.tsx` stays the permanent uploader, not a stand-in awaiting a 3d
+  migration. This was checked against the installed SDK, not assumed:
+  `CrudBatch`/`CrudTransaction.complete()` (`@powersync/common`) acknowledge a batch as a whole —
+  there is no per-entry completion — so "a 4xx record is retained and set aside while the round
+  continues" cannot be expressed on top of the native CRUD queue without either discarding the
+  refused entry (forbidden) or blocking every entry behind it forever (the `Outbox.tsx`
+  strand-the-queue shape already fixed once). `uploadData` throwing on a non-empty batch is now
+  documented as a tripwire for that invariant, not a stopgap for missing routing. Owner question
+  raised in STATUS.md §3: this reading conflicts with how earlier STATUS/doc entries phrased
+  `uploadData` as "not yet wired — 3d"; flagged rather than silently resolved.
 ☐ 3e Two-device conflict matrix is implemented: append-only events coexist; field conflicts are
   audited; aggregate projections use the immutable baseline and `(occurred_at, id)` total order
 ☐ 3e Recount resets rather than adds, and arrival order cannot change the derived result

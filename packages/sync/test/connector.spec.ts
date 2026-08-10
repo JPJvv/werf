@@ -75,25 +75,28 @@ describe('createSyncConnector — fetchCredentials', () => {
 });
 
 describe('createSyncConnector — uploadData', () => {
-  it('resolves quietly when nothing is queued — the common case for this slice', async () => {
+  it('resolves quietly when nothing is queued — the only case this design ever produces', async () => {
     const connector = createSyncConnector({ apiBaseUrl: '/api', getAccessToken: async () => null });
     const database = { getCrudBatch: vi.fn().mockResolvedValue(null) };
 
     await expect(connector.uploadData(database as never)).resolves.toBeUndefined();
   });
 
-  it('⛔ throws rather than silently draining a real queued write — no route to a domain endpoint yet', async () => {
-    // db.md: "the write queue is never discarded by the system." A write that reaches the CRUD
-    // queue with nowhere honest to send it must stay visibly queued, never complete()d — see
-    // connector.ts's own header for why a generic passthrough isn't the fix (phase-checklists.md
-    // 3c/3d owns per-table routing).
+  it('⛔ throws rather than silently draining a real queued write — the CRUD queue must stay empty by construction', async () => {
+    // db.md: "the write queue is never discarded by the system." This batch should be
+    // structurally impossible (every capture table is localOnly — connector.ts's own header
+    // explains why REST-up/PowerSync-down is the decided shape, not a placeholder) — so a
+    // non-empty batch here is the tripwire firing, and it must stay visibly queued, never
+    // complete()d, rather than being silently drained.
     const connector = createSyncConnector({ apiBaseUrl: '/api', getAccessToken: async () => null });
     const complete = vi.fn();
     const database = {
       getCrudBatch: vi.fn().mockResolvedValue({ crud: [{ id: '1', table: 'farms' }], complete }),
     };
 
-    await expect(connector.uploadData(database as never)).rejects.toThrow(/3c\/3d/);
+    await expect(connector.uploadData(database as never)).rejects.toThrow(
+      /structurally impossible/,
+    );
     expect(complete).not.toHaveBeenCalled();
   });
 });

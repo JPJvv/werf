@@ -3,7 +3,7 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-10
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -17,43 +17,38 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c done, unmerged | `phase-3/powersync-foundation`: local SQLite schema + self-hosted PowerSync service + Sync Streams + `PowerSyncBackendConnector` + all 12 capture stores migrated from localStorage to SQLite/OPFS, all empirically validated end-to-end. See §4/§5. `uploadData` (per-table upload routing), offline queue durability and down-sync hydration are 3d/3e, not yet started |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, unmerged | `phase-3/powersync-foundation`: local SQLite schema + self-hosted PowerSync service + Sync Streams + `PowerSyncBackendConnector` + all 12 capture stores migrated from localStorage to SQLite/OPFS + 3d's durable-upload invariants audited and proven (no code gap found; `uploadData`'s throw reframed from TODO to decided tripwire). See §3/§4/§5. Down-sync hydration (3e) is not started — tripwire 3e still unfired |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot and launch readiness |
 
-## 2. Audit findings closed
+## 2. Audit findings closed (Phase 0–2, historical)
 
-1. **Wrong branch on session start.** The workspace opened on `main`, where `STATUS.md` did not
-   exist, while the active branch was more than 100 commits ahead. Always reconcile branch + SHA
-   before planning.
-2. **The handoff had become a review transcript.** The former `STATUS.md` was 1,839 lines, carried
-   several superseded “next session” blocks, and contradicted itself about open decisions. Git
-   already preserves that history; this file is now constrained to 300 lines by
-   `pnpm project:check`.
-3. **The plan had two incompatible phase maps.** The checklist called Phase 2 “Livestock” and its
-   build list empty, while the authoritative roadmap called it “Livestock & Crops”. The code has no
-   crop module. The delivery map is being aligned to the architecture: livestock → offline sync →
-   crops → labour → compliance → hardening.
-4. **The architecture promise is ahead of the implementation.** `@werf/sync` currently persists
-   browser-local JSON stores and has no PowerSync dependency. That is an honest Phase 2 adapter,
-   not the SQLite/OPFS replication described by ADR-0003. Phase 3 now owns closing that gap.
-5. **A green browser lane was noisy.** The populated accessibility fixture looked unsent, so the
-   real outbox repeatedly attempted API writes; reference reads also bypassed page routes through
-   the service worker. The fixture now carries its sent log, known reads are narrowly aborted, and
-   only the axe file blocks the worker. The dedicated offline test still uses the production worker.
-6. **Regulated verification remains human-gated.** The 2026 NMW figure and animal-marking period
-   were checked against primary government sources during this audit, but no regulated production
-   data is being changed. Phase 2 still waits for the owner-triggered compliance pass.
-7. **The uncached gate exposed a false timeout.** Four full registration journeys now have a
-   10-second ceiling instead of the 5-second unit default; under concurrent integration-test load,
-   two healthy flows had crossed five seconds. A stalled journey still fails promptly.
-8. **FR-101 fields existed without capture controls.** The create-animal screen now records DOB,
-   whether it is estimated, and the actual acquisition day. A back-dated purchase carries that day
-   on both the animal and its event; it is no longer silently dated to the day the phone was used.
+Full detail lives in git history and the merged PR #3, not here (this file's own rule: session
+narrative belongs in git history). Summary: wrong-branch-on-start, an oversized handoff doc, two
+incompatible phase maps, the sync-architecture-ahead-of-implementation gap, a noisy accessibility
+fixture, human-gated regulated verification, a false uncached-gate timeout, and missing FR-101
+capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+⚠️ **OPEN, 2026-08-10 — was `PowerSyncBackendConnector.uploadData` ever meant to grow per-table
+CRUD routing, or is REST-up/PowerSync-down the permanent shape?** Prior STATUS/checklist wording
+("uploadData still throws — 3d", "per-table upload routing... not yet started") reads as a TODO a
+later slice fills in. Checked against the installed SDK this session: `CrudBatch`/
+`CrudTransaction.complete()` (`@powersync/common`) acknowledge a batch as a whole, with no
+per-entry completion. A 4xx capture that must be "retained and set aside while the round
+continues" (db.md, phase-checklists.md 3d) cannot be built on that primitive without either
+discarding the refused entry (forbidden) or blocking everything behind it forever (the exact
+strand-the-queue SEV-2 shape `Outbox.tsx`'s own history already fixed once). Since every capture
+table is already `Table.createLocalOnly` and `Outbox.tsx` already satisfies every 3d invariant
+against the real REST endpoints (audited this session, §4/§5 — no gap found), this session
+reframed `uploadData`'s throw as a permanent tripwire rather than building dead per-table routing
+for a CRUD queue that is empty by construction. **Ask JP:** keep this permanently (update the
+architecture docs to say so plainly), or is a CRUD-native redesign wanted — which would be ADR
+territory, not a slice, given the `complete()` semantics above.
+→ _Answer:_
 
 **Three of four sync-rules questions RESOLVED empirically, 2026-08-09**, against a real
 `journeyapps/powersync-service:1.23.3` self-hosted instance (`docker compose up postgres
@@ -138,6 +133,7 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
 | `pnpm test:e2e` (2026-08-09, capture-store SQLite migration, 3c) | ✅ 30/30 Chromium journeys passed (incl. 2 new `capture-migration.spec.ts` cases: clean migration + order preserved + localStorage untouched, and a second cold start as a no-op), re-run 3× on the sync-critical specs with no flakes |
 | `sync-auditor` (2026-08-09, owner-triggered, full branch `13a0d46..HEAD`) | ⚠️ **First pass over this entire branch (11 commits).** Two real findings, both fixed same day (below); everything else — sync-stream/RLS agreement (hand-verified against real migrations, not just the test's existence), the `expires_at` sweep, `writeTransaction` atomicity/TOCTOU, `allSettled` coverage, no hard deletes, tenancy completeness — checked and sound. One LOW/cosmetic finding (stale `generate:sync-rules` script name, superseded by Sync Streams) left open, not yet fixed |
 | `pnpm verify` (2026-08-09, sync-auditor Findings 1 & 2 fixed) | ✅ Uncached: 99 test files / 1,043 tests, 7/7 builds; bundle 153.68 KB gz ≤ 250 KB interactive-path (unchanged budget). Every new/extended test watched to FAIL first (git-stashed or temporarily neutered the fix, confirmed red, restored, confirmed green) |
+| `pnpm verify` + `pnpm test:e2e` (2026-08-10, Phase 3 slice 3d) | ✅ Same baseline — 99 test files / 1,043 tests, 7/7 builds, 153.68 KB gz, 30/30 Chromium journeys (3d closed by audit + a reworded connector throw, not new production code). The reworded throw's own test watched to FAIL first against the old message, then restored to green |
 
 ## 5. Next executable steps
 
@@ -215,8 +211,7 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
    `WeaningSessionScreen` froze their work queue on a mount-time snapshot of pre-hydration data,
    closed the same way. Bundle-budget decision (precache the engine, exclude it from the
    interactive-path sum) made and recorded in §3. Full account:
-   `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`. `uploadData` (per-table routing)
-   remains 3d, unstarted. ⭐ **Follow-up done same day:** the three dose-before-disposal tests that
+   `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`. ⭐ **Follow-up done same day:** the three dose-before-disposal tests that
    caught the `allSettled` regression proved it once, by going red-to-green, but nothing in the
    committed suite would have failed again if the gate were later deleted — the fake database's
    promise interleaving happened to make the race timing-dependent, not pinned. Closed with
@@ -244,6 +239,15 @@ now excludes a named, closed set of engine chunks from the JS-gz sum and reports
     errored and online. Every fix watched to FAIL first. One LOW finding (stale
     `generate:sync-rules` script name) left open, cosmetic, not fixed. Still not merge-ready — one
     pass over one slice, not a fresh clearance of the whole branch.
+13. ✅ Done 2026-08-10: **Phase 3 slice 3d — audited, no code gap found; `uploadData` reframed.**
+    Every 3d invariant (idempotency-before-validation on the two state-mutating captures,
+    4xx-set-aside/5xx-abort/refresh-holds-queue, browser-kill/reboot durability) was already
+    implemented and proven — see `phase-checklists.md` 3d for citations. The one real change:
+    `uploadData`'s throw and its test were reframed from "TODO 3c/3d" to a documented permanent
+    tripwire, after confirming against the installed `@powersync/common` that
+    `CrudBatch`/`CrudTransaction.complete()` has no per-entry completion — making CRUD-native
+    routing structurally incompatible with the never-discard/4xx-set-aside invariants. Owner
+    question raised in §3, open. Tripwire 3e did not fire — no screen wired to `.connect()`.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

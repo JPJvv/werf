@@ -5,19 +5,37 @@
  * the main barrel. Application code never imports `@powersync/common` itself; it calls
  * `createSyncConnector` and gets a value already shaped to the SDK's interface.
  *
- * Scope for this slice: `fetchCredentials` is real — it mints a token via `GET /sync/token`
- * (apps/api's `SyncController`) and lets `.connect()` genuinely authenticate against the
- * self-hosted PowerSync service. `uploadData` is deliberately NOT wired to the domain capture
- * endpoints yet (phase-checklists.md 3c/3d): mapping a `CrudEntry` to the right
- * `/api/livestock/*` endpoint, with the SAME validation and idempotency those endpoints already
- * enforce, is the same per-table routing problem `apps/web/src/sync/captureApi.ts` +
- * `Outbox.tsx` solve for the existing localStorage-backed queue — migrating that queue is its
- * own slice, not a shortcut through a generic passthrough. See this file's `uploadData` for why
- * that shortcut specifically is not available in this codebase (db.md, the FR-131 guard).
+ * `fetchCredentials` is real — it mints a token via `GET /sync/token` (apps/api's
+ * `SyncController`) and lets `.connect()` genuinely authenticate against the self-hosted
+ * PowerSync service.
  *
- * db.md: "the write queue is never discarded by the system." A write that reaches the CRUD
- * queue and is never uploaded must stay queued and visible as a problem, never silently
- * `complete()`d — so `uploadData` throws rather than draining the batch it cannot honestly send.
+ * ⛔ `uploadData` DELIBERATELY THROWS on any queued write, and this is the DECIDED upload
+ * architecture (phase-checklists.md 3d), not a placeholder waiting for a later slice to fill in
+ * per-table routing. Every capture screen writes through `apps/web/src/**Local*.tsx` into
+ * `capture_records` — a `Table.createLocalOnly` table (`capture-schema.ts`) — so it NEVER enters
+ * PowerSync's CRUD queue in the first place; `Outbox.tsx` reads those local-only stores and posts
+ * to the `/api/*` REST endpoints directly, with the SAME validation and idempotency those
+ * endpoints enforce for every other caller. `uploadData`'s queue is empty by construction on every
+ * `.connect()` this app makes.
+ *
+ * Why REST-up rather than CRUD-native, checked against the installed SDK rather than assumed:
+ * `CrudBatch.complete()` / `CrudTransaction.complete()` (`@powersync/common`) acknowledge the
+ * batch as a whole — there is no per-entry completion. A 4xx capture that must be "retained and
+ * set aside while the round continues" (phase-checklists.md 3d, db.md) cannot be expressed on top
+ * of that primitive: either `complete()` runs and the refused entry is gone from the local queue
+ * forever (the exact `DELETE` this repo's own rules forbid), or it doesn't and every entry behind
+ * the refusal is blocked forever too — the "a `return` on refusal strands every capture behind
+ * it" SEV-2 shape `Outbox.tsx`'s own history already found and fixed once. So this repo's
+ * REST-up / PowerSync-down split is not a migration step; it is the shape the never-discard and
+ * set-aside-on-refusal invariants together require. `uploadData` throwing here is a tripwire for
+ * that invariant, not a stopgap for missing routing: if this batch is ever non-empty, something
+ * started writing to a non-local-only table outside this design, and that is a bug to surface
+ * loudly, not a queue to drain silently.
+ *
+ * db.md: "the write queue is never discarded by the system." A write that somehow reaches the
+ * CRUD queue anyway must stay queued and visible as a problem, never silently `complete()`d — so
+ * `uploadData` throws rather than draining a batch it has no honest, invariant-preserving way to
+ * send.
  */
 
 import type { CommonPowerSyncDatabase, PowerSyncBackendConnector } from '@powersync/common';
@@ -59,12 +77,14 @@ export function createSyncConnector(options: SyncConnectorOptions): PowerSyncBac
 
     async uploadData(database: CommonPowerSyncDatabase) {
       const batch = await database.getCrudBatch();
-      if (!batch) return; // Nothing queued — the common case for the rest of this slice.
+      if (!batch) return; // Empty by construction — every capture table is `localOnly`.
 
       throw new Error(
-        'PowerSyncBackendConnector.uploadData has no route to a domain capture endpoint yet ' +
-          '(phase-checklists.md 3c/3d) — a write reached the local CRUD queue with nowhere ' +
-          'honest to send it. Leaving it queued, not discarding it.',
+        'PowerSyncBackendConnector.uploadData received a non-empty CRUD batch, which should be ' +
+          'structurally impossible: every capture table is Table.createLocalOnly (capture-schema.ts) ' +
+          'and Outbox.tsx is the sole uploader (phase-checklists.md 3d). Something wrote to a ' +
+          'non-local-only PowerSync table outside that design. Leaving the batch queued, not ' +
+          'discarding it — db.md: the write queue is never discarded by the system.',
       );
     },
   };

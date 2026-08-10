@@ -863,12 +863,14 @@ add the one shared local-first attachment path approved on 2026-08-08.
   which this proves). This is now the standing posture: every stream auto-subscribes, matching
   offline-first's premise that a device holds its whole farm by default.
   `uploadData` deliberately THROWS on any queued write rather than draining it silently — db.md's
-  "the write queue is never discarded by the system" — because no per-table upload route exists
-  yet (3c/3d). Proven directly: `connector.spec.ts`'s throw-on-nonempty-queue test asserts
-  `complete()` is never called for an unroutable write. This connector is not wired into any
-  application read path — diagnostics-only (`apps/web/src/diagnostics/local-db-diagnostic.ts`
-  `mode=connect`) — so tripwire 3e below does not fire yet; wiring a real read path to `.connect()`
-  is 3c/3d territory and must pull the `landed()` hydration fix forward when it happens, not after.
+  "the write queue is never discarded by the system" — because no per-table upload route exists,
+  permanently (ADR-0012, closed Phase 3 slice 3d). Proven directly: `connector.spec.ts`'s
+  throw-on-nonempty-queue test asserts `complete()` is never called for an unroutable write.
+  ⭐ UPDATE (3e): the real application read path now exists —
+  `apps/web/src/sync/SyncConnection.tsx` mounts the ONE `.connect()` call inside `AppShell`, live
+  as long as an authenticated session is, and the `landed()` hydration fix below landed in the SAME
+  slice that wired it, exactly as this box demanded. The diagnostics-only `mode=connect` entry
+  remains, unchanged, for the narrower OPFS-open proof it was built for.
 ☑ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
   at every step leaves either the old readable store or the complete new one, never half of each.
   All 12 `Local*.tsx` capture stores now back onto `createSqliteCaptureStore`
@@ -936,20 +938,63 @@ add the one shared local-first attachment path approved on 2026-08-08.
   documented as a tripwire for that invariant, not a stopgap for missing routing. Owner question
   raised in STATUS.md §3: this reading conflicts with how earlier STATUS/doc entries phrased
   `uploadData` as "not yet wired — 3d"; flagged rather than silently resolved.
-☐ 3e Two-device conflict matrix is implemented: append-only events coexist; field conflicts are
-  audited; aggregate projections use the immutable baseline and `(occurred_at, id)` total order
-☐ 3e Recount resets rather than adds, and arrival order cannot change the derived result
-⛔ 3e HYDRATION TRIPWIRE, LEFT BY THE TENTH PASS — do this BEFORE any down-sync ships.
-  `needsHead` in `apps/web/src/sync/Outbox.tsx` asks `landed()` whether the server holds a tally,
-  and `landed()` is `sentLog.has(id)` — "did THIS DEVICE send it". That is exact only while the
-  device holds the whole log, which is true in Phase 2 because nothing hydrates. The moment mobs
-  and tallies come down from the server, a tally another phone landed is invisible to `landed()`,
-  `projectHeadCount` under-counts, and the decrease is HELD EVERY ROUND FOR EVER with no refusal
-  above it — `/not-sent` then shows it under "Waiting to go up" and it never goes. That is the
-  ninth pass's SEV-2 shape (a hold that cannot clear) reached through the new mechanism.
-  Fix with hydration: `landed()` must become `sentLog.has(id) || hydratedFromServer.has(id)`.
-  Found independently by `reviewer` and `sync-auditor`; NOT a Phase 2 defect — it cannot fire in
-  the shipped configuration — which is exactly why it is written here rather than left in a comment
+◐ 3e Two-device conflict matrix — CLOSED for mobs/tallies, the entity pair this slice scoped to
+  (fallback clause: "the smallest complete vertical rung that proves the two-device issue #8
+  journey end-to-end"). Append-only events coexist; aggregate projections fold from the immutable
+  `initialHeadCount` baseline over the `(occurred_at, id)` total order — same rule the server
+  applies, same result either side. Animals/moves/health/land hydration merging is NOT built —
+  named here so it is not silently assumed covered by this box's checkmark. Evidence: fake-driven
+  `Outbox.test.tsx`'s `tripwire 3e (issue #8)` suite (5 tests) + `hydrated-table-store.spec.ts` (5
+  tests) + `HydratedLivestock.test.ts` (4 `mergeById` tests) + `herd.test.ts` (2 hydrated-fold
+  tests) + the real-service e2e below.
+◐ 3e Recount resets rather than adds, and arrival order cannot change the derived result — proven
+  for mobs/tallies: `Outbox.test.tsx`'s "a hydrated RECOUNT still resets, and funds a decrease the
+  created baseline alone could not" and "hydration arriving OUT OF chronological order projects
+  the same result".
+☑ 3e HYDRATION TRIPWIRE, LEFT BY THE TENTH PASS — CLOSED. `landed()` in `apps/web/src/sync/
+  Outbox.tsx` is now `sentLog.has(id) || hydratedTallyIds.has(id)`, where `hydratedTallyIds` comes
+  from `HydratedLivestock.tsx`'s `useHydratedTallies()` (`packages/sync/src/hydrated-table-store.ts`,
+  a new read-only reactive store over the down-synced `mobs`/`events` tables, farm-scoped, never
+  imports `@powersync/web` from application code — ADR-0003 intact). `needsHead`'s fold now merges
+  local and hydrated tallies via `mergeById` (local wins on a shared id — a device's own capture is
+  never staler than its own later-hydrated echo). `AdjustMobScreen`'s `headAsAt` needed the SAME
+  merge independently — found while implementing, not anticipated: without it, a decrease against a
+  mob this device never captured anything about refused at CAPTURE TIME with "this group is managed
+  as individual animals" before ever reaching the outbox.
+  Proven two ways, not one:
+  - **Fake-driven** (`Outbox.test.tsx`, watched to FAIL first by temporarily reverting the fix):
+    Device B hydrates a birth another device landed, without it in Device B's own sent log; Device
+    B's decrease is sent, not held; cross-farm hydrated rows never fund a decrease; a hydration
+    failure still holds the whole queue fail-closed; hydration arriving out of order does not change
+    the projection.
+  - **Real service** (`apps/web/e2e/real-sync-hydration.spec.ts`, gated behind `WERF_REAL_STACK=1`,
+    not part of `pnpm test:e2e`'s default lane — needs `apps/api` + `werf-postgres` +
+    `werf-powersync` live, see the spec's own header for the exact bootstrap): a real REST-landed
+    birth tally, a real second login, a real PowerSync `.connect()`, real SQLite hydration, the
+    real capture UI, a real send, and a real Postgres row-count check for the resulting decrease.
+    Also covers test 10 (browser reload preserves both the read projection and the — by then empty —
+    queue; real OPFS persistence, which no fake reaches). Run 3× clean (fresh `apps/api` process
+    each time, in-memory auth-throttle counters reset) — 3/3 green.
+  ⭐ **The real-service run found a genuine, previously-unknown production defect the fake suite
+  structurally cannot see**: `events` (migration 0010) is a Postgres PARTITIONED table with one
+  partition, `events_default`. PowerSync attributes replicated WAL rows to the PARTITION's own
+  relid, not the parent's, and explicitly REFUSES `publish_via_partition_root` (`PSYNC_S1143`,
+  confirmed against `journeyapps/powersync-service:1.23.3` by setting it and reading the boot
+  error). So `FROM events` against the partitioned parent VALIDATES and "replicates" — the config
+  loads clean, the server logs show flushes — while a connected client receives **zero rows**,
+  forever, no error anywhere. `mobs` (not partitioned) hydrated correctly the whole time, which is
+  what made this take four restarts and a raw-row diagnostic to isolate rather than being obvious
+  from the first red run. Fixed at the SOURCE (`packages/sync/scripts/derive-sync-streams.ts`'s new
+  `PARTITIONED_SOURCE_TABLE` map + `sync-streams.ts`'s new `SyncStreamDef.sourceTable`, rendering
+  `FROM events_default AS events` — the alias keeps the LOCAL client table name, which is matched
+  by stream key, not by Postgres FROM text, unaffected), regenerated (not hand-patched — the
+  freshness spec would have caught a hand-patch drifting from the generator), all 125
+  `@werf/sync` tests green. **This is production-blocking knowledge, not a dev-only quirk**: the
+  af-south-1 deploy's publication needs the identical aliased config or down-sync of every event
+  (tally, move, treatment, dose, birth, death, sale — everything the product's whole event log
+  carries) silently delivers nothing to any client, forever, with a config that validates and a
+  server that reports success. Found independently by `reviewer` and `sync-auditor` (issue #8
+  itself); NOT a Phase 2 defect — it cannot fire in the shipped configuration.
 ☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
 ☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
 ☐ 3h Sync health reports queue depth/failure per farm without PII

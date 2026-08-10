@@ -57,6 +57,14 @@ export { localSchema, type LocalSchema } from './local-schema';
 // as safe to export eagerly as local-schema.ts's `Schema` usage above, unlike local-database.ts.
 export { createSyncConnector, type SyncConnectorOptions } from './connector';
 
+// The down-sync read side (phase-checklists.md 3e). Only `import type { LocalDatabase }` crosses
+// into local-database.ts, same discipline as sqlite-capture-store.ts above.
+export {
+  createHydratedTableStore,
+  type HydratedTableStore,
+  type HydratedTableStoreOptions,
+} from './hydrated-table-store';
+
 // `createLocalDatabase` (local-database.ts) is deliberately NOT re-exported here. It pulls in
 // `@powersync/web`'s SQLite/OPFS engine — multiple megabytes of WASM — and apps/web consumes
 // this package as source with no pre-build step (vite.config.ts), so anything reachable from

@@ -61,6 +61,15 @@ import {
   type StoredTally,
 } from '../livestock/LocalTallies';
 import {
+  useHydratedMobs,
+  useHydratedMobsHydrationFailed,
+  useHydratedMobsSettled,
+  useHydratedTallies,
+  useHydratedTalliesHydrationFailed,
+  useHydratedTalliesSettled,
+  mergeById,
+} from '../livestock/HydratedLivestock';
+import {
   useAnimalLabels,
   useIdentifiers,
   useIdentifiersHydrationFailed,
@@ -412,6 +421,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const boundaryWalks = useBoundaryWalks();
   const mobs = useMobs();
   const tallies = useTallies();
+  // ⭐ The down-sync half of the same two tables (phase-checklists.md 3e) — mobs another device
+  // created and tallies another device sent, already replicated to this one. This is what closes
+  // tripwire 3e: see the `foldMobs`/`foldTallies`/`hydratedTallyIds` block below `queue`, and
+  // `needsHead`'s own comment, for exactly how.
+  const hydratedMobs = useHydratedMobs();
+  const hydratedTallies = useHydratedTallies();
   const animals = useAnimals();
   const identifiers = useIdentifiers();
   // What each animal is CALLED. Read here purely so a refused capture can be named by the number
@@ -446,6 +461,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const boundaryWalksSettled = useBoundaryWalksSettled();
   const mobsSettled = useMobsSettled();
   const talliesSettled = useTalliesSettled();
+  // Same "not yet trustworthy" gate as every local store above, for the down-sync sources —
+  // `HydratedTableStore.settled()` is the first LOCAL read completing, never a live-sync wait
+  // (`hydrated-table-store.ts`'s own header), so an offline device settles immediately.
+  const hydratedMobsSettled = useHydratedMobsSettled();
+  const hydratedTalliesSettled = useHydratedTalliesSettled();
   const animalsSettled = useAnimalsSettled();
   const identifiersSettled = useIdentifiersSettled();
   const weightsSettled = useWeightsSettled();
@@ -460,6 +480,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     boundaryWalksSettled &&
     mobsSettled &&
     talliesSettled &&
+    hydratedMobsSettled &&
+    hydratedTalliesSettled &&
     animalsSettled &&
     identifiersSettled &&
     weightsSettled &&
@@ -484,6 +506,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const boundaryWalksHydrationFailed = useBoundaryWalksHydrationFailed();
   const mobsHydrationFailed = useMobsHydrationFailed();
   const talliesHydrationFailed = useTalliesHydrationFailed();
+  const hydratedMobsHydrationFailed = useHydratedMobsHydrationFailed();
+  const hydratedTalliesHydrationFailed = useHydratedTalliesHydrationFailed();
   const animalsHydrationFailed = useAnimalsHydrationFailed();
   const identifiersHydrationFailed = useIdentifiersHydrationFailed();
   const weightsHydrationFailed = useWeightsHydrationFailed();
@@ -498,6 +522,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     boundaryWalksHydrationFailed ||
     mobsHydrationFailed ||
     talliesHydrationFailed ||
+    hydratedMobsHydrationFailed ||
+    hydratedTalliesHydrationFailed ||
     animalsHydrationFailed ||
     identifiersHydrationFailed ||
     weightsHydrationFailed ||
@@ -523,6 +549,32 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const farmId = activeFarm?.id ?? 'none';
   const sentLog = useMemo(() => factory(`werf-sent:${farmId}`), [factory, farmId]);
   const sent = useSyncExternalStore(sentLog.subscribe, sentLog.all);
+
+  // ⭐ TRIPWIRE 3e CLOSED HERE. `needsHead` (inside `queue`, below) folds over `foldTallies`/
+  // `foldMobs` rather than the raw local `mobs`/`tallies` — the merge of what this device
+  // captured with what another device captured and the server has already replicated down. Two
+  // rules make this safe rather than a second way to duplicate a send:
+  //
+  //   1. The QUEUE ITSELF (the `for` loops below that push `FlushItem`s) still iterates the LOCAL
+  //      `mobs`/`tallies` arrays ONLY, filtered by `!sent.has(id)` exactly as before. A hydrated
+  //      row is never a `FlushItem` and is never POSTed — `foldTallies`/`foldMobs` exist ONLY to
+  //      answer "what does the fold this device can see currently say", never "what should be
+  //      sent". Widening the queue itself to hydrated rows would make a device re-POST another
+  //      device's already-landed work.
+  //   2. `hydratedTallyIds` is folded into `landed()`, not into the sent-log. Writing a hydrated
+  //      id into `sentLog` would conflate "this device sent it" with "the server holds it" and,
+  //      on a large farm, grow that log unboundedly — `sent-log.ts`'s own header now says so.
+  //      Deriving the set live from the down-synced table instead means it cannot drift from what
+  //      is actually hydrated, and it costs nothing to keep in sync: it IS the table.
+  const foldMobs = useMemo(() => mergeById(mobs, hydratedMobs), [mobs, hydratedMobs]);
+  const foldTallies = useMemo(
+    () => mergeById(tallies, hydratedTallies),
+    [tallies, hydratedTallies],
+  );
+  const hydratedTallyIds = useMemo(
+    () => new Set(hydratedTallies.map((t) => t.id)),
+    [hydratedTallies],
+  );
 
   // The pending queue, in send order. Two rules decide it, and the second is not obvious:
   //   1. FOREIGN KEYS — a row must not arrive before what it points at. Land, then mobs, then
@@ -769,7 +821,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           ...(consumesHead
             ? {
                 needsHead: (landed: (id: string) => boolean): boolean => {
-                  const stored = mobs.find((m) => m.id === tally.mobId);
+                  // ⭐ TRIPWIRE 3e CLOSED. `foldMobs`, not `mobs` — a mob this device has never
+                  // itself captured anything about, only heard about via down-sync, still has a
+                  // baseline to fold over. See the comment above `foldMobs`'s own declaration for
+                  // why this cannot duplicate a send.
+                  const stored = foldMobs.find((m) => m.id === tally.mobId);
                   // The mob row itself has not been seen. `mobrow:` above is what holds this;
                   // underflow is not the question and a guess here would be a second answer.
                   if (stored === undefined) return false;
@@ -783,18 +839,18 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
                   // ⭐ Strictly BEFORE `(occurredAt, id)` and only what the server actually holds —
                   // the same cut `deriveHeadCount` applies, with the same total order. A tally
                   // later in this queue, refused this round, or held this round is not in the
-                  // sent-log and is correctly absent: the server will not have it either.
+                  // sent-log AND not hydrated, and is correctly absent: the server will not have
+                  // it either.
                   //
-                  // ⛔ PHASE 3 TRIPWIRE. That last sentence rests on a premise this file cannot
-                  // enforce: `landed()` is `sentLog.has(id)`, which answers "did THIS DEVICE send
-                  // it", and that equals "does the server hold it" ONLY while the device holds the
-                  // whole log. True today — nothing hydrates. The moment PowerSync brings mobs and
-                  // tallies DOWN, a tally another phone landed is invisible here, this fold
-                  // under-counts, and the decrease is held every round for ever with no refusal
-                  // above it to clear. `landed()` must become
-                  // `sentLog.has(id) || hydratedFromServer.has(id)` in the same slice that ships
-                  // hydration. Checklist item 3e carries this; a comment alone goes stale.
-                  const before = tallies.filter(
+                  // `landed(id)` (passed in by the flush loop, below) is now
+                  // `sentLog.has(id) || hydratedTallyIds.has(id)` — recognising a tally another
+                  // device sent, once the server has replicated it back down to this one, exactly
+                  // as if this device had sent it itself. `foldTallies`, not `tallies`, is the
+                  // CANDIDATE list `landed` filters — the fix above is necessary but not
+                  // sufficient on its own: a tally device A created is not in device B's local
+                  // `tallies` array at all, so without folding it into the candidate list here,
+                  // `landed()` recognising its id would have nothing to find.
+                  const before = foldTallies.filter(
                     (t) =>
                       t.mobId === tally.mobId &&
                       landed(t.id) &&
@@ -895,6 +951,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     boundaryWalks,
     mobs,
     tallies,
+    foldMobs,
+    foldTallies,
     animals,
     identifiers,
     weights,
@@ -986,7 +1044,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // other half of its move — must wait too. `sentLog` is the live view of what the server
         // holds, so this asks the server's own question at the moment of sending rather than from a
         // snapshot taken when the queue was built.
-        if (item.needsHead?.((id) => sentLog.has(id)) === true) {
+        //
+        // ⭐ TRIPWIRE 3e: `landed(id)` is `sentLog.has(id) || hydratedTallyIds.has(id)` — a tally
+        // another device sent counts as landed the moment the server has replicated it back down
+        // to this one, not only when THIS device is the one that sent it. `hydratedTallyIds` is
+        // derived live from the down-synced `events` table (`HydratedLivestock.tsx`), never
+        // written into `sentLog` itself — see `foldMobs`'s declaration comment, above, for why.
+        if (item.needsHead?.((id) => sentLog.has(id) || hydratedTallyIds.has(id)) === true) {
           taint(item);
           heldThisRound.add(item.id);
           continue;
@@ -1053,7 +1117,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         setHeld((previous) => replaceSetIfChanged(previous, heldThisRound));
       }
     }
-  }, [online, sentLog, refreshSession]);
+  }, [online, sentLog, refreshSession, hydratedTallyIds]);
+  // ⭐ `hydratedTallyIds` is a dep because `landed()` above reads it directly, not via a ref — and
+  // that is deliberate: a hydration event alone (a tally another device sent finally arriving,
+  // `pendingCount` UNCHANGED because it was already counted as pending) must still get this
+  // device's held decrease re-checked and sent. `flush` changing identity is what re-fires the
+  // auto-flush effect below on that exact event, via its own `flush` dependency — no separate
+  // "hydration changed" signal needed.
 
   // Flush whenever there is something to send and a way to send it. `pendingCount` in the deps
   // makes a new capture (or a reconnect) trigger a fresh attempt; a server error does not change

@@ -3,7 +3,7 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-10 (Part 2: 3e mobs/tallies hydration slice)
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -17,7 +17,7 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, unmerged | `phase-3/powersync-foundation`: local SQLite schema + self-hosted PowerSync service + Sync Streams + `PowerSyncBackendConnector` + all 12 capture stores migrated from localStorage to SQLite/OPFS + 3d's durable-upload invariants audited and proven (no code gap found; `uploadData`'s throw reframed from TODO to decided tripwire). See §3/§4/§5. Down-sync hydration (3e) is not started — tripwire 3e still unfired |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -32,6 +32,20 @@ fixture, human-gated regulated verification, a false uncached-gate timeout, and 
 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+⭐ **Found and fixed 2026-08-10 — PowerSync silently replicates ZERO rows for a partitioned source
+table, with no error anywhere.** `events` (migration 0010) is Postgres-partitioned, one partition
+`events_default`. PowerSync attributes WAL rows to the PARTITION's relid, not the parent's, and
+explicitly rejects `publish_via_partition_root` (`PSYNC_S1143`, confirmed against
+`journeyapps/powersync-service:1.23.3`). `FROM events` validated, "replicated" (server logs showed
+flushes), and delivered exactly nothing to any client — `mobs` (unpartitioned) hydrated correctly
+throughout, which is what made this look like an app bug for four restarts. Fixed at the generator
+(`derive-sync-streams.ts`'s `PARTITIONED_SOURCE_TABLE` → `sourceTable` on `SyncStreamDef` →
+renders `FROM events_default AS events`; the alias keeps the local client table name intact,
+matched by stream key not FROM text), not hand-patched. **Production-relevant**: the af-south-1
+deploy's publication needs this identical aliased config or the down-sync of every event type
+(tallies, moves, treatments, doses, births, deaths, sales) silently delivers nothing, forever, with
+a config that validates and a server that reports success. Full account: `phase-checklists.md` 3e.
 
 ✅ **Closed 2026-08-10 — REST-up/PowerSync-down is the PERMANENT upload topology, not a Phase-3
 TODO.** `Outbox.tsx` is the authoritative durable upload queue, posting through the domain-owned
@@ -81,6 +95,9 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
 | `sync-auditor` (2026-08-09, owner-triggered, full branch `13a0d46..HEAD`) | ⚠️ **First pass over this entire branch (11 commits).** Two real findings, both fixed same day (below); everything else — sync-stream/RLS agreement (hand-verified against real migrations, not just the test's existence), the `expires_at` sweep, `writeTransaction` atomicity/TOCTOU, `allSettled` coverage, no hard deletes, tenancy completeness — checked and sound. One LOW/cosmetic finding (stale `generate:sync-rules` script name, superseded by Sync Streams) left open, not yet fixed |
 | `pnpm verify` (2026-08-09, sync-auditor Findings 1 & 2 fixed) | ✅ Uncached: 99 test files / 1,043 tests, 7/7 builds; bundle 153.68 KB gz ≤ 250 KB interactive-path (unchanged budget). Every new/extended test watched to FAIL first (git-stashed or temporarily neutered the fix, confirmed red, restored, confirmed green) |
 | `pnpm verify` + `pnpm test:e2e` (2026-08-10, Phase 3 slice 3d) | ✅ Same baseline — 99 test files / 1,043 tests, 7/7 builds, 153.68 KB gz, 30/30 Chromium journeys (3d closed by audit + a reworded connector throw, not new production code). The reworded throw's own test watched to FAIL first against the old message, then restored to green |
+| `pnpm verify` (2026-08-10, Phase 3 slice 3e — mobs/tallies hydration) | ✅ Uncached: 101 test files / 1,059 tests, 7/7 builds; bundle 155.19 KB gz ≤ 250 KB. Includes the new `HydratedTableStore`/`HydratedLivestock`/`SyncConnection` code and the `Outbox.tsx`/`AdjustMobScreen.tsx` tripwire-3e changes, all watched to FAIL first via a temporary revert |
+| `pnpm test:e2e` (2026-08-10, same slice) | ✅ 30 passed / 1 skipped (the new `real-sync-hydration.spec.ts`, gated behind `WERF_REAL_STACK=1`, correctly absent from the default lane) |
+| Manual — real service, two-device issue #8 journey (2026-08-10) | ✅ `real-sync-hydration.spec.ts` run manually against live `apps/api` + `werf-postgres` + `werf-powersync`, 3× clean (fresh `apps/api` process each run — in-memory auth-throttle counters reset — no flakes): real REST-landed birth tally → real second login → real `.connect()` → real SQLite hydration → real capture UI → real send → real Postgres row-count confirmation → real `page.reload()` preserving both the projection and the (by then empty) queue. Found and fixed the partition-replication defect above in the process |
 
 ## 5. Next executable steps
 
@@ -119,8 +136,8 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
    gating the flush on every store; (2) two screens froze their queue on a mount-time
    pre-hydration snapshot, closed the same way. Full account:
    `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`.
-9. ⛔ Read tripwire 3e (`phase-checklists.md`) before writing any hydration/down-sync code —
-   `landed()` breaks the day mobs/tallies come down from the server.
+9. ✅ Done 2026-08-10: **tripwire 3e closed** — `landed()` now recognises a hydrated tally, proven
+   by fakes and by the real service. See §3 and `phase-checklists.md` 3e.
 10. Do not begin payroll on local adapters.
 10. ⚠️ `docs/phase-3-6-scope` is still stacked on the pre-merge `phase-2/livestock`, not `main` —
     rebase it onto `main` before starting any Phase 3–6 scope-doc work.
@@ -134,6 +151,14 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
     browser-kill/reboot durability) was already implemented and proven — `phase-checklists.md` 3d.
     `uploadData`'s throw reframed from "TODO 3c/3d" to the documented permanent tripwire that
     became **ADR-0012** the following session.
+13. ✅ Done 2026-08-10: **3e — mobs/tallies down-sync + tripwire 3e (issue #8) closed**, real
+    connection lifecycle (`SyncConnectionProvider`), and a production-blocking PowerSync
+    partitioned-table replication defect found and fixed (§3). Next: extend hydration merging to
+    animals/moves/health (the rest of the 3e conflict matrix), then 3f (quota eviction) / 3g
+    (additive-migration) / 3h (sync health) / 3i (attachments) in order. Issue #10
+    (`theft_incident_animals` surrogate-id gap) remains untouched and tracked separately — it did
+    not block this slice and was not silently folded into it. Branch is ready for an
+    owner-triggered `sync-auditor` pass over 3e's diff whenever JP asks for one.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

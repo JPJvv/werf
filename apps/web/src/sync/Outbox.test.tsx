@@ -994,6 +994,281 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(DIED);
   });
 
+  describe('tripwire 3e (issue #8): a hydrated tally from ANOTHER device', () => {
+    // ⛔ THE TENTH PASS'S TRIPWIRE, CLOSED. `landed()` used to be exactly `sentLog.has(id)` —
+    // "did THIS DEVICE send it" — which is the same claim as "does the server hold it" only while
+    // the device holds the whole log. Down-sync breaks that: an INCREASE another device captured
+    // and sent lands on the server, is replicated back to THIS device via PowerSync, and — before
+    // this fix — was invisible to `needsHead`'s fold. The fold then UNDER-counts the true head,
+    // and a decrease that the server would happily accept looks like it would underflow locally —
+    // held, every round, forever, with no refusal above it to ever clear it.
+    //
+    // The scenario below picks an INCREASE deliberately, not a decrease: a hidden DECREASE would
+    // make the naive fold over-permissive (the server's own guard still catches that), but a
+    // hidden INCREASE is what produces the silent, permanent, farmer-visible hold this tripwire
+    // names — "1 to send" that never becomes "Synced" no matter how long the phone sits in range.
+
+    const M = '0190f3a0-0000-7000-8000-0000000000e1';
+    /** Device A's birth — landed on the server, replicated down, NEVER captured on this device. */
+    const BIRTH = '0190f3a0-0000-7000-8000-0000000000e2';
+    /** This device's own decrease, valid once the birth is counted, still unsent. */
+    const DECREASE = '0190f3a0-0000-7000-8000-0000000000e3';
+
+    function seedMobAndDecrease(): void {
+      window.localStorage.setItem(
+        `werf-mobs:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: M,
+            farmId: FARM_ID,
+            name: 'Flock A',
+            species: 'sheep',
+            headCount: 260,
+            initialHeadCount: 260,
+          },
+        ]),
+      );
+      window.localStorage.setItem(
+        `werf-tallies:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: DECREASE,
+            farmId: FARM_ID,
+            mobId: M,
+            // After the birth, so the fold's `(occurredAt, id)` cut counts it — same shape every
+            // other head-arithmetic test in this file already relies on.
+            occurredAt: '2026-07-25T12:00:00.000Z',
+            reason: 'death',
+            count: 280,
+            delta: -280,
+          },
+        ]),
+      );
+    }
+
+    /** The birth as the canonical `events` row PowerSync would down-sync — the exact shape
+     *  `recordMobTally` (`@werf/domain`) writes, read back rather than re-invented. */
+    function hydratedBirthRow(farmId = FARM_ID) {
+      return {
+        id: BIRTH,
+        farm_id: farmId,
+        mob_id: M,
+        type: 'tally',
+        occurred_at: '2026-07-20T12:00:00.000Z',
+        payload: JSON.stringify({ reason: 'birth', delta: 40 }),
+      };
+    }
+
+    it('⭐⭐ sends the decrease once the hydrated birth funds it — not held forever', async () => {
+      cachedSession();
+      seedMobAndDecrease();
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+
+      // BEFORE hydration: the MOB row sends (it is a plain, unguarded FlushItem — a foreign key,
+      // not an arithmetic question), but 260 (baseline alone) cannot fund a 280 decrease, so the
+      // TALLY specifically is held rather than refused. Waited for via the strip settling on
+      // "pending" (proof the gate has run at least once), not by racing a timer.
+      await screen.findByText(/1 to send/);
+      expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(false);
+
+      // Device A's birth lands. Nothing on THIS device captured it, sent it, or restarted for it —
+      // it simply arrives, the way down-sync does.
+      const fake = await getCurrentFakeLocalDatabase();
+      act(() => {
+        fake.hydrateRow('events', hydratedBirthRow());
+      });
+
+      // ⭐ THE ASSERTION THIS TEST EXISTS FOR. The fold can now see the head the birth funded
+      // (260 + 40 − 280 = 20 ≥ 0), so the decrease sends on its own.
+      await waitFor(() => {
+        expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(true);
+      });
+      const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+      expect(sent).toContain(DECREASE);
+      // The hydrated birth itself is never POSTed — it is not this device's capture to send. Only
+      // ONE tally request should ever have gone out, however many times the flush retried.
+      expect(postedPaths(fetchMock).filter((path) => path.includes('/mob-tallies'))).toHaveLength(
+        1,
+      );
+    });
+
+    it('cross-farm hydrated rows never fund a decrease on this farm', async () => {
+      cachedSession();
+      seedMobAndDecrease();
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+      await screen.findByText(/1 to send/);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      act(() => {
+        // Same mob id, same delta — but a DIFFERENT farm. If farm-scoping ever slipped, this
+        // would fund the decrease exactly as the real birth does above.
+        fake.hydrateRow('events', hydratedBirthRow('0190f3a0-0000-7000-8000-0000000000ff'));
+      });
+
+      // Held, still — nothing to observe (a negative assertion), so give the (non-)event a real
+      // window rather than checking once immediately after the act().
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(false);
+    });
+
+    it('⭐ a hydrated RECOUNT still resets, and funds a decrease the created baseline alone could not', async () => {
+      // Test 6 of the required matrix. `projectHeadCount` (@werf/domain) has always reset on a
+      // recount — this is not new behaviour — but the merge feeding it hydrated rows must not
+      // treat a hydrated recount as just another delta added on top of the baseline.
+      const M2 = '0190f3a0-0000-7000-8000-0000000000e5';
+      const RECOUNT = '0190f3a0-0000-7000-8000-0000000000e6';
+      const DECREASE2 = '0190f3a0-0000-7000-8000-0000000000e7';
+      cachedSession();
+      window.localStorage.setItem(
+        `werf-mobs:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: M2,
+            farmId: FARM_ID,
+            name: 'Flock B',
+            species: 'sheep',
+            headCount: 260,
+            initialHeadCount: 260,
+          },
+        ]),
+      );
+      window.localStorage.setItem(
+        `werf-tallies:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: DECREASE2,
+            farmId: FARM_ID,
+            mobId: M2,
+            // The created baseline (260) alone cannot fund this; the recounted figure (500) can.
+            occurredAt: '2026-07-26T12:00:00.000Z',
+            reason: 'death',
+            count: 450,
+            delta: -450,
+          },
+        ]),
+      );
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+      await screen.findByText(/1 to send/);
+      expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(false);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      act(() => {
+        fake.hydrateRow('events', {
+          id: RECOUNT,
+          farm_id: FARM_ID,
+          mob_id: M2,
+          type: 'tally',
+          occurred_at: '2026-07-20T12:00:00.000Z',
+          payload: JSON.stringify({ reason: 'recount', countedHead: 500 }),
+        });
+      });
+
+      await waitFor(() => {
+        expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(true);
+      });
+      expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '').toContain(DECREASE2);
+    });
+
+    it('⭐ test 5 of the required matrix: hydration arriving OUT OF chronological order projects the same result', async () => {
+      const M3 = '0190f3a0-0000-7000-8000-0000000000e8';
+      const RECOUNT3 = '0190f3a0-0000-7000-8000-0000000000e9';
+      const BIRTH3 = '0190f3a0-0000-7000-8000-0000000000ea';
+      const DECREASE3 = '0190f3a0-0000-7000-8000-0000000000eb';
+      cachedSession();
+      window.localStorage.setItem(
+        `werf-mobs:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: M3,
+            farmId: FARM_ID,
+            name: 'Flock C',
+            species: 'sheep',
+            headCount: 260,
+            initialHeadCount: 260,
+          },
+        ]),
+      );
+      window.localStorage.setItem(
+        `werf-tallies:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: DECREASE3,
+            farmId: FARM_ID,
+            mobId: M3,
+            // Only funded once BOTH the recount (500, on the 18th) and the birth (+50, on the
+            // 19th) are counted: 550 total, 500 taken, 50 left.
+            occurredAt: '2026-07-26T12:00:00.000Z',
+            reason: 'death',
+            count: 500,
+            delta: -500,
+          },
+        ]),
+      );
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+      await screen.findByText(/1 to send/);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      // Delivered in REVERSE of the order they happened on the farm — the later birth arrives
+      // before the earlier recount. The total order the fold sorts by is `(occurredAt, id)`, not
+      // arrival order, so the result must not depend on which one this device heard about first.
+      act(() => {
+        fake.hydrateRow('events', {
+          id: BIRTH3,
+          farm_id: FARM_ID,
+          mob_id: M3,
+          type: 'tally',
+          occurred_at: '2026-07-19T12:00:00.000Z',
+          payload: JSON.stringify({ reason: 'birth', delta: 50 }),
+        });
+      });
+      act(() => {
+        fake.hydrateRow('events', {
+          id: RECOUNT3,
+          farm_id: FARM_ID,
+          mob_id: M3,
+          type: 'tally',
+          occurred_at: '2026-07-18T12:00:00.000Z',
+          payload: JSON.stringify({ reason: 'recount', countedHead: 500 }),
+        });
+      });
+
+      await waitFor(() => {
+        expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(true);
+      });
+      expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '').toContain(DECREASE3);
+    });
+
+    it('a genuine hydration failure holds the queue, never drops it (never a lost capture)', async () => {
+      cachedSession();
+      seedMobAndDecrease();
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      fake.failWatch('events');
+
+      render(<App />);
+
+      expect(await screen.findByText('Not sent — will retry')).toBeTruthy();
+      expect(postedPaths(fetchMock)).toEqual([]);
+      // Still in the local store, untouched — a down-sync failure is never a discard.
+      const stillQueued = await storedCaptures<{ id: string }>(`werf-tallies:${FARM_ID}`);
+      expect(stillQueued.map((t) => t.id)).toContain(DECREASE);
+    });
+  });
+
   it('⭐ NAMES the held capture on /not-sent, so a hold is a thing the farmer can see', async () => {
     // ⛔ The tenth pass's finding, and it is about the ninth pass's own fix. That fix existed to
     // end "a hold nobody can see is a lost record" — and the surface it added, the waiting list on

@@ -3,12 +3,14 @@ import { Link, Outlet } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { SyncStatusStrip } from '../sync/SyncStatusStrip';
 import { OutboxProvider } from '../sync/Outbox';
+import { SyncConnectionProvider } from '../sync/SyncConnection';
 import { InstallPrompt } from '../pwa/InstallPrompt';
 import { FarmSwitcher } from './FarmSwitcher';
 import { LocalLandProvider } from '../land/LocalLand';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
 import { LocalTalliesProvider } from '../livestock/LocalTallies';
+import { HydratedLivestockProvider } from '../livestock/HydratedLivestock';
 import { LocalIdentifiersProvider } from '../livestock/LocalIdentifiers';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
 import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
@@ -59,6 +61,10 @@ const CAPTURE_STORES = [
   LocalSpeciesGestationProvider,
   LocalTheftProvider,
   LocalRainfallProvider,
+  // Also not a capture store — the DOWN-SYNC half of mobs/tallies (phase-checklists.md 3e).
+  // `Outbox.tsx` and `herd.ts` both read it, so it has to sit above both, same as
+  // `LocalMobsProvider`/`LocalTalliesProvider` above it in this list.
+  HydratedLivestockProvider,
 ] as const;
 
 function CaptureStores({ children }: { children: ReactNode }) {
@@ -91,10 +97,16 @@ export function AppShell() {
       </header>
       <CaptureStores>
         <OutboxProvider>
-          <SyncStatusStrip />
-          <main>
-            <Outlet />
-          </main>
+          {/* No visual output — owns the app's ONE down-sync connection (phase-checklists.md 3e).
+              Inside CaptureStores/OutboxProvider only because it needs no context from either;
+              placed here rather than higher up so it mounts/unmounts on the same authenticated
+              lifetime as everything that reads what it hydrates. */}
+          <SyncConnectionProvider>
+            <SyncStatusStrip />
+            <main>
+              <Outlet />
+            </main>
+          </SyncConnectionProvider>
         </OutboxProvider>
       </CaptureStores>
       <InstallPrompt />

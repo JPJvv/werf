@@ -30,6 +30,7 @@ import { farmToday } from '../farmTime';
 import { useEffectiveMobs } from './herd';
 import { useRecordTallies, useTallies } from './LocalTallies';
 import { useMobs } from './LocalMobs';
+import { useHydratedMobs, useHydratedTallies, mergeById } from './HydratedLivestock';
 import { useHealthEvents } from './LocalHealth';
 import { useAnimals } from './LocalHerd';
 import { useMoves } from './LocalMoves';
@@ -115,6 +116,13 @@ export function AdjustMobScreen() {
   // The RAW mobs: the fold below needs the mob's BASELINE, and a projected mob's `headCount` has
   // already had the whole log applied to it. Folding over that would count every tally twice.
   const storedMobs = useMobs();
+  // Hydrated mobs/tallies (phase-checklists.md 3e) — a mob or a tally another device sent, already
+  // replicated to this one. `headAsAt` merges these in so a decrease against a mob this device has
+  // never itself touched (only knows via down-sync) validates against the SAME baseline the server
+  // would judge it by, rather than falling through to "this group is managed as individual
+  // animals" — the wrong refusal for a mob this device simply has not captured anything about yet.
+  const hydratedMobs = useHydratedMobs();
+  const hydratedTallies = useHydratedTallies();
   const healthEvents = useHealthEvents();
   const products = useVetProducts();
   // A counted mob can ALSO hold individually-registered animals, and a treatment given to one of
@@ -176,9 +184,11 @@ export function AdjustMobScreen() {
   // this fold is how the two halves of one move come to disagree about a number.
   const headAsAt = useMemo(() => {
     const at = `${day}T12:00:00.000Z`;
+    const foldTallies = mergeById(tallies, hydratedTallies);
+    const foldMobs = mergeById(storedMobs, hydratedMobs);
     return (mobId: string): number | null => {
-      const before = tallies.filter((t) => t.mobId === mobId && t.occurredAt <= at);
-      const stored = storedMobs.find((m) => m.id === mobId);
+      const before = foldTallies.filter((t) => t.mobId === mobId && t.occurredAt <= at);
+      const stored = foldMobs.find((m) => m.id === mobId);
       const baseline =
         stored === undefined
           ? null
@@ -187,7 +197,7 @@ export function AdjustMobScreen() {
             : stored.initialHeadCount;
       return projectHeadCount(baseline, before);
     };
-  }, [storedMobs, tallies, day]);
+  }, [storedMobs, hydratedMobs, tallies, hydratedTallies, day]);
   const currentHead = selected === null ? null : headAsAt(selected.id);
   const isRecount = reason === 'recount';
   const trade = reason === 'sale' || reason === 'purchase';

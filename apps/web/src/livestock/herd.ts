@@ -19,6 +19,7 @@ import {
   summariseHerd,
   type AnimalClass,
   type HerdSummary,
+  type TallyRecord,
 } from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
 import { useAnimals, useAnimalsSettled, type StoredAnimal } from './LocalHerd';
@@ -28,7 +29,8 @@ import {
   type StoredLifecycleEvent,
 } from './LocalLifecycle';
 import { useMobs, type StoredMob } from './LocalMobs';
-import { useTallies, type StoredTally } from './LocalTallies';
+import { useTallies } from './LocalTallies';
+import { useHydratedMobs, useHydratedTallies, mergeById } from './HydratedLivestock';
 import { useMoves, useMovesSettled, type StoredMove } from './LocalMoves';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
@@ -158,9 +160,11 @@ export function useEffectiveAnimalsSettled(): boolean {
  * `headCount`, which is the running total this function produces. Folding a log over its own output
  * counts every tally twice. That this file used to fold over `headCount` and still gave the right
  * answer was an accident of one fact: nothing writes back into the local mob register, so the count
- * it holds happens to still be the created one. The accident ends the moment `mobs` is hydrated from
- * the server, and it ends silently, on every counted mob at once — which is why this is a named
- * field now rather than a comment saying "do not write here".
+ * it holds happens to still be the created one. This is why the field is named rather than left as
+ * a comment saying "do not write here" — and per phase-checklists.md 3e, `mobs` IS now hydrated
+ * from the server (`useEffectiveMobs`, below): a hydrated row's `initialHeadCount` comes back as
+ * an explicit `null` (never `undefined`), so this function's `undefined`-vs-`null` branch already
+ * does the right thing for it without change here.
  *
  * The server derives the same number from the same events with the same function, from the same
  * immutable baseline (`mobs.initial_head_count`, migration 0018) AND the same total order —
@@ -168,13 +172,19 @@ export function useEffectiveAnimalsSettled(): boolean {
  * day the same instant and a fold containing a recount does not commute. Ordering on the instant
  * alone left this at the mercy of the capture-store append order here and the query plan there,
  * which is how the same log could produce two different counts.
+ *
+ * `tallies` is typed as `TallyRecord` (the fold's own minimal shape — id/mobId/occurredAt/reason/
+ * delta/countedHead), not `StoredTally`, because a hydrated tally read back from the server's
+ * `events` table (phase-checklists.md 3e) never carries `count` — only the device that captured it
+ * did. `StoredTally` remains structurally assignable, so every existing local-only caller is
+ * unaffected.
  */
 export function projectMobs(
   mobs: readonly StoredMob[],
-  tallies: readonly StoredTally[],
+  tallies: readonly TallyRecord[],
 ): readonly StoredMob[] {
   if (tallies.length === 0) return mobs;
-  const byMob = new Map<string, StoredTally[]>();
+  const byMob = new Map<string, TallyRecord[]>();
   for (const tally of tallies) {
     const held = byMob.get(tally.mobId);
     if (held) held.push(tally);
@@ -203,14 +213,26 @@ export function projectMobs(
  *
  * A mob is head a farmer has, so it belongs in the total: leaving it out would make the home tile
  * say 0 on a farm running 300 sheep as a flock, which is the exact farm FR-102 exists for.
+ *
+ * ⭐ Merges in HYDRATED mobs and tallies (phase-checklists.md 3e) — a mob another device created,
+ * and every tally another device has already sent, both already replicated to this one via
+ * PowerSync. Without this a counted mob nobody on THIS device ever touched would not appear at
+ * all, and a mob this device DID create would silently under-count every tally a co-worker landed
+ * — the same class of staleness `Outbox.tsx`'s `needsHead` closes on the write side. `mergeById`
+ * prefers the local copy on a shared id, so a capture this device made moments ago is never
+ * shadowed by a same-id row still catching up through down-sync.
  */
 export function useEffectiveMobs(herdId?: string): readonly StoredMob[] {
   const mobs = useMobs();
   const tallies = useTallies();
+  const hydratedMobs = useHydratedMobs();
+  const hydratedTallies = useHydratedTallies();
   return useMemo(() => {
-    const projected = projectMobs(mobs, tallies);
+    const foldMobs = mergeById(mobs, hydratedMobs);
+    const foldTallies = mergeById(tallies, hydratedTallies);
+    const projected = projectMobs(foldMobs, foldTallies);
     return herdId === undefined ? projected : projected.filter((m) => m.enterpriseId === herdId);
-  }, [mobs, tallies, herdId]);
+  }, [mobs, hydratedMobs, tallies, hydratedTallies, herdId]);
 }
 
 /** The herd summary (FR-705/017), for one herd or (unfiltered) the whole farm. */

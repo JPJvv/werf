@@ -37,7 +37,7 @@ streams:
     auto_subscribe: true
   events:
     query: |
-      SELECT animal_id, batch_id, created_at, created_by, deleted_at, employee_id, enterprise_id, farm_id, id, land_unit_id, location_geojson, mob_id, notes, occurred_at, payload, synced_at, type, updated_at FROM events
+      SELECT animal_id, batch_id, created_at, created_by, deleted_at, employee_id, enterprise_id, farm_id, id, land_unit_id, location_geojson, mob_id, notes, occurred_at, payload, synced_at, type, updated_at FROM events_default AS events
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: true
   farm_users:

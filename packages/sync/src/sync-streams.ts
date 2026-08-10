@@ -39,6 +39,18 @@
 export interface SyncStreamDef {
   readonly name: string;
   readonly table: string;
+  /**
+   * The Postgres table the QUERY actually reads, when it differs from `table` (the TENANCY key
+   * every other consumer — `sync-streams.spec.ts`, `sync-streams-rls-agreement.spec.ts`, RLS
+   * comparison — matches against). Set ONLY for a partitioned source with no partition-root
+   * publishing: PowerSync attributes replicated rows to the PARTITION's own relid, not the
+   * parent's (`publish_via_partition_root` is explicitly unsupported — `PSYNC_S1143`, empirically
+   * confirmed 2026-08-10 against journeyapps/powersync-service:1.23.3), so `FROM events` against
+   * the partitioned parent validates and "replicates" with zero rows ever reaching a client —
+   * no error, silently wrong. `derive-sync-streams.ts`'s `PARTITIONED_SOURCE_TABLE` is the one
+   * place this is decided; this field only renders what that decided.
+   */
+  readonly sourceTable?: string;
   /** Explicit column list — never `*`. A `SELECT *` data query ships `neverSyncColumns` bytes
    * over the wire regardless of what the client's local schema accepts; the local schema is not
    * a security boundary, this list is. */
@@ -49,13 +61,20 @@ export interface SyncStreamDef {
 
 function renderStream(s: SyncStreamDef): string {
   const cols = s.columns.join(', ');
+  // Alias back to the logical name so the local client schema (which matches by STREAM NAME, not
+  // by the Postgres FROM text) sees no difference — see `sourceTable`'s own doc for why this
+  // exists at all.
+  const from =
+    s.sourceTable !== undefined && s.sourceTable !== s.table
+      ? `${s.sourceTable} AS ${s.table}`
+      : s.table;
   // auto_subscribe: streams are an opt-in subscription model — without this, a connected client
   // receives nothing until it explicitly subscribes to each stream, which nothing in this repo
   // does yet (empirically found 2026-08-09: a real .connect() completed with operations_synced: 0
   // against a service confirmed to hold correctly-indexed bucket_parameters for the connecting
   // user). Offline-first means a device holds its whole farm by default; per-stream on-demand
   // subscription is a bandwidth optimisation a later phase can opt back into, not the default.
-  return `  ${s.name}:\n    query: |\n      SELECT ${cols} FROM ${s.table}\n      WHERE ${s.whereSql}\n    auto_subscribe: true`;
+  return `  ${s.name}:\n    query: |\n      SELECT ${cols} FROM ${from}\n      WHERE ${s.whereSql}\n    auto_subscribe: true`;
 }
 
 /** Renders a complete `config: {edition: 3}` + `streams:` document. Callers own the header comment. */

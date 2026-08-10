@@ -22,6 +22,19 @@ import type { SyncStreamDef } from '../src/sync-streams';
  * is a schema gap, not a query-language ceiling like the one Sync Streams just resolved. */
 const NO_SURROGATE_ID: ReadonlySet<SyncedTable> = new Set(['theft_incident_animals']);
 
+/**
+ * Postgres tables that are PARTITIONED with `publish_via_partition_root` off (unsupported by
+ * PowerSync — `PSYNC_S1143`, empirically confirmed 2026-08-10). `FROM <parent>` validates and
+ * replicates zero rows for these, silently — see `sync-streams.ts`'s `sourceTable` doc for the
+ * full mechanism. `events` (migration 0010) is the only one today: one partition, `events_default`
+ * (`0010_events.sql`'s own default range). Add here, not generic partition detection, per that
+ * doc's "scope it to what exists" — a second partitioned table is a second entry, not a reason to
+ * introspect `pg_inherits` for a case count of one.
+ */
+const PARTITIONED_SOURCE_TABLE: Partial<Record<SyncedTable, string>> = {
+  events: 'events_default',
+};
+
 /** The membership predicate every stream below is built on: `farm_users` rows for the connected
  * user, alive and accepted. Deliberately omits `expires_at` — see sync-streams.ts's header and
  * `MembershipExpiryService`, which tombstones elapsed grants once per minute.
@@ -67,7 +80,14 @@ export function deriveSyncStreams(): readonly SyncStreamDef[] {
 
     const columns = columnsFor(tablesByName, tableName);
     const whereSql = wherePredicateFor(tableName);
-    streams.push({ name: tableName, table: tableName, columns, whereSql });
+    const sourceTable = PARTITIONED_SOURCE_TABLE[tableName];
+    streams.push({
+      name: tableName,
+      table: tableName,
+      ...(sourceTable === undefined ? {} : { sourceTable }),
+      columns,
+      whereSql,
+    });
   }
   return streams.sort((a, b) => a.name.localeCompare(b.name));
 }

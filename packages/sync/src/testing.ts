@@ -74,6 +74,41 @@ export interface FakeLocalDatabase {
   getAll<T>(sql: string, params?: readonly unknown[]): Promise<T[]>;
   execute(sql: string, params?: readonly unknown[]): Promise<unknown>;
   writeTransaction<T>(callback: (tx: unknown) => Promise<T>): Promise<T>;
+  /**
+   * The narrow slice of `watch()` a `HydratedTableStore` needs: recognizes
+   * `SELECT ... FROM mobs WHERE farm_id = ?` and `SELECT ... FROM events WHERE farm_id = ? AND
+   * type = 'tally' ...` (both `AND deleted_at IS NULL`), farm-scoped by `params[0]`. Fires
+   * `onResult` once immediately (mirroring the real SDK's `triggerImmediate: true`) and again
+   * every time a matching row is seeded via `hydrateRow`/`hydrateRows` — the fake's stand-in for a
+   * down-sync delivery landing.
+   */
+  watch(
+    sql: string,
+    params: readonly unknown[],
+    handler: { onResult: (result: unknown) => void; onError?: (error: Error) => void },
+  ): void;
+  /** True after `connect()` resolves and until `disconnect()` is called. Mirrors the real SDK's
+   *  `connected` getter narrowly enough for a lifecycle test to assert against. */
+  readonly connected: boolean;
+  /** Records every connector `connect()` was called with, so a test can assert `getAccessToken`
+   *  was wired to the live session rather than a stale closure. */
+  readonly connectCalls: number;
+  connect(connector: unknown): Promise<void>;
+  disconnect(): Promise<void>;
+  /**
+   * Simulates a down-sync delivery: inserts/updates one row in the given canonical table and
+   * re-fires every `watch()` registered against it whose farm-scope matches. `table` is `'mobs'`
+   * or `'events'` — the only two canonical tables 3e hydrates. Never touches `capture_records` —
+   * a hydrated row and a locally-captured one are always distinct rows in this fake, exactly as
+   * they are two distinct tables in the real schema.
+   */
+  hydrateRow(table: 'mobs' | 'events', row: Record<string, unknown>): void;
+  /** `hydrateRow`, plural — the common case of a device receiving more than one row per delivery. */
+  hydrateRows(table: 'mobs' | 'events', rows: readonly Record<string, unknown>[]): void;
+  /** Every later `watch()` against this table's `onError` instead of `onResult`, and any watcher
+   *  already registered against it re-fires into `onError` immediately — simulating the local
+   *  query itself failing, not a single malformed row (see `HydratedTableStore`'s own header). */
+  failWatch(table: 'mobs' | 'events'): void;
   /** The NEXT writeTransaction's callback runs to completion, then the "commit" throws instead —
    *  simulating a browser kill after every insert but before the transaction lands. */
   failNextTransactionAfterInserts(): void;
@@ -103,6 +138,29 @@ export interface FakeLocalDatabase {
  * (a fresh `vi.mock` return value, or a fresh instance for a scenario that needs its own history)
  * never shares state with any other test through a leaked singleton.
  */
+/** One registered `watch()` call: which canonical table, this watcher's own farm-scope param
+ *  (params[0] on every query this fake recognizes), and the handler to re-fire. */
+interface CanonicalWatcher {
+  readonly table: 'mobs' | 'events';
+  readonly farmId: string;
+  readonly onResult: (result: unknown) => void;
+  readonly onError?: ((error: Error) => void) | undefined;
+}
+
+/** Matches a canonical row against one watcher's farm scope and (for `events`) the `type =
+ *  'tally'` / `deleted_at IS NULL` shape every 3e query carries — kept in one place so the
+ *  INITIAL fire and every later re-fire filter identically. */
+function matchesWatcher(
+  table: 'mobs' | 'events',
+  row: Record<string, unknown>,
+  farmId: string,
+): boolean {
+  if (row['farm_id'] !== farmId) return false;
+  if (row['deleted_at'] != null) return false;
+  if (table === 'events' && row['type'] !== 'tally') return false;
+  return true;
+}
+
 export function createFakeLocalDatabase(): FakeLocalDatabase {
   let records = new Map<string, FakeRecordRow>();
   let migrations = new Map<string, FakeMigrationRow>();
@@ -115,6 +173,30 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
   // observes the same serialization the real engine provides — the property the marker-race fix
   // in sqlite-capture-store.ts depends on.
   let writeQueue: Promise<unknown> = Promise.resolve();
+
+  // Canonical down-synced tables (phase-checklists.md 3e) — deliberately separate maps from
+  // `records`/`migrations` above, which back `capture_records`/`capture_migrations` only. A
+  // hydrated row and a locally-captured one are two different tables in the real schema and stay
+  // two different Maps here.
+  const canonicalMobs = new Map<string, Record<string, unknown>>();
+  const canonicalEvents = new Map<string, Record<string, unknown>>();
+  const canonicalTable = (table: 'mobs' | 'events') =>
+    table === 'mobs' ? canonicalMobs : canonicalEvents;
+  const watchers: CanonicalWatcher[] = [];
+  const failingWatch = new Set<'mobs' | 'events'>();
+  let connected = false;
+  let connectCalls = 0;
+
+  const fireWatcher = (w: CanonicalWatcher): void => {
+    if (failingWatch.has(w.table)) {
+      w.onError?.(new Error(`fake database: simulated watch failure for "${w.table}"`));
+      return;
+    }
+    const rows = [...canonicalTable(w.table).values()].filter((row) =>
+      matchesWatcher(w.table, row, w.farmId),
+    );
+    w.onResult({ array: rows });
+  };
 
   const fake = {
     async init(): Promise<void> {},
@@ -205,6 +287,73 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
 
     failHydrationFor(storeKey: string): void {
       failing.add(storeKey);
+    },
+
+    watch(
+      sql: string,
+      params: readonly unknown[] = [],
+      handler: { onResult: (result: unknown) => void; onError?: (error: Error) => void },
+    ): void {
+      const table: 'mobs' | 'events' | undefined = sql.includes('FROM mobs')
+        ? 'mobs'
+        : sql.includes('FROM events')
+          ? 'events'
+          : undefined;
+      if (table === undefined) {
+        throw new Error(`fake database: unrecognized watch() — ${sql}`);
+      }
+      const [farmId] = params as [string];
+      const watcher: CanonicalWatcher = {
+        table,
+        farmId,
+        onResult: handler.onResult,
+        onError: handler.onError,
+      };
+      watchers.push(watcher);
+      fireWatcher(watcher);
+    },
+
+    get connected(): boolean {
+      return connected;
+    },
+
+    get connectCalls(): number {
+      return connectCalls;
+    },
+
+    async connect(): Promise<void> {
+      connectCalls += 1;
+      connected = true;
+    },
+
+    async disconnect(): Promise<void> {
+      connected = false;
+    },
+
+    hydrateRow(table: 'mobs' | 'events', row: Record<string, unknown>): void {
+      fake.hydrateRows(table, [row]);
+    },
+
+    hydrateRows(table: 'mobs' | 'events', rows: readonly Record<string, unknown>[]): void {
+      for (const row of rows) {
+        const id = row['id'];
+        if (typeof id !== 'string') {
+          throw new Error(
+            `fake database: hydrateRow requires a string "id" — ${JSON.stringify(row)}`,
+          );
+        }
+        canonicalTable(table).set(id, row);
+      }
+      for (const w of watchers) {
+        if (w.table === table) fireWatcher(w);
+      }
+    },
+
+    failWatch(table: 'mobs' | 'events'): void {
+      failingWatch.add(table);
+      for (const w of watchers) {
+        if (w.table === table) fireWatcher(w);
+      }
     },
   };
 

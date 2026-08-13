@@ -1123,15 +1123,44 @@ add the one shared local-first attachment path approved on 2026-08-08.
   fixture row exactly as db.md promises adding a table without classifying it would.
   ⛔ **Not yet built: the binary path.** "The binary stays in OPFS until its checksum-confirmed
   server acknowledgement is durable" is 3i(c) scope, unstarted this session.
-☐ 3i(c) Animal photos and later crop/grievance documents use one deferred queue: capture commits
+◐ 3i(c) Animal photos and later crop/grievance documents use one deferred queue: capture commits
   locally with no signal, browser kill/reload loses neither metadata nor blob, and retry is idempotent.
-  Not started.
-☐ 3i(b) The API authorises the farm before issuing a short-lived presigned upload; object keys are
+  ⛔ **Deliberately NOT started this session — a scoping decision, not an oversight.** `Outbox.tsx`
+  is the most defect-dense file in the repo (ten review passes, each finding a bug in the previous
+  pass's fix); a correct integration is not "append a `FlushItem`" — it needs an `animalrow:`
+  subject namespace mirroring `mobrow:` (so an attachment behind an unsent/refused animal is HELD,
+  not 404-set-aside), touches the animal items' `provides`, and needs `Outbox.test.tsx` coverage
+  plus an OPFS-durability e2e (`local-db-diagnostic.spec.ts`'s shape) since OPFS is browser-only and
+  the unit tier cannot reach it. Design decisions made so the next session starts warm rather than
+  re-deriving them: (a) the three-leg send (create → PUT → finalize) is end-to-end idempotent by
+  construction (3i(b)), so it can be ONE `FlushItem`, not three; (b) ordering is FK-only, after
+  animals — no safety ordering applies (nothing here is evidence a disposal guard reads), but it
+  needs the new `animalrow:` subject; (c) the local blob is released only once `finalize` returns,
+  never on the PUT's own 200 — a PUT can succeed while the app is killed before `finalize` runs, and
+  the queue must still hold the blob to retry that leg; (d) a `BlobStore` port/OPFS-adapter split,
+  the same port/adapter shape 3i(b)'s `ObjectStorage` uses, for testability without a browser.
+◐ 3i(b) The API authorises the farm before issuing a short-lived presigned upload; object keys are
   server-derived, never arbitrary client paths, and another farm can neither upload nor read them.
-  Not started — gated on `@aws-sdk/client-s3`/`@aws-sdk/s3-request-presigner` being installable;
-  see STATUS.md § 5 for the exact next step.
-☐ 3i(b) One S3-compatible adapter uses MinIO in development/integration tests and S3 in `af-south-1`
-  in production; tests cover checksum/size refusal, quota pressure, retry and orphan cleanup. Not started.
+  **Closed.** `apps/api/src/attachments/`: `createAttachment`/`finalizeAttachment`
+  (`assertCanCapture` + a farm-scoped subject check before either), object key deterministic from
+  `(farmId, id)` — a retried create reuses it rather than orphaning a new one. 9/9 integration tests
+  green against real Postgres AND real MinIO (testcontainers, never mocked): cross-farm create
+  refused, cross-farm subject refused, cross-farm finalize refused, both idempotency shapes, and the
+  wire response is pinned by parsing it through `attachmentUploadUrlSchema` after a JSON round-trip
+  (caught a real contract bug — see STATUS.md § 3).
+◐ 3i(b) One S3-compatible adapter uses MinIO in development/integration tests and S3 in `af-south-1`
+  in production; tests cover checksum/size refusal, quota pressure, retry and orphan cleanup.
+  **Checksum and size refusal closed** — empirically confirmed against `minio/minio:latest` that a
+  presigned PUT with `ChecksumSHA256` bound into the SigV4 signature is refused server-side (400
+  `XAmzContentChecksumMismatch`) on a body that doesn't hash to the declared value, so `finalize`
+  only re-derives size/checksum from the stored object via `HeadObject` rather than re-hashing the
+  body itself (`object-storage.ts`'s header has the full empirical account). A size-lie test and a
+  checksum-lie test (the latter written directly to the bucket, bypassing the presign — the PUT-time
+  enforcement makes a mismatched object impossible to produce any other way) both pass.
+  docker-compose gains a `minio` service + one-shot bucket init for dev parity.
+  ⛔ **Quota pressure, retry-on-transient-failure and orphan cleanup NOT built** — the agreed stage
+  boundary for this slice (STATUS.md § 5); the partial index `0022_attachments.sql` added for an
+  orphan sweep exists but nothing reads it yet.
 ☑ 3i(d) Existing Phase 2 `photo_key` rows migrate without inventing an attachment; null remains none.
   Grepped: no code path in `apps/web/src` has ever set `photoKey` — Phase 2 genuinely stored no
   photo. `livestock.integration.test.ts`'s new test proves `recordAnimal` with no photo leaves

@@ -36,7 +36,11 @@ export { createCaptureStore, type CaptureStore, type CaptureStoreOptions } from 
 // crosses into local-database.ts — erased at build time — so, like connector.ts and
 // local-schema.ts above, this is safe in the eagerly-bundled barrel; it never drags in
 // `@powersync/web`'s runtime by itself.
-export { createSqliteCaptureStore, type SqliteCaptureStoreOptions } from './sqlite-capture-store';
+export {
+  createSqliteCaptureStore,
+  PERSIST_RETRY_INTERVAL_MS,
+  type SqliteCaptureStoreOptions,
+} from './sqlite-capture-store';
 export { createDraftStore, type DraftStore, type DraftStoreOptions } from './draft-store';
 export { createSentLog, type SentLog, type SentLogOptions } from './sent-log';
 export {

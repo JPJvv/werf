@@ -12,7 +12,11 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { createSqliteCaptureStore, type SessionStorageLike } from '../src/index';
+import {
+  createSqliteCaptureStore,
+  PERSIST_RETRY_INTERVAL_MS,
+  type SessionStorageLike,
+} from '../src/index';
 import { createFakeLocalDatabase } from '../src/testing';
 import type { LocalDatabase } from '../src/local-database';
 
@@ -306,6 +310,75 @@ describe('the SQLite-backed capture store', () => {
 
     expect(() => store.append({ id: '1', species: 'cattle' })).not.toThrow();
     expect(store.all()).toEqual([{ id: '1', species: 'cattle' }]);
+  });
+
+  // ⭐ phase-checklists.md 3f: "the write queue is never bounded and never evicted." A
+  // QuotaExceededError from `execute()` is exactly the storage-pressure case that line names —
+  // and the test above only proves the record survives IN THIS SESSION's memory. It says nothing
+  // about the reboot db.md's own words describe: "A farmer offline for six weeks... A browser
+  // restart resumes it." A capture that was shown as saved and then genuinely never reached
+  // durable storage, followed by a browser restart, is a lost record wearing the append-order
+  // guarantee's clothes.
+  it('⭐ 3f: a capture that failed to persist under quota pressure is retried and durable before the app ever restarts', async () => {
+    vi.useFakeTimers();
+    try {
+      const db = createFakeLocalDatabase();
+      let quotaExceeded = true;
+      const realExecute = db.execute.bind(db);
+      db.execute = async (sql: string, params?: readonly unknown[]) => {
+        if (quotaExceeded && sql.startsWith('INSERT OR REPLACE INTO capture_records')) {
+          throw new Error('QuotaExceededError');
+        }
+        return realExecute(sql, params);
+      };
+      const typedDb = db as unknown as LocalDatabase;
+
+      const first = createSqliteCaptureStore<Animal>({
+        database: Promise.resolve(typedDb),
+        key: 'herd:farm-a',
+        legacyStorage: memoryStorage(),
+      });
+      await waitForHydration(first);
+
+      // The farmer's capture: shown as saved (FR-009), but storage was full at the moment it
+      // tried to reach durable SQLite.
+      first.append({ id: 'never-persisted', species: 'cattle' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(first.all()).toEqual([{ id: 'never-persisted', species: 'cattle' }]);
+      expect(
+        await typedDb.getAll<{ payload_json: string }>(
+          'SELECT payload_json FROM capture_records WHERE store_key = ?',
+          ['herd:farm-a'],
+        ),
+      ).toEqual([]); // not yet durable — this is the state a restart right now would lose
+
+      // Quota pressure clears while the app is still open — the retention window degrading the
+      // READ set (3f's other half) frees space, or the farmer deletes photos elsewhere on the
+      // device. The store's own retry loop, not a new capture or a page reload, is what notices.
+      quotaExceeded = false;
+      await vi.advanceTimersByTimeAsync(PERSIST_RETRY_INTERVAL_MS);
+
+      const rows = await typedDb.getAll<{ payload_json: string }>(
+        'SELECT payload_json FROM capture_records WHERE store_key = ?',
+        ['herd:farm-a'],
+      );
+      expect(rows.map((row) => (JSON.parse(row.payload_json) as Animal).id)).toEqual([
+        'never-persisted',
+      ]);
+
+      // The restart, now that the write is genuinely durable: a SECOND store instance over the
+      // SAME backing, exactly as a fresh page load re-hydrates from OPFS. Nothing in the first
+      // store's in-memory state carries over.
+      const secondBoot = createSqliteCaptureStore<Animal>({
+        database: Promise.resolve(typedDb),
+        key: 'herd:farm-a',
+        legacyStorage: memoryStorage(),
+      });
+      await waitForHydration(secondBoot);
+      expect(secondBoot.all()).toEqual([{ id: 'never-persisted', species: 'cattle' }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('settled() is false until hydration finishes, true once it succeeds', async () => {

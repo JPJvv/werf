@@ -34,6 +34,31 @@
  *     the client never subscribed to anything. Every stream below sets it. This product's whole
  *     premise is a device holding its farm by default; per-stream on-demand subscription is a
  *     bandwidth optimisation a later phase can opt into, not the default.
+ *
+ * ⛔ EMPIRICALLY CONFIRMED, 2026-08-13, against the same instance, while investigating phase-
+ * checklists.md 3f's retention read-set window (STATUS.md § 3 has the full decision record):
+ *   - Client-supplied STREAM PARAMETERS are real: `subscribe(name, {ttl, priority})`'s SDK type
+ *     (`SyncStreamSubscribeOptions`, `@powersync/common`) doesn't carry them, but the wire
+ *     protocol and the service's own SQL compiler do — confirmed by reading
+ *     `packages/sync-rules/dist/legacy/streams/functions.js` inside the running
+ *     `journeyapps/powersync-service:1.23.3` image, not by trusting docs a prior investigation
+ *     already found paraphrasing inconsistently. `subscription.parameter('key')` and
+ *     `subscription.parameters()` extract client-supplied, UNAUTHENTICATED JSON — the same
+ *     "any value the client sends" posture `auth.parameters()` has for the JWT, just a different
+ *     source. Unauthenticated is fine for a read-set BOUND (this farm's own data, never another
+ *     farm's — tenancy is still `auth.user_id()`), not fine for anything security-relevant.
+ *   - ⛔ THE ACTUAL WALL: an expression that references BOTH row data (a column) AND a
+ *     subscription/connection parameter may combine them ONLY with `=`. Attempting
+ *     `occurred_at > subscription.parameter('cutoff')` fails to load with the service's own exact
+ *     words: *"This expression already references row data, so it can't also reference
+ *     connection parameters unless the two are compared with an equals operator."* A range-based
+ *     retention cutoff is therefore NOT directly expressible as a stream predicate — the same
+ *     class of gap `now()`'s rejection left for `expires_at` (above), and the reason a naive
+ *     "pass today's cutoff as a parameter" design for 3f's read-set window does not work. Making
+ *     it work needs equality-bucketed partitioning (e.g. subscribing to one stream per
+ *     month-bucket the client computes) or a server-side sweep converting the boundary into
+ *     something equality CAN test — both a heavier design than this slice's budget, so 3f's
+ *     retention read-set window is left as an open item for JP rather than built on a guess.
  */
 
 export interface SyncStreamDef {

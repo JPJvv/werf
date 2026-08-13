@@ -206,6 +206,11 @@ describe('attachment capture (phase-checklists.md 3i)', () => {
     const created = await service.createAttachment(userId, body);
     expect(created.uploadUrl).not.toBeNull();
     expect(created.stored.status).toBe('pending');
+    // Pins the WIRE contract, not just this service call: `attachmentUploadUrlSchema` is what a
+    // real client parses the response against, and JSON.stringify/parse (not a direct `.parse` on
+    // the JS object) is what actually crosses the wire — a `Date` only survives that round trip as
+    // the ISO string the schema's `timestampSchema` expects.
+    schemas.attachmentUploadUrlSchema.parse(JSON.parse(JSON.stringify(created)));
 
     const putRes = await putRealBytes(created.uploadUrl!, created.checksumHeaderValue!, bytes);
     expect(putRes.status).toBe(200);
@@ -242,6 +247,12 @@ describe('attachment capture (phase-checklists.md 3i)', () => {
     const second = await service.finalizeAttachment(userId, { id: body.id, farmId });
 
     expect(second).toEqual(first);
+
+    // A re-flushed CREATE after finalisation must also validate — the null-URL branch is a
+    // distinct shape from the happy path and needs its own pin against the same wire schema.
+    const recreated = await service.createAttachment(userId, body);
+    expect(recreated.uploadUrl).toBeNull();
+    schemas.attachmentUploadUrlSchema.parse(JSON.parse(JSON.stringify(recreated)));
   });
 
   it('refuses to create for a farm the caller is not a member of', async () => {

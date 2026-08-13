@@ -38,6 +38,9 @@ export interface PresignedUpload {
   readonly uploadUrl: string;
   /** Base64, per S3's `x-amz-checksum-sha256` header contract — NOT the hex the domain stores. */
   readonly checksumHeaderValue: string;
+  /** When `uploadUrl` stops working — computed here, next to the TTL it is derived from, so the
+   *  service layer never restates `PRESIGNED_PUT_TTL_SECONDS` as a second literal. */
+  readonly expiresAt: Date;
 }
 
 export interface StoredObject {
@@ -92,7 +95,8 @@ export class S3ObjectStorage implements ObjectStorage {
     const uploadUrl = await getSignedUrl(this.client, command, {
       expiresIn: PRESIGNED_PUT_TTL_SECONDS,
     });
-    return { uploadUrl, checksumHeaderValue };
+    const expiresAt = new Date(Date.now() + PRESIGNED_PUT_TTL_SECONDS * 1000);
+    return { uploadUrl, checksumHeaderValue, expiresAt };
   }
 
   async headObject(key: string): Promise<StoredObject | null> {
@@ -123,8 +127,10 @@ export function attachmentObjectKey(farmId: string, attachmentId: string): strin
   return `farm/${farmId}/attachments/${attachmentId}`;
 }
 
-/** sha256 of empty input, used nowhere except as a sanity constant in tests — kept here so a test
- *  never hand-computes it and drifts from what `createHash` actually produces. */
+/** The domain's checksum over real bytes — the same computation `newAttachmentSchema.checksum`
+ *  documents a client running at capture time. Exported so a test builds a body's `checksum` from
+ *  the SAME bytes it later PUTs, rather than a hand-typed hex string that could silently drift
+ *  from what `createHash` actually produces. */
 export function sha256Hex(bytes: Buffer | Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }

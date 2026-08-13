@@ -119,7 +119,13 @@ export class AttachmentsService {
       // A row already finalised has nothing left to upload — a retried create for an id whose
       // upload already completed gets the row back, not a fresh (unusable) presigned URL.
       if (stored.status === 'finalised') {
-        return { attachmentId: stored.id, uploadUrl: null, checksumHeaderValue: null, stored };
+        return {
+          attachmentId: stored.id,
+          uploadUrl: null,
+          checksumHeaderValue: null,
+          expiresAt: null,
+          stored,
+        };
       }
 
       const presigned = await this.storage.presignPut(stored.objectKey ?? objectKey, {
@@ -131,6 +137,7 @@ export class AttachmentsService {
         attachmentId: stored.id,
         uploadUrl: presigned.uploadUrl,
         checksumHeaderValue: presigned.checksumHeaderValue,
+        expiresAt: presigned.expiresAt,
         stored,
       };
     });

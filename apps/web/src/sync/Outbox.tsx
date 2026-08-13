@@ -112,6 +112,7 @@ import {
 } from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
+import { deriveSyncHealth, type SyncHealth } from './syncHealth';
 
 /**
  * Send one lifecycle event to its own endpoint. The switch is exhaustive on the union, so adding a
@@ -409,6 +410,10 @@ const RefusedCapturesContext = createContext<readonly RefusedCapture[]>(EMPTY_RE
 
 /** The captures HELD behind one of those refusals — waiting, not rejected. */
 const HeldCapturesContext = createContext<readonly RefusedCapture[]>(EMPTY_REFUSED);
+
+/** Phase-checklists.md 3h: per-farm queue depth/failure, PII-shaped fields structurally absent
+ *  (see syncHealth.ts's own header). Null outside a provider — no farm to scope it to. */
+const SyncHealthContext = createContext<SyncHealth | null>(null);
 
 export interface OutboxProviderProps {
   children: ReactNode;
@@ -1199,6 +1204,20 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   );
   const waitingCount = waiting.length;
 
+  // Phase-checklists.md 3h. A pure fold (syncHealth.ts) over the SAME queue/blocked/waiting this
+  // provider already computed and already proves correct elsewhere in this file — never a second
+  // read of a capture store, so it cannot disagree with `state` below about what is pending.
+  const syncHealth = useMemo<SyncHealth>(
+    () =>
+      deriveSyncHealth(
+        farmId,
+        queue,
+        new Set(blocked.map((item) => item.id)),
+        new Set(waiting.map((item) => item.id)),
+      ),
+    [farmId, queue, blocked, waiting],
+  );
+
   const state = useMemo<SyncState>(() => {
     // ⭐ `!allSettled` is checked BEFORE the empty-queue fallthrough reaches 'synced'. Before every
     // store has hydrated, `pendingCount` reads 0 not because the farm has nothing pending but
@@ -1241,7 +1260,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     <OutboxContext.Provider value={state}>
       <SentCapturesContext.Provider value={sent}>
         <RefusedCapturesContext.Provider value={blocked}>
-          <HeldCapturesContext.Provider value={waiting}>{children}</HeldCapturesContext.Provider>
+          <HeldCapturesContext.Provider value={waiting}>
+            <SyncHealthContext.Provider value={syncHealth}>{children}</SyncHealthContext.Provider>
+          </HeldCapturesContext.Provider>
         </RefusedCapturesContext.Provider>
       </SentCapturesContext.Provider>
     </OutboxContext.Provider>
@@ -1278,6 +1299,19 @@ export function useRefusedCaptures(): readonly RefusedCapture[] {
  */
 export function useHeldCaptures(): readonly RefusedCapture[] {
   return useContext(HeldCapturesContext);
+}
+
+/**
+ * Phase-checklists.md 3h: this farm's queue depth and failure counts, by kind. `null` outside an
+ * `OutboxProvider` — there is no farm to scope a report to, and withholding is the safe default
+ * every other hook in this file already uses.
+ *
+ * For a support/diagnostics consumer, never a farmer's own screen — see syncHealth.ts's header
+ * for why the type itself, not this hook, is what keeps a tag number or an animal label from ever
+ * reaching this path.
+ */
+export function useSyncHealth(): SyncHealth | null {
+  return useContext(SyncHealthContext);
 }
 
 /**

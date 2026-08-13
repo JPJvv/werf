@@ -1059,6 +1059,21 @@ add the one shared local-first attachment path approved on 2026-08-08.
     `AuthService.register`'s own direct farm insert, not `FarmsService.createFarm` — the exact
     function Finding 2's text names, and a genuinely SEPARATE insert path (confirmed: `register`
     does not call `createFarm`). Strengthened to assert BOTH paths land in `events_default`.
+✅ **Finding 2 CLOSED, 2026-08-13 — JP chose retirement, not wiring-up, after the "wire it up
+  properly" option was found to hide a worse defect.** JP's first answer was option (a): wire
+  `create_farm_partition` into `FarmsService.createFarm` and teach the generator to read
+  partitions from `pg_inherits` dynamically. Before implementing, a second look surfaced a
+  conflict the original three-option framing missed: `generate-sync-streams.ts` writes a STATIC
+  file, generated at build/deploy time, never regenerated per farm at signup — and PowerSync
+  rejects `publish_via_partition_root` (`PSYNC_S1143`, already confirmed), so a stream can only
+  ever read a partition that existed when the config was generated. Reading `pg_inherits`
+  dynamically only helps at generation time; it cannot see a farm that signs up afterward. Under
+  (a), every farm created after the last config deploy would silently down-sync nothing —
+  converting Finding 2's latent risk into a guaranteed one for every real farm, which is worse
+  than the status quo it was meant to fix. Taken back to JP with the new fact; JP chose to retire
+  partitioning outright. Migration 0021 drops `create_farm_partition`; `events_default` is now the
+  permanent, only partition; `PARTITIONED_SOURCE_TABLE`/`sourceTable` in `derive-sync-streams.ts`
+  stay as they are (still true, now permanently rather than by accident). Full record: STATUS.md §3.
 ☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
 ☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
 ☐ 3h Sync health reports queue depth/failure per farm without PII

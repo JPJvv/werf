@@ -314,17 +314,18 @@ CREATE TABLE events (
 ) PARTITION BY LIST (farm_id);
 ```
 
-**Partitioned by `farm_id` from day one.** At NFR-305 (500k events/farm/year) × NFR-301 (10k farms) this table is the constraint. Partitioning later means a migration on a table with billions of rows, which is a thing that does not happen. Partitioning now costs one line.
+**Partitioned by `farm_id` from day one, but `events_default` is the sole partition, permanently.**
+At NFR-305 (500k events/farm/year) × NFR-301 (10k farms) this table is the constraint, and the
+`PARTITION BY LIST` clause itself still costs nothing to keep. Per-farm partitions are a different
+story: PowerSync explicitly rejects `publish_via_partition_root` (`PSYNC_S1143`, empirically
+confirmed 2026-08-10 against `journeyapps/powersync-service:1.23.3`), and the Sync Streams config
+consumed by the self-hosted service is a static file generated at build/deploy time
+(`packages/sync/scripts/generate-sync-streams.ts`), never regenerated per farm at signup. A farm
+given its own partition after the last config deploy would silently down-sync nothing, forever —
+so migration 0021 retires `create_farm_partition` outright rather than ever calling it from a real
+onboarding path. STATUS.md §3, Finding 2, has the full decision record.
 
 ```sql
--- Partitions are created by the farm-provisioning path
-CREATE OR REPLACE FUNCTION create_farm_partition(p_farm_id uuid) RETURNS void AS $$
-BEGIN
-  EXECUTE format(
-    'CREATE TABLE IF NOT EXISTS events_%s PARTITION OF events FOR VALUES IN (%L)',
-    replace(p_farm_id::text,'-','_'), p_farm_id);
-END $$ LANGUAGE plpgsql;
-
 CREATE INDEX events_farm_occurred ON events (farm_id, occurred_at DESC);
 CREATE INDEX events_animal        ON events (animal_id, occurred_at DESC) WHERE animal_id IS NOT NULL;
 CREATE INDEX events_type_occurred ON events (farm_id, type, occurred_at DESC);

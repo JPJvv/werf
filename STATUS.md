@@ -3,7 +3,7 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-10 (Part 3: sync-auditor pass + re-pass over 3e, all code findings closed; Finding 2 + compliance-checker remain open)
+**Last updated:** 2026-08-13 (Finding 2 closed — partitioning retired, migration 0021; compliance-checker pass declined "not yet" by JP, still the sole open item before merge-ready)
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -17,7 +17,7 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ⚠️ `sync-auditor` pass + re-pass over 3e: every CODE finding closed (2 SEV-2, 1 MEDIUM, 1 LOW, 1 test-coverage gap); Finding 2 itself is an open owner decision (§3), and this slice needs an owner-triggered `compliance-checker` pass before merge-ready (FR-131 touched). Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ✅ `sync-auditor` pass + re-pass over 3e: every finding closed, including Finding 2 (2026-08-13 — partitioning retired, migration 0021, see §3). ⛔ Still not merge-ready: this slice touches FR-131 and needs an owner-triggered `compliance-checker` pass, declined "not yet" by JP on 2026-08-13. Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -33,23 +33,33 @@ capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
 
-⭐ **NEW, 2026-08-10 — Finding 2's fix is an architecture decision, not a code fix, and this is the
-question.** The owner-triggered `sync-auditor` pass below found that `derive-sync-streams.ts`'s
-`PARTITIONED_SOURCE_TABLE` map (which fixed the partition-replication defect below) is correct
-TODAY only because `FarmsService.createFarm` — the real onboarding path — never calls
-`create_farm_partition`. `packages/db/scripts/seed.mjs` and `events.integration.test.ts`'s own
-fixtures DO call it, so events for THOSE farms already silently fail to down-sync, reproducibly,
-right now. A regression test now pins today's safe reality
-(`apps/api/src/farms/farms.integration.test.ts`, "never gives a REAL onboarding farm its own events
-partition") and will go red the day anyone wires partitioning into real onboarding without also
-fixing the generator — but that is a tripwire, not an answer. **Options, not a recommendation:**
-(a) wire `create_farm_partition` into `FarmsService.createFarm` AND teach the generator to read
-partitions from `pg_inherits` dynamically instead of a hand-maintained map; (b) retire per-farm
-partitioning entirely (the `events_default` catch-all becomes the only partition, ever); (c) leave
-provisioning as-is (no partition, ever, until a scale reason forces one) and delete the unused
-`create_farm_partition` path from `seed.mjs`/tests so nothing exercises a shape production never
-uses.
-→ _Answer:_
+✅ **Closed 2026-08-13 — Finding 2: per-farm events partitioning is retired, not wired up.** JP's
+first answer to the three options below was (a): wire `create_farm_partition` into
+`FarmsService.createFarm` and teach `derive-sync-streams.ts` to read partitions from `pg_inherits`
+dynamically instead of the hand-maintained map. Before implementing, a conflict surfaced that the
+original framing missed and that changed the factual basis of the decision, so it went back to JP
+rather than being built past: `generate-sync-streams.ts` writes `infra/powersync/sync-config.yaml`
+as a **static file, generated at build/deploy time**, never regenerated per farm at signup — and
+PowerSync explicitly rejects `publish_via_partition_root` (`PSYNC_S1143`, already empirically
+confirmed 2026-08-10 against `journeyapps/powersync-service:1.23.3`), so a stream can only ever
+read a partition that existed when the config was last generated. "Read `pg_inherits`
+dynamically" only helps at generation time — it cannot see a farm that signs up afterward. Under
+(a), every farm created after the last config deploy would silently down-sync nothing, forever:
+option (a) as worded would have converted Finding 2's latent risk into a **guaranteed** one for
+every real farm, which is worse than the status quo it was meant to fix. Neither a stream-per-
+partition nor a UNION view rescues this (config size scales with farm count either way; view
+changes emit no WAL, so logical replication can't follow them — same silent-zero-rows class this
+repo already found twice). **JP chose to retire partitioning outright** rather than spend time on
+a spike that was already unlikely to survive `PSYNC_S1143`. Closed by migration
+`0021_retire_farm_partitioning.sql`: `create_farm_partition` is dropped; `events_default` is now
+the permanent, only partition `events` will ever have (the `PARTITION BY LIST` structure itself
+stays — un-partitioning the table is a separate, riskier migration nothing here required, since
+RLS/grants/indexes live on the parent and are not automatically present on a detached partition).
+`derive-sync-streams.ts`'s `PARTITIONED_SOURCE_TABLE`/`sourceTable` mechanism is unchanged — it
+was already correct for a single permanent partition, now permanently rather than by accident.
+`events.integration.test.ts` and `farms.integration.test.ts`'s Finding-2 tripwire were rewritten
+from "pins today's accidentally-safe reality" to a permanent invariant, including a test that
+`create_farm_partition` no longer exists to call. Full record: `phase-checklists.md` 3e.
 
 ⭐ **Closed 2026-08-10 — `sync-auditor` pass over the 3e slice, 2 SEV-2 + 1 LOW, all fixed same
 day.** Requested by JP ("run the necessary agents") specifically over the diff since the last
@@ -162,6 +172,7 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
 | `sync-auditor` RE-PASS (2026-08-10, owner-triggered, `fc3d9e2..dd49a20`) | ⚠️ **Confirmed Finding 1/LOW's fixes sound, no fourth call site missed, test timing correct. Found 1 MEDIUM (genuinely new — StrictMode double-invoke killed hydration permanently in `pnpm dev`) + 1 test-coverage gap (Finding 2's tripwire missed `FarmsService.createFarm`).** Both fixed same day, both qualify for §6 clause 3 (mechanical, file-confined, fail-first tested) — no third pass required for them. Finding 2 itself (SEV-2) still open pending the owner decision in §3 |
 | `pnpm verify` (2026-08-10, all sync-auditor + re-pass findings closed) | ✅ Uncached: 102 test files / 1,065 tests, 12/12 typecheck, 7/7 builds; bundle 155.40 KB gz ≤ 250 KB. Every new/extended test watched to FAIL first, incl. `AdjustMob.test.tsx`'s new `<StrictMode>`-wrapped render test |
 | `pnpm test:e2e` (2026-08-10, same fixes) | ✅ 30 passed / 1 skipped, run twice back to back across both rounds of fixes, no flakes |
+| `pnpm verify` (2026-08-13, Finding 2 closed — migration 0021) | ✅ Uncached: 102 test files / 1,066 tests, 7/7 builds; bundle 155.40 KB gz ≤ 250 KB. `events.integration.test.ts`/`farms.integration.test.ts`'s rewritten invariants pass, incl. a new test proving `create_farm_partition` no longer exists to call |
 
 ## 5. Next executable steps
 
@@ -224,12 +235,11 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
     1 LOW, fixed same day. Re-pass over the fix diff: confirmed those fixes sound, found 1 MEDIUM
     (StrictMode double-invoke killing hydration in `pnpm dev`) + 1 test-coverage gap, both fixed
     same day and both qualify for §6 clause 3 (no third pass required for them). Full detail: §3.
-    ⛔ **Still not merge-ready**: (a) Finding 2 itself (SEV-2) remains open — it is an owner
-    architecture decision, not something further review resolves; (b) Finding 1's fix touches FR-131
-    guard behaviour, so this slice needs an owner-triggered `compliance-checker` pass, not requested.
-    Next: JP answers Finding 2 (§3) and, separately, decides whether to request the
-    `compliance-checker` pass; only after both close does 3e's remaining scope (animals/moves/health
-    hydration, 3f–3i) resume.
+15. ✅ Done 2026-08-13: **Finding 2 closed — partitioning retired**, migration
+    `0021_retire_farm_partitioning.sql`; see §3 for the full decision record. ⛔ **Still not
+    merge-ready**: FR-131 (Finding 1) still needs an owner-triggered `compliance-checker` pass —
+    JP said "not yet" on 2026-08-13. Next: JP requests that pass when ready; only after it closes
+    does 3e's remaining scope (animals/moves/health hydration, 3f–3i) resume.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

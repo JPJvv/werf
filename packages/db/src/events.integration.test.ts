@@ -1,11 +1,13 @@
 /**
  * events, proven against a real Postgres: the farm-scoped RLS boundary, the LIST(farm_id)
- * partitioning (per-farm partitions + the default-partition safety net), the three-timestamp
- * discipline (occurred_at ≠ created_at), and the location⇄GeoJSON dual-write trigger (migration
- * 0010). Written as things a farmer or an attacker would actually do — weigh an animal in the
- * crush, capture a week before syncing, try to log an event on someone else's farm — and asserted
- * on what comes back. We never mock the DB (CLAUDE.md): RLS, partition routing and the PostGIS
- * trigger are exactly what a mock cannot see.
+ * partitioning (`events_default` is the sole, permanent partition — STATUS.md §3, Finding 2:
+ * `create_farm_partition` retired 0021 rather than ever creating a second one, because
+ * PowerSync's static sync config cannot follow a partition created after the last deploy), the
+ * three-timestamp discipline (occurred_at ≠ created_at), and the location⇄GeoJSON dual-write
+ * trigger (migration 0010). Written as things a farmer or an attacker would actually do — weigh
+ * an animal in the crush, capture a week before syncing, try to log an event on someone else's
+ * farm — and asserted on what comes back. We never mock the DB (CLAUDE.md): RLS, partition
+ * routing and the PostGIS trigger are exactly what a mock cannot see.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -34,9 +36,6 @@ describe('events — tenancy, partitioning, timestamps and the geojson dual-writ
     elevated = createElevatedDb({ url: pg.elevatedUrl });
     a = await mkFarm(elevated, 'Farm A', 'Free State');
     b = await mkFarm(elevated, 'Farm B', 'Western Cape');
-    // Provision each farm's dedicated partition — the path database-schema.md § 5 describes.
-    await provision(elevated, a.farmId);
-    await provision(elevated, b.farmId);
   }, BOOT_TIMEOUT_MS);
 
   afterAll(async () => {
@@ -45,7 +44,7 @@ describe('events — tenancy, partitioning, timestamps and the geojson dual-writ
     await pg?.stop();
   });
 
-  it('lets a member log an event on their own farm, into that farm’s partition', async () => {
+  it('lets a member log an event on their own farm, landing in the sole events_default partition', async () => {
     const [created] = await app.asUser(a.userId, (tx) =>
       tx
         .insert(events)
@@ -62,9 +61,10 @@ describe('events — tenancy, partitioning, timestamps and the geojson dual-writ
     expect(created?.type).toBe('weight');
     expect(created?.payload).toEqual({ kg: 412.5, method: 'scale' });
 
-    // It physically landed in farm A's dedicated partition, not the default.
+    // events_default is the only partition that has ever existed since create_farm_partition's
+    // retirement (0021) — this is what derive-sync-streams.ts's PARTITIONED_SOURCE_TABLE assumes.
     const rows = await partitionOf(elevated, created!.id);
-    expect(rows[0]?.partition).toBe(`events_${a.farmId.replace(/-/g, '_')}`);
+    expect(rows[0]?.partition).toBe('events_default');
   });
 
   it('keeps occurred_at (farm time) distinct from created_at (row written) — reports use occurred_at', async () => {
@@ -141,11 +141,11 @@ describe('events — tenancy, partitioning, timestamps and the geojson dual-writ
     expect(movedGeo.coordinates[0]).toBeCloseTo(27.2, 5);
   });
 
-  it('accepts an event for a farm with no dedicated partition (offline write never bounces → default)', async () => {
-    // A farm reached ingestion before provisioning gave it a partition. The write must not fail
-    // (.claude/rules/db.md — the write queue is never discarded by the system); it lands in the
-    // default partition and stays RLS-scoped to its farm.
-    const c = await mkFarm(elevated, 'Farm C', 'Limpopo'); // deliberately NOT provisioned
+  it('a brand new farm, never provisioned with anything special, still lands in events_default', async () => {
+    // No provisioning step exists any more (0021) — every farm's events go straight to the
+    // one permanent partition. The write must not fail either way (.claude/rules/db.md — the
+    // write queue is never discarded by the system).
+    const c = await mkFarm(elevated, 'Farm C', 'Limpopo');
 
     const [created] = await app.asUser(c.userId, (tx) =>
       tx
@@ -164,6 +164,12 @@ describe('events — tenancy, partitioning, timestamps and the geojson dual-writ
     const rows = await partitionOf(elevated, created!.id);
     expect(rows[0]?.partition).toBe('events_default');
   });
+
+  it('create_farm_partition no longer exists (0021) — nothing can create a second partition', async () => {
+    await expect(
+      elevated.db.execute(sql`SELECT create_farm_partition(${a.farmId}::uuid)`),
+    ).rejects.toThrow(/function create_farm_partition\(uuid\) does not exist/i);
+  });
 });
 
 /** Which partition a given event physically lives in (the parent's tableoid resolved to a name). */
@@ -171,11 +177,6 @@ function partitionOf(elevated: ElevatedDb, id: string): Promise<Array<{ partitio
   return elevated.db
     .execute(sql`SELECT tableoid::regclass::text AS partition FROM events WHERE id = ${id}`)
     .then((r) => r.rows as Array<{ partition: string }>);
-}
-
-/** Give a farm its own events partition — the provisioning path (database-schema.md § 5). */
-async function provision(elevated: ElevatedDb, farmId: string): Promise<void> {
-  await elevated.db.execute(sql`SELECT create_farm_partition(${farmId}::uuid)`);
 }
 
 /** One business, one farm, one owner who has accepted their membership. */

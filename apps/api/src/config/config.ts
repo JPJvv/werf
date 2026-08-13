@@ -68,6 +68,26 @@ const smtpSchema = z.object({
   from: z.string().min(1),
 });
 
+/**
+ * Attachment binary storage (phase-checklists.md 3i) — an S3-compatible endpoint, MinIO in dev/
+ * test and real S3 in `af-south-1` in production (ADR-0002: no Supabase Cloud, no cross-region
+ * bucket). Nullable rather than required, mirroring `smtp` below: NOT because attachments has a
+ * degraded no-op mode the way mail does (a presigned URL with nowhere to presign against cannot
+ * silently succeed), but because this is one feature's dependency, not API-wide infrastructure
+ * like `databaseUrl`/`jwtSecret`. `AttachmentsModule`'s own provider factory is where an unset
+ * value becomes a boot-time throw — see its header for why that throw has no environment gate.
+ */
+const objectStorageSchema = z.object({
+  bucket: z.string().min(1),
+  region: z.string().min(1).default('af-south-1'),
+  /** Unset for real AWS S3. Set to MinIO's endpoint in dev/test. */
+  endpoint: z.string().url().optional(),
+  /** MinIO needs path-style addressing (`endpoint/bucket/key`); S3 defaults to virtual-hosted. */
+  forcePathStyle: z.coerce.boolean().default(false),
+  accessKeyId: z.string().min(1),
+  secretAccessKey: z.string().min(1),
+});
+
 const configSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
 
@@ -167,6 +187,9 @@ const configSchema = z.object({
 
   /** Null when no relay is configured — see `smtpSchema`. */
   smtp: smtpSchema.nullable(),
+
+  /** Null when unconfigured — see `objectStorageSchema`. */
+  objectStorage: objectStorageSchema.nullable(),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -198,6 +221,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
             user: env.SMTP_USER,
             password: env.SMTP_PASSWORD,
             from: env.SMTP_FROM,
+          },
+    // All-or-nothing, same reasoning as smtp: a bucket with no credentials is a
+    // misconfiguration worth failing on, not something to paper over.
+    objectStorage:
+      env.OBJECT_STORAGE_BUCKET === undefined
+        ? null
+        : {
+            bucket: env.OBJECT_STORAGE_BUCKET,
+            region: env.OBJECT_STORAGE_REGION,
+            endpoint: env.OBJECT_STORAGE_ENDPOINT,
+            forcePathStyle: env.OBJECT_STORAGE_FORCE_PATH_STYLE,
+            accessKeyId: env.OBJECT_STORAGE_ACCESS_KEY_ID,
+            secretAccessKey: env.OBJECT_STORAGE_SECRET_ACCESS_KEY,
           },
   });
 

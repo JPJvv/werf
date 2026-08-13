@@ -66,10 +66,16 @@ export type NewAttachment = z.infer<typeof newAttachmentSchema>;
 
 /** The response to a presigned-upload request: where to PUT the bytes, and for how long that URL
  *  is valid. The object key itself never crosses to the client as something it could reuse to
- *  construct its own path — it is embedded in `uploadUrl`, opaque. */
+ *  construct its own path — it is embedded in `uploadUrl`, opaque.
+ *
+ *  `checksumHeaderValue` is the same sha256 the client already computed at capture (in
+ *  `newAttachmentSchema.checksum`), re-encoded to the base64 S3's `x-amz-checksum-sha256` header
+ *  expects. Handed back rather than re-derived client-side so a hex/base64 encoding bug can only
+ *  ever exist in one place (`object-storage.ts`), not in two implementations that must agree. */
 export const attachmentUploadUrlSchema = z.object({
   attachmentId: uuidSchema,
   uploadUrl: z.string().url(),
+  checksumHeaderValue: z.string().min(1),
   expiresAt: timestampSchema,
 });
 export type AttachmentUploadUrl = z.infer<typeof attachmentUploadUrlSchema>;

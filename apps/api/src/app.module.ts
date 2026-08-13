@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule, minutes, seconds } from '@nestjs/throttler';
+import { AttachmentsModule } from './attachments/attachments.module';
 import { AuthModule } from './auth/auth.module';
 import { DbModule } from './db/db.module';
 import { FarmsModule } from './farms/farms.module';
@@ -37,6 +38,7 @@ import { HealthController } from './health/health.controller';
     // payroll and the compliance packs will need in their phases.
     MailModule,
     AuthModule,
+    AttachmentsModule,
     FarmsModule,
     LandModule,
     LivestockModule,

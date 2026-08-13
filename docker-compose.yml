@@ -58,5 +58,44 @@ services:
       # dev, and it would otherwise publish a database-adjacent service to the laptop's Wi-Fi.
       - '127.0.0.1:8080:8080'
 
+  # Object storage for attachment binaries (phase-checklists.md 3i). LOCAL DEV ONLY — production
+  # is real S3 in af-south-1 (ADR-0002). Credentials match .env.example's OBJECT_STORAGE_* defaults.
+  minio:
+    image: minio/minio:latest
+    container_name: werf-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: werf-dev
+      MINIO_ROOT_PASSWORD: werf-dev-secret
+    command: ['server', '/data', '--console-address', ':9001']
+    ports:
+      # Loopback only, same reasoning as postgres/powersync above.
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - werf_minio:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: creates the dev bucket. `minio/minio` has no built-in "create this bucket on boot"
+  # option, so a companion `mc` container does it and exits — `docker compose up` converges to a
+  # ready bucket without a manual step.
+  minio-init:
+    image: minio/mc:latest
+    container_name: werf-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 werf-dev werf-dev-secret &&
+      mc mb -p local/werf-attachments-dev &&
+      exit 0
+      "
+
 volumes:
   werf_pg:
+  werf_minio:

@@ -61,3 +61,48 @@ describe('loadConfig — PowerSync signing key', () => {
     expect(config.powerSyncUrl).toBe('https://sync.example.com');
   });
 });
+
+describe('loadConfig — object storage (attachments, 3i)', () => {
+  it('is null when unconfigured, same as smtp — a single feature dependency, not API-wide infra', () => {
+    const config = loadConfig(validEnv());
+    expect(config.objectStorage).toBeNull();
+  });
+
+  it('parses a complete bucket config, defaulting region and forcePathStyle', () => {
+    const config = loadConfig(
+      validEnv({
+        OBJECT_STORAGE_BUCKET: 'werf-attachments-dev',
+        OBJECT_STORAGE_ACCESS_KEY_ID: 'werf-dev',
+        OBJECT_STORAGE_SECRET_ACCESS_KEY: 'werf-dev-secret',
+      }),
+    );
+    expect(config.objectStorage).toEqual({
+      bucket: 'werf-attachments-dev',
+      region: 'af-south-1',
+      endpoint: undefined,
+      forcePathStyle: false,
+      accessKeyId: 'werf-dev',
+      secretAccessKey: 'werf-dev-secret',
+    });
+  });
+
+  it('refuses a bucket with no credentials — a half-configured store fails loudly, not silently', () => {
+    expect(() => loadConfig(validEnv({ OBJECT_STORAGE_BUCKET: 'werf-attachments-dev' }))).toThrow(
+      /objectStorage/,
+    );
+  });
+
+  it('reads a MinIO endpoint and path-style flag for dev/test', () => {
+    const config = loadConfig(
+      validEnv({
+        OBJECT_STORAGE_BUCKET: 'werf-attachments-dev',
+        OBJECT_STORAGE_ACCESS_KEY_ID: 'werf-dev',
+        OBJECT_STORAGE_SECRET_ACCESS_KEY: 'werf-dev-secret',
+        OBJECT_STORAGE_ENDPOINT: 'http://localhost:9000',
+        OBJECT_STORAGE_FORCE_PATH_STYLE: 'true',
+      }),
+    );
+    expect(config.objectStorage?.endpoint).toBe('http://localhost:9000');
+    expect(config.objectStorage?.forcePathStyle).toBe(true);
+  });
+});

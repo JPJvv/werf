@@ -20,6 +20,7 @@ import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** What the register holds: identifiers composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredIdentifier = schemas.NewAnimalIdentifier;
@@ -49,6 +50,7 @@ export function LocalIdentifiersProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-identifiers:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return (
     <IdentifierStoreContext.Provider value={store}>{children}</IdentifierStoreContext.Provider>

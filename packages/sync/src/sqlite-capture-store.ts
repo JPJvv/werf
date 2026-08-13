@@ -50,6 +50,66 @@ interface MigrationMarkerRow {
   readonly id: string;
 }
 
+const PERSIST_CAPTURE_SQL =
+  'INSERT OR REPLACE INTO capture_records (id, store_key, farm_id, seq, payload_json) VALUES (?, ?, ?, ?, ?)';
+
+interface PersistenceRetry {
+  readonly db: LocalDatabase;
+  readonly params: readonly unknown[];
+  inFlight: boolean;
+}
+
+// One application-level durability queue, rather than one interval per mounted capture provider.
+// A failed write must outlive a farm-switching component (discarding it in `close()` would turn a
+// resource fix into data loss), but it does not need to retain that store's listeners/snapshot.
+const persistenceRetries = new Map<string, PersistenceRetry>();
+let persistenceRetryTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Test isolation only; production must never discard this queue. Re-exported only by ./testing. */
+export function resetPersistenceRetryCoordinatorForTesting(): void {
+  persistenceRetries.clear();
+  if (persistenceRetryTimer !== null) clearInterval(persistenceRetryTimer);
+  persistenceRetryTimer = null;
+}
+
+function stopPersistenceTimerWhenIdle(): void {
+  if (persistenceRetries.size !== 0 || persistenceRetryTimer === null) return;
+  clearInterval(persistenceRetryTimer);
+  persistenceRetryTimer = null;
+}
+
+function attemptPersistence(retryKey: string, retry: PersistenceRetry): void {
+  if (retry.inFlight) return;
+  retry.inFlight = true;
+  retry.db
+    .execute(PERSIST_CAPTURE_SQL, [...retry.params])
+    .then(() => {
+      if (persistenceRetries.get(retryKey) === retry) persistenceRetries.delete(retryKey);
+      stopPersistenceTimerWhenIdle();
+    })
+    .catch(() => {
+      retry.inFlight = false;
+      if (!persistenceRetries.has(retryKey)) persistenceRetries.set(retryKey, retry);
+      ensurePersistenceTimer();
+    });
+}
+
+function ensurePersistenceTimer(): void {
+  if (persistenceRetryTimer !== null) return;
+  persistenceRetryTimer = setInterval(() => {
+    for (const [retryKey, retry] of [...persistenceRetries]) {
+      attemptPersistence(retryKey, retry);
+    }
+    stopPersistenceTimerWhenIdle();
+  }, PERSIST_RETRY_INTERVAL_MS);
+}
+
+function persistCapture(db: LocalDatabase, retryKey: string, params: readonly unknown[]): void {
+  const retry: PersistenceRetry = { db, params, inFlight: false };
+  persistenceRetries.set(retryKey, retry);
+  attemptPersistence(retryKey, retry);
+}
+
 /** Same tolerant parse as `capture-store.ts`'s `load()`: corrupt/missing → `[]`, never throws — a
  *  parse error here would otherwise crash a boot that has already read the marker as "not yet
  *  migrated" and is about to attempt it. */
@@ -151,68 +211,19 @@ export function createSqliteCaptureStore<T extends { id: string }>(
   // (Outbox.tsx's flush) must treat it as "cannot currently verify", never as evidence.
   let didHydrationFail = false;
   const listeners = new Set<() => void>();
-  // ⭐ 3f: records whose FIRST persist attempt failed (quota exceeded, DB closed mid-write) — kept
-  // by id -> seq so a retry writes back to the SAME slot rather than appending a duplicate. Never
-  // drained by anything except a successful write, matching db.md's "the write queue is never
-  // discarded by the system. Only a human, explicitly." Distinct from `pendingAppends`: that queue
-  // is for the pre-hydration window and is drained once, synchronously, the moment `resolvedDb` is
-  // set; this one is for a write that reached a resolved database and was refused by IT.
-  const unpersisted = new Map<string, { readonly record: T; readonly seq: number }>();
-  let retryTimer: ReturnType<typeof setInterval> | null = null;
 
   const notify = (): void => {
     for (const listener of listeners) listener();
   };
 
   const persist = (db: LocalDatabase, record: T, seq: number): void => {
-    db.execute(
-      'INSERT OR REPLACE INTO capture_records (id, store_key, farm_id, seq, payload_json) VALUES (?, ?, ?, ?, ?)',
-      [record.id, key, farmId, seq, JSON.stringify(record)],
-    )
-      .then(() => {
-        unpersisted.delete(record.id);
-      })
-      .catch(() => {
-        // Quota exceeded, DB closed, or similar — the record is still live in `snapshot`, exactly
-        // as capture-store.ts's persist() tolerates a localStorage setItem throw. Never surfaced
-        // as a lost write; the farmer already saw it save. ⭐ 3f: also never left for a browser
-        // restart to lose — queued for retry until it durably lands, matching the write queue's
-        // never-evicted contract for every OTHER failure this store already tolerates.
-        unpersisted.set(record.id, { record, seq });
-        scheduleRetry(db);
-      });
-  };
-
-  /**
-   * Starts (if not already running) a bounded retry loop over every record `persist()` has ever
-   * failed to write. Stops itself once the retry queue is empty — no timer ticks forever on a
-   * farm that has not had a failure since its last one cleared.
-   *
-   * ⚠️ KNOWN LIMITATION, not a data-loss risk: this store has no `close()`, so a farm switch that
-   * discards this instance while a retry is actively in flight leaves the interval running against
-   * the old closure until it empties on its own. Every provider opens the SAME shared on-device
-   * database (`local-database.ts` — one `werf.db`, farm-scoped by row, not by file), so a stray
-   * retry still lands the write correctly; the only cost is a timer outliving the component that
-   * started it, the same SHAPE of resource leak `hydrated-table-store.ts`'s `db.watch()` had before
-   * its `close()` fix (sync-auditor, 2026-08-10) — narrower here because it self-clears on first
-   * success rather than running indefinitely. Wiring a matching `close()` through all twelve
-   * `Local*.tsx` providers is tracked as follow-on work, not done in this pass.
-   */
-  const scheduleRetry = (db: LocalDatabase): void => {
-    if (retryTimer !== null) return;
-    retryTimer = setInterval(() => {
-      if (unpersisted.size === 0) {
-        if (retryTimer !== null) clearInterval(retryTimer);
-        retryTimer = null;
-        return;
-      }
-      // A snapshot of the current retry set — `persist()` mutates `unpersisted` itself (deleting
-      // on success, re-adding on a repeat failure), so iterating the live map while it changes
-      // would be iterating a moving target.
-      for (const { record, seq } of [...unpersisted.values()]) {
-        persist(db, record, seq);
-      }
-    }, PERSIST_RETRY_INTERVAL_MS);
+    persistCapture(db, `${key}\u0000${record.id}`, [
+      record.id,
+      key,
+      farmId,
+      seq,
+      JSON.stringify(record),
+    ]);
   };
 
   void (async () => {
@@ -291,6 +302,12 @@ export function createSqliteCaptureStore<T extends { id: string }>(
 
     hydrationFailed(): boolean {
       return didHydrationFail;
+    },
+
+    close(): void {
+      // Retry commands live in the application-level coordinator above and intentionally survive
+      // this instance: clearing them here would lose a capture accepted before a farm switch.
+      listeners.clear();
     },
   };
 }

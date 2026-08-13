@@ -20,6 +20,7 @@ import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** What the register holds: mobs composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredMob = schemas.NewMob;
@@ -46,6 +47,7 @@ export function LocalMobsProvider({ children, factory = defaultFactory }: LocalM
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-mobs:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <MobStoreContext.Provider value={store}>{children}</MobStoreContext.Provider>;
 }

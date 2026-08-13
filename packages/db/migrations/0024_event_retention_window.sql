@@ -1,0 +1,2 @@
+ALTER TABLE "farms" ADD COLUMN "event_retention_months" integer DEFAULT 24 NOT NULL;--> statement-breakpoint
+ALTER TABLE "farms" ADD CONSTRAINT "farms_event_retention_months_positive" CHECK ("farms"."event_retention_months" > 0);

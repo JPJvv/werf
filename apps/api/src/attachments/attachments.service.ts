@@ -13,7 +13,7 @@
  */
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { animals, attachments, type AppDb } from '@werf/db';
 import { ConflictError, NotFoundError, ValidationError, type schemas } from '@werf/core';
 import { APP_DB } from '../db/db.module';
@@ -202,7 +202,14 @@ export class AttachmentsService {
 
       const [finalized] = await tx
         .update(attachments)
-        .set({ status: 'finalised', updatedBy: userId, updatedAt: new Date() })
+        .set({
+          status: 'finalised',
+          updatedBy: userId,
+          // Creation defaults to the Postgres clock. Using the API-host clock here can make the
+          // timestamp move backwards when those hosts differ slightly, which the real-container
+          // gate caught. Keep one clock domain and guarantee this state transition is observable.
+          updatedAt: sql`GREATEST(${attachments.updatedAt} + interval '1 millisecond', clock_timestamp())`,
+        })
         .where(and(eq(attachments.id, input.id), eq(attachments.farmId, input.farmId)))
         .returning(attachmentProjection);
       return finalized!;

@@ -21,6 +21,7 @@ import {
 import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** A walk, as held locally. `undefined` on a destination means that dimension was left alone. */
 export interface StoredMove {
@@ -61,6 +62,7 @@ export function LocalMovesProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-moves:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <MoveStoreContext.Provider value={store}>{children}</MoveStoreContext.Provider>;
 }

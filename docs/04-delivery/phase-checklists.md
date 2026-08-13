@@ -1074,27 +1074,19 @@ add the one shared local-first attachment path approved on 2026-08-08.
   partitioning outright. Migration 0021 drops `create_farm_partition`; `events_default` is now the
   permanent, only partition; `PARTITIONED_SOURCE_TABLE`/`sourceTable` in `derive-sync-streams.ts`
   stay as they are (still true, now permanently rather than by accident). Full record: STATUS.md §3.
-◐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives.
-  **Queue-survival half CLOSED, 2026-08-13**: `sqlite-capture-store.spec.ts`'s new fail-first test
-  found a REAL durability bug this checklist line exists to catch — `persist()` swallowed a
-  `QuotaExceededError` and left the record in-memory only, so a browser restart before the NEXT
-  successful write lost it silently, contradicting db.md's "the write queue is never bounded and
-  never evicted." Fixed in `sqlite-capture-store.ts`: a failed persist joins a retry set
-  (`unpersisted`) drained by a bounded interval (`PERSIST_RETRY_INTERVAL_MS`, self-stops once
-  empty) rather than being dropped. ⚠️ Known, narrow follow-on (documented in `scheduleRetry`'s own
-  comment, not silently left): the store has no `close()`, so a farm switch mid-retry leaks the
-  timer — harmless for correctness (one shared on-device `werf.db`, farm-scoped by row, not by
-  file) but not yet symmetric with `hydrated-table-store.ts`'s `close()` fix; wiring it through all
-  twelve `Local*.tsx` providers is unstarted. ⛔ **Read-set window half NOT built — an owner
-  decision, not an oversight.** Empirically probed against the real service (see
-  `sync-streams.ts`'s 2026-08-13 header addendum): `subscription.parameter()` genuinely exists, but
-  the service refuses ANY expression mixing row data with a subscription/connection parameter
-  except via `=` — *"This expression already references row data, so it can't also reference
-  connection parameters unless the two are compared with an equals operator"* — so
-  `occurred_at > subscription.parameter('cutoff')` cannot load. Same problem class as
-  `farm_users.expires_at`'s `now()` ceiling (§3b), and per STATUS.md §3's standing instruction not
-  to invent a sweep-shaped fix without JP: left open. See STATUS.md § 3 for the decision this is
-  waiting on.
+☑ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives.
+  **CLOSED, 2026-08-13.** Queue survival: a failed SQLite persist joins the application-level
+  durability coordinator and retries until it lands; the queue is never evicted. The coordinator
+  is shared rather than captured by each store, and `CaptureStore.close()` is wired through all
+  twelve `Local*.tsx` providers, so farm switches release store listeners without cancelling a
+  pending durable write. Read-set window: migration 0024 adds each farm's positive
+  `event_retention_months` setting (default 24). PowerSync's supported equality-bucket workaround
+  is used instead of an elapsed-time sweep: the event stream requires authorised `farm_id` and UTC
+  `YYYY-MM` subscription parameters, while `event-retention.ts` maintains that farm's configured
+  month set, subscribes the new month before releasing the oldest, and uses TTL 0 so expired read
+  buckets leave local SQLite. Capture rows live in local-only tables and are outside that stream.
+  Tests cover year-boundary bucket calculation, per-farm subscription counts, zero-TTL release,
+  close-during-quota retry, and the generated stream's independent membership predicate.
 ☑ 3g Additive-migration tests send an old-client payload after the new schema is deployed.
   `livestock.integration.test.ts`'s new `mob creation (FR-102)` test builds the EXACT pre-0018
   request shape (no `initialHeadCount` key at all, not merely `undefined`) and proves today's

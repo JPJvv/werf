@@ -40,6 +40,7 @@ import {
 import type { AnimalStatus } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** Fields every stored lifecycle event carries. `occurredAt` is an ISO string (JSON-safe). */
 interface StoredEventBase {
@@ -183,6 +184,7 @@ export function LocalLifecycleProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-events:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <LifecycleStoreContext.Provider value={store}>{children}</LifecycleStoreContext.Provider>;
 }

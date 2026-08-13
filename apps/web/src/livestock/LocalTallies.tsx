@@ -26,6 +26,7 @@ import { recordMobTally } from '@werf/domain';
 import { ValidationError, schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /**
  * A head-count adjustment as the device holds it.
@@ -122,6 +123,7 @@ export function LocalTalliesProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-tallies:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <TallyStoreContext.Provider value={store}>{children}</TallyStoreContext.Provider>;
 }

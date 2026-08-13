@@ -11,19 +11,24 @@
  * contract holds.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createSqliteCaptureStore,
   PERSIST_RETRY_INTERVAL_MS,
   type SessionStorageLike,
 } from '../src/index';
-import { createFakeLocalDatabase } from '../src/testing';
+import {
+  createFakeLocalDatabase,
+  resetPersistenceRetryCoordinatorForTesting,
+} from '../src/testing';
 import type { LocalDatabase } from '../src/local-database';
 
 interface Animal {
   id: string;
   species: string;
 }
+
+afterEach(() => resetPersistenceRetryCoordinatorForTesting());
 
 /** An in-memory stand-in for localStorage — the migration's read-only source. */
 function memoryStorage(initial: Record<string, string> = {}): SessionStorageLike {
@@ -411,6 +416,47 @@ describe('the SQLite-backed capture store', () => {
     await waitForHydration(store);
 
     expect(store.hydrationFailed()).toBe(false);
+  });
+
+  it('close() releases subscribers without cancelling a quota retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const db = createFakeLocalDatabase();
+      let quotaExceeded = true;
+      const realExecute = db.execute.bind(db);
+      db.execute = async (sql: string, params?: readonly unknown[]) => {
+        if (quotaExceeded && sql.startsWith('INSERT OR REPLACE INTO capture_records')) {
+          throw new Error('QuotaExceededError');
+        }
+        return realExecute(sql, params);
+      };
+      const typedDb = db as unknown as LocalDatabase;
+      const store = createSqliteCaptureStore<Animal>({
+        database: Promise.resolve(typedDb),
+        key: 'close:farm-close',
+        legacyStorage: memoryStorage(),
+      });
+      await waitForHydration(store);
+      const listener = vi.fn();
+      store.subscribe(listener);
+
+      store.append({ id: 'survives-close', species: 'cattle' });
+      await vi.advanceTimersByTimeAsync(0);
+      store.close();
+      listener.mockClear();
+
+      quotaExceeded = false;
+      await vi.advanceTimersByTimeAsync(PERSIST_RETRY_INTERVAL_MS);
+      expect(listener).not.toHaveBeenCalled();
+      expect(
+        await typedDb.getAll<{ payload_json: string }>(
+          'SELECT payload_json FROM capture_records WHERE store_key = ?',
+          ['close:farm-close'],
+        ),
+      ).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('settled() also flips true on a FAILED hydration — a waiter must not hang forever', async () => {

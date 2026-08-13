@@ -31,6 +31,7 @@ import type { schemas } from '@werf/core';
 import type { WalkFix } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** What the register holds: land units composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredLandUnit = schemas.NewLandUnit;
@@ -125,6 +126,8 @@ export function LocalLandProvider({
       },
     };
   }, [factory, walkFactory, draftFactory, farmId]);
+  useCloseCaptureStore(stores.units);
+  useCloseCaptureStore(stores.walks);
 
   return <LandStoreContext.Provider value={stores}>{children}</LandStoreContext.Provider>;
 }

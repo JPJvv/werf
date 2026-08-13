@@ -84,7 +84,7 @@ reads, with MinIO in development/tests and S3 in `af-south-1` in production.
 | 3d | Durable upload queue: idempotency, 4xx quarantine, 5xx abort, refresh hold | offline matrix |
 | 3e | Conflict rules and append-only projections ordered by `(occurred_at, id)` | two-device tests |
 | 3f | Retention/read-set degradation; queue never evicted | quota test |
-| 3g | Old-client compatibility and additive migrations | 12-month client-window test |
+| 3g | Old-client compatibility and additive migrations | 24-month client-window test |
 | 3h | Sync health/observability without PII | per-farm diagnostics |
 | 3i | Shared local-first attachment queue and S3-compatible object boundary | offline/restart/quota, checksum, idempotency and cross-farm tests |
 

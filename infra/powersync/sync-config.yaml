@@ -43,8 +43,9 @@ streams:
   events:
     query: |
       SELECT animal_id, batch_id, created_at, created_by, deleted_at, employee_id, enterprise_id, farm_id, id, land_unit_id, location_geojson, mob_id, notes, occurred_at, payload, synced_at, type, updated_at FROM events_default AS events
-      WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
-    auto_subscribe: true
+      WHERE farm_id = subscription.parameter('farm_id') AND substring(occurred_at, 1, 7) = subscription.parameter('month') AND farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: false
+    accept_potentially_dangerous_queries: true
   farm_users:
     query: |
       SELECT accepted_at, created_at, deleted_at, expires_at, farm_id, id, invited_at, role, scope, updated_at, user_id FROM farm_users
@@ -52,7 +53,7 @@ streams:
     auto_subscribe: true
   farms:
     query: |
-      SELECT business_id, created_at, deleted_at, district, enterprise_types, hectares, id, jurisdiction, name, province, timezone, updated_at FROM farms
+      SELECT business_id, created_at, deleted_at, district, enterprise_types, event_retention_months, hectares, id, jurisdiction, name, province, timezone, updated_at FROM farms
       WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: true
   land_units:

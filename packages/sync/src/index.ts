@@ -32,6 +32,16 @@ export {
   type SessionStoreOptions,
 } from './session-store';
 export { createCaptureStore, type CaptureStore, type CaptureStoreOptions } from './capture-store';
+export {
+  DEFAULT_EVENT_RETENTION_MONTHS,
+  EVENT_RETENTION_RETRY_MS,
+  EVENT_RETENTION_STREAM,
+  createEventRetentionController,
+  eventMonthBuckets,
+  type EventRetentionController,
+  type EventRetentionControllerOptions,
+  type FarmEventRetention,
+} from './event-retention';
 // The SQLite/OPFS-backed sibling (phase-checklists.md 3c). Only `import type { LocalDatabase }`
 // crosses into local-database.ts — erased at build time — so, like connector.ts and
 // local-schema.ts above, this is safe in the eagerly-bundled barrel; it never drags in

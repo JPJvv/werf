@@ -87,6 +87,9 @@ export function deriveSyncStreams(): readonly SyncStreamDef[] {
       ...(sourceTable === undefined ? {} : { sourceTable }),
       columns,
       whereSql,
+      ...(tableName === 'events'
+        ? { autoSubscribe: false, acceptPotentiallyDangerousQueries: true }
+        : {}),
     });
   }
   return streams.sort((a, b) => a.name.localeCompare(b.name));
@@ -102,7 +105,16 @@ function wherePredicateFor(tableName: SyncedTable): string {
   }
   switch (scope.kind) {
     case 'direct':
-      return `${scope.column} IN (${OWN_FARM_IDS})`;
+      return tableName === 'events'
+        ? // PowerSync cannot compare a timestamp column to a parameter with a range operator.
+          // Month equality buckets are its documented time-window workaround. `farm_id` is also
+          // a subscription parameter so each farm may carry a different configured window; the
+          // membership subquery remains the security boundary because both parameters are
+          // client-controlled and may only NARROW that independently authorised set.
+          `${scope.column} = subscription.parameter('farm_id') AND ` +
+            `substring(occurred_at, 1, 7) = subscription.parameter('month') AND ` +
+            `${scope.column} IN (${OWN_FARM_IDS})`
+        : `${scope.column} IN (${OWN_FARM_IDS})`;
     case 'via-business':
       // businesses.id -> farms.business_id -> farms.id -> farm_users.farm_id. Classic Sync
       // Rules could not express this two-hop resolution at all (no JOINs/subqueries); Streams'

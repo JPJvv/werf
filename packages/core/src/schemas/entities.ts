@@ -73,6 +73,8 @@ export const farmSchema = z.object({
   enterpriseTypes: z.array(enterpriseTypeSchema),
   hectares: z.number().nonnegative().nullable(),
   timezone: z.string().min(1),
+  /** UTC calendar-month event buckets kept on a device; 24 is the offline-sync.md §3 default. */
+  eventRetentionMonths: z.number().int().positive(),
   ...auditTimestamps,
 });
 export type Farm = z.infer<typeof farmSchema>;
@@ -85,6 +87,7 @@ export const newFarmSchema = farmSchema
     enterpriseTypes: z.array(enterpriseTypeSchema).min(1),
     hectares: farmSchema.shape.hectares.default(null),
     timezone: farmSchema.shape.timezone.default('Africa/Johannesburg'),
+    eventRetentionMonths: farmSchema.shape.eventRetentionMonths.default(24),
   });
 export type NewFarm = z.infer<typeof newFarmSchema>;
 

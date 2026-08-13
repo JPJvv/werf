@@ -26,7 +26,12 @@
  */
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { createSyncConnector } from '@werf/sync';
+import {
+  createEventRetentionController,
+  createSyncConnector,
+  type EventRetentionController,
+  type FarmEventRetention,
+} from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from './local-db';
 
@@ -51,15 +56,29 @@ export function SyncConnectionProvider({ children }: SyncConnectionProviderProps
   tokenRef.current = accessToken;
   const refreshSessionRef = useRef(refreshSession);
   refreshSessionRef.current = refreshSession;
+  const farmRetention: readonly FarmEventRetention[] =
+    session?.farms.map((farm) => ({
+      farmId: farm.id,
+      months: farm.eventRetentionMonths,
+    })) ?? [];
+  const farmRetentionRef = useRef(farmRetention);
+  farmRetentionRef.current = farmRetention;
+  // Active-farm switches do not change this key. A genuine retention-setting/farm-list change
+  // does, and deserves one controlled reconnect so its subscription set is rebuilt.
+  const farmRetentionKey = farmRetention
+    .map((farm) => `${farm.farmId}:${farm.months}`)
+    .sort()
+    .join('|');
 
   useEffect(() => {
     // Rule 1: nothing to connect without a token.
     if (!hasToken) return;
 
     let cancelled = false;
+    let retentionController: EventRetentionController | null = null;
     void (async () => {
       const db = await getLocalDatabase();
-      if (cancelled || db.connected) return;
+      if (cancelled) return;
       const connector = createSyncConnector({
         apiBaseUrl: API_BASE,
         getAccessToken: async () => {
@@ -76,7 +95,14 @@ export function SyncConnectionProvider({ children }: SyncConnectionProviderProps
         },
       });
       try {
-        await db.connect(connector);
+        if (!db.connected) await db.connect(connector);
+        if (cancelled) return;
+        const nextRetentionController = createEventRetentionController({
+          database: db,
+          farms: farmRetentionRef.current,
+        });
+        if (cancelled) nextRetentionController.close();
+        else retentionController = nextRetentionController;
       } catch {
         // A failed connect is a down-sync problem, not a capture-path one — offline writes do not
         // depend on this succeeding, and the SDK governs its own retry/backoff. Nothing here
@@ -86,6 +112,7 @@ export function SyncConnectionProvider({ children }: SyncConnectionProviderProps
 
     return () => {
       cancelled = true;
+      retentionController?.close();
       // Rule 3: disconnect, never disconnectAndClear. Fires on sign-out (accessToken -> null,
       // `AuthProvider.signOut` clears the session synchronously) and on unmount — RequireAuth
       // only mounts this provider's parent (`AppShell`) for an authenticated route.
@@ -93,7 +120,7 @@ export function SyncConnectionProvider({ children }: SyncConnectionProviderProps
         if (db.connected) void db.disconnect();
       });
     };
-  }, [hasToken]);
+  }, [hasToken, farmRetentionKey]);
 
   return <>{children}</>;
 }

@@ -162,6 +162,20 @@
       "when": 1786605796833,
       "tag": "0022_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786632804791,
+      "tag": "0023_reconcile_snapshot_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786633108298,
+      "tag": "0024_event_retention_window",
+      "breakpoints": true
     }
   ]
 }

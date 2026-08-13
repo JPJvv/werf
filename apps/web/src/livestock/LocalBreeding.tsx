@@ -30,6 +30,7 @@ import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /**
  * The vocabularies come FROM the payload schemas rather than being written out again here. A
@@ -111,6 +112,7 @@ export function LocalBreedingProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-breeding:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <BreedingStoreContext.Provider value={store}>{children}</BreedingStoreContext.Provider>;
 }

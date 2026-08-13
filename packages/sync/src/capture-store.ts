@@ -58,6 +58,8 @@ export interface CaptureStore<T> {
    * a store that failed to hydrate must be held, not waved through as if the guard read nothing.
    */
   hydrationFailed(): boolean;
+  /** Releases instance-owned listeners/resources. Pending durable work must not be discarded. */
+  close(): void;
 }
 
 export interface CaptureStoreOptions {
@@ -99,6 +101,9 @@ export function createCaptureStore<T>(options: CaptureStoreOptions): CaptureStor
 
     hydrationFailed(): boolean {
       return false; // load() below never throws — a corrupt value reads as [], not a failure
+    },
+    close(): void {
+      listeners.clear();
     },
   };
 }

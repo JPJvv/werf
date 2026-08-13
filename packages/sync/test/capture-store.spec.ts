@@ -132,4 +132,16 @@ describe('the local capture store', () => {
     expect(() => store.append({ id: '1', species: 'cattle' })).not.toThrow();
     expect(store.all()).toEqual([{ id: '1', species: 'cattle' }]);
   });
+
+  it('close() releases subscribers without discarding the store snapshot', () => {
+    const store = createCaptureStore<Animal>({ storage: memoryStorage(), key: 'herd:farm-a' });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.close();
+    store.append({ id: '1', species: 'cattle' });
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(store.all()).toEqual([{ id: '1', species: 'cattle' }]);
+  });
 });

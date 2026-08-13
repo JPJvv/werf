@@ -15,6 +15,7 @@ import {
   check,
   date,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
@@ -58,9 +59,14 @@ export const farms = pgTable(
       .default(sql`'{}'`),
     hectares: numeric('hectares', { precision: 10, scale: 2 }),
     timezone: text('timezone').notNull().default('Africa/Johannesburg'),
+    /** Number of UTC calendar-month event buckets retained on each device (offline-sync.md §3). */
+    eventRetentionMonths: integer('event_retention_months').notNull().default(24),
     ...auditColumns,
   },
-  (t) => [check('farms_jurisdiction_v1', sql`${t.jurisdiction} = 'ZA'`)],
+  (t) => [
+    check('farms_jurisdiction_v1', sql`${t.jurisdiction} = 'ZA'`),
+    check('farms_event_retention_months_positive', sql`${t.eventRetentionMonths} > 0`),
+  ],
 );
 
 /**

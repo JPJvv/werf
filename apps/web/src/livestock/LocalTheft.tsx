@@ -30,6 +30,7 @@ import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /**
  * An incident as held locally. Every timestamp is an ISO string; every optional fact is `null`
@@ -97,6 +98,7 @@ export function LocalTheftProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-theft:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <TheftStoreContext.Provider value={store}>{children}</TheftStoreContext.Provider>;
 }

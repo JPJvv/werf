@@ -55,10 +55,12 @@
  *     retention cutoff is therefore NOT directly expressible as a stream predicate — the same
  *     class of gap `now()`'s rejection left for `expires_at` (above), and the reason a naive
  *     "pass today's cutoff as a parameter" design for 3f's read-set window does not work. Making
- *     it work needs equality-bucketed partitioning (e.g. subscribing to one stream per
- *     month-bucket the client computes) or a server-side sweep converting the boundary into
- *     something equality CAN test — both a heavier design than this slice's budget, so 3f's
- *     retention read-set window is left as an open item for JP rather than built on a guess.
+ *     it work needs equality-bucketed partitioning or a server-side sweep converting the boundary
+ *     into something equality CAN test. 3f chose equality buckets: the event stream compares the
+ *     UTC `YYYY-MM` substring to a subscription parameter, while `event-retention.ts` maintains
+ *     each farm's configured number of month subscriptions and evicts expired buckets with TTL 0.
+ *     The membership predicate remains independent, so client-controlled parameters can narrow a
+ *     farm's authorised rows but can never widen them.
  */
 
 export interface SyncStreamDef {
@@ -82,6 +84,10 @@ export interface SyncStreamDef {
   readonly columns: readonly string[];
   /** The full `WHERE` clause body (no leading `WHERE`), built on `auth.user_id()`. */
   readonly whereSql: string;
+  /** Defaults to true. Retention-bounded streams are subscribed by the client with parameters. */
+  readonly autoSubscribe?: boolean;
+  /** Required when client-controlled parameters only narrow an independently authorised set. */
+  readonly acceptPotentiallyDangerousQueries?: boolean;
 }
 
 function renderStream(s: SyncStreamDef): string {
@@ -99,7 +105,13 @@ function renderStream(s: SyncStreamDef): string {
   // against a service confirmed to hold correctly-indexed bucket_parameters for the connecting
   // user). Offline-first means a device holds its whole farm by default; per-stream on-demand
   // subscription is a bandwidth optimisation a later phase can opt back into, not the default.
-  return `  ${s.name}:\n    query: |\n      SELECT ${cols} FROM ${from}\n      WHERE ${s.whereSql}\n    auto_subscribe: true`;
+  const options = [
+    `    auto_subscribe: ${s.autoSubscribe ?? true}`,
+    ...(s.acceptPotentiallyDangerousQueries === true
+      ? ['    accept_potentially_dangerous_queries: true']
+      : []),
+  ].join('\n');
+  return `  ${s.name}:\n    query: |\n      SELECT ${cols} FROM ${from}\n      WHERE ${s.whereSql}\n${options}`;
 }
 
 /** Renders a complete `config: {edition: 3}` + `streams:` document. Callers own the header comment. */

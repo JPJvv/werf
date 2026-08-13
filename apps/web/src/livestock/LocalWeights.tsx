@@ -24,6 +24,7 @@ import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordWeight, type WeightMethod } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** A weight reading as held locally. `occurredAt` is an ISO string (JSON-safe across a cold start). */
 export interface StoredWeight {
@@ -73,6 +74,7 @@ export function LocalWeightsProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-weights:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <WeightStoreContext.Provider value={store}>{children}</WeightStoreContext.Provider>;
 }

@@ -156,6 +156,7 @@ export const LOCAL_SCHEMA_TABLES: readonly LocalTableDef[] = [
       { name: 'deleted_at', type: 'TEXT' },
       { name: 'district', type: 'TEXT' },
       { name: 'enterprise_types', type: 'TEXT' },
+      { name: 'event_retention_months', type: 'INTEGER' },
       { name: 'hectares', type: 'REAL' },
       { name: 'jurisdiction', type: 'TEXT' },
       { name: 'name', type: 'TEXT' },

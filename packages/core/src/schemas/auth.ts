@@ -111,6 +111,11 @@ export const sessionFarmSchema = z.object({
   name: z.string().min(1),
   enterpriseTypes: z.array(enterpriseTypeSchema),
   /**
+   * UTC calendar-month event buckets kept on this device. Defaulted so a cached Phase-2 session
+   * remains usable offline after the retention-window feature ships.
+   */
+  eventRetentionMonths: z.number().int().positive().default(24),
+  /**
    * The farm's active herds/enterprises. DEFAULTED, not required: a session cached before this
    * field existed is re-parsed on every cold start, and making it mandatory would fail that parse
    * and sign a farmer out — offline, with captures queued, because of an app update. An empty list

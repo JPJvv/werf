@@ -76,4 +76,21 @@ describe('sync streams — deriver expresses every table TENANCY says may sync',
       }
     }
   });
+
+  it('3f bounds events by authorised farm/month equality buckets, never a moving range', () => {
+    const events = deriveSyncStreams().find((stream) => stream.table === 'events');
+    expect(events).toBeDefined();
+    expect(events?.autoSubscribe).toBe(false);
+    expect(events?.acceptPotentiallyDangerousQueries).toBe(true);
+    expect(events?.whereSql).toContain("farm_id = subscription.parameter('farm_id')");
+    expect(events?.whereSql).toContain(
+      "substring(occurred_at, 1, 7) = subscription.parameter('month')",
+    );
+    expect(events?.whereSql).toContain('farm_id IN (SELECT farm_id FROM farm_users');
+    expect(events?.whereSql).not.toMatch(/occurred_at\s*[<>]=?/);
+
+    const yaml = renderSyncStreamsYaml([events!]);
+    expect(yaml).toContain('auto_subscribe: false');
+    expect(yaml).toContain('accept_potentially_dangerous_queries: true');
+  });
 });

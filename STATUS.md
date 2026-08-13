@@ -3,15 +3,16 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-13 (owner-triggered `sync-auditor` + `compliance-checker` + `reviewer` pass,
+**Last updated:** 2026-08-13 (3f retention window, migration snapshot baseline, and quota-retry
+lifecycle follow-on completed; full uncached `pnpm verify` green: 106 files / 1,100 tests, 12/12
+type-check tasks, 7/7 builds, 156.78 KB gz interactive bundle ≤ 250 KB.
+Prior entry: owner-triggered `sync-auditor` + `compliance-checker` + `reviewer` pass,
 run together at JP's request — "run all relevant agents ... report back what blocks progress." ✅
 **Compliance-checker cleared FR-131 with zero findings — the sole recorded merge blocker is closed.**
 `sync-auditor` found 2 MEDIUM + 1 LOW in the new attachments module (not FR-131), all fixed same
 session under §6 clause 3. `reviewer` independently reproduced every load-bearing STATUS.md claim
-and found no contradictions. See §3/§4 for full detail. Prior entry, still true: 3f–3i worked per
-JP's "complete as much of 3f-3i as possible" — 3g/3h/3i(a)/3i(b)/3i(d) closed, 3f half-closed
-(queue-survival bug found+fixed, read-set window left as an owner decision), 3i(c) deliberately not
-started — see §5)
+and found no contradictions. See §3/§4 for full detail. 3f–3i worked per JP's "complete as much of
+3f-3i as possible" — 3f/3g/3h/3i(a)/3i(b)/3i(d) closed; 3i(c) deliberately not started — see §5)
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -25,7 +26,7 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), 3g/3h/3i(a)/3i(b)/3i(d) done, 3f half-done, 3i(c) not started, unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ✅ `sync-auditor` pass + re-pass over 3e: every finding closed, including Finding 2 (2026-08-13 — partitioning retired, migration 0021, see §3). 2026-08-13: 3g (additive-migration test), 3h (sync health surface) and 3i(a)/(d) (attachments schema/tenancy, photo_key pin) CLOSED; 3f's queue-survival half CLOSED (found+fixed a real quota-eviction bug), its retention read-set half left ☐ as an owner decision (§3); 3i(b) (API upload module — presigned PUT with server-side checksum enforcement, checksum-verified finalize, MinIO/S3 adapter) CLOSED, 9/9 tests green against real Postgres + real MinIO; 3i(c) (client blob queue) deliberately NOT started — see §5. ✅ **2026-08-13 (later same day): the owner-triggered `compliance-checker` pass ran and CLEARED — APPROVABLE, zero findings.** The sole recorded merge blocker is closed. Same session, `sync-auditor` re-pass over `dd49a20..HEAD` found 2 MEDIUM + 1 LOW in the new attachments module (id-conflict checksum bypass, cross-farm id collision crash, missing `updated_at` bump on finalize) — all three fixed under §6 clause 3, each with a test watched to FAIL first. `reviewer` independently reproduced every load-bearing STATUS.md claim (test counts, bundle size, migration 0021, real-Postgres/real-MinIO attachments tests) with no contradictions. Remaining, separately — none of these are audit/compliance blockers: 3e scope (animals/moves/health hydration) not started, 3f's retention-window is an open owner decision, 3i(c) deliberately deferred. See §3/§4/§5 |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d/3f/3g/3h done, 3e started (mobs/tallies), 3i(a)/3i(b)/3i(d) done, 3i(c) not started, unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ✅ `sync-auditor` pass + re-pass over 3e: every finding closed, including Finding 2 (2026-08-13 — partitioning retired, migration 0021, see §3). 2026-08-13: 3f CLOSED: quota-failed writes survive store disposal through one application-scoped retry coordinator, and the authoritative 24-month events read set is implemented as equality-bucket month subscriptions with per-farm configuration. 3g (additive-migration test), 3h (sync health surface), 3i(a)/(d) (attachments schema/tenancy, photo_key pin), and 3i(b) (API upload module) are CLOSED. The migration snapshot gap is reconciled by no-op baseline 0023, with 0024 proving clean subsequent generation. ✅ The owner-triggered `compliance-checker` pass ran and CLEARED — APPROVABLE, zero findings. `sync-auditor` findings in the attachments module were fixed under §6 clause 3. Remaining, separately: 3e scope (animals/moves/health hydration) not started and 3i(c) deliberately deferred. See §3/§4/§5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -78,50 +79,30 @@ acted on: `SyncConnection.tsx`'s `.connect()` retries `@powersync/web`'s default
 first arguably wants persistent retry), but worth JP's attention if battery/network chatter on a
 long-offline device matters; and commit `1bc5f36` carries no FR/slice tag, cosmetic.
 
-⛔ **OPEN, raised 2026-08-13 — 3f's retention read-set window has no cheap fix; JP's call is which
-heavier design, or whether to descope it for now.** Empirically probed against the real
-`journeyapps/powersync-service:1.23.3` (full account: `sync-streams.ts`'s header, second addendum):
-a client-supplied stream parameter genuinely exists (`subscription.parameter()`), but the service
-refuses to load ANY stream whose WHERE mixes row data with a subscription/connection parameter
-except via `=` — *"This expression already references row data, so it can't also reference
-connection parameters unless the two are compared with an equals operator."* So
-`occurred_at > subscription.parameter('cutoff')` cannot express a rolling window; only equality
-can. Two ways forward, both heavier than this slice's budget: (a) equality-bucket time into
-discrete parameters (e.g. a `sync_month` column + client subscribes to the N months it wants) —
-correctness is straightforward, cost is a derived column plus the client managing a moving
-subscription set; (b) a server-side sweep in the `membership-expiry.service.ts` shape, converting
-"outside the window" into something equality can test (e.g. a boolean/tombstone-like column) —
-same shape as the `expires_at` fix, same cost of a new background job and a replication-lag window.
-Neither was built without JP's steer. The queue-survival half of 3f (never losing a write under
-quota pressure) is unaffected and is CLOSED — see phase-checklists.md 3f and the entry below.
-⚠️ Also worth a look when this is decided: `roadmap.md`'s 3f/3g row says "12-month client-window
-test" where `offline-sync.md` § 3 says "default 24 months of events" — the two documents disagree
-on the actual window size, independent of the mechanism question above.
-→ _Answer:_
+✅ **Closed 2026-08-13 — 3f uses equality-bucket month subscriptions for its event retention
+read set, with 24 months as the authoritative default.** The pinned service rejects timestamp
+range parameters but accepts equality parameters. The client now subscribes to one stream per
+`farm_id` + `YYYY-MM` bucket, adding the new month before removing an expired one; zero-TTL
+subscription expiry removes rows that leave the read set. `farms.event_retention_months` is a
+positive, per-farm setting (default 24), carried through the session contract. Membership remains
+an independent predicate in the stream query, so client-controlled farm/month parameters cannot
+grant access. This avoids the sweep design's cron, mass-row updates and replication-lag window.
+`roadmap.md`'s stale 12-month wording is corrected to match `offline-sync.md`.
 
-📌 **Noted 2026-08-13 — the `drizzle-kit` snapshot history has a gap from migration 0016 onward,
-discovered while adding 0022.** `packages/db/migrations/meta/` has snapshots through `0015`, then
-none until `0022` (this session's own, since deleted — see below): migrations 0016–0021 were all
-hand-authored directly into the migrations folder with a hand-appended `_journal.json` entry, never
-run through `drizzle-kit generate`. Harmless for `migrate()` (it tracks applied migrations in the
-target Postgres itself, not from `meta/`), but the FIRST `generate` run this session, diffing
-against the stale 0015 snapshot, tried to redo all six migrations' worth of already-applied schema
-changes (re-`CREATE TYPE`, re-`ALTER TYPE ADD VALUE`, re-add `initial_head_count`, etc.) into a
-new file — caught before it was ever applied, deleted, and 0022 was hand-written instead, matching
-the pattern 0016–0021 already established. Not a blocker — hand-writing migrations already IS this
-repo's practice for anything RLS/trigger-shaped, which `generate` cannot produce anyway — but
-`generate` cannot safely be trusted for a plain additive column any more either until someone
-either backfills the missing snapshots or accepts hand-writing as the permanent norm and says so.
-JP's call, not urgent.
+✅ **Closed 2026-08-13 — the `drizzle-kit` snapshot gap is reconciled without rewriting applied
+migrations.** Migration 0023 is an intentional SQL no-op whose generated snapshot captures the
+schema after hand-authored migrations 0016–0022. This restores a truthful current diff baseline;
+it does not pretend historical snapshots can be reconstructed safely. Migration 0024 was then
+generated normally and contains only the new retention setting, proving the next diff is clean.
+`migration-history.test.ts` now requires every journal entry to have SQL and the latest entry to
+have a snapshot, preventing the same silent drift from recurring.
 
-📌 **Noted 2026-08-13 — `sqlite-capture-store.ts`'s new quota-retry timer has no `close()`.** Fixing
-3f's queue-survival bug (below) added a `setInterval`-based retry loop with no teardown hook; a
-farm switch that discards a store instance while a retry is in flight leaks that interval (self-
-clears on first success, so this is bounded, not indefinite — full account in the code comment
-above `scheduleRetry`). Same SHAPE of resource leak `hydrated-table-store.ts`'s `db.watch()` had
-before its `close()` fix (sync-auditor, 2026-08-10), narrower in effect. Wiring a matching
-`close()` through all twelve `Local*.tsx` providers is follow-on work, not done this session —
-flagged rather than silently left, per CLAUDE.md's "no silent caps."
+✅ **Closed 2026-08-13 — capture stores now expose and use `close()`, without sacrificing a
+quota-failed write during a farm switch.** All twelve local capture providers close discarded
+store listeners. Retry ownership moved from each store instance to one application-scoped
+durability coordinator that holds only database command parameters, uses at most one interval,
+and survives provider disposal until the write persists. Tests cover listener teardown, shared
+timer bounds, farm-switch survival, and retry completion.
 
 ✅ **Closed 2026-08-13 — Finding 2: per-farm events partitioning is retired, not wired up.** JP's
 first answer (wire `create_farm_partition` into `FarmsService.createFarm` + read `pg_inherits`
@@ -181,6 +162,7 @@ budget (`docs/04-delivery/phase-3-capture-migration-2026-08-09.md`).
 | Review agents (2026-08-13, owner-triggered, this session, "run all relevant agents") | ✅ **`compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings — the sole recorded merge blocker is closed.** ⚠️ **`sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, no tenancy leak, all fixed same session under §6 clause 3 (fail-first tested).** ✅ `reviewer`: independently reproduced every load-bearing STATUS.md claim (gate results, migration 0021, real-Postgres/real-MinIO attachments tests, commit authorship) with **no contradictions**; correctly declined to call Phase 3 exit-gate complete (3e/3f/3i(c) already-recorded gaps, not new). Full detail: §3 |
 | `pnpm verify` (2026-08-13, sync-auditor findings 1–3 fixed) | ✅ Uncached, run directly (not trusted from the `pnpm verify` turbo tail alone — that log only showed the cached-mixed `build` step's summary, so `pnpm test` was re-run standalone to confirm a genuine execution): 104 test files / **1,092 tests** (1,089 + 3 new fail-first tests), real 187s wall duration, 1332.99s cumulative test time. `attachments.integration.test.ts`: 12/12, including the 3 new tests, each independently confirmed to FAIL against the pre-fix code (via `git stash` on just `attachments.service.ts`) before being confirmed green with the fix restored. Build: 155.98 KB gz ≤ 250 KB, unchanged (no bundle-affecting code) |
 | `pnpm test:e2e` (2026-08-13, same fixes) | ✅ 30 passed / 1 skipped, real 1.1m run, no regression |
+| `pnpm verify` (2026-08-13, 3f follow-ons closed) | ✅ Fully uncached: **106 test files / 1,100 tests**, including real-Postgres forward migration through no-op baseline 0023 and generated retention migration 0024, and 12/12 real Postgres/MinIO attachment tests. 12/12 type-check tasks; 7/7 builds; interactive bundle **156.78 KB gz ≤ 250 KB**. Project check reports 0 open owner decisions. The pinned `journeyapps/powersync-service:1.23.3` also started all engines and logged `Loaded sync config` on the generated equality-bucket stream. The gate exposed and closed a pre-existing mixed-clock defect in attachment finalization: Postgres creation time could be later than the API-host update time; finalization now uses a monotonic Postgres expression. |
 
 ## 5. Next executable steps
 
@@ -202,7 +184,7 @@ rebasing onto `main` before any Phase 3–6 scope-doc work.
     `0021_retire_farm_partitioning.sql`; see §3 for the full decision record.
 16. ✅ Done 2026-08-13, JP explicitly overrode item 15's sequencing ("complete as much of 3f-3i as
     possible", ahead of the compliance pass — deliberate, not a lapse): **3g, 3h, 3i(a), 3i(b),
-    3i(d) closed; 3f half-closed; 3i(c) deliberately deferred, not a lapse (design notes in
+    3i(d) closed; 3f initially half-closed; 3i(c) deliberately deferred, not a lapse (design notes in
     `phase-checklists.md` 3i(c) so the next session starts warm).** 3i(b): presigned-upload +
     checksum-verified finalize API against a real S3-compatible adapter, empirically confirmed
     MinIO enforces the declared checksum at PUT time (`object-storage.ts` header). A wire-contract
@@ -213,9 +195,8 @@ rebasing onto `main` before any Phase 3–6 scope-doc work.
     parse a JSON round-trip through the schema, not just assert fields. None of this touched the
     FR-131 guard files (`AdjustMobScreen.tsx`, `Outbox.tsx`'s taint walk, `residue.ts`) on purpose,
     so the compliance pass JP will eventually trigger is not entangled with this session's diff.
-    Full detail: `phase-checklists.md` 3f/3g/3h/3i, and §3 above for the owner decisions this
-    raised (retention read-set window; the drizzle snapshot gap; the quota-retry timer's missing
-    `close()`). Next: JP reviews, then requests whichever agents get this merge-ready — his own
+    Full detail: `phase-checklists.md` 3f/3g/3h/3i, and §3 above for the follow-on decisions this
+    raised. Next: JP reviews, then requests whichever agents get this merge-ready — his own
     words for this session's closing step.
 17. ✅ Done 2026-08-13, this session, item 16's "Next" step: **JP requested all relevant agents
     ("run all relevant agents, to improve, fix and report back what blocks progress"), treated as
@@ -226,9 +207,12 @@ rebasing onto `main` before any Phase 3–6 scope-doc work.
     reproduced every load-bearing claim in this file independently, no contradictions. Full detail:
     §3/§4. **Not done this session, deliberately: did not push or open a PR** — this file's own
     standing note says that's JP's explicit go-ahead, which this session's instruction did not
-    grant. What's left blocking a PR is no longer an audit/compliance gate — it's JP's own call on
-    (a) whether to push this as a checkpoint now or keep building 3e/3f/3i(c) first, and (b) the
-    open 3f retention-window design decision above.
+    grant. What's left blocking a PR is no longer an audit/compliance or 3f decision gate — it is
+    JP's own call on whether to push this checkpoint now or keep building 3e/3i(c) first.
+18. ✅ Done 2026-08-13: **3f follow-ons closed.** Equality-bucket subscriptions implement the
+    per-farm 24-month event window; migration 0023 restores the Drizzle current-state snapshot
+    baseline and generated 0024 proves it; capture-store disposal is wired through all twelve
+    providers while application-scoped retry ownership preserves quota-failed writes. See §3.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

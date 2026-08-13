@@ -55,6 +55,7 @@ export class FarmsService {
           businessId: farms.businessId,
           name: farms.name,
           enterpriseTypes: farms.enterpriseTypes,
+          eventRetentionMonths: farms.eventRetentionMonths,
           role: farmUsers.role,
         })
         .from(farmUsers)
@@ -118,6 +119,7 @@ export class FarmsService {
         businessId: farm!.businessId,
         name: farm!.name,
         enterpriseTypes: farm!.enterpriseTypes,
+        eventRetentionMonths: farm!.eventRetentionMonths,
         enterprises: created,
         role: 'owner',
       };
@@ -206,6 +208,7 @@ export class FarmsService {
         businessId: updated!.businessId,
         name: updated!.name,
         enterpriseTypes: updated!.enterpriseTypes,
+        eventRetentionMonths: updated!.eventRetentionMonths,
         enterprises: herds.get(farmId) ?? [],
         role: role!.role,
       };

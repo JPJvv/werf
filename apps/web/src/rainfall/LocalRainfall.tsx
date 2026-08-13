@@ -22,6 +22,7 @@ import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordRainfall } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** A gauge reading as held locally. `occurredAt` is an ISO string (JSON-safe across a cold start). */
 export interface StoredRainfall {
@@ -70,6 +71,7 @@ export function LocalRainfallProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-rainfall:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <RainfallStoreContext.Provider value={store}>{children}</RainfallStoreContext.Provider>;
 }

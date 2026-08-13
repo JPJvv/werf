@@ -29,6 +29,7 @@ import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** Which of the three health captures this is. Each posts to its own endpoint. */
 export type HealthKind = 'treatment' | 'vaccination' | 'dip';
@@ -104,6 +105,7 @@ export function LocalHealthProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-health:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <HealthStoreContext.Provider value={store}>{children}</HealthStoreContext.Provider>;
 }

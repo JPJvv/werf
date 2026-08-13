@@ -63,12 +63,14 @@ CREATE TABLE farms (
   boundary_geojson text,
   hectares      numeric(10,2),
   timezone      text NOT NULL DEFAULT 'Africa/Johannesburg',
+  event_retention_months integer NOT NULL DEFAULT 24,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz,
   -- v1 lock. Removing this CHECK is the deliberate act of adding a country —
   -- it should require a migration and a conversation, not a config flag.
-  CONSTRAINT farms_jurisdiction_v1 CHECK (jurisdiction = 'ZA')
+  CONSTRAINT farms_jurisdiction_v1 CHECK (jurisdiction = 'ZA'),
+  CONSTRAINT farms_event_retention_months_positive CHECK (event_retention_months > 0)
 );
 
 CREATE TABLE users (

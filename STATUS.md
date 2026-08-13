@@ -11,11 +11,10 @@ strictly to the finding-2 fix diff (§6 clause 1), returned APPROVABLE** — eve
 sites verified exhaustively (grep, not sampling), the tally/animal exclusion traced against source
 rather than trusted, the `Outbox.tsx` send/guard boundary confirmed intact, no field-loss path
 found. Two LOW docstring-precision notes (not defects) fixed same session. **The FR-131 compliance
-gate on this diff is now closed** — the sole remaining blocker before merge-ready is JP's own call
-on when to commit/push. See §3.)
+gate on this diff is now closed, and JP chose to commit the checkpoint (`ba7f680`).** See §3.)
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
-commits only, awaiting the owner's go-ahead to push/open a PR.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `ba7f680`. Not
+pushed yet — local commits only, awaiting the owner's go-ahead to push/open a PR.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge
 
@@ -92,8 +91,8 @@ path for `WithholdDose`. Two LOW docstring-precision notes fixed same session (t
 overclaimed; the real argument is "what does each fold consumer actually read" — this repo's own
 top recurring-defect class is a comment whose premise outlived the code). **The FR-131 gate on this
 diff is now closed.** Full `pnpm verify`: 106 files / 1,127 tests, 7/7 builds, 158.99 KB gz;
-`pnpm test:e2e`: 30/1 skip. **Not committed** — this session's commit permission covered only the
-preceding 3f checkpoint (`ff443ff`). What remains is JP's own call on when to commit/push.
+`pnpm test:e2e`: 30/1 skip. **Committed as `ba7f680`** (JP's explicit go-ahead). Not pushed —
+pushing/opening a PR is still a separate, unrequested go-ahead.
 
 ⛔ **Open owner decision — a narrower residual finding 2's re-pass flagged but did NOT call a
 defect: a BACK-DATED local move.** If a farmer captures a move today for a walk that happened days
@@ -240,13 +239,14 @@ found+fixed; a `sync-auditor` pass+re-pass over 3e. Do not begin payroll on loca
 19. ✅ Done 2026-08-13, JP's explicit choice of this session's next step ("3e: animals/moves/health
     hydration"): **3e extended past mobs/tallies to cover animals/moves/health/identifiers/theft/
     weights/breeding.** Full detail: §3, `phase-checklists.md` 3e.
-20. ✅ Done 2026-08-13, JP's explicit choice twice this session ("Request compliance-checker now",
-    then "Request compliance-checker re-pass now" after the clause-4 stakes were named out loud):
-    **`compliance-checker` ran three times over the item-19 diff — finding 1, fixed; finding 2 (a
-    re-pass), fixed; a THIRD pass scoped to just the finding-2 fix diff → APPROVABLE.** The FR-131
-    gate on this diff is closed. Full record: §3. ⛔ Not yet done: the commit — this session's
-    commit permission still covers only the preceding 3f checkpoint. §3 also carries one open owner
-    decision (back-dated local moves), not a defect, unrelated to the now-closed gate.
+20. ✅ Done 2026-08-13, JP's explicit choice three times this session ("Request compliance-checker
+    now", "Request compliance-checker re-pass now" after the clause-4 stakes were named out loud,
+    then "Commit this checkpoint"): **`compliance-checker` ran three times over the item-19 diff —
+    finding 1, fixed; finding 2 (a re-pass), fixed; a THIRD pass scoped to just the finding-2 fix
+    diff → APPROVABLE — then committed as `ba7f680`.** The FR-131 gate on this diff is closed. Full
+    record: §3. §3 also carries one open owner decision (back-dated local moves), not a defect,
+    unrelated to the now-closed gate. Not pushed — pushing/opening a PR remains a separate
+    go-ahead.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

@@ -172,4 +172,77 @@ describe('the hydrated table store', () => {
     expect(store.hydrationFailed()).toBe(false);
     expect(store.all()).toEqual([{ id: 'good', mobId: 'mob-1' }]);
   });
+
+  // ⭐ The animals/moves/health/identifiers/theft/weights/breeding hydration slice widened this
+  // fake past a single hard-coded `type === 'tally'` filter (every prior `events` query this
+  // package issued) to one PARSED from each watcher's own SQL — because `events` now backs
+  // several distinct hydrated stores, each narrowed to its own type set, and a fake that still
+  // only recognised `'tally'` would silently deliver ZERO rows to every one of them.
+  it('⭐ narrows an events watcher to its OWN type set, not a hard-coded "tally"', async () => {
+    const fake = createFakeLocalDatabase();
+    fake.hydrateRows('events', [
+      { id: 'the-death', farm_id: 'farm-a', mob_id: 'mob-1', type: 'death' },
+      { id: 'a-tally-too', farm_id: 'farm-a', mob_id: 'mob-1', type: 'tally' },
+    ]);
+    const lifecycleStore = createHydratedTableStore({
+      database: Promise.resolve(fake as unknown as LocalDatabase),
+      sql: "SELECT id, mob_id FROM events WHERE farm_id = ? AND type IN ('birth','death','sale','missing','purchase','weaning') AND deleted_at IS NULL",
+      params: ['farm-a'],
+      mapRow,
+    });
+    await waitForNotify(lifecycleStore);
+
+    // Sees ONLY the death — a tally in the same table, same farm, must not leak into a lifecycle
+    // read just because the fake used to treat every `events` watcher as tally-only.
+    expect(lifecycleStore.all()).toEqual([{ id: 'the-death', mobId: 'mob-1' }]);
+  });
+
+  it('⭐ the reverse: a tally watcher does not see a row from a DIFFERENT type set', async () => {
+    const fake = createFakeLocalDatabase();
+    fake.hydrateRows('events', [
+      { id: 'the-tally', farm_id: 'farm-a', mob_id: 'mob-1', type: 'tally' },
+      { id: 'a-move', farm_id: 'farm-a', mob_id: 'mob-1', type: 'move' },
+    ]);
+    const tallyStore = createHydratedTableStore({
+      database: Promise.resolve(fake as unknown as LocalDatabase),
+      sql: "SELECT id, mob_id FROM events WHERE farm_id = ? AND type = 'tally' AND deleted_at IS NULL",
+      params: ['farm-a'],
+      mapRow,
+    });
+    await waitForNotify(tallyStore);
+
+    expect(tallyStore.all()).toEqual([{ id: 'the-tally', mobId: 'mob-1' }]);
+  });
+
+  it('⭐ recognizes the new canonical tables (animals/animal_identifiers/theft_incidents)', async () => {
+    const fake = createFakeLocalDatabase();
+    fake.hydrateRow('animals', { id: 'a1', farm_id: 'farm-a', mob_id: 'mob-1' });
+    fake.hydrateRow('animal_identifiers', { id: 'id1', farm_id: 'farm-b', mob_id: 'mob-9' });
+    fake.hydrateRow('theft_incidents', { id: 't1', farm_id: 'farm-a', mob_id: 'mob-1' });
+
+    const animalsStore = createHydratedTableStore({
+      database: Promise.resolve(fake as unknown as LocalDatabase),
+      sql: 'SELECT id, mob_id FROM animals WHERE farm_id = ? AND deleted_at IS NULL',
+      params: ['farm-a'],
+      mapRow,
+    });
+    const identifiersStore = createHydratedTableStore({
+      database: Promise.resolve(fake as unknown as LocalDatabase),
+      sql: 'SELECT id, mob_id FROM animal_identifiers WHERE farm_id = ? AND deleted_at IS NULL',
+      params: ['farm-a'],
+      mapRow,
+    });
+    const theftStore = createHydratedTableStore({
+      database: Promise.resolve(fake as unknown as LocalDatabase),
+      sql: 'SELECT id, mob_id FROM theft_incidents WHERE farm_id = ? AND deleted_at IS NULL',
+      params: ['farm-a'],
+      mapRow,
+    });
+    await Promise.all([animalsStore, identifiersStore, theftStore].map((s) => waitForNotify(s)));
+
+    expect(animalsStore.all()).toEqual([{ id: 'a1', mobId: 'mob-1' }]);
+    // Cross-farm — the identifier was hydrated under farm-b, this watcher reads farm-a.
+    expect(identifiersStore.all()).toEqual([]);
+    expect(theftStore.all()).toEqual([{ id: 't1', mobId: 'mob-1' }]);
+  });
 });

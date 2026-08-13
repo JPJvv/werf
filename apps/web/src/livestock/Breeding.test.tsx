@@ -21,14 +21,14 @@
  * assertion written that way reds for two hours out of every twenty-four.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { projectDueDate } from '@werf/domain';
 import { App } from '../App';
 import { farmToday } from '../farmTime';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f2';
@@ -299,6 +299,44 @@ describe('recording a pregnancy diagnosis (FR-121)', () => {
     expect((screen.getByLabelText('When was she served') as HTMLInputElement).value).toBe(
       '2026-01-05',
     );
+    expect(screen.getByText(/Taken from the service you recorded/)).toBeTruthy();
+  });
+
+  it('⭐ prefills the service date from a mating known only via HYDRATION (phase-checklists.md 3e)', async () => {
+    // The gap this closes: `breeding = useBreedingEvents()` read only `LocalBreeding` — a mating
+    // recorded on ANOTHER DEVICE for the same dam, once replicated down, was invisible here, so the
+    // service-date prefill silently fell back to blank for exactly the dam a co-worker's phone
+    // already has the service date for. This device never captures the mating itself.
+    const cow = animal({});
+    seedHerd([cow]);
+
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/pregnancy');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000br99',
+        farm_id: FARM_ID,
+        animal_id: cow.id,
+        type: 'mating',
+        occurred_at: '2026-01-05T12:00:00.000Z',
+        payload: JSON.stringify({
+          method: 'natural',
+          bullInAt: '2026-01-05',
+          bullOutAt: '2026-02-16',
+        }),
+      });
+    });
+
+    await user.selectOptions(await screen.findByLabelText('Which female'), cow.id as string);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('When was she served') as HTMLInputElement).value).toBe(
+        '2026-01-05',
+      );
+    });
     expect(screen.getByText(/Taken from the service you recorded/)).toBeTruthy();
   });
 

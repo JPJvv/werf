@@ -128,4 +128,74 @@ describe('the register (FR-131) sees a withholding known only by HYDRATION', () 
     expect(await screen.findByText(/must not go into the food chain/i)).toBeTruthy();
     expect(screen.queryByText(/nothing needs your attention/i)).toBeNull();
   });
+
+  it('⭐ flags a LOCAL sale whose animal AND dose are known only via hydration (phase-checklists.md 3e)', async () => {
+    // The individual-animal counterpart of the test above, and the sibling fix in the SAME slice —
+    // `useLocalResidueFlags` merged `evidenceTallies` (mobs/tallies) with hydrated data in the prior
+    // session; `animals`/`health`/`moves` — the evidence the INDIVIDUAL disposal path reads — stayed
+    // local-only until this one. The sale event itself is local (this device's own capture), but
+    // `byId.get(event.animalId)` and the dose it is judged against both come from down-sync only.
+    const ANIMAL_ID = '0190f3a0-0000-7000-8000-00000000a010';
+    const SALE_ID = '0190f3a0-0000-7000-8000-00000000c010';
+    const DOSE_ID = '0190f3a0-0000-7000-8000-00000000c011';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-events:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SALE_ID,
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          type: 'sale',
+          status: 'sold',
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          counterparty: 'Vleissentraal',
+          priceCents: 500000,
+        },
+      ]),
+    );
+
+    const fake = await getCurrentFakeLocalDatabase();
+    fake.hydrateRow('animals', {
+      id: ANIMAL_ID,
+      farm_id: FARM_ID,
+      species: 'sheep',
+      sex: 'female',
+      breed: null,
+      status: 'alive',
+      dob: null,
+      dob_estimated: 0,
+      status_at: null,
+      dam_id: null,
+      sire_id: null,
+      mob_id: null,
+      land_unit_id: null,
+      source: null,
+      acquired_at: null,
+      brand_id: null,
+      brand_applied_at: null,
+      attributes: '{}',
+      photo_key: null,
+      enterprise_id: null,
+    });
+    fake.hydrateRow('events', {
+      id: DOSE_ID,
+      farm_id: FARM_ID,
+      animal_id: ANIMAL_ID,
+      mob_id: null,
+      type: 'treatment',
+      occurred_at: '2026-07-20T06:00:00.000Z',
+      payload: JSON.stringify({
+        product: 'Terramycin LA',
+        administeredOn: '2026-07-20',
+        meatWithholdUntil: '2026-08-17',
+      }),
+    });
+
+    window.history.pushState({}, '', '/attention');
+    render(<App />);
+
+    expect(await screen.findByText(/must not go into the food chain/i)).toBeTruthy();
+    expect(screen.queryByText(/nothing needs your attention/i)).toBeNull();
+  });
 });

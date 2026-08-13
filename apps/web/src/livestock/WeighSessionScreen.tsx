@@ -18,6 +18,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveAnimals } from './herd';
 import { useAnimalWeights, useRecordWeight, type StoredWeight } from './LocalWeights';
+import { useHydratedWeights, mergeById } from './HydratedLivestock';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
@@ -50,7 +51,16 @@ export function WeighSessionScreen() {
 
   const animal = animals[index];
   // Read every render for the animal in front of us; at save time this is its readings so far.
-  const priorReadings = useAnimalWeights(animal?.id ?? '');
+  //
+  // ⭐ Merged with hydrated weights (phase-checklists.md 3e) — without this, a reading another
+  // device took was invisible here, so the "prior weight" context and the ADG shown after save
+  // could both silently ignore the animal's most recent real weigh.
+  const localReadings = useAnimalWeights(animal?.id ?? '');
+  const hydratedWeights = useHydratedWeights();
+  const priorReadings = useMemo(() => {
+    const hydratedForAnimal = hydratedWeights.filter((w) => w.animalId === animal?.id);
+    return mergeById(localReadings, hydratedForAnimal);
+  }, [localReadings, hydratedWeights, animal?.id]);
   const prior = useMemo(() => latestReading(priorReadings), [priorReadings]);
 
   if (!activeFarm) return null;

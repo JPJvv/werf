@@ -9,12 +9,12 @@
  * drain days later.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -156,6 +156,41 @@ describe('tagging animals (FR-109)', () => {
     await waitFor(async () => {
       expect(await storedIdentifiers()).toHaveLength(1);
     });
+  });
+
+  it('⭐ refuses a number already tagged on ANOTHER DEVICE, known only via hydration (phase-checklists.md 3e)', async () => {
+    // The gap this closes: `useTakenValues()` read only `LocalIdentifiers` — a tag another device
+    // applied and the server has replicated down was invisible to this guard, so a misread digit
+    // that happened to collide with a co-worker's already-sent tag would save locally and jam the
+    // outbox days later with a refusal nothing on the phone explained.
+    cachedSession();
+    seedHerd(1);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/tag');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('animal_identifiers', {
+        id: '0190f3a0-0000-7000-8000-00000000i001',
+        farm_id: FARM_ID,
+        animal_id: '0190f3a0-0000-7000-8000-00000000a099',
+        type: 'visual_tag',
+        value: '4021',
+        is_primary: 1,
+        applied_at: null,
+      });
+    });
+
+    await user.type(await screen.findByLabelText(/number/i), '4021');
+
+    await waitFor(() => {
+      expect(screen.getByText(/already on another animal/i)).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: /save & next/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(await storedIdentifiers()).toHaveLength(0);
   });
 
   it('makes the number the animal’s name on the list, and survives a cold start', async () => {

@@ -42,6 +42,7 @@ import {
   type PregnancyResult,
   type StoredMating,
 } from './LocalBreeding';
+import { useHydratedBreedingEvents, mergeById } from './HydratedLivestock';
 import { useGestationDays } from './LocalSpeciesGestation';
 import { speciesLabel } from './AnimalsScreen';
 
@@ -80,7 +81,15 @@ export function RecordPregnancyScreen() {
   const { activeFarm } = useAuth();
   const recordBreeding = useRecordBreeding();
   const labels = useAnimalLabels();
-  const breeding = useBreedingEvents();
+  // ⭐ Merged with hydrated breeding events (phase-checklists.md 3e) — without this, a mating another
+  // device recorded for the dam was invisible here, so the service-date prefill silently fell back
+  // to blank for exactly the animal a co-worker's phone already has the service date for.
+  const localBreeding = useBreedingEvents();
+  const hydratedBreeding = useHydratedBreedingEvents();
+  const breeding = useMemo(
+    () => mergeById(localBreeding, hydratedBreeding),
+    [localBreeding, hydratedBreeding],
+  );
 
   const dams = useEffectiveAnimals().filter((a) => a.status === 'alive' && a.sex === 'female');
 

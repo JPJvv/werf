@@ -20,6 +20,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { farmDay } from '../farmTime';
 import { useEffectiveAnimals, useEffectiveAnimalsSettled } from './herd';
 import { useLifecycleEvents, useRecordWeaning } from './LocalLifecycle';
+import { useHydratedLifecycleEvents, useHydratedLifecycleEventsSettled } from './HydratedLivestock';
 import { useAnimalLabels } from './LocalIdentifiers';
 import type { StoredAnimal } from './LocalHerd';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
@@ -29,14 +30,24 @@ export function WeaningSessionScreen() {
   const { activeFarm } = useAuth();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
   const events = useLifecycleEvents();
+  const hydratedEvents = useHydratedLifecycleEvents();
   const labels = useAnimalLabels();
   const record = useRecordWeaning();
-  const readyToOpen = useEffectiveAnimalsSettled();
+  // Both called unconditionally, one per line — `useX() && useY()` inline would short-circuit and
+  // skip calling useY() whenever useX() is false, breaking the Rules of Hooks (TagSessionScreen.tsx
+  // has the same discipline for the same reason).
+  const animalsSettled = useEffectiveAnimalsSettled();
+  const hydratedEventsSettled = useHydratedLifecycleEventsSettled();
+  const readyToOpen = animalsSettled && hydratedEventsSettled;
 
-  const alreadyWeaned = useMemo(
-    () => new Set(events.filter((e) => e.type === 'weaning').map((e) => e.animalId)),
-    [events],
-  );
+  // ⭐ Merged with hydrated lifecycle events (phase-checklists.md 3e) — without this, a weaning
+  // another device already sent, once replicated down, was invisible here, so the queue offered an
+  // animal a co-worker had already weaned and let this device record it a second time.
+  const alreadyWeaned = useMemo(() => {
+    const local = events.filter((e) => e.type === 'weaning').map((e) => e.animalId);
+    const hydrated = hydratedEvents.filter((e) => e.type === 'weaning').map((e) => e.animalId);
+    return new Set([...local, ...hydrated]);
+  }, [events, hydratedEvents]);
 
   // Fixed once every store it is built from has hydrated, like the tagging session: a queue that
   // shrank under the farmer's thumb after each save would make working down a race impossible to

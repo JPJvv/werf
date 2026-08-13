@@ -30,12 +30,20 @@ import { farmToday } from '../farmTime';
 import { useEffectiveMobs } from './herd';
 import { useRecordTallies, useTallies } from './LocalTallies';
 import { useMobs } from './LocalMobs';
-import { useHydratedMobs, useHydratedTallies, mergeById } from './HydratedLivestock';
+import {
+  useHydratedMobs,
+  useHydratedTallies,
+  useHydratedAnimals,
+  useHydratedMoves,
+  useHydratedHealthEvents,
+  mergeById,
+  mergeByIdPreferHydrated,
+} from './HydratedLivestock';
 import { useHealthEvents } from './LocalHealth';
 import { useAnimals } from './LocalHerd';
 import { useMoves } from './LocalMoves';
 import { useVetProducts } from './LocalVetProducts';
-import { meatWithdrawalForMob } from './withdrawal';
+import { meatWithdrawalForMob, type WithholdDose } from './withdrawal';
 
 /**
  * The reasons, in the order a farmer meets them rather than alphabetically or grouped by sign.
@@ -133,12 +141,35 @@ export function AdjustMobScreen() {
     [tallies, hydratedTallies],
   );
   const healthEvents = useHealthEvents();
+  const hydratedHealthEvents = useHydratedHealthEvents();
   const products = useVetProducts();
   // A counted mob can ALSO hold individually-registered animals, and a treatment given to one of
   // them stores `mob_id = NULL`. The raw herd and the move log are what let the guard see it — the
   // tally takes head out without naming which head.
+  //
+  // ⭐ Merged with hydrated animals/moves/health (phase-checklists.md 3e), same reasoning as
+  // `foldTallies` above: an individually-registered member this device has only heard about via
+  // down-sync, or a dose/walk another device recorded for it, was invisible to this guard before —
+  // the mob-membership reconstruction (`withdrawal.ts`'s `mobMembership`) silently missed exactly
+  // the animal a co-worker's phone knows about.
   const herd = useAnimals();
+  const hydratedHerd = useHydratedAnimals();
   const moves = useMoves();
+  const hydratedMoves = useHydratedMoves();
+  const foldHerd = useMemo(() => mergeById(herd, hydratedHerd), [herd, hydratedHerd]);
+  // `mergeByIdPreferHydrated` for moves/health: their hydrated echoes carry server-derived
+  // enrichment (`fromMobId`/`fromLandUnitId`, `meatWithholdUntil`) a local capture never can —
+  // local-wins would shadow it once this device's own capture round-trips back with the same id
+  // (compliance-checker finding, phase-checklists.md 3e). See `HydratedLivestock.tsx`'s
+  // `mergeByIdPreferHydrated` docstring.
+  const foldMoves = useMemo(
+    () => mergeByIdPreferHydrated(moves, hydratedMoves),
+    [moves, hydratedMoves],
+  );
+  const foldHealth = useMemo(
+    () => mergeByIdPreferHydrated<WithholdDose>(healthEvents, hydratedHealthEvents),
+    [healthEvents, hydratedHealthEvents],
+  );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState<schemas.TallyReason | null>(null);
@@ -241,7 +272,15 @@ export function AdjustMobScreen() {
   const withdrawal =
     selected === null
       ? null
-      : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves, foldTallies);
+      : meatWithdrawalForMob(
+          selected.id,
+          day,
+          foldHealth,
+          products,
+          foldHerd,
+          foldMoves,
+          foldTallies,
+        );
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
   // The reasons that are recorded rather than refused still say so — same rule as the death path.
   const noteWithdrawal =

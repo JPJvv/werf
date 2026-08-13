@@ -466,6 +466,71 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(await storedTallies()).toHaveLength(0);
   });
 
+  it('⭐ refuses a flock tally when the member AND its treatment are known only via hydration (phase-checklists.md 3e)', async () => {
+    // The test just above proves the guard sees a member THIS device captured, individually
+    // registered and dosed on its own phone. The gap this closes is the member captured on ANOTHER
+    // device: `AdjustMobScreen.tsx` read `useAnimals()`/`useMoves()`/`useHealthEvents()` — all
+    // local-only — so a member standing in this mob only because another device registered it (and
+    // dosed it) was invisible to `meatWithdrawalForMob`'s mob-membership reconstruction. This
+    // device never runs any `seedHerd`-equivalent for the member: the animal and its treatment
+    // both arrive purely through down-sync.
+    cachedSession();
+    seedFlock();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('animals', {
+        id: ANIMAL_ID,
+        farm_id: FARM_ID,
+        species: 'sheep',
+        sex: 'female',
+        breed: null,
+        status: 'alive',
+        dob: null,
+        dob_estimated: 0,
+        status_at: null,
+        dam_id: null,
+        sire_id: null,
+        // Standing in Flock A as first captured — the opening mob `mobMembership` reads.
+        mob_id: MOB_ID,
+        land_unit_id: null,
+        source: null,
+        acquired_at: null,
+        brand_id: null,
+        brand_applied_at: null,
+        attributes: '{}',
+        photo_key: null,
+        enterprise_id: null,
+      });
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000f003',
+        farm_id: FARM_ID,
+        animal_id: ANIMAL_ID,
+        mob_id: null,
+        type: 'treatment',
+        occurred_at: new Date().toISOString(),
+        payload: JSON.stringify({
+          product: 'Terramycin LA',
+          administeredOn: farmToday(),
+          meatWithholdUntil: '2099-01-01',
+        }),
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    });
+    expect(await storedTallies()).toHaveLength(0);
+  });
+
   it('⭐ lets a BACK-DATED tally be recorded against the flock as it stood THAT day', async () => {
     // The client mirror of the as-at cut the server already got. The screen folded the WHOLE local
     // log and then judged a past capture against the present, so: sell the whole flock on the 20th,

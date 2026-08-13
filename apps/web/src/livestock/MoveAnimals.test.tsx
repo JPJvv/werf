@@ -8,12 +8,12 @@
  * rather than quietly clearing it.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -188,6 +188,45 @@ describe('moving animals (FR-103)', () => {
     });
     const rows = screen.getAllByRole('listitem');
     expect(rows.every((row) => (row.textContent ?? '').includes('Camp 4'))).toBe(true);
+  });
+
+  it('⭐ offers a mob another device created, known only via hydration, as a move destination (phase-checklists.md 3e)', async () => {
+    // The gap this closes: the destination-mob dropdown read `useMobs()` (local-only) instead of
+    // `useEffectiveMobs()` — a mob created on another device and already replicated down did not
+    // appear as somewhere a gate could walk animals into, even though the same screen's animal
+    // picker (`useEffectiveAnimals()`) already saw hydrated animals correctly.
+    cachedSession();
+    const [camp1] = seedCamps('Camp 1');
+    seedHerd(2, camp1!);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/move');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    const HYDRATED_MOB = '0190f3a0-0000-7000-8000-00000000b099';
+    act(() => {
+      fake.hydrateRow('mobs', {
+        id: HYDRATED_MOB,
+        farm_id: FARM_ID,
+        enterprise_id: null,
+        land_unit_id: null,
+        name: 'Down-synced flock',
+        species: 'cattle',
+        head_count: null,
+        initial_head_count: null,
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
+    await user.selectOptions(screen.getByLabelText(/move into which group/i), HYDRATED_MOB);
+    await user.click(screen.getByRole('button', { name: /move them/i }));
+
+    let moves: readonly Record<string, unknown>[] = [];
+    await waitFor(async () => {
+      moves = await storedMoves();
+      expect(moves).toHaveLength(2);
+    });
+    expect(moves.every((m) => m['toMobId'] === HYDRATED_MOB)).toBe(true);
   });
 
   it('leaves the group alone when only a camp is named', async () => {

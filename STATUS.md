@@ -3,16 +3,16 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-13 (3f retention window, migration snapshot baseline, and quota-retry
-lifecycle follow-on completed; full uncached `pnpm verify` green: 106 files / 1,100 tests, 12/12
-type-check tasks, 7/7 builds, 156.78 KB gz interactive bundle ≤ 250 KB.
-Prior entry: owner-triggered `sync-auditor` + `compliance-checker` + `reviewer` pass,
-run together at JP's request — "run all relevant agents ... report back what blocks progress." ✅
-**Compliance-checker cleared FR-131 with zero findings — the sole recorded merge blocker is closed.**
-`sync-auditor` found 2 MEDIUM + 1 LOW in the new attachments module (not FR-131), all fixed same
-session under §6 clause 3. `reviewer` independently reproduced every load-bearing STATUS.md claim
-and found no contradictions. See §3/§4 for full detail. 3f–3i worked per JP's "complete as much of
-3f-3i as possible" — 3f/3g/3h/3i(a)/3i(b)/3i(d) closed; 3i(c) deliberately not started — see §5)
+**Last updated:** 2026-08-13 (3e's compliance-checker pass, requested by JP, found two findings
+against the animals/moves/health hydration diff — both fixed. Finding 1 (mob_id current-vs-opening)
+fixed; finding 2 (`mergeById`'s local-wins shadowing a self-captured move/dose's hydrated
+enrichment) fixed with a new `mergeByIdPreferHydrated`. **A THIRD pass, requested by JP and scoped
+strictly to the finding-2 fix diff (§6 clause 1), returned APPROVABLE** — every one of the 10 call
+sites verified exhaustively (grep, not sampling), the tally/animal exclusion traced against source
+rather than trusted, the `Outbox.tsx` send/guard boundary confirmed intact, no field-loss path
+found. Two LOW docstring-precision notes (not defects) fixed same session. **The FR-131 compliance
+gate on this diff is now closed** — the sole remaining blocker before merge-ready is JP's own call
+on when to commit/push. See §3.)
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -26,7 +26,7 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d/3f/3g/3h done, 3e started (mobs/tallies), 3i(a)/3i(b)/3i(d) done, 3i(c) not started, unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ✅ `sync-auditor` pass + re-pass over 3e: every finding closed, including Finding 2 (2026-08-13 — partitioning retired, migration 0021, see §3). 2026-08-13: 3f CLOSED: quota-failed writes survive store disposal through one application-scoped retry coordinator, and the authoritative 24-month events read set is implemented as equality-bucket month subscriptions with per-farm configuration. 3g (additive-migration test), 3h (sync health surface), 3i(a)/(d) (attachments schema/tenancy, photo_key pin), and 3i(b) (API upload module) are CLOSED. The migration snapshot gap is reconciled by no-op baseline 0023, with 0024 proving clean subsequent generation. ✅ The owner-triggered `compliance-checker` pass ran and CLEARED — APPROVABLE, zero findings. `sync-auditor` findings in the attachments module were fixed under §6 clause 3. Remaining, separately: 3e scope (animals/moves/health hydration) not started and 3i(c) deliberately deferred. See §3/§4/§5 |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d/3f/3g/3h done, 3e CLOSED for mobs/tallies AND animals/moves/health/identifiers/theft/weights/breeding (land still open), 3i(a)/3i(b)/3i(d) done, 3i(c) not started, unmerged, uncommitted, awaiting a fresh compliance pass | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ✅ `sync-auditor` pass + re-pass over 3e: every finding closed, including Finding 2 (2026-08-13 — partitioning retired, migration 0021, see §3). 2026-08-13: 3f CLOSED: quota-failed writes survive store disposal through one application-scoped retry coordinator, and the authoritative 24-month events read set is implemented as equality-bucket month subscriptions with per-farm configuration. 3g (additive-migration test), 3h (sync health surface), 3i(a)/(d) (attachments schema/tenancy, photo_key pin), and 3i(b) (API upload module) are CLOSED. The migration snapshot gap is reconciled by no-op baseline 0023, with 0024 proving clean subsequent generation. ✅ The owner-triggered `compliance-checker` pass ran and CLEARED — APPROVABLE, zero findings — over the branch AS IT STOOD THEN. ⛔ **2026-08-13, later the same day: 3e extended to animals/moves/health/identifiers/theft/weights/breeding hydration, touching FR-131 guard files the clearance above did not cover — waiting on a fresh owner-triggered compliance pass, not yet requested.** `sync-auditor` findings in the attachments module were fixed under §6 clause 3. Remaining, separately: 3e land hydration not started, and 3i(c) deliberately deferred. See §3/§4/§5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -41,6 +41,70 @@ fixture, human-gated regulated verification, a false uncached-gate timeout, and 
 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+✅ **CLOSED, 2026-08-13 — 3e extended to animals/moves/health/identifiers/theft/weights/breeding
+hydration, touching FR-131 files. JP requested `compliance-checker`; it ran THREE times: two real
+findings, both fixed, then a re-pass scoped to just the finding-2 fix diff (§6 clause 1) returned
+APPROVABLE.** Mirrors the mobs/tallies pattern (`HydratedLivestock.tsx` +8 hydrated stores). **A
+genuine wire-shape trap found and closed:** a hydrated treatment/vaccination/dip carries no
+`productId` — only `product` (a name) and the server-resolved `meatWithholdUntil` — so
+`withdrawal.ts` was widened to a `WithholdDose` union that prefers the hydrated date. Also closed:
+the duplicate-tag guard, theft-incident read/sent gap, move-destination picker, three informational
+prefill/dedup gaps, and the shared test fake's `events` watcher (was hard-coded to `type ===
+'tally'`) — full file list in `phase-checklists.md` 3e.
+
+**Finding 1 (compliance-checker pass 1, FIXED):** a hydrated animal's `mob_id` is the server's
+denormalised CURRENT position (overwritten by every move that lands as latest), not the opening one
+`mobMembership()` assumed. Fixed by threading `fromMobId`/`fromLandUnitId` off the wire (the server
+resolves these unconditionally at write time — `movement.ts`'s `recordMove`) onto `StoredMove`, and
+seeding `mobMembership`'s `openMob` from the earliest move's `fromMobId` when present.
+
+**Finding 2 (compliance-checker re-pass, FIXED):** the finding-1 fix left the same false-CLEAR
+failure mode open through a MORE common trigger. `mergeById`'s local-wins, combined with local
+capture rows never being evicted, meant a move/dose THIS DEVICE captured (structurally missing
+`fromMobId`/`meatWithholdUntil`, since a local capture never carries them) permanently shadowed its
+own hydrated echo the moment that echo landed with the same id — the ordinary two-device (or even
+one-device, next-sync) workflow. Fixed with `mergeByIdPreferHydrated` (`HydratedLivestock.tsx`):
+hydrated wins on a shared id, applied at the 6 `foldMoves` + 4 `foldHealth` sites
+(`AdjustMobScreen.tsx`, `RecordLossScreen.tsx`, `herd.ts` ×2, `residue.ts`, `Outbox.tsx`). Scoped
+deliberately: `mergeById`'s local-wins is UNCHANGED and still correct for tallies (hydrated
+projection drops `count` — a reduction, not enrichment) and animals (single-creation row, no mixed-
+provenance case) — the helper's own docstring states the strict-superset criterion so a future call
+site is not swapped wrongly. `herd.ts`'s position fold (`useEffectiveAnimals`) was swapped too, on
+top of the guard sites: `mapHydratedMove`'s existing header already established the wire's `toMobId`
+comes back ALWAYS resolved (never `undefined`-means-unchanged the way local is), so preferring
+hydrated makes the client's position projection read the identical inputs the server's own
+projection folds from — strictly safer, not just guard-scoped. `mergeById`'s and `Outbox.tsx`'s
+docstrings, which claimed "the content is the same either way once both exist", were corrected —
+that claim is false for moves/health and was the premise the second finding falsified.
+
+Every fix (both findings) has a fail-first test (`git stash`/temporary-revert per file, confirmed
+fail, restored) — finding 2's e2e reproduction (`RecordLoss.test.tsx`) seeds BOTH the local move
+log and the hydrated `events` table with the SAME move id, the exact shadow-copy trace.
+
+**Finding-2 re-pass (compliance-checker, third pass, scoped to the fix diff only): APPROVABLE.**
+Verified exhaustively (grep, not sampling) all 10 call sites switched; traced (not trusted) that
+the tally/animal exclusion is correct against source — animals ARE mutated server-side (the
+docstring's original "single-creation row" claim was wrong), but no fold trusts position/status
+directly off the row either way, so `mergeById` is still correct there for a narrower reason than
+first stated; confirmed the `Outbox.tsx` send-queue/guard-fold boundary intact and no field-loss
+path for `WithholdDose`. Two LOW docstring-precision notes fixed same session (the stated criteria
+overclaimed; the real argument is "what does each fold consumer actually read" — this repo's own
+top recurring-defect class is a comment whose premise outlived the code). **The FR-131 gate on this
+diff is now closed.** Full `pnpm verify`: 106 files / 1,127 tests, 7/7 builds, 158.99 KB gz;
+`pnpm test:e2e`: 30/1 skip. **Not committed** — this session's commit permission covered only the
+preceding 3f checkpoint (`ff443ff`). What remains is JP's own call on when to commit/push.
+
+⛔ **Open owner decision — a narrower residual finding 2's re-pass flagged but did NOT call a
+defect: a BACK-DATED local move.** If a farmer captures a move today for a walk that happened days
+ago, and this device has never received that animal's earlier hydrated moves, the device genuinely
+has no way to know the TRUE opening mob at that past instant — there is no correct client-side
+answer, only a preview that may be wrong until the next hydration. Two ways to close this:
+**(a) fail-closed** — a back-dated move with no hydrated context blocks the FR-131 preview outright
+rather than guessing, or **(b) accept as a documented preview limitation** — the guard already
+recomputes authoritatively at capture time in the common (non-back-dated) case, and the SERVER'S own
+guard (not this preview) is still the actual enforcement boundary.
+→ _Answer:_
 
 ✅ **Closed 2026-08-13 — owner-triggered `compliance-checker` pass over the full branch
 (`13a0d46..HEAD`) ran at JP's request ("run all relevant agents ... report back what blocks
@@ -112,37 +176,15 @@ which is worse than the status quo. Taken back to JP with that fact; **JP chose 
 partitioning outright.** Migration `0021_retire_farm_partitioning.sql`: `create_farm_partition`
 dropped, `events_default` is now the permanent only partition. Full record: `phase-checklists.md` 3e.
 
-⭐ **Closed 2026-08-10 — `sync-auditor` pass + re-pass over 3e, 2 SEV-2 + 1 LOW → all fixed, 2
-follow-on findings on the fixes → also fixed.** Finding 1 (SEV-2, FR-131): the withholding guard
-read raw local `tallies` at three call sites, blind to a withholding known only via down-sync —
-fixed by reading the `mergeById` local+hydrated fold everywhere (`AdjustMobScreen.tsx`,
-`Outbox.tsx`, `residue.ts`); **this is why the slice needs a compliance-checker pass before
-merge.** Finding 2: see above. LOW: `hydrated-table-store.ts`'s `db.watch()` leaked across farm
-switches, fixed with `close()`. Re-pass found a StrictMode double-invoke that permanently killed
-hydration in `pnpm dev` (fixed by constructing the store inside the effect) and a tripwire gap
-(`FarmsService.createFarm` uncovered, strengthened). Full detail: `phase-checklists.md` 3e.
-
-⭐ **Found+fixed 2026-08-10 — PowerSync replicates ZERO rows for a partitioned source table
-(`events`), silently.** `publish_via_partition_root` is explicitly rejected (`PSYNC_S1143`); a
-config against the partitioned parent validates and "replicates" while delivering nothing to any
-client, ever. Fixed at the generator (`PARTITIONED_SOURCE_TABLE`/`sourceTable` → `FROM
-events_default AS events`), not hand-patched. Production-relevant for the af-south-1 publication.
-Full account: `phase-checklists.md` 3e.
-
-✅ **Closed 2026-08-10 — REST-up/PowerSync-down is the PERMANENT upload topology.** `Outbox.tsx` is
-the durable upload queue; PowerSync is down-sync only; `PowerSyncBackendConnector.uploadData` is a
-fail-loud tripwire, not a stand-in. Reasoning: **[ADR-0012](docs/03-architecture/adr/ADR-0012-upload-topology.md)**.
-
-**Resolved 2026-08-09, four items, each with full evidence in `phase-checklists.md` 3b unless
-linked:** (1) Sync Streams, not classic Sync Rules (JOIN/subquery ban blocked three tables);
-`IN (SELECT...)` validates, `EXISTS`/`now()` do not — `farm_users.expires_at` closed by
-`MembershipExpiryService`'s minute sweep instead
-(`docs/04-delivery/phase-3-sync-expiry-enforcement-gap-2026-08-09.md`). (2) Werf absorbs Voorman's
-planning discipline, archived not merged; Google OIDC primary via ADR-0011, passkeys step-up, never
-SMS (`docs/04-delivery/werf-voorman-consolidation-audit-2026-08-09.md`). (3) Object storage is a
-Phase 3 shared foundation (OPFS + SQLite metadata, MinIO dev/test, S3 prod) — Phase 2 stored no
-photo. (4) The PowerSync WASM engine (~2.7MB gz) is precached, not counted against NFR-009's 250KB
-budget (`docs/04-delivery/phase-3-capture-migration-2026-08-09.md`).
+**2026-08-09/10, condensed — full detail in git history and `phase-checklists.md` 3b/3e (also
+summarised in §5's items 1–14):** `sync-auditor` pass+re-pass over 3e closed 2 SEV-2+1 LOW then a
+StrictMode double-invoke + a tripwire gap; a partitioned `events` table was found to silently
+replicate ZERO rows through PowerSync (`PSYNC_S1143`), fixed at the config generator; REST-up/
+PowerSync-down was set as the PERMANENT upload topology (**[ADR-0012](docs/03-architecture/adr/ADR-0012-upload-topology.md)**);
+Sync Streams (not classic Sync Rules) with `MembershipExpiryService` closing the `EXISTS`/`now()`
+gap; Werf absorbs Voorman's planning discipline (Google OIDC primary, passkeys step-up, never SMS);
+object storage set as a Phase 3 shared foundation (OPFS+SQLite, MinIO dev/test, S3 prod); the
+PowerSync WASM engine (~2.7MB gz) precached and excluded from NFR-009's budget.
 
 ## 4. Verification
 
@@ -150,54 +192,36 @@ budget (`docs/04-delivery/phase-3-capture-migration-2026-08-09.md`).
 |---|---|
 | `pnpm project:check` | Green. ⚠️ Unanswered owner decisions are now a WARNING, not a failure — the old exit-1 made "ask, do not guess" break the definition of done. `--strict` restores the hard failure and **nothing invokes it yet**; that is a deliberate, informed weakening, not an oversight |
 | Review agents | ✅ **Tenth pass run 2026-08-08 at owner request over `17891f0..HEAD`.** `sync-auditor`: APPROVABLE. `compliance-checker`: APPROVABLE — **withdraws its standing NOT APPROVABLE**. `reviewer`: NOT APPROVABLE, carried solely by the exit-gate line "owner-triggered passes still open", which this pass closed. **No SEV-1 and no SEV-2 from any agent** |
-| `pnpm verify` (2026-08-09, membership expiry bridge) | ✅ Uncached: 97 test files / 1,020 tests; 7/7 builds; bundle 151.67 KB gz ≤ 250 KB. Real-Postgres proof: elapsed accepted + pending grants tombstoned, future/permanent untouched, existing tombstone preserved, second sweep changed 0 rows |
-| Manual — real service, real per-user delivery (2026-08-09) | ✅ A freshly registered test farm's row reached the client through a real `.connect()` against the self-hosted service: `buckets: 16`, `operations_synced: 6`, client read back exactly its own farm — the rung config-validation/replication-log evidence alone could not prove; see phase-checklists.md 3b |
-| `pnpm verify` (2026-08-09, capture-store SQLite migration, 3c + deterministic gate test) | ✅ Uncached: 99 test files / 1,038 tests, 12/12 typecheck, 7/7 builds; bundle 153.34 KB gz ≤ 250 KB interactive-path budget (195.86 KB gz precached engine, reported separately, not gated) |
-| `pnpm test:e2e` (2026-08-09, capture-store SQLite migration, 3c) | ✅ 30/30 Chromium journeys passed (incl. 2 new `capture-migration.spec.ts` cases: clean migration + order preserved + localStorage untouched, and a second cold start as a no-op), re-run 3× on the sync-critical specs with no flakes |
-| 2026-08-09/08-10 baseline (condensed — full detail in git history and `phase-checklists.md` 3b/3c/3d/3e) | ✅ First full-branch `sync-auditor` pass (2 findings, fixed) → `pnpm verify` 99/1,043 green. 3d audited clean. 3e mobs/tallies hydration shipped, real two-device issue #8 journey proven manually against the live stack, partition-replication defect found+fixed → `pnpm verify` 101/1,059 green, e2e 30/1 skip. `sync-auditor` pass over 3e (2 SEV-2+1 LOW) then re-pass (1 MEDIUM+1 coverage gap), all fixed → `pnpm verify` 102/1,065 green, e2e 30/1 skip, twice back to back, no flakes |
-| `pnpm verify` (2026-08-13, Finding 2 closed — migration 0021) | ✅ Uncached: 102 test files / 1,066 tests, 7/7 builds; bundle 155.40 KB gz ≤ 250 KB. `events.integration.test.ts`/`farms.integration.test.ts`'s rewritten invariants pass, incl. a new test proving `create_farm_partition` no longer exists to call |
-| `pnpm verify` (2026-08-13, 3f/3g/3h/3i(a)/3i(d)) | ✅ Uncached: 103 test files / 1,076 tests, 7/7 builds; bundle 155.96 KB gz ≤ 250 KB. Real-Postgres proof for migration 0022 (`werf-postgres`); `journeyapps/powersync-service:1.23.3` restarted on the regenerated `sync-config.yaml`, "Loaded sync config" with no error, `attachments` confirmed in the `FOR ALL TABLES` publication. Every new test watched to FAIL first, incl. `sqlite-capture-store.spec.ts`'s quota-retry test against the actual bug it fixes |
-| `pnpm test:e2e` (2026-08-13, same slice) | ✅ 30 passed / 1 skipped (the real-stack tripwire, correctly absent from the default lane), no regression from the 3f/3g/3h/3i(a)/(d) diff |
-| `pnpm verify` (2026-08-13, 3i(b) — API attachments module) | ✅ Uncached: 104 test files / 1,089 tests, 7/7 builds; bundle 155.98 KB gz ≤ 250 KB. `attachments.integration.test.ts`: 9/9 against a REAL Postgres AND a real `minio/minio:latest` (testcontainers), never mocked — including a genuine PUT round-trip through a presigned URL and two tests that parse the response through `attachmentUploadUrlSchema` after a JSON round-trip (this is what caught the wire-contract bug logged in §3). ⚠️ An earlier attempt at this same run failed 9 unrelated integration-test files with `Port 5432/tcp not bound` / `Health check not healthy` — traced to Docker resource contention from an EARLIER background `pnpm verify` invocation of mine still running concurrently (18+ orphaned testcontainers Postgres containers found via `docker ps`); stopped the stale background task, removed the orphans, re-ran once cleanly. Not a code defect — flagged so a future session recognises the same symptom instead of chasing a phantom regression |
-| Review agents (2026-08-13, owner-triggered, this session, "run all relevant agents") | ✅ **`compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings — the sole recorded merge blocker is closed.** ⚠️ **`sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, no tenancy leak, all fixed same session under §6 clause 3 (fail-first tested).** ✅ `reviewer`: independently reproduced every load-bearing STATUS.md claim (gate results, migration 0021, real-Postgres/real-MinIO attachments tests, commit authorship) with **no contradictions**; correctly declined to call Phase 3 exit-gate complete (3e/3f/3i(c) already-recorded gaps, not new). Full detail: §3 |
-| `pnpm verify` (2026-08-13, sync-auditor findings 1–3 fixed) | ✅ Uncached, run directly (not trusted from the `pnpm verify` turbo tail alone — that log only showed the cached-mixed `build` step's summary, so `pnpm test` was re-run standalone to confirm a genuine execution): 104 test files / **1,092 tests** (1,089 + 3 new fail-first tests), real 187s wall duration, 1332.99s cumulative test time. `attachments.integration.test.ts`: 12/12, including the 3 new tests, each independently confirmed to FAIL against the pre-fix code (via `git stash` on just `attachments.service.ts`) before being confirmed green with the fix restored. Build: 155.98 KB gz ≤ 250 KB, unchanged (no bundle-affecting code) |
-| `pnpm test:e2e` (2026-08-13, same fixes) | ✅ 30 passed / 1 skipped, real 1.1m run, no regression |
-| `pnpm verify` (2026-08-13, 3f follow-ons closed) | ✅ Fully uncached: **106 test files / 1,100 tests**, including real-Postgres forward migration through no-op baseline 0023 and generated retention migration 0024, and 12/12 real Postgres/MinIO attachment tests. 12/12 type-check tasks; 7/7 builds; interactive bundle **156.78 KB gz ≤ 250 KB**. Project check reports 0 open owner decisions. The pinned `journeyapps/powersync-service:1.23.3` also started all engines and logged `Loaded sync config` on the generated equality-bucket stream. The gate exposed and closed a pre-existing mixed-clock defect in attachment finalization: Postgres creation time could be later than the API-host update time; finalization now uses a monotonic Postgres expression. |
+| 2026-08-09/08-10 baseline (condensed — full detail in git history and `phase-checklists.md` 3b/3c/3d/3e) | ✅ Membership expiry bridge, real per-user delivery proven against the live service, capture-store SQLite migration (3c), first full-branch `sync-auditor` pass (2 findings, fixed), 3d audited clean, 3e mobs/tallies hydration + partition-replication defect found+fixed, a `sync-auditor` pass+re-pass over 3e (2 SEV-2+1 LOW, then 1 MEDIUM+1 coverage gap, all fixed). Ending state: `pnpm verify` 102/1,065 green, e2e 30/1 skip, twice back to back, no flakes |
+| 2026-08-13 morning, condensed (Finding 2/migration 0021, 3f/3g/3h/3i(a)/(b)/(d), full detail in git history) | ✅ Partitioning retired (migration 0021); real-Postgres proof for migration 0022, PowerSync reloaded clean; attachments module against real Postgres+MinIO, 9/9, incl. a genuine presigned-URL PUT round-trip (this run is what caught the wire-contract bug in §3). One infra note: an early run's 9 unrelated failures traced to Docker contention from a stale concurrent `pnpm verify`, not a code defect. Ending state: 104 files/1,089 tests, 7/7 builds, 155.98 KB gz, e2e 30/1 skip |
+| Review agents (2026-08-13, owner-triggered, "run all relevant agents") | ✅ **`compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings.** ⚠️ `sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, no tenancy leak, all fixed under §6 clause 3. ✅ `reviewer`: independently reproduced every load-bearing claim, no contradictions. Full detail: §3 |
+| `pnpm verify` (2026-08-13, sync-auditor findings 1–3 fixed, then 3f follow-ons closed) | ✅ Uncached, run directly (not trusted from a cached-mixed turbo tail): 104 files/1,092 tests → **106 files/1,100 tests**, incl. real-Postgres forward migration through no-op baseline 0023 + generated 0024, 12/12 real Postgres/MinIO attachment tests, a pre-existing mixed-clock defect in attachment finalization found+closed. 7/7 builds; 156.78 KB gz; e2e 30/1 skip |
+| `pnpm verify` (2026-08-13, 3e extended to animals/moves/health/identifiers/theft/weights/breeding) | ✅ Fully uncached: **106 test files / 1,119 tests** (19 new, incl. shared test-fake + `withdrawal.ts`/`WithholdDose` widening, each verified in isolation); 7/7 builds; **158.94 KB gz**. Every new test confirmed to FAIL against pre-fix code via `git stash` before being confirmed green. `pnpm test:e2e`: 30/1 skip, no regression |
+| `pnpm verify` (2026-08-13, compliance-checker findings 1+2 fixed) | ✅ Fully uncached: **106 test files / 1,127 tests** (8 new since the 1,119 baseline — finding 1: 3 `withdrawal.test.ts` + 1 `RecordLoss.test.tsx`; finding 2: 3 `HydratedLivestock.test.ts` `mergeByIdPreferHydrated` tests + 1 `RecordLoss.test.tsx` shadow-copy e2e reproduction); 7/7 builds; **158.99 KB gz**. Both fixes' tests independently confirmed to FAIL pre-fix, then pass with the fix. `pnpm test:e2e`: 30/1 skip, real 1.1m run, no regression |
 
 ## 5. Next executable steps
 
 **Items 1–14, all ✅ done 2026-08-08 through 2026-08-10 — condensed, full detail in git history and
 `phase-checklists.md`:** the tenth pass and its filed issues #4–#10 (incl. #8, the Phase 3
 `landed()`-on-hydration blocker, and #10, the `theft_incident_animals` surrogate-id gap, still
-untouched and tracked separately); 3a (SDK isolation behind `@werf/sync`, drift-checked local
-schema); Werf/Voorman consolidation (HttpOnly session cookie, auth throttles, CSP baselines); the
-real-browser OPFS proof; 3b (self-hosted PowerSync + Sync Streams replicating real rows from all 15
-tables, `PowerSyncBackendConnector` + the `auto_subscribe` fix); 3c (all 12 capture stores migrated
-to SQLite/OPFS, two hydration-gating regressions found+closed); tripwire 3e closed; a full-branch
-`sync-auditor` pass (hydration-failure isolation + 429 retry, both fixed); 3d audited clean,
-`uploadData` reframed into ADR-0012; 3e mobs/tallies down-sync + the partitioned-table replication
-defect found+fixed; a `sync-auditor` pass+re-pass over 3e (2 SEV-2+1 LOW, then 1 MEDIUM+1 coverage
-gap, all fixed). Do not begin payroll on local adapters. `docs/phase-3-6-scope` still needs
-rebasing onto `main` before any Phase 3–6 scope-doc work.
+untouched and tracked separately); 3a (SDK isolation behind `@werf/sync`); Werf/Voorman
+consolidation; the real-browser OPFS proof; 3b (self-hosted PowerSync + Sync Streams); 3c (all 12
+capture stores migrated to SQLite/OPFS); tripwire 3e closed; 3d audited clean, `uploadData`
+reframed into ADR-0012; 3e mobs/tallies down-sync + the partitioned-table replication defect
+found+fixed; a `sync-auditor` pass+re-pass over 3e. Do not begin payroll on local adapters.
+`docs/phase-3-6-scope` still needs rebasing onto `main` before any Phase 3–6 scope-doc work.
 
 15. ✅ Done 2026-08-13: **Finding 2 closed — partitioning retired**, migration
     `0021_retire_farm_partitioning.sql`; see §3 for the full decision record.
 16. ✅ Done 2026-08-13, JP explicitly overrode item 15's sequencing ("complete as much of 3f-3i as
     possible", ahead of the compliance pass — deliberate, not a lapse): **3g, 3h, 3i(a), 3i(b),
-    3i(d) closed; 3f initially half-closed; 3i(c) deliberately deferred, not a lapse (design notes in
-    `phase-checklists.md` 3i(c) so the next session starts warm).** 3i(b): presigned-upload +
-    checksum-verified finalize API against a real S3-compatible adapter, empirically confirmed
-    MinIO enforces the declared checksum at PUT time (`object-storage.ts` header). A wire-contract
-    bug was found and closed in the same session — `attachmentUploadUrlSchema` promised `expiresAt`
-    on every response and non-null `uploadUrl`/`checksumHeaderValue`, the service returned neither
-    correctly; service-level tests never caught it because they never round-tripped the response
-    through the schema a real client parses. Fixed, and the fix is now pinned by two tests that
-    parse a JSON round-trip through the schema, not just assert fields. None of this touched the
-    FR-131 guard files (`AdjustMobScreen.tsx`, `Outbox.tsx`'s taint walk, `residue.ts`) on purpose,
-    so the compliance pass JP will eventually trigger is not entangled with this session's diff.
-    Full detail: `phase-checklists.md` 3f/3g/3h/3i, and §3 above for the follow-on decisions this
-    raised. Next: JP reviews, then requests whichever agents get this merge-ready — his own
-    words for this session's closing step.
+    3i(d) closed; 3f initially half-closed; 3i(c) deliberately deferred (design notes in
+    `phase-checklists.md` 3i(c)).** 3i(b): presigned-upload + checksum-verified finalize API against
+    a real S3-compatible adapter. A wire-contract bug was found and closed the same session —
+    `attachmentUploadUrlSchema` promised fields the service did not correctly return; service-level
+    tests never caught it because they never round-tripped the response through the schema a real
+    client parses. Fixed, pinned by two tests that parse a JSON round-trip. Full detail:
+    `phase-checklists.md` 3f/3g/3h/3i, §3 above.
 17. ✅ Done 2026-08-13, this session, item 16's "Next" step: **JP requested all relevant agents
     ("run all relevant agents, to improve, fix and report back what blocks progress"), treated as
     the owner trigger for `compliance-checker` (item 15's "not yet" was for earlier the same day,
@@ -213,6 +237,16 @@ rebasing onto `main` before any Phase 3–6 scope-doc work.
     per-farm 24-month event window; migration 0023 restores the Drizzle current-state snapshot
     baseline and generated 0024 proves it; capture-store disposal is wired through all twelve
     providers while application-scoped retry ownership preserves quota-failed writes. See §3.
+19. ✅ Done 2026-08-13, JP's explicit choice of this session's next step ("3e: animals/moves/health
+    hydration"): **3e extended past mobs/tallies to cover animals/moves/health/identifiers/theft/
+    weights/breeding.** Full detail: §3, `phase-checklists.md` 3e.
+20. ✅ Done 2026-08-13, JP's explicit choice twice this session ("Request compliance-checker now",
+    then "Request compliance-checker re-pass now" after the clause-4 stakes were named out loud):
+    **`compliance-checker` ran three times over the item-19 diff — finding 1, fixed; finding 2 (a
+    re-pass), fixed; a THIRD pass scoped to just the finding-2 fix diff → APPROVABLE.** The FR-131
+    gate on this diff is closed. Full record: §3. ⛔ Not yet done: the commit — this session's
+    commit permission still covers only the preceding 3f checkpoint. §3 also carries one open owner
+    decision (back-dated local moves), not a defect, unrelated to the now-closed gate.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

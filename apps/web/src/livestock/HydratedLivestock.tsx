@@ -27,9 +27,21 @@ import {
 } from 'react';
 import { createHydratedTableStore, type HydratedTableStore } from '@werf/sync';
 import type { TallyRecord } from '@werf/domain';
+import type { AnimalStatus } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
 import type { StoredMob } from './LocalMobs';
+import type { StoredAnimal } from './LocalHerd';
+import type { StoredMove } from './LocalMoves';
+import type { StoredIdentifier } from './LocalIdentifiers';
+import type { StoredTheftIncident } from './LocalTheft';
+import type { StoredWeight } from './LocalWeights';
+import type {
+  MatingMethod,
+  PregnancyMethod,
+  PregnancyResult,
+  StoredBreedingEvent,
+} from './LocalBreeding';
 
 const MOBS_SQL =
   'SELECT id, farm_id, enterprise_id, land_unit_id, name, species, head_count, initial_head_count FROM mobs WHERE farm_id = ? AND deleted_at IS NULL';
@@ -38,6 +50,44 @@ const MOBS_SQL =
 // `projectHeadCount` folds — every other event type is invisible to this query by construction.
 const TALLY_EVENTS_SQL =
   "SELECT id, mob_id, occurred_at, payload FROM events WHERE farm_id = ? AND type = 'tally' AND deleted_at IS NULL";
+
+const ANIMALS_SQL =
+  'SELECT id, farm_id, enterprise_id, species, breed, sex, dob, dob_estimated, status, status_at, ' +
+  'dam_id, sire_id, mob_id, land_unit_id, source, acquired_at, brand_id, brand_applied_at, ' +
+  'attributes, photo_key FROM animals WHERE farm_id = ? AND deleted_at IS NULL';
+
+/** The lifecycle event types `projectHerd`/`residue.ts`/the weaning queue fold — see `herd.ts`. */
+const LIFECYCLE_EVENT_TYPES = "('birth','death','sale','missing','purchase','weaning')";
+const LIFECYCLE_EVENTS_SQL =
+  `SELECT id, animal_id, type, occurred_at, payload FROM events ` +
+  `WHERE farm_id = ? AND type IN ${LIFECYCLE_EVENT_TYPES} AND deleted_at IS NULL`;
+
+const MOVE_EVENTS_SQL =
+  'SELECT id, farm_id, animal_id, occurred_at, batch_id, payload FROM events ' +
+  "WHERE farm_id = ? AND type = 'move' AND deleted_at IS NULL";
+
+const HEALTH_EVENT_TYPES = "('treatment','vaccination','dip')";
+const HEALTH_EVENTS_SQL =
+  `SELECT id, animal_id, mob_id, payload FROM events ` +
+  `WHERE farm_id = ? AND type IN ${HEALTH_EVENT_TYPES} AND deleted_at IS NULL`;
+
+const IDENTIFIERS_SQL =
+  'SELECT id, farm_id, animal_id, type, value, is_primary, applied_at FROM animal_identifiers ' +
+  'WHERE farm_id = ? AND deleted_at IS NULL';
+
+const THEFT_INCIDENTS_SQL =
+  'SELECT id, farm_id, discovered_at, last_seen_at, last_seen_location_geojson, land_unit_id, ' +
+  'head_count, case_number, reporting_station, observations FROM theft_incidents ' +
+  'WHERE farm_id = ? AND deleted_at IS NULL';
+
+const WEIGHT_EVENTS_SQL =
+  'SELECT id, farm_id, animal_id, occurred_at, payload FROM events ' +
+  "WHERE farm_id = ? AND type = 'weight' AND deleted_at IS NULL";
+
+const BREEDING_EVENT_TYPES = "('mating','pregnancy_test')";
+const BREEDING_EVENTS_SQL =
+  `SELECT id, farm_id, animal_id, type, occurred_at, payload FROM events ` +
+  `WHERE farm_id = ? AND type IN ${BREEDING_EVENT_TYPES} AND deleted_at IS NULL`;
 
 /** Tolerant per row — a row written by a future schema version this build does not understand is
  *  skipped, not fatal, same philosophy as `sqlite-capture-store.ts`'s payload parsing. */
@@ -131,9 +181,409 @@ function mapHydratedTally(row: Record<string, unknown>): TallyRecord | null {
   }
 }
 
+/** Tolerant per row, same shape `recordAnimal` (`@werf/domain`) writes. `dob_estimated`/`attributes`
+ *  round-trip as SQLite INTEGER/TEXT — decoded the same way `sqlite-capture-store.ts` decodes any
+ *  local row, not assumed. */
+function mapHydratedAnimal(row: Record<string, unknown>): StoredAnimal | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const species = row['species'];
+  const sex = row['sex'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof species !== 'string' ||
+    typeof sex !== 'string'
+  ) {
+    return null;
+  }
+  const attributesJson = row['attributes'];
+  let attributes: Record<string, unknown> = {};
+  if (typeof attributesJson === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(attributesJson);
+      if (typeof parsed === 'object' && parsed !== null)
+        attributes = parsed as Record<string, unknown>;
+    } catch {
+      // Tolerant: an unreadable attributes blob loses only the species-specific extras, not the row.
+    }
+  }
+  const str = (key: string): string | null =>
+    typeof row[key] === 'string' ? (row[key] as string) : null;
+  // `statusAt` is the one `Date`-typed field here (`timestampSchema`, unlike the plain
+  // YYYY-MM-DD `dateSchema` every other date on this row uses) — see primitives.ts.
+  const statusAtRaw = row['status_at'];
+  const statusAtDate = typeof statusAtRaw === 'string' ? new Date(statusAtRaw) : null;
+  const status = row['status'];
+  return {
+    id,
+    farmId,
+    enterpriseId: str('enterprise_id'),
+    species: species as StoredAnimal['species'],
+    breed: str('breed'),
+    sex: sex as StoredAnimal['sex'],
+    dob: str('dob'),
+    dobEstimated: row['dob_estimated'] === 1,
+    status: (typeof status === 'string' ? status : 'alive') as StoredAnimal['status'],
+    statusAt: statusAtDate !== null && !Number.isNaN(statusAtDate.getTime()) ? statusAtDate : null,
+    damId: str('dam_id'),
+    sireId: str('sire_id'),
+    mobId: str('mob_id'),
+    landUnitId: str('land_unit_id'),
+    source: str('source'),
+    acquiredAt: str('acquired_at'),
+    brandId: str('brand_id'),
+    brandAppliedAt: str('brand_applied_at'),
+    attributes,
+    photoKey: str('photo_key'),
+  };
+}
+
+/**
+ * The fold's own minimal shape for a lifecycle event — everything `projectHerd`'s status fold
+ * (`herd.ts`), the weaning queue's dedup, and `residue.ts`'s disposal scan read, and nothing a
+ * hydrated row cannot supply. `status` is DERIVED from `type` here rather than read off the wire —
+ * the server never stores it (a lifecycle event's status transition is a client+server READ-MODEL
+ * projection, never a column — see `livestock.service.ts`'s `recordDeath`), so local and hydrated
+ * events derive it the identical way.
+ */
+export interface HydratedLifecycleEvent {
+  readonly id: string;
+  readonly animalId: string;
+  readonly type: 'birth' | 'death' | 'sale' | 'missing' | 'purchase' | 'weaning';
+  readonly status: AnimalStatus | null;
+  readonly occurredAt: string;
+  /** Death only — whether the death was a slaughter (FR-131 food-chain disposal). */
+  readonly slaughtered?: boolean;
+}
+
+function statusForLifecycleType(type: HydratedLifecycleEvent['type']): AnimalStatus | null {
+  switch (type) {
+    case 'death':
+      return 'dead';
+    case 'sale':
+      return 'sold';
+    case 'missing':
+      return 'missing';
+    default:
+      return null;
+  }
+}
+
+function mapHydratedLifecycleEvent(row: Record<string, unknown>): HydratedLifecycleEvent | null {
+  const id = row['id'];
+  const animalId = row['animal_id'];
+  const type = row['type'];
+  const occurredAtRaw = row['occurred_at'];
+  if (
+    typeof id !== 'string' ||
+    typeof animalId !== 'string' ||
+    typeof type !== 'string' ||
+    typeof occurredAtRaw !== 'string'
+  ) {
+    return null;
+  }
+  if (
+    type !== 'birth' &&
+    type !== 'death' &&
+    type !== 'sale' &&
+    type !== 'missing' &&
+    type !== 'purchase' &&
+    type !== 'weaning'
+  ) {
+    return null;
+  }
+  const occurredAtDate = new Date(occurredAtRaw);
+  if (Number.isNaN(occurredAtDate.getTime())) return null;
+  let slaughtered: boolean | undefined;
+  if (type === 'death') {
+    const payloadJson = row['payload'];
+    if (typeof payloadJson === 'string') {
+      try {
+        const payload: unknown = JSON.parse(payloadJson);
+        if (typeof payload === 'object' && payload !== null && 'slaughtered' in payload) {
+          const value = (payload as { slaughtered?: unknown }).slaughtered;
+          if (value === true) slaughtered = true;
+        }
+      } catch {
+        // Tolerant: an unreadable payload still yields the death fact itself, just not the flag.
+      }
+    }
+  }
+  return {
+    id,
+    animalId,
+    type,
+    status: statusForLifecycleType(type),
+    occurredAt: occurredAtDate.toISOString(),
+    ...(slaughtered === true ? { slaughtered: true } : {}),
+  };
+}
+
+/**
+ * Same tolerance as `mapHydratedTally`. `toLandUnitId`/`toMobId` come back from the wire ALWAYS
+ * defined (the server resolves "unchanged" to the concrete prior value before storing — see
+ * `movement.ts`'s `recordMove`), never `undefined` the way a fresh local capture's omitted field
+ * is — so `herd.ts`'s `positionByAnimal` always treats a hydrated move as a real position, which is
+ * exactly right: the wire's resolved destination IS the position, whether or not it changed.
+ */
+function mapHydratedMove(row: Record<string, unknown>): StoredMove | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const animalId = row['animal_id'];
+  const occurredAtRaw = row['occurred_at'];
+  const payloadJson = row['payload'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof animalId !== 'string' ||
+    typeof occurredAtRaw !== 'string' ||
+    typeof payloadJson !== 'string'
+  ) {
+    return null;
+  }
+  const occurredAtDate = new Date(occurredAtRaw);
+  if (Number.isNaN(occurredAtDate.getTime())) return null;
+  try {
+    const payload: unknown = JSON.parse(payloadJson);
+    if (typeof payload !== 'object' || payload === null) return null;
+    const { toLandUnitId, toMobId, fromLandUnitId, fromMobId } = payload as {
+      toLandUnitId?: unknown;
+      toMobId?: unknown;
+      fromLandUnitId?: unknown;
+      fromMobId?: unknown;
+    };
+    const batchId = row['batch_id'];
+    return {
+      id,
+      farmId,
+      animalId,
+      occurredAt: occurredAtDate.toISOString(),
+      toLandUnitId: typeof toLandUnitId === 'string' ? toLandUnitId : null,
+      toMobId: typeof toMobId === 'string' ? toMobId : null,
+      // `movePayloadSchema` always carries these two explicitly (never omitted, per
+      // `movement.ts`'s `recordMove`) — present so `withdrawal.ts`'s `mobMembership` can seed the
+      // animal's TRUE opening mob from the wire rather than from a hydrated animal's own
+      // denormalised (and therefore CURRENT, not opening) `mobId`. Local captures never set these.
+      fromLandUnitId: typeof fromLandUnitId === 'string' ? fromLandUnitId : null,
+      fromMobId: typeof fromMobId === 'string' ? fromMobId : null,
+      batchId: typeof batchId === 'string' ? batchId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** What the FR-131 withdrawal guard needs from a hydrated dose — `WithholdDose`'s hydrated half.
+ *  No `productId`: the wire payload never carries one (see `withdrawal.ts`'s module header). */
+export interface HydratedHealthDose {
+  readonly id: string;
+  readonly animalId: string | null;
+  readonly mobId: string | null;
+  readonly administeredOn: string;
+  readonly meatWithholdUntil?: string;
+}
+
+function mapHydratedHealthDose(row: Record<string, unknown>): HydratedHealthDose | null {
+  const id = row['id'];
+  const payloadJson = row['payload'];
+  if (typeof id !== 'string' || typeof payloadJson !== 'string') return null;
+  try {
+    const payload: unknown = JSON.parse(payloadJson);
+    if (typeof payload !== 'object' || payload === null || !('administeredOn' in payload)) {
+      return null;
+    }
+    const { administeredOn, meatWithholdUntil } = payload as {
+      administeredOn: unknown;
+      meatWithholdUntil?: unknown;
+    };
+    if (typeof administeredOn !== 'string') return null;
+    const animalId = row['animal_id'];
+    const mobId = row['mob_id'];
+    return {
+      id,
+      animalId: typeof animalId === 'string' ? animalId : null,
+      mobId: typeof mobId === 'string' ? mobId : null,
+      administeredOn,
+      ...(typeof meatWithholdUntil === 'string' ? { meatWithholdUntil } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mapHydratedIdentifier(row: Record<string, unknown>): StoredIdentifier | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const animalId = row['animal_id'];
+  const type = row['type'];
+  const value = row['value'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof animalId !== 'string' ||
+    typeof type !== 'string' ||
+    typeof value !== 'string'
+  ) {
+    return null;
+  }
+  const appliedAt = row['applied_at'];
+  return {
+    id,
+    farmId,
+    animalId,
+    type: type as StoredIdentifier['type'],
+    value,
+    isPrimary: row['is_primary'] === 1,
+    appliedAt: typeof appliedAt === 'string' ? appliedAt : null,
+  };
+}
+
+/** `animalIds` is always `[]` — `theft_incident_animals` (the per-animal join) cannot sync locally
+ *  at all (issue #10: a composite-PK table with no surrogate id, which PowerSync cannot represent).
+ *  The incident row itself hydrates; which animals it names does not, yet. */
+function mapHydratedTheftIncident(row: Record<string, unknown>): StoredTheftIncident | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const discoveredAt = row['discovered_at'];
+  const headCount = row['head_count'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof discoveredAt !== 'string' ||
+    typeof headCount !== 'number'
+  ) {
+    return null;
+  }
+  const str = (key: string): string | null =>
+    typeof row[key] === 'string' ? (row[key] as string) : null;
+  return {
+    id,
+    farmId,
+    discoveredAt,
+    lastSeenAt: str('last_seen_at'),
+    lastSeenLocationGeojson: str('last_seen_location_geojson'),
+    landUnitId: str('land_unit_id'),
+    headCount,
+    caseNumber: str('case_number'),
+    reportingStation: str('reporting_station'),
+    observations: str('observations'),
+    animalIds: [],
+  };
+}
+
+function mapHydratedWeight(row: Record<string, unknown>): StoredWeight | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const animalId = row['animal_id'];
+  const occurredAtRaw = row['occurred_at'];
+  const payloadJson = row['payload'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof animalId !== 'string' ||
+    typeof occurredAtRaw !== 'string' ||
+    typeof payloadJson !== 'string'
+  ) {
+    return null;
+  }
+  const occurredAtDate = new Date(occurredAtRaw);
+  if (Number.isNaN(occurredAtDate.getTime())) return null;
+  try {
+    const payload: unknown = JSON.parse(payloadJson);
+    if (typeof payload !== 'object' || payload === null) return null;
+    const { kg, method } = payload as { kg?: unknown; method?: unknown };
+    if (typeof kg !== 'number' || typeof method !== 'string') return null;
+    return {
+      id,
+      farmId,
+      animalId,
+      kg,
+      method: method as StoredWeight['method'],
+      occurredAt: occurredAtDate.toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mapHydratedBreedingEvent(row: Record<string, unknown>): StoredBreedingEvent | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const animalId = row['animal_id'];
+  const type = row['type'];
+  const occurredAtRaw = row['occurred_at'];
+  const payloadJson = row['payload'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof animalId !== 'string' ||
+    (type !== 'mating' && type !== 'pregnancy_test') ||
+    typeof occurredAtRaw !== 'string' ||
+    typeof payloadJson !== 'string'
+  ) {
+    return null;
+  }
+  const occurredAtDate = new Date(occurredAtRaw);
+  if (Number.isNaN(occurredAtDate.getTime())) return null;
+  const occurredAt = occurredAtDate.toISOString();
+  try {
+    const payload: unknown = JSON.parse(payloadJson);
+    if (typeof payload !== 'object' || payload === null) return null;
+    if (type === 'mating') {
+      const { method, sireId, sireCode, bullInAt, bullOutAt } = payload as {
+        method?: unknown;
+        sireId?: unknown;
+        sireCode?: unknown;
+        bullInAt?: unknown;
+        bullOutAt?: unknown;
+      };
+      if (typeof method !== 'string') return null;
+      return {
+        id,
+        farmId,
+        animalId,
+        occurredAt,
+        kind: 'mating',
+        method: method as MatingMethod,
+        ...(typeof sireId === 'string' ? { sireId } : {}),
+        ...(typeof sireCode === 'string' ? { sireCode } : {}),
+        ...(typeof bullInAt === 'string' ? { bullInAt } : {}),
+        ...(typeof bullOutAt === 'string' ? { bullOutAt } : {}),
+      };
+    }
+    const { method, result, matingDate } = payload as {
+      method?: unknown;
+      result?: unknown;
+      matingDate?: unknown;
+    };
+    if (typeof method !== 'string' || typeof result !== 'string') return null;
+    return {
+      id,
+      farmId,
+      animalId,
+      occurredAt,
+      kind: 'pregnancyTest',
+      method: method as PregnancyMethod,
+      result: result as PregnancyResult,
+      ...(typeof matingDate === 'string' ? { matingDate } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface HydratedLivestockValue {
   readonly mobs: HydratedTableStore<StoredMob>;
   readonly tallies: HydratedTableStore<TallyRecord>;
+  readonly animals: HydratedTableStore<StoredAnimal>;
+  readonly lifecycleEvents: HydratedTableStore<HydratedLifecycleEvent>;
+  readonly moves: HydratedTableStore<StoredMove>;
+  readonly healthEvents: HydratedTableStore<HydratedHealthDose>;
+  readonly identifiers: HydratedTableStore<StoredIdentifier>;
+  readonly theftIncidents: HydratedTableStore<StoredTheftIncident>;
+  readonly weights: HydratedTableStore<StoredWeight>;
+  readonly breedingEvents: HydratedTableStore<StoredBreedingEvent>;
 }
 
 /** Permanently unsettled, no subscription to close — safe to construct during render (StrictMode's
@@ -162,6 +612,14 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
   const [value, setValue] = useState<HydratedLivestockValue>(() => ({
     mobs: emptyHydratedTableStore<StoredMob>(),
     tallies: emptyHydratedTableStore<TallyRecord>(),
+    animals: emptyHydratedTableStore<StoredAnimal>(),
+    lifecycleEvents: emptyHydratedTableStore<HydratedLifecycleEvent>(),
+    moves: emptyHydratedTableStore<StoredMove>(),
+    healthEvents: emptyHydratedTableStore<HydratedHealthDose>(),
+    identifiers: emptyHydratedTableStore<StoredIdentifier>(),
+    theftIncidents: emptyHydratedTableStore<StoredTheftIncident>(),
+    weights: emptyHydratedTableStore<StoredWeight>(),
+    breedingEvents: emptyHydratedTableStore<StoredBreedingEvent>(),
   }));
 
   // ⭐ sync-auditor re-pass (2026-08-10): the store pair used to be built in a `useMemo` above this
@@ -189,11 +647,67 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
         params: [farmId],
         mapRow: mapHydratedTally,
       }),
+      animals: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: ANIMALS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedAnimal,
+      }),
+      lifecycleEvents: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: LIFECYCLE_EVENTS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedLifecycleEvent,
+      }),
+      moves: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: MOVE_EVENTS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedMove,
+      }),
+      healthEvents: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: HEALTH_EVENTS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedHealthDose,
+      }),
+      identifiers: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: IDENTIFIERS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedIdentifier,
+      }),
+      theftIncidents: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: THEFT_INCIDENTS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedTheftIncident,
+      }),
+      weights: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: WEIGHT_EVENTS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedWeight,
+      }),
+      breedingEvents: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: BREEDING_EVENTS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedBreedingEvent,
+      }),
     };
     setValue(pair);
     return () => {
       pair.mobs.close();
       pair.tallies.close();
+      pair.animals.close();
+      pair.lifecycleEvents.close();
+      pair.moves.close();
+      pair.healthEvents.close();
+      pair.identifiers.close();
+      pair.theftIncidents.close();
+      pair.weights.close();
+      pair.breedingEvents.close();
     };
   }, [farmId]);
   return (
@@ -243,13 +757,155 @@ export function useHydratedTalliesHydrationFailed(): boolean {
   return useSyncExternalStore(tallies.subscribe, tallies.hydrationFailed);
 }
 
+/** Animals another device registered and the server has replicated to this one. */
+export function useHydratedAnimals(): readonly StoredAnimal[] {
+  const { animals } = useHydratedLivestock();
+  return useSyncExternalStore(animals.subscribe, animals.all);
+}
+
+export function useHydratedAnimalsSettled(): boolean {
+  const { animals } = useHydratedLivestock();
+  return useSyncExternalStore(animals.subscribe, animals.settled);
+}
+
+export function useHydratedAnimalsHydrationFailed(): boolean {
+  const { animals } = useHydratedLivestock();
+  return useSyncExternalStore(animals.subscribe, animals.hydrationFailed);
+}
+
+/** Births/deaths/sales/missing reports/purchases/weanings another device sent, already replicated
+ *  to this one — everything `herd.ts`'s `projectHerd` status fold reads. */
+export function useHydratedLifecycleEvents(): readonly HydratedLifecycleEvent[] {
+  const { lifecycleEvents } = useHydratedLivestock();
+  return useSyncExternalStore(lifecycleEvents.subscribe, lifecycleEvents.all);
+}
+
+export function useHydratedLifecycleEventsSettled(): boolean {
+  const { lifecycleEvents } = useHydratedLivestock();
+  return useSyncExternalStore(lifecycleEvents.subscribe, lifecycleEvents.settled);
+}
+
+export function useHydratedLifecycleEventsHydrationFailed(): boolean {
+  const { lifecycleEvents } = useHydratedLivestock();
+  return useSyncExternalStore(lifecycleEvents.subscribe, lifecycleEvents.hydrationFailed);
+}
+
+/** Walks another device recorded and the server has replicated to this one — what `herd.ts`'s
+ *  `positionByAnimal` and `withdrawal.ts`'s mob-membership reconstruction both fold over. */
+export function useHydratedMoves(): readonly StoredMove[] {
+  const { moves } = useHydratedLivestock();
+  return useSyncExternalStore(moves.subscribe, moves.all);
+}
+
+export function useHydratedMovesSettled(): boolean {
+  const { moves } = useHydratedLivestock();
+  return useSyncExternalStore(moves.subscribe, moves.settled);
+}
+
+export function useHydratedMovesHydrationFailed(): boolean {
+  const { moves } = useHydratedLivestock();
+  return useSyncExternalStore(moves.subscribe, moves.hydrationFailed);
+}
+
+/** Treatments/vaccinations/dips another device gave and the server has replicated to this one, in
+ *  `HydratedHealthDose` shape — the FR-131 withdrawal guard's authoritative half (`withdrawal.ts`). */
+export function useHydratedHealthEvents(): readonly HydratedHealthDose[] {
+  const { healthEvents } = useHydratedLivestock();
+  return useSyncExternalStore(healthEvents.subscribe, healthEvents.all);
+}
+
+export function useHydratedHealthEventsSettled(): boolean {
+  const { healthEvents } = useHydratedLivestock();
+  return useSyncExternalStore(healthEvents.subscribe, healthEvents.settled);
+}
+
+export function useHydratedHealthEventsHydrationFailed(): boolean {
+  const { healthEvents } = useHydratedLivestock();
+  return useSyncExternalStore(healthEvents.subscribe, healthEvents.hydrationFailed);
+}
+
+/** Identifiers another device applied and the server has replicated to this one — what the
+ *  duplicate-tag guard (`LocalIdentifiers.tsx`'s `useTakenValues`) must check against. */
+export function useHydratedIdentifiers(): readonly StoredIdentifier[] {
+  const { identifiers } = useHydratedLivestock();
+  return useSyncExternalStore(identifiers.subscribe, identifiers.all);
+}
+
+export function useHydratedIdentifiersSettled(): boolean {
+  const { identifiers } = useHydratedLivestock();
+  return useSyncExternalStore(identifiers.subscribe, identifiers.settled);
+}
+
+export function useHydratedIdentifiersHydrationFailed(): boolean {
+  const { identifiers } = useHydratedLivestock();
+  return useSyncExternalStore(identifiers.subscribe, identifiers.hydrationFailed);
+}
+
+/** Theft incidents another device filed and the server has replicated to this one. The row only —
+ *  `theft_incident_animals` cannot sync locally at all yet (issue #10), so `animalIds` is `[]`. */
+export function useHydratedTheftIncidents(): readonly StoredTheftIncident[] {
+  const { theftIncidents } = useHydratedLivestock();
+  return useSyncExternalStore(theftIncidents.subscribe, theftIncidents.all);
+}
+
+export function useHydratedTheftIncidentsSettled(): boolean {
+  const { theftIncidents } = useHydratedLivestock();
+  return useSyncExternalStore(theftIncidents.subscribe, theftIncidents.settled);
+}
+
+export function useHydratedTheftIncidentsHydrationFailed(): boolean {
+  const { theftIncidents } = useHydratedLivestock();
+  return useSyncExternalStore(theftIncidents.subscribe, theftIncidents.hydrationFailed);
+}
+
+/** Weigh readings another device took and the server has replicated to this one. */
+export function useHydratedWeights(): readonly StoredWeight[] {
+  const { weights } = useHydratedLivestock();
+  return useSyncExternalStore(weights.subscribe, weights.all);
+}
+
+export function useHydratedWeightsSettled(): boolean {
+  const { weights } = useHydratedLivestock();
+  return useSyncExternalStore(weights.subscribe, weights.settled);
+}
+
+export function useHydratedWeightsHydrationFailed(): boolean {
+  const { weights } = useHydratedLivestock();
+  return useSyncExternalStore(weights.subscribe, weights.hydrationFailed);
+}
+
+/** Matings/pregnancy diagnoses another device recorded and the server has replicated to this one. */
+export function useHydratedBreedingEvents(): readonly StoredBreedingEvent[] {
+  const { breedingEvents } = useHydratedLivestock();
+  return useSyncExternalStore(breedingEvents.subscribe, breedingEvents.all);
+}
+
+export function useHydratedBreedingEventsSettled(): boolean {
+  const { breedingEvents } = useHydratedLivestock();
+  return useSyncExternalStore(breedingEvents.subscribe, breedingEvents.settled);
+}
+
+export function useHydratedBreedingEventsHydrationFailed(): boolean {
+  const { breedingEvents } = useHydratedLivestock();
+  return useSyncExternalStore(breedingEvents.subscribe, breedingEvents.hydrationFailed);
+}
+
 /**
  * Merges a device's own captures with the hydrated copies of the same canonical rows, local
  * winning on a shared id — the two are two views of the SAME row once the server has both, and
  * only one of them should ever reach a fold. Used by both `Outbox.tsx`'s `needsHead` arithmetic
  * and `herd.ts`'s read projection, so the two cannot disagree about what "this device knows about"
- * means. Local wins on a collision purely because it can never be staler than the hydrated copy —
- * the content is the same either way once both exist, since a row does not change after it lands.
+ * means. Local wins on a collision because it can never be staler than the hydrated copy for the
+ * fields a LOCAL capture actually carries.
+ *
+ * That caveat matters: for most tables the local and hydrated shapes are identical, so "local
+ * wins" and "hydrated wins" pick the same values. But `StoredMove` and `WithholdDose` are NOT
+ * that case — the hydrated echo carries fields (`fromMobId`/`fromLandUnitId`, `meatWithholdUntil`)
+ * that a local capture never populates, because the server derives them at write time and never
+ * sends them back down as an app-authored field. `mergeById`'s local-wins here permanently
+ * shadows that enrichment once this device's own capture has synced and echoed back with the same
+ * id — a compliance-checker finding on FR-131 (see `mergeByIdPreferHydrated` below). Use THIS
+ * function only for tables where the local and hydrated shapes carry the same information.
  */
 export function mergeById<T extends { id: string }>(
   local: readonly T[],
@@ -259,4 +915,39 @@ export function mergeById<T extends { id: string }>(
   const seen = new Set(local.map((row) => row.id));
   const extra = hydrated.filter((row) => !seen.has(row.id));
   return extra.length === 0 ? local : [...local, ...extra];
+}
+
+/**
+ * Same fold as `mergeById`, but the HYDRATED copy wins on a shared id.
+ *
+ * The criterion is not "every field local carries, hydrated carries too" — `WithholdDose` already
+ * breaks that (hydrated drops `productId`). The real test is: does every FOLD CONSUMER's read of
+ * this shape still resolve correctly if hydrated wins? For `StoredMove`/`WithholdDose` it does,
+ * because the fields hydrated adds (`fromMobId`/`fromLandUnitId`, `meatWithholdUntil`) are the ones
+ * FR-131's withdrawal guard actually reads, and `clearDateFor` (`withdrawal.ts`) already prefers
+ * `meatWithholdUntil` over `productId` when both exist — so losing `productId` on a hydrated-wins
+ * dose is never load-bearing. Once this device's own write has round-tripped through the server and
+ * come back down as a hydrated row with the SAME id, the hydrated copy is strictly more informative
+ * for what the guard reads — never staler, sometimes richer — so preferring it closes the
+ * false-CLEAR gap `mergeById`'s local-wins leaves open.
+ *
+ * Do NOT reach for this on a table where the hydrated shape is a REDUCTION of a field a consumer
+ * DOES trust directly (e.g. `TallyRecord`, whose hydrated projection drops `count`, which every
+ * consumer trusts directly). Animals are a subtler case: the server DOES mutate `mob_id`/
+ * `land_unit_id`/status on the row (`livestock.service.ts`'s `recordMove`/lifecycle writes) — this
+ * is not a single-creation row — but no fold trusts an animal's position/status straight off the
+ * row either way (`herd.ts` re-derives both from the merged move/event logs), so `mergeById` stays
+ * correct there too, for the same "what does the consumer actually read" reason, not because the
+ * row never changes. Swapping the winner on a table a consumer DOES trust directly would trade one
+ * false-CLEAR bug for a different data-loss bug. `mergeById`'s local-wins is still correct — and
+ * still the default — everywhere else.
+ *
+ * A local-only row (not yet synced, so it has no hydrated twin) is unaffected: it has no id
+ * collision, so it always survives the fold untouched, pending or not.
+ */
+export function mergeByIdPreferHydrated<T extends { id: string }>(
+  local: readonly T[],
+  hydrated: readonly T[],
+): readonly T[] {
+  return mergeById(hydrated, local);
 }

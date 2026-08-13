@@ -34,6 +34,19 @@ export interface StoredMove {
   readonly toLandUnitId?: string | null;
   /** Destination mob. Absent = mob unchanged; null = unassigned from its mob. */
   readonly toMobId?: string | null;
+  /**
+   * The camp/mob the animal was in immediately BEFORE this move — present ONLY on a hydrated move
+   * (`HydratedLivestock.tsx`'s `mapHydratedMove`, reading `events.payload`'s own `fromLandUnitId`/
+   * `fromMobId`). A LOCAL capture never carries these: the app does not send them (the server
+   * derives the FROM side from the animal's own row at write time — `movement.ts`'s `recordMove`),
+   * so a local `StoredMove` genuinely does not know its own origin. `withdrawal.ts`'s
+   * `mobMembership` reads this off the FIRST move in an animal's log — the same rule
+   * `livestock.service.ts`'s server-side `mobMembership` uses — to seed the animal's TRUE opening
+   * mob, which a hydrated animal's own denormalised `mobId` cannot honestly provide (that field is
+   * the animal's CURRENT position, overwritten by every move that lands as the latest).
+   */
+  readonly fromLandUnitId?: string | null;
+  readonly fromMobId?: string | null;
   /** Ties one walk across many animals together as the single action it was (FR-112). */
   readonly batchId: string | null;
 }

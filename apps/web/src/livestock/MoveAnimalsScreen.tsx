@@ -25,9 +25,8 @@ import { vocabularyFor } from '../i18n/terminology';
 import type { EnterpriseType } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { useLandUnits } from '../land/LocalLand';
-import { useEffectiveAnimals } from './herd';
+import { useEffectiveAnimals, useEffectiveMobs } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
-import { useMobs } from './LocalMobs';
 import { useRecordMoves, type StoredMove } from './LocalMoves';
 import { speciesLabel } from './AnimalsScreen';
 
@@ -44,7 +43,10 @@ export function MoveAnimalsScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
   const landUnits = useLandUnits();
-  const mobs = useMobs();
+  // ⭐ Merged with hydrated mobs (phase-checklists.md 3e, `useEffectiveMobs`) — a mob another device
+  // created is a real destination a gate can walk animals into, not just one this device happened
+  // to make itself.
+  const mobs = useEffectiveMobs();
   const labels = useAnimalLabels();
   const recordMoves = useRecordMoves();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');

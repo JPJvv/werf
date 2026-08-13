@@ -10,12 +10,12 @@
  * that genuinely needs it, and the point of the test is that the screen says so honestly.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -252,6 +252,38 @@ describe('the evidence pack (FR-603)', () => {
     window.history.pushState({}, '', '/animals/theft');
     render(<App />);
 
+    expect(await screen.findByRole('button', { name: /get the evidence pack/i })).toBeTruthy();
+  });
+
+  it('⭐ shows and offers a pack for an incident filed on ANOTHER DEVICE, known only via hydration (phase-checklists.md 3e)', async () => {
+    // The gap this closes: this screen read only local `useTheftIncidents()` — an incident a
+    // co-worker filed and the server has already replicated down was invisible here entirely, and
+    // (separately) `isSent` read only this device's own local `sentLog`, which a hydrated incident
+    // — by construction already on the server — could never be in. This device never files or
+    // seeds anything locally: the incident arrives purely through down-sync.
+    cachedSession();
+    window.history.pushState({}, '', '/animals/theft');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('theft_incidents', {
+        id: '0190f3a0-0000-7000-8000-00000000t099',
+        farm_id: FARM_ID,
+        discovered_at: '2026-07-20T10:00:00.000Z',
+        last_seen_at: '2026-07-18T10:00:00.000Z',
+        last_seen_location_geojson: '{"type":"Point","coordinates":[26.21,-29.12]}',
+        land_unit_id: null,
+        head_count: 12,
+        case_number: null,
+        reporting_station: null,
+        observations: 'Fence cut on the eastern boundary',
+      });
+    });
+
+    // Visible at all — the read gap.
+    expect(await screen.findByText('12')).toBeTruthy();
+    // And ready — the "already on the server" gap, since this device never sent it itself.
     expect(await screen.findByRole('button', { name: /get the evidence pack/i })).toBeTruthy();
   });
 

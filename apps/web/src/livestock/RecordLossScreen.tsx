@@ -33,7 +33,14 @@ import { useAnimalLabels } from './LocalIdentifiers';
 import { currentPoint, type FixFailure } from '../geo/geolocation';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
-import { meatWithdrawalFor } from './withdrawal';
+import { meatWithdrawalFor, type WithholdDose } from './withdrawal';
+import {
+  useHydratedAnimals,
+  useHydratedMoves,
+  useHydratedHealthEvents,
+  mergeById,
+  mergeByIdPreferHydrated,
+} from './HydratedLivestock';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 /**
@@ -84,12 +91,22 @@ export function RecordLossScreen() {
   const recordMissing = useRecordMissing();
   const labels = useAnimalLabels();
   const healthEvents = useHealthEvents();
+  const hydratedHealthEvents = useHydratedHealthEvents();
   const products = useVetProducts();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
   // The RAW herd row and the move log: the withdrawal guard reconstructs which mob this animal
   // was in on the day of each dose, and a projected animal carries only where it is NOW.
-  const stored = useAnimals();
-  const moves = useMoves();
+  //
+  // ⭐ Merged with hydrated animals/moves/health (phase-checklists.md 3e). Without this, an animal
+  // this device never itself captured — only heard about via down-sync — was invisible to `stored`,
+  // so `selectedStored` came back `undefined` and the guard below silently skipped ENTIRELY (not
+  // narrowly wrong — off) for exactly the animal a co-worker's phone knows the treatment history of.
+  const stored = mergeById(useAnimals(), useHydratedAnimals());
+  // `mergeByIdPreferHydrated`: a move's hydrated echo carries `fromMobId`/`fromLandUnitId`, which a
+  // local capture never can — local-wins would shadow that enrichment once this device's own move
+  // round-trips back with the same id (compliance-checker finding, phase-checklists.md 3e). See
+  // `HydratedLivestock.tsx`'s `mergeByIdPreferHydrated` docstring.
+  const moves = mergeByIdPreferHydrated(useMoves(), useHydratedMoves());
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -117,10 +134,13 @@ export function RecordLossScreen() {
   // Judged on the DAY THE FARMER GAVE, not on today — a back-dated disposal must be judged against
   // the withholding as it stood when the animal actually left.
   const selectedStored = selected === null ? undefined : stored.find((a) => a.id === selected.id);
+  // Same reasoning as `moves` above: a hydrated dose carries `meatWithholdUntil`, a local capture
+  // never can.
+  const foldHealth = mergeByIdPreferHydrated<WithholdDose>(healthEvents, hydratedHealthEvents);
   const withdrawal =
     selectedStored === undefined
       ? null
-      : meatWithdrawalFor(selectedStored, disposalDay, healthEvents, products, moves);
+      : meatWithdrawalFor(selectedStored, disposalDay, foldHealth, products, moves);
   // Both routes into the food chain, and the guard has to cover both. A server-only check on the
   // slaughter path arrives days after the animal has been eaten.
   const intoFoodChain = outcome === 'sold' || outcome === 'slaughtered';

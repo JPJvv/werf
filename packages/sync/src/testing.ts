@@ -70,6 +70,12 @@ function applyExecute(
  * — the same "narrow fake, cast at the boundary" shape `capture-store.spec.ts`'s `memoryStorage()`
  * uses against `SessionStorageLike`.
  */
+/** Every canonical (server-owned, down-synced) table a `HydratedTableStore` reads — `mobs`/
+ *  `events` from the original 3e slice, plus `animals`/`animal_identifiers`/`theft_incidents`
+ *  added for the animals/moves/health/identifiers/theft/weights/breeding hydration slice. */
+export type CanonicalTable =
+  'mobs' | 'events' | 'animals' | 'animal_identifiers' | 'theft_incidents';
+
 export interface FakeLocalDatabase {
   init(): Promise<void>;
   getOptional<T>(sql: string, params?: readonly unknown[]): Promise<T | null>;
@@ -77,12 +83,15 @@ export interface FakeLocalDatabase {
   execute(sql: string, params?: readonly unknown[]): Promise<unknown>;
   writeTransaction<T>(callback: (tx: unknown) => Promise<T>): Promise<T>;
   /**
-   * The narrow slice of `watch()` a `HydratedTableStore` needs: recognizes
-   * `SELECT ... FROM mobs WHERE farm_id = ?` and `SELECT ... FROM events WHERE farm_id = ? AND
-   * type = 'tally' ...` (both `AND deleted_at IS NULL`), farm-scoped by `params[0]`. Fires
-   * `onResult` once immediately (mirroring the real SDK's `triggerImmediate: true`) and again
-   * every time a matching row is seeded via `hydrateRow`/`hydrateRows` — the fake's stand-in for a
-   * down-sync delivery landing.
+   * The narrow slice of `watch()` a `HydratedTableStore` needs: recognizes a `SELECT ... FROM
+   * <table> WHERE farm_id = ? ... AND deleted_at IS NULL` against any `CanonicalTable`, farm-scoped
+   * by `params[0]`. For an `events` query, the row's `type` is additionally checked against
+   * whatever `type = '...'` / `type IN (...)` clause THIS watcher's own SQL carries — parsed once
+   * at `watch()` time (`eventTypesFor`) — not a single hard-coded type, since `events` now backs
+   * several distinct hydrated stores (tallies, lifecycle, moves, health, weights, breeding), each
+   * narrowed to its own type set. Fires `onResult` once immediately (mirroring the real SDK's
+   * `triggerImmediate: true`) and again every time a matching row is seeded via
+   * `hydrateRow`/`hydrateRows` — the fake's stand-in for a down-sync delivery landing.
    */
   watch(
     sql: string,
@@ -102,18 +111,17 @@ export interface FakeLocalDatabase {
   disconnect(): Promise<void>;
   /**
    * Simulates a down-sync delivery: inserts/updates one row in the given canonical table and
-   * re-fires every `watch()` registered against it whose farm-scope matches. `table` is `'mobs'`
-   * or `'events'` — the only two canonical tables 3e hydrates. Never touches `capture_records` —
-   * a hydrated row and a locally-captured one are always distinct rows in this fake, exactly as
-   * they are two distinct tables in the real schema.
+   * re-fires every `watch()` registered against it whose farm-scope (and, for `events`, type set)
+   * matches. Never touches `capture_records` — a hydrated row and a locally-captured one are
+   * always distinct rows in this fake, exactly as they are two distinct tables in the real schema.
    */
-  hydrateRow(table: 'mobs' | 'events', row: Record<string, unknown>): void;
+  hydrateRow(table: CanonicalTable, row: Record<string, unknown>): void;
   /** `hydrateRow`, plural — the common case of a device receiving more than one row per delivery. */
-  hydrateRows(table: 'mobs' | 'events', rows: readonly Record<string, unknown>[]): void;
+  hydrateRows(table: CanonicalTable, rows: readonly Record<string, unknown>[]): void;
   /** Every later `watch()` against this table's `onError` instead of `onResult`, and any watcher
    *  already registered against it re-fires into `onError` immediately — simulating the local
    *  query itself failing, not a single malformed row (see `HydratedTableStore`'s own header). */
-  failWatch(table: 'mobs' | 'events'): void;
+  failWatch(table: CanonicalTable): void;
   /** The NEXT writeTransaction's callback runs to completion, then the "commit" throws instead —
    *  simulating a browser kill after every insert but before the transaction lands. */
   failNextTransactionAfterInserts(): void;
@@ -144,25 +152,44 @@ export interface FakeLocalDatabase {
  * never shares state with any other test through a leaked singleton.
  */
 /** One registered `watch()` call: which canonical table, this watcher's own farm-scope param
- *  (params[0] on every query this fake recognizes), and the handler to re-fire. */
+ *  (params[0] on every query this fake recognizes), the `events`-only type narrowing this
+ *  watcher's SQL carries (null for every non-`events` table, which needs none), and the handler
+ *  to re-fire. */
 interface CanonicalWatcher {
-  readonly table: 'mobs' | 'events';
+  readonly table: CanonicalTable;
   readonly farmId: string;
+  readonly eventTypes: ReadonlySet<string> | null;
   readonly onResult: (result: unknown) => void;
   readonly onError?: ((error: Error) => void) | undefined;
 }
 
-/** Matches a canonical row against one watcher's farm scope and (for `events`) the `type =
- *  'tally'` / `deleted_at IS NULL` shape every 3e query carries — kept in one place so the
- *  INITIAL fire and every later re-fire filter identically. */
-function matchesWatcher(
-  table: 'mobs' | 'events',
-  row: Record<string, unknown>,
-  farmId: string,
-): boolean {
-  if (row['farm_id'] !== farmId) return false;
+/**
+ * Parses the `type = '...'` or `type IN (...)` clause out of an `events` query — each hydrated
+ * store built on `events` (tallies, lifecycle, moves, health, weights, breeding) narrows to its
+ * own type set, and this fake has to tell them apart to avoid firing a lifecycle watcher's
+ * `onResult` for a hydrated tally. Not general SQL parsing: this package only ever issues one of
+ * these two shapes, quoted single-type or a comma-separated quoted list, so a regex on the literal
+ * is exact rather than an approximation. Throws on an `events` query with neither shape, same
+ * "fail loud on an unrecognized query" discipline as the rest of this fake.
+ */
+function eventTypesFor(sql: string): ReadonlySet<string> | null {
+  if (!sql.includes('FROM events')) return null;
+  const single = /type\s*=\s*'(\w+)'/.exec(sql);
+  if (single) return new Set([single[1] as string]);
+  const list = /type\s+IN\s*\(([^)]+)\)/.exec(sql);
+  if (list) {
+    return new Set((list[1] as string).split(',').map((s) => s.trim().replace(/^'|'$/g, '')));
+  }
+  throw new Error(`fake database: events query with no recognizable type filter — ${sql}`);
+}
+
+/** Matches a canonical row against one watcher's farm scope, `deleted_at IS NULL`, and — for
+ *  `events` — this watcher's own parsed type set — kept in one place so the INITIAL fire and
+ *  every later re-fire filter identically. */
+function matchesWatcher(w: CanonicalWatcher, row: Record<string, unknown>): boolean {
+  if (row['farm_id'] !== w.farmId) return false;
   if (row['deleted_at'] != null) return false;
-  if (table === 'events' && row['type'] !== 'tally') return false;
+  if (w.eventTypes !== null && !w.eventTypes.has(row['type'] as string)) return false;
   return true;
 }
 
@@ -179,16 +206,21 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
   // in sqlite-capture-store.ts depends on.
   let writeQueue: Promise<unknown> = Promise.resolve();
 
-  // Canonical down-synced tables (phase-checklists.md 3e) — deliberately separate maps from
-  // `records`/`migrations` above, which back `capture_records`/`capture_migrations` only. A
-  // hydrated row and a locally-captured one are two different tables in the real schema and stay
-  // two different Maps here.
-  const canonicalMobs = new Map<string, Record<string, unknown>>();
-  const canonicalEvents = new Map<string, Record<string, unknown>>();
-  const canonicalTable = (table: 'mobs' | 'events') =>
-    table === 'mobs' ? canonicalMobs : canonicalEvents;
+  // Canonical down-synced tables (phase-checklists.md 3e, extended by the animals/moves/health/
+  // identifiers/theft/weights/breeding slice) — deliberately separate maps from `records`/
+  // `migrations` above, which back `capture_records`/`capture_migrations` only. A hydrated row and
+  // a locally-captured one are two different tables in the real schema and stay two different
+  // Maps here.
+  const canonicalTables: Record<CanonicalTable, Map<string, Record<string, unknown>>> = {
+    mobs: new Map(),
+    events: new Map(),
+    animals: new Map(),
+    animal_identifiers: new Map(),
+    theft_incidents: new Map(),
+  };
+  const canonicalTable = (table: CanonicalTable) => canonicalTables[table];
   const watchers: CanonicalWatcher[] = [];
-  const failingWatch = new Set<'mobs' | 'events'>();
+  const failingWatch = new Set<CanonicalTable>();
   let connected = false;
   let connectCalls = 0;
 
@@ -197,9 +229,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
       w.onError?.(new Error(`fake database: simulated watch failure for "${w.table}"`));
       return;
     }
-    const rows = [...canonicalTable(w.table).values()].filter((row) =>
-      matchesWatcher(w.table, row, w.farmId),
-    );
+    const rows = [...canonicalTable(w.table).values()].filter((row) => matchesWatcher(w, row));
     w.onResult({ array: rows });
   };
 
@@ -300,11 +330,20 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
       handler: { onResult: (result: unknown) => void; onError?: (error: Error) => void },
       options?: { signal?: AbortSignal },
     ): void {
-      const table: 'mobs' | 'events' | undefined = sql.includes('FROM mobs')
+      // Order matters only in that each check is a distinct, non-overlapping substring — `FROM
+      // animal_identifiers` never matches `FROM animals` (different characters immediately after
+      // "FROM animal"), so there is no ambiguity to resolve by ordering.
+      const table: CanonicalTable | undefined = sql.includes('FROM mobs')
         ? 'mobs'
         : sql.includes('FROM events')
           ? 'events'
-          : undefined;
+          : sql.includes('FROM animal_identifiers')
+            ? 'animal_identifiers'
+            : sql.includes('FROM animals')
+              ? 'animals'
+              : sql.includes('FROM theft_incidents')
+                ? 'theft_incidents'
+                : undefined;
       if (table === undefined) {
         throw new Error(`fake database: unrecognized watch() — ${sql}`);
       }
@@ -312,6 +351,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
       const watcher: CanonicalWatcher = {
         table,
         farmId,
+        eventTypes: eventTypesFor(sql),
         onResult: handler.onResult,
         onError: handler.onError,
       };
@@ -340,11 +380,11 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
       connected = false;
     },
 
-    hydrateRow(table: 'mobs' | 'events', row: Record<string, unknown>): void {
+    hydrateRow(table: CanonicalTable, row: Record<string, unknown>): void {
       fake.hydrateRows(table, [row]);
     },
 
-    hydrateRows(table: 'mobs' | 'events', rows: readonly Record<string, unknown>[]): void {
+    hydrateRows(table: CanonicalTable, rows: readonly Record<string, unknown>[]): void {
       for (const row of rows) {
         const id = row['id'];
         if (typeof id !== 'string') {
@@ -359,7 +399,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
       }
     },
 
-    failWatch(table: 'mobs' | 'events'): void {
+    failWatch(table: CanonicalTable): void {
       failingWatch.add(table);
       for (const w of watchers) {
         if (w.table === table) fireWatcher(w);

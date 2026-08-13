@@ -6,13 +6,13 @@
  * `localStorage` and render the real `<App/>`; nothing touches the network.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
 import { farmToday } from '../farmTime';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -303,6 +303,229 @@ describe('recording a loss', () => {
       true,
     );
     expect((await storedEvents()).find((e) => e['type'] === 'death')).toBeUndefined();
+  });
+
+  it('⭐ refuses a slaughter for an animal AND its treatment known only via hydration (phase-checklists.md 3e)', async () => {
+    // The gap this closes: before it, `RecordLossScreen`'s guard read `useAnimals()` (local-only)
+    // to find `selectedStored`, and `useHealthEvents()` (local-only) for the dose. An animal
+    // registered on ANOTHER device — never captured here — was invisible to `useAnimals()`, so
+    // `selectedStored` came back `undefined` and the guard silently skipped ENTIRELY (not narrowly
+    // wrong — OFF). This device never ran `seedHerd`/`seedActiveWithdrawal` at all: the animal AND
+    // its treatment both arrive purely through down-sync, exactly as they would for a co-worker's
+    // capture this device has only heard about.
+    cachedSession();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('animals', {
+        id: 'a1',
+        farm_id: FARM_ID,
+        species: 'cattle',
+        sex: 'female',
+        breed: null,
+        status: 'alive',
+        dob: null,
+        dob_estimated: 0,
+        status_at: null,
+        dam_id: null,
+        sire_id: null,
+        mob_id: null,
+        land_unit_id: null,
+        source: null,
+        acquired_at: null,
+        brand_id: null,
+        brand_applied_at: null,
+        attributes: '{}',
+        photo_key: null,
+        enterprise_id: null,
+      });
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000e099',
+        farm_id: FARM_ID,
+        animal_id: 'a1',
+        mob_id: null,
+        type: 'treatment',
+        occurred_at: new Date().toISOString(),
+        // Real for a hydrated dose (see withdrawal.ts's module header): no `productId`, the
+        // withdrawal already resolved server-side into `meatWithholdUntil`.
+        payload: JSON.stringify({
+          product: 'Terramycin LA',
+          administeredOn: farmToday(),
+          meatWithholdUntil: '2099-01-01', // far enough out that no test clock ever runs past it
+        }),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: /record slaughter/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect((await storedEvents()).find((e) => e['type'] === 'death')).toBeUndefined();
+  });
+
+  it('⭐ refuses a sale for a HYDRATED animal whose mobId is CURRENT, dosed via a mob it has since LEFT (compliance-checker finding)', async () => {
+    // A hydrated animal's `mob_id` is the server's denormalised CURRENT position, not its opening
+    // one (`livestock.service.ts`'s `recordMove` overwrites it on every move that lands as the
+    // latest). Seeding `withdrawal.ts`'s `mobMembership` from that field made the reconstruction
+    // skip the animal's TRUE opening interval outright — a dose given to the mob it opened in,
+    // before it ever moved, became invisible. This animal is hydrated already standing in OXEN
+    // (current), a hydrated move records it walked there FROM DIP_CAMP, and the dip was given to
+    // DIP_CAMP before that move — the exact shape the fix reads `fromMobId` off the wire to catch.
+    const DIP_CAMP = '0190f3a0-0000-7000-8000-00000000b010';
+    const OXEN = '0190f3a0-0000-7000-8000-00000000b011';
+    cachedSession();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('animals', {
+        id: 'a1',
+        farm_id: FARM_ID,
+        species: 'cattle',
+        sex: 'female',
+        breed: null,
+        status: 'alive',
+        dob: null,
+        dob_estimated: 0,
+        status_at: null,
+        dam_id: null,
+        sire_id: null,
+        mob_id: OXEN, // CURRENT position, per the server's denormalisation
+        land_unit_id: null,
+        source: null,
+        acquired_at: null,
+        brand_id: null,
+        brand_applied_at: null,
+        attributes: '{}',
+        photo_key: null,
+        enterprise_id: null,
+      });
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000mv01',
+        farm_id: FARM_ID,
+        animal_id: 'a1',
+        type: 'move',
+        occurred_at: '2026-07-22T06:00:00.000Z',
+        payload: JSON.stringify({
+          fromLandUnitId: null,
+          toLandUnitId: null,
+          fromMobId: DIP_CAMP,
+          toMobId: OXEN,
+        }),
+      });
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000e100',
+        farm_id: FARM_ID,
+        animal_id: null,
+        mob_id: DIP_CAMP,
+        type: 'dip',
+        occurred_at: '2026-07-20T06:00:00.000Z',
+        payload: JSON.stringify({
+          product: 'Tickaway',
+          administeredOn: '2026-07-20',
+          meatWithholdUntil: '2099-01-01',
+        }),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Sold' }));
+    await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
+    await user.type(screen.getByLabelText(/^price/i), '8500');
+
+    await waitFor(() => {
+      expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+  });
+
+  it('⭐ a LOCALLY-CAPTURED copy of a move does not mask its own hydrated fromMobId (compliance-checker finding #2, phase-checklists.md 3e)', async () => {
+    // The gap finding #1's fix left open: `mergeById`'s local-wins, combined with local capture
+    // rows never being evicted, meant a move THIS DEVICE captured (no `fromMobId` — the app never
+    // sends one) permanently shadowed its own hydrated twin — the SAME move, same id, now carrying
+    // `fromMobId` once the server had echoed it back down — inside `RecordLossScreen`'s fold. That
+    // is the ordinary two-device (or two-sync) workflow, not an edge case: reproduced here by
+    // seeding BOTH the local move log and the hydrated `events` table with the SAME move id. The
+    // fix is `mergeByIdPreferHydrated` — see `HydratedLivestock.tsx`.
+    const DIP_CAMP = '0190f3a0-0000-7000-8000-00000000b020';
+    const OXEN = '0190f3a0-0000-7000-8000-00000000b021';
+    const MOVE_ID = '0190f3a0-0000-7000-8000-00000000mv02';
+    cachedSession();
+    seedHerd(animal('a1', { sex: 'female', mobId: OXEN }));
+    // The LOCAL echo of the move: no `fromMobId`, exactly as a real local capture is shaped — the
+    // app never sends one, so a local `StoredMove` structurally cannot carry it.
+    window.localStorage.setItem(
+      MOVES_KEY,
+      JSON.stringify([
+        {
+          id: MOVE_ID,
+          farmId: FARM_ID,
+          animalId: 'a1',
+          occurredAt: '2026-07-22T06:00:00.000Z',
+          toMobId: OXEN,
+          batchId: null,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/loss');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      // The SAME move (same id), now hydrated back down with the server-resolved `fromMobId` — the
+      // enrichment a local capture never carries.
+      fake.hydrateRow('events', {
+        id: MOVE_ID,
+        farm_id: FARM_ID,
+        animal_id: 'a1',
+        type: 'move',
+        occurred_at: '2026-07-22T06:00:00.000Z',
+        payload: JSON.stringify({
+          fromLandUnitId: null,
+          toLandUnitId: null,
+          fromMobId: DIP_CAMP,
+          toMobId: OXEN,
+        }),
+      });
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000e101',
+        farm_id: FARM_ID,
+        animal_id: null,
+        mob_id: DIP_CAMP,
+        type: 'dip',
+        occurred_at: '2026-07-20T06:00:00.000Z',
+        payload: JSON.stringify({
+          product: 'Tickaway',
+          administeredOn: '2026-07-20',
+          meatWithholdUntil: '2099-01-01',
+        }),
+      });
+    });
+
+    await user.click(await screen.findByRole('button', { name: /female/i }));
+    await user.click(screen.getByRole('button', { name: 'Sold' }));
+    await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
+    await user.type(screen.getByLabelText(/^price/i), '8500');
+
+    await waitFor(() => {
+      expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
   });
 
   it('refuses a SALE inside an active meat withdrawal, at capture', async () => {

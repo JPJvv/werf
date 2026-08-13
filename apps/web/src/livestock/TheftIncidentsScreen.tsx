@@ -15,7 +15,7 @@
  * See `LocalTheft.tsx` and `packages/domain/src/livestock/evidence.ts`.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
@@ -24,6 +24,7 @@ import { useSentCaptures } from '../sync/Outbox';
 import { useLandUnits } from '../land/LocalLand';
 import { farmDay } from '../farmTime';
 import { useTheftIncidents, type StoredTheftIncident } from './LocalTheft';
+import { useHydratedTheftIncidents, mergeById } from './HydratedLivestock';
 import { theftApi } from './theftApi';
 
 /** Why a pack could not be produced. Each needs different words, so they are not collapsed. */
@@ -48,8 +49,20 @@ function deliverPdf(pdf: Blob, filename: string): void {
 export function TheftIncidentsScreen() {
   const { t } = useTranslation();
   const { session, activeFarm } = useAuth();
-  const incidents = useTheftIncidents();
+  // ⭐ Merged with hydrated incidents (phase-checklists.md 3e) — an incident filed on another device
+  // and already replicated down otherwise would not appear here at all, and a farmer on THIS device
+  // genuinely cannot see that a co-worker already reported it.
+  const localIncidents = useTheftIncidents();
+  const hydratedIncidents = useHydratedTheftIncidents();
+  const incidents = mergeById(localIncidents, hydratedIncidents);
   const sent = useSentCaptures();
+  // A hydrated incident is, by construction, already on the server — the local `sent` set (built
+  // from THIS device's own confirmed sends) never contains its id, so without this the pack button
+  // would read a co-worker's already-landed incident as "not sent yet" forever.
+  const hydratedIncidentIds = useMemo(
+    () => new Set(hydratedIncidents.map((i) => i.id)),
+    [hydratedIncidents],
+  );
   const camps = useLandUnits();
 
   // Per-incident, because a farmer may generate one pack, fail on another, and both answers have to
@@ -106,7 +119,7 @@ export function TheftIncidentsScreen() {
       ) : (
         <ul aria-label={t('theft.title')} className="flex list-none flex-col gap-4 p-0">
           {newestFirst.map((incident) => {
-            const isSent = sent.has(incident.id);
+            const isSent = sent.has(incident.id) || hydratedIncidentIds.has(incident.id);
             const camp = campName(incident.landUnitId);
             const failure = failed[incident.id];
             return (

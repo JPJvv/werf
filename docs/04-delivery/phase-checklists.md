@@ -938,15 +938,97 @@ add the one shared local-first attachment path approved on 2026-08-08.
   documented as a tripwire for that invariant, not a stopgap for missing routing. Owner question
   raised in STATUS.md §3: this reading conflicts with how earlier STATUS/doc entries phrased
   `uploadData` as "not yet wired — 3d"; flagged rather than silently resolved.
-◐ 3e Two-device conflict matrix — CLOSED for mobs/tallies, the entity pair this slice scoped to
-  (fallback clause: "the smallest complete vertical rung that proves the two-device issue #8
-  journey end-to-end"). Append-only events coexist; aggregate projections fold from the immutable
+☑ 3e Two-device conflict matrix — CLOSED for mobs/tallies AND for animals/moves/health/
+  identifiers/theft/weights/breeding, extending the same fold rule to the rest of livestock. Land
+  hydration merging is STILL NOT built — named here so it is not silently assumed covered by this
+  box's checkmark. Append-only events coexist; aggregate projections fold from the immutable
   `initialHeadCount` baseline over the `(occurred_at, id)` total order — same rule the server
-  applies, same result either side. Animals/moves/health/land hydration merging is NOT built —
-  named here so it is not silently assumed covered by this box's checkmark. Evidence: fake-driven
-  `Outbox.test.tsx`'s `tripwire 3e (issue #8)` suite (5 tests) + `hydrated-table-store.spec.ts` (5
-  tests) + `HydratedLivestock.test.ts` (4 `mergeById` tests) + `herd.test.ts` (2 hydrated-fold
-  tests) + the real-service e2e below.
+  applies, same result either side. `HydratedLivestock.tsx` grew eight new hydrated stores
+  (`useHydratedAnimals`, `useHydratedLifecycleEvents`, `useHydratedMoves`, `useHydratedHealthEvents`,
+  `useHydratedIdentifiers`, `useHydratedTheftIncidents`, `useHydratedWeights`,
+  `useHydratedBreedingEvents`), each a `createHydratedTableStore` over a canonical table/type-set the
+  local device already down-syncs — no new PowerSync subscription config was needed. `herd.ts`'s
+  `useEffectiveAnimals`/`useWithholdingCount` merge them via `mergeById`, settled by re-verifying
+  against source (not assumed by analogy to mobs) that `mergeById`'s local-wins is safe here too:
+  `animals.status`/`landUnitId`/`mobId` are never trusted directly by the fold, only re-derived from
+  the (also merged) lifecycle-event/move logs, so a stale local baseline is corrected by the fold
+  rather than by which copy of the row wins — verified against `livestock.service.ts`'s
+  `recordMove`/`recordDeath` (status is a client+server read-model projection, never a column;
+  `landUnitId`/`mobId` are updated server-side only via `recordMove`'s "latest move" write, which the
+  client's own `positionByAnimal` fold reconstructs independently from the merged move log).
+  `identifiers`/`theft_incidents` have no production update path post-creation either — grepped, only
+  test fixtures touch them. `theft_incident_animals` (the per-animal join) still cannot sync locally
+  at all (issue #10, no surrogate id) — a hydrated theft incident's `animalIds` is always `[]`,
+  unchanged from before this slice.
+  ⭐ A genuine wire-shape trap found and closed, not assumed: the events.payload for treatment/
+  vaccination/dip never carries `productId` — only `product` (a name string) and the
+  server-resolved `meatWithholdUntil`/`milkWithholdUntil`. `withdrawal.ts`'s guard functions were
+  widened from `StoredHealthEvent` to a `WithholdDose` union (`productId?` OR `meatWithholdUntil?`)
+  and `clearDateFor` prefers the hydrated, already-authoritative date over a local register lookup —
+  a naive mapper reusing `productId` would have silently dropped every hydrated dose from the fold
+  (a false CLEAR on the FR-131 guard, the one direction this file exists to prevent).
+  Guard call sites fixed together (AdjustMobScreen.tsx, RecordLossScreen.tsx, Outbox.tsx,
+  residue.ts) since `mobDisposalSubjects` reconstructs membership from animals+moves — fixing health
+  alone would have left the guard blind through a different hole. Also closed: the duplicate-tag
+  guard (`TagSessionScreen.tsx`'s `useTakenValues`), the theft-incident read/sent gap
+  (`TheftIncidentsScreen.tsx`), the move-destination picker (`MoveAnimalsScreen.tsx` now uses
+  `useEffectiveMobs`), and three informational-display gaps (prior-weight/ADG in
+  `WeighSessionScreen.tsx`, weaning dedup in `WeaningSessionScreen.tsx`, mating-date prefill in
+  `RecordPregnancyScreen.tsx`).
+  The shared test fake (`packages/sync/src/testing.ts`) was widened alongside: it recognised only
+  `'mobs' | 'events'` with a single hard-coded `type === 'tally'` filter for every `events` watcher —
+  correct while tallies were the only thing hydrated from `events`, silently wrong the moment
+  lifecycle/move/health/weight/breeding stores also query `events` with their own `type IN (...)`
+  sets. Now parses each watcher's own type filter from its SQL (`eventTypesFor`) and recognises
+  `animals`/`animal_identifiers`/`theft_incidents` as canonical tables too — proven fail-first via
+  `git stash` on just `testing.ts` before restoring.
+  Evidence: fake-driven `Outbox.test.tsx`'s `tripwire 3e (issue #8)` suite (5 tests) + a new
+  hydrated-guard test + `hydrated-table-store.spec.ts` (9 tests, 3 new) +
+  `HydratedLivestock.test.ts` (4 `mergeById` tests) + `herd.test.ts` (5 hydrated-fold tests, 3 new) +
+  `withdrawal.test.ts` (3 new `WithholdDose` tests) + one new fail-first test each in
+  `RecordLoss.test.tsx`, `AdjustMob.test.tsx`, `AttentionScreen.test.tsx`, `TagSession.test.tsx`,
+  `Theft.test.tsx`, `MoveAnimals.test.tsx`, `WeighSession.test.tsx`, `Lifecycle.test.tsx`,
+  `Breeding.test.tsx` — every one watched to FAIL against the pre-fix code via `git stash` before
+  being confirmed green with the fix restored, matching this file's own §6 clause 3 discipline. Full
+  `pnpm verify` uncached: 106 test files / 1,119 tests, 7/7 builds, 158.94 KB gz ≤ 250 KB;
+  `pnpm test:e2e`: 30 passed / 1 skipped, no regression. + the real-service e2e below.
+  ⛔ **`compliance-checker`, requested by JP over this diff, ran TWICE and found two real findings —
+  both fixed, a re-pass over the fix diff still owed before merge-ready (STATUS.md §3/§6):**
+  Finding 1 — a hydrated animal's `mob_id` is the server's denormalised CURRENT position, not the
+  opening one `mobMembership()` assumed; fixed by threading `fromMobId`/`fromLandUnitId` off the
+  wire (the server resolves these unconditionally — `movement.ts`'s `recordMove`) onto `StoredMove`
+  and seeding `openMob` from the earliest move's `fromMobId` when present. Finding 2 (re-pass) — the
+  finding-1 fix left the SAME false-CLEAR mode open through a more common trigger: `mergeById`'s
+  local-wins, plus local capture rows never being evicted, meant a move/dose THIS DEVICE captured
+  (structurally missing `fromMobId`/`meatWithholdUntil`) permanently shadowed its own hydrated echo
+  the moment that echo landed with the same id. Fixed with a new `mergeByIdPreferHydrated`
+  (`HydratedLivestock.tsx`) — hydrated wins on a shared id — applied at all 6 `foldMoves` + 4
+  `foldHealth` sites (`AdjustMobScreen.tsx`, `RecordLossScreen.tsx`, `herd.ts` ×2, `residue.ts`,
+  `Outbox.tsx`). Scoped deliberately: `mergeById`'s local-wins is UNCHANGED for tallies (hydrated
+  drops `count` — a reduction, not enrichment) and animals (single-creation row, no mixed-provenance
+  case) — the helper's own docstring states the strict-superset criterion. `herd.ts`'s position fold
+  (`useEffectiveAnimals`) was swapped too: `mapHydratedMove` already established the wire's `toMobId`
+  comes back ALWAYS resolved (never `undefined`-means-unchanged the way local is), so preferring
+  hydrated makes the client's position projection read the identical inputs the server's own
+  projection folds from. `mergeById`'s docstring, which claimed local/hydrated content is
+  interchangeable once both exist, was corrected — false for moves/health, and the premise finding 2
+  falsified. Both findings' fixes are fail-first tested, including an e2e reproduction
+  (`RecordLoss.test.tsx`) seeding BOTH the local move log and the hydrated `events` table with the
+  SAME move id — the exact shadow-copy trace. Open owner decision (STATUS.md §3, unanswered): a
+  back-dated local move with no hydrated context has no correct client-side answer — fail-closed vs.
+  documented preview limitation, not itself a defect the re-pass called blocking.
+  ✅ **A THIRD `compliance-checker` pass, scoped strictly to the finding-2 fix diff (STATUS.md §6
+  clause 1 — not the accumulated slice), returned APPROVABLE.** Verified exhaustively (grep, not
+  sampling) that all 10 call sites switched; traced against source that the tally/animal exclusion
+  from `mergeByIdPreferHydrated` is correct — animals ARE mutated server-side (the docstring's
+  original "single-creation row" framing was imprecise), but no fold trusts an animal's position/
+  status directly off the row either way, so `mergeById` stays correct there for a narrower reason
+  than first stated; confirmed the `Outbox.tsx` send-queue/guard-fold boundary intact and no
+  field-loss path for `WithholdDose`. Two LOW docstring-precision notes (the stated criteria
+  overclaimed "strict superset"; the real argument is "what does each fold consumer actually
+  read") fixed same session rather than deferred — this repo's own top recurring-defect class is a
+  comment whose premise outlived the code. **The FR-131 compliance gate on this diff is now
+  closed.**
 ◐ 3e Recount resets rather than adds, and arrival order cannot change the derived result — proven
   for mobs/tallies: `Outbox.test.tsx`'s "a hydrated RECOUNT still resets, and funds a decrease the
   created baseline alone could not" and "hydration arriving OUT OF chronological order projects

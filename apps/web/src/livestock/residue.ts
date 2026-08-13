@@ -26,13 +26,25 @@ import { useMemo } from 'react';
 import { schemas } from '@werf/core';
 import { farmDay } from '../farmTime';
 import { useAnimals, type StoredAnimal } from './LocalHerd';
-import { useHealthEvents, type StoredHealthEvent } from './LocalHealth';
+import { useHealthEvents } from './LocalHealth';
 import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
 import { useMoves, type StoredMove } from './LocalMoves';
 import { useTallies, type StoredTally } from './LocalTallies';
-import { useHydratedTallies, mergeById } from './HydratedLivestock';
+import {
+  useHydratedTallies,
+  useHydratedAnimals,
+  useHydratedMoves,
+  useHydratedHealthEvents,
+  mergeById,
+  mergeByIdPreferHydrated,
+} from './HydratedLivestock';
 import { useVetProducts, type StoredVetProduct } from './LocalVetProducts';
-import { meatWithdrawalFor, meatWithdrawalForMob, type ArrivedHead } from './withdrawal';
+import {
+  meatWithdrawalFor,
+  meatWithdrawalForMob,
+  type ArrivedHead,
+  type WithholdDose,
+} from './withdrawal';
 
 /**
  * A flagged disposal the device worked out itself. Deliberately the SERVER's shape minus the two
@@ -71,10 +83,12 @@ const intoFoodChain = (reason: schemas.TallyReason): boolean =>
  * the stores.
  */
 export function localResidueFlags(input: {
+  /** Evidence about the disposal's subject — local+hydrated merged is fine to pass here (see the
+   *  hook below); only `lifecycle`/`tallies` (the ROW source) must stay local-only. */
   readonly animals: readonly StoredAnimal[];
   readonly lifecycle: readonly StoredLifecycleEvent[];
   readonly tallies: readonly StoredTally[];
-  readonly health: readonly StoredHealthEvent[];
+  readonly health: readonly WithholdDose[];
   readonly products: readonly StoredVetProduct[];
   readonly moves: readonly StoredMove[];
   /**
@@ -158,9 +172,17 @@ export function localResidueFlags(input: {
   return flags;
 }
 
-/** The device's own flagged disposals, reactive over every store the derivation reads. */
+/** The device's own flagged disposals, reactive over every store the derivation reads.
+ *
+ * ⭐ `animals`/`health`/`moves` are merged with their hydrated counterparts (phase-checklists.md
+ * 3e) — the same evidence-widening `evidenceTallies` already does, extended past tallies. This
+ * screen must not disagree with the AT-CAPTURE guard (`AdjustMobScreen.tsx`/`RecordLossScreen.tsx`)
+ * about whether a disposal is inside a withholding, and those now read the merged evidence too.
+ * `lifecycle`/`tallies` stay LOCAL-ONLY — they are the ROW source, and a hydrated row must never
+ * generate a flag here (the server's own register already covers it — see the module header). */
 export function useLocalResidueFlags(): readonly LocalResidueFlag[] {
   const animals = useAnimals();
+  const hydratedAnimals = useHydratedAnimals();
   const lifecycle = useLifecycleEvents();
   const tallies = useTallies();
   const hydratedTallies = useHydratedTallies();
@@ -169,11 +191,38 @@ export function useLocalResidueFlags(): readonly LocalResidueFlag[] {
     [tallies, hydratedTallies],
   );
   const health = useHealthEvents();
+  const hydratedHealth = useHydratedHealthEvents();
   const products = useVetProducts();
   const moves = useMoves();
+  const hydratedMoves = useHydratedMoves();
+  const foldAnimals = useMemo(
+    () => mergeById(animals, hydratedAnimals),
+    [animals, hydratedAnimals],
+  );
+  // `mergeByIdPreferHydrated` for moves/health: their hydrated echoes carry server-derived
+  // enrichment (`fromMobId`/`fromLandUnitId`, `meatWithholdUntil`) a local capture never can —
+  // local-wins would shadow it once this device's own capture round-trips back with the same id
+  // (compliance-checker finding, phase-checklists.md 3e). See `HydratedLivestock.tsx`'s
+  // `mergeByIdPreferHydrated` docstring.
+  const foldHealth = useMemo(
+    () => mergeByIdPreferHydrated<WithholdDose>(health, hydratedHealth),
+    [health, hydratedHealth],
+  );
+  const foldMoves = useMemo(
+    () => mergeByIdPreferHydrated(moves, hydratedMoves),
+    [moves, hydratedMoves],
+  );
   return useMemo(
     () =>
-      localResidueFlags({ animals, lifecycle, tallies, evidenceTallies, health, products, moves }),
-    [animals, lifecycle, tallies, evidenceTallies, health, products, moves],
+      localResidueFlags({
+        animals: foldAnimals,
+        lifecycle,
+        tallies,
+        evidenceTallies,
+        health: foldHealth,
+        products,
+        moves: foldMoves,
+      }),
+    [foldAnimals, lifecycle, tallies, evidenceTallies, foldHealth, products, foldMoves],
   );
 }

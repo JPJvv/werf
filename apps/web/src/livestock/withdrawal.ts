@@ -34,14 +34,45 @@
  *
  * ⭐ AND EVERY ROUTE IS BOUNDED BY THE DAY BEING JUDGED. A dose given after a disposal cannot
  * withhold it — see `latestClearAcross`, which had no such bound while the server did.
+ *
+ * ⭐ A DOSE IS READ TWO WAYS, and which one applies is not a caller's choice. `StoredHealthEvent`
+ * (a LOCAL capture, not yet confirmed sent) carries a `productId` — the device's own cached
+ * register is the only clear date it can preview. A dose read back through `HydratedLivestock`
+ * (this device's own capture, once round-tripped through the server, or another device's) carries
+ * no `productId` at all: the wire payload stores `product` (a NAME string, resolved server-side)
+ * and the ALREADY-COMPUTED `meatWithholdUntil`, because the withdrawal is a regulated number
+ * (ADR-0005) and the server never sends the id back. `WithholdDose` is the shape both satisfy, and
+ * `clearDateFor` prefers the hydrated date when present — it is the authoritative answer, not a
+ * second preview of the same one. A mapper that tried to force a hydrated dose into `productId`
+ * would find nothing in the local register and silently drop it from the fold: a false CLEAR on
+ * the one guard this file exists to keep from ever being wrong in that direction.
  */
 
 import { isWithinWithdrawal, withholdUntil } from '@werf/domain';
 import { farmDay } from '../farmTime';
 import type { StoredAnimal } from './LocalHerd';
-import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMove } from './LocalMoves';
 import type { StoredVetProduct } from './LocalVetProducts';
+
+/**
+ * What the withdrawal guard needs from ONE dose, and nothing more — the fold's own minimal shape,
+ * satisfied by both a local `StoredHealthEvent` (structurally: `productId` required narrows to this
+ * field's optional type) and a hydrated dose (`meatWithholdUntil` in place of `productId`). See the
+ * module header for why a dose is read two different ways.
+ */
+export interface WithholdDose {
+  /** Not read by any function in this file — present so callers can `mergeById` a local+hydrated
+   *  dose list (dedup needs an id) without a second, narrower type just for that. */
+  readonly id: string;
+  readonly animalId: string | null;
+  readonly mobId?: string | null;
+  /** The farm-local day the dose was given (YYYY-MM-DD). */
+  readonly administeredOn: string;
+  /** A LOCAL capture's productId — looked up against the device's cached register. */
+  readonly productId?: string;
+  /** A HYDRATED dose's already-resolved clear date — the server's own answer, preferred when present. */
+  readonly meatWithholdUntil?: string;
+}
 
 export interface WithdrawalStatus {
   /** The day this animal clears its meat withholding, or null when nothing is withholding it. */
@@ -59,14 +90,24 @@ interface MobInterval {
 
 /**
  * When an animal was in which mob, from the device's own move log — the same reconstruction the
- * server runs, in the same farm-local DAYS, inclusive at BOTH ends (a move day belongs to both
- * mobs, and a food-safety boundary must fail toward blocking).
+ * server runs (`livestock.service.ts`'s own `mobMembership`), in the same farm-local DAYS,
+ * inclusive at BOTH ends (a move day belongs to both mobs, and a food-safety boundary must fail
+ * toward blocking).
  *
- * The client log holds only the DESTINATION of each move, because that is all a capture sends. So
- * the opening mob is the animal's `mobId` AS FIRST CAPTURED, which is exactly what the herd store
- * keeps: it is append-only and never rewritten. Pass the RAW animal for that reason — a projected
- * one carries where it is NOW, which is the denormalised value this whole reconstruction exists to
- * stop trusting.
+ * ⭐ The opening mob is the FIRST move's `fromMobId` when the animal has moved at all — exactly the
+ * server's rule ("the mob it was in before the FIRST move is that move's `fromMobId`") — and ONLY
+ * `animal.mobId` when it has never moved. This is NOT the same thing as "the animal's `mobId` AS
+ * FIRST CAPTURED" this function's header used to claim: that was true for every LOCAL animal (the
+ * herd store is append-only and `mobId` is frozen at creation) but silently false for a HYDRATED
+ * one, whose `mobId` is the server's denormalised CURRENT position — overwritten on every move that
+ * lands as the latest (`livestock.service.ts`'s `recordMove`, "the denormalised position follows
+ * the history"). Seeding `openMob` from a hydrated animal's `mobId` made the loop below skip
+ * pushing the animal's true opening interval outright (its first move's `toMobId` equalled the
+ * wrongly-seeded CURRENT mob, so `to === openMob` fired on iteration one) — a dose given to the
+ * animal's real opening mob, before it ever moved, became invisible to this reconstruction: a false
+ * CLEAR on the one guard this file exists to keep from ever being wrong in that direction. A LOCAL
+ * move never carries `fromMobId` (the app never sends it — see `LocalMoves.tsx`'s `StoredMove`), so
+ * this only ever engages for a HYDRATED move, which is exactly where the bug was.
  */
 function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): readonly MobInterval[] {
   const mine = moves
@@ -89,7 +130,8 @@ function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): read
     );
 
   const intervals: MobInterval[] = [];
-  let openMob = animal.mobId ?? null;
+  const openingFromWire = mine[0]?.fromMobId;
+  let openMob = openingFromWire !== undefined ? openingFromWire : (animal.mobId ?? null);
   let openedOn = '0000-01-01';
 
   for (const move of mine) {
@@ -113,7 +155,7 @@ function inMobOn(wasIn: readonly MobInterval[], mobId: string, day: string): boo
 
 /** True when this dose reached this animal — its own, or its mob's while it was in that mob. */
 function reachedAnimal(
-  event: StoredHealthEvent,
+  event: WithholdDose,
   animal: StoredAnimal,
   wasIn: readonly MobInterval[],
 ): boolean {
@@ -138,7 +180,7 @@ function reachedAnimal(
 export function meatWithdrawalFor(
   animal: StoredAnimal,
   disposalOn: string,
-  events: readonly StoredHealthEvent[],
+  events: readonly WithholdDose[],
   products: readonly StoredVetProduct[],
   moves: readonly StoredMove[] = [],
 ): WithdrawalStatus {
@@ -167,7 +209,7 @@ export function meatWithdrawalFor(
 export function meatWithdrawalForMob(
   mobId: string,
   disposalOn: string,
-  events: readonly StoredHealthEvent[],
+  events: readonly WithholdDose[],
   products: readonly StoredVetProduct[],
   animals: readonly StoredAnimal[] = [],
   moves: readonly StoredMove[] = [],
@@ -195,7 +237,7 @@ export function meatWithdrawalForMob(
 
 /** Everything the mob rule reads, threaded through the transfer chain unchanged. */
 interface MobWithdrawalContext {
-  readonly events: readonly StoredHealthEvent[];
+  readonly events: readonly WithholdDose[];
   readonly products: readonly StoredVetProduct[];
   readonly animals: readonly StoredAnimal[];
   readonly moves: readonly StoredMove[];
@@ -223,7 +265,7 @@ function mobWithdrawal(
     .map((animal) => ({ animal, wasIn: mobMembership(animal, moves) }))
     .filter((m) => inMobOn(m.wasIn, mobId, disposalOn));
 
-  const reaches = (event: StoredHealthEvent): boolean => {
+  const reaches = (event: WithholdDose): boolean => {
     // The COUNTED portion of the mob — head with no `animals` rows — is reached by the mob's own
     // doses. This is the only half that ever fires for a pure head-count flock.
     if ((event.mobId ?? null) === mobId) return true;
@@ -445,8 +487,28 @@ function collectMobSubjects(
  * dipped-and-sold on one day is a real residue question and a food-safety boundary fails toward
  * blocking. Identical to the server's comparison, deliberately.
  */
+/**
+ * The clear date for ONE dose. `meatWithholdUntil`, when present, is the server's own resolved
+ * answer (a hydrated dose) and wins outright — recomputing from a product register would be a
+ * second, narrower computation of the same regulated number. Only a LOCAL preview falls through to
+ * the register lookup, and only when the device recognises the product at all.
+ */
+function clearDateFor(
+  event: WithholdDose,
+  withdrawalDays: ReadonlyMap<string, number | null>,
+): string | undefined {
+  if (event.meatWithholdUntil !== undefined) return event.meatWithholdUntil;
+  if (event.productId === undefined) return undefined;
+  const days = withdrawalDays.get(event.productId);
+  // A product the device does not know about contributes nothing. That is the honest answer —
+  // guessing a withdrawal would be inventing a regulated number — and the server still holds the
+  // real one, so the animal is protected even when this device cannot say so.
+  if (days === undefined || days === null) return undefined;
+  return withholdUntil(event.administeredOn, days);
+}
+
 function latestClearAcross(
-  events: readonly StoredHealthEvent[],
+  events: readonly WithholdDose[],
   disposalOn: string,
   products: readonly StoredVetProduct[],
 ): WithdrawalStatus {
@@ -456,12 +518,8 @@ function latestClearAcross(
   for (const event of events) {
     // The day bound, before anything else: this is not about which product it was.
     if (event.administeredOn > disposalOn) continue;
-    const days = withdrawalDays.get(event.productId);
-    // A product the device does not know about contributes nothing. That is the honest answer —
-    // guessing a withdrawal would be inventing a regulated number — and the server still holds the
-    // real one, so the animal is protected even when this device cannot say so.
-    if (days === undefined || days === null) continue;
-    const clear = withholdUntil(event.administeredOn, days);
+    const clear = clearDateFor(event, withdrawalDays);
+    if (clear === undefined) continue;
     if (latest === undefined || clear > latest) latest = clear;
   }
 

@@ -28,6 +28,7 @@ const MOB_ID = '0190f3a0-0000-7000-8000-0000000000b1';
 const DIP_ID = '0190f3a0-0000-7000-8000-0000000000c1';
 const TALLY_ID = '0190f3a0-0000-7000-8000-0000000000c2';
 const MOVE_ID = '0190f3a0-0000-7000-8000-0000000000c3';
+const SALE_ID = '0190f3a0-0000-7000-8000-0000000000e3';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -704,6 +705,114 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(TALLY_ID);
     expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+  });
+
+  it('⭐ holds an individual sale when the animal AND its mob membership are known only via HYDRATION', async () => {
+    // The animals/moves/health hydration slice (phase-checklists.md 3e), the individual-animal
+    // counterpart of the transfer-chain test above. `guardedByFor` for a lifecycle disposal used to
+    // read `animals.find(...)` (local-only) to find `subject`, then `animalDisposalSubjects(subject,
+    // moves)` (also local-only) for the mob-history subject set. An animal registered on ANOTHER
+    // device — never captured here — made `subject` `undefined`, which fell through to
+    // `guardedBy: nonNull(event.animalId)`: the animal's own id, with NO mob history. A refused dip
+    // on a mob the animal stood in (known only because the hydrated animal row itself carries that
+    // mob) then held nothing, and the sale posted anyway — 201 for meat inside an active
+    // withholding, the one shape in this file where meat reaches a truck rather than a farmer being
+    // blocked.
+    cachedSession();
+    // LOCAL: the dip on the mob (refused this round) and the sale event, naming an animal id this
+    // device has no local herd row for at all.
+    window.localStorage.setItem(
+      `werf-vet-products:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-0000000000d2',
+          name: 'Tickaway',
+          registrationNumber: 'G4321 Act 36/1947',
+          species: ['cattle'],
+          meatWithdrawalDays: 28,
+          milkWithdrawalHours: null,
+          route: 'topical',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-health:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: DIP_ID,
+          farmId: FARM_ID,
+          animalId: null,
+          mobId: MOB_ID,
+          kind: 'dip',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+          productId: '0190f3a0-0000-7000-8000-0000000000d2',
+          method: 'plunge',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-events:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SALE_ID,
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          type: 'sale',
+          status: 'sold',
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          counterparty: 'Vleissentraal',
+          priceCents: 500000,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/dips') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // HYDRATED before the first render, same reasoning as the transfer-chain test: this device
+    // boots into a world where the animal and its mob membership already arrived via down-sync.
+    const fake = await getCurrentFakeLocalDatabase();
+    fake.hydrateRow('animals', {
+      id: ANIMAL_ID,
+      farm_id: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+      breed: null,
+      status: 'alive',
+      dob: null,
+      dob_estimated: 0,
+      status_at: null,
+      dam_id: null,
+      sire_id: null,
+      // Standing in the dipped mob as first captured — the opening mob `mobMembership` reads,
+      // no move event needed to establish it.
+      mob_id: MOB_ID,
+      land_unit_id: null,
+      source: null,
+      acquired_at: null,
+      brand_id: null,
+      brand_applied_at: null,
+      attributes: '{}',
+      photo_key: null,
+      enterprise_id: null,
+    });
+
+    render(<App />);
+    // Held: the refused dip's taint must reach the sale through the hydrated animal's mob history.
+    expect(await screen.findByText(/1 not sent — needs your attention/)).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(SALE_ID);
+    expect(await storedBlob(`werf-events:${FARM_ID}`)).toContain(SALE_ID);
   });
 
   it('⭐ holds the arrival — and the slaughter behind it — when the DEPARTURE was refused', async () => {

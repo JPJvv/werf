@@ -67,7 +67,14 @@ import {
   useHydratedTallies,
   useHydratedTalliesHydrationFailed,
   useHydratedTalliesSettled,
+  useHydratedAnimals,
+  useHydratedAnimalsHydrationFailed,
+  useHydratedAnimalsSettled,
+  useHydratedMoves,
+  useHydratedMovesHydrationFailed,
+  useHydratedMovesSettled,
   mergeById,
+  mergeByIdPreferHydrated,
 } from '../livestock/HydratedLivestock';
 import {
   useAnimalLabels,
@@ -433,6 +440,18 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const hydratedMobs = useHydratedMobs();
   const hydratedTallies = useHydratedTallies();
   const animals = useAnimals();
+  // ⭐ Same down-sync half, extended to animals/moves (phase-checklists.md 3e) — an animal another
+  // device registered, or a walk another device recorded, already replicated to this one.
+  // `foldAnimals`/`foldMoves`, below `queue`, feed ONLY the FR-131 guard computations
+  // (`mobDisposalSubjects`/`animalDisposalSubjects`) — never the item-build loops, which stay on
+  // the raw local stores below so a hydrated row is never re-queued for send. Health does NOT need
+  // the same fold here: this queue's `guardedBy`/`provides`/`taintedSubjects` mechanism holds a
+  // LOCAL disposal behind a LOCAL dose refused THIS round — a hydrated dose is, by definition,
+  // already accepted, so there is nothing for it to taint. The withdrawal STATUS computation that
+  // does read hydrated health lives at capture time (`AdjustMobScreen.tsx`/`RecordLossScreen.tsx`)
+  // and in the residue preview (`residue.ts`), not here.
+  const hydratedAnimals = useHydratedAnimals();
+  const hydratedMoves = useHydratedMoves();
   const identifiers = useIdentifiers();
   // What each animal is CALLED. Read here purely so a refused capture can be named by the number
   // on the animal's ear rather than by a uuid the farmer has never seen.
@@ -471,6 +490,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // (`hydrated-table-store.ts`'s own header), so an offline device settles immediately.
   const hydratedMobsSettled = useHydratedMobsSettled();
   const hydratedTalliesSettled = useHydratedTalliesSettled();
+  const hydratedAnimalsSettled = useHydratedAnimalsSettled();
+  const hydratedMovesSettled = useHydratedMovesSettled();
   const animalsSettled = useAnimalsSettled();
   const identifiersSettled = useIdentifiersSettled();
   const weightsSettled = useWeightsSettled();
@@ -487,6 +508,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     talliesSettled &&
     hydratedMobsSettled &&
     hydratedTalliesSettled &&
+    hydratedAnimalsSettled &&
+    hydratedMovesSettled &&
     animalsSettled &&
     identifiersSettled &&
     weightsSettled &&
@@ -513,6 +536,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const talliesHydrationFailed = useTalliesHydrationFailed();
   const hydratedMobsHydrationFailed = useHydratedMobsHydrationFailed();
   const hydratedTalliesHydrationFailed = useHydratedTalliesHydrationFailed();
+  const hydratedAnimalsHydrationFailed = useHydratedAnimalsHydrationFailed();
+  const hydratedMovesHydrationFailed = useHydratedMovesHydrationFailed();
   const animalsHydrationFailed = useAnimalsHydrationFailed();
   const identifiersHydrationFailed = useIdentifiersHydrationFailed();
   const weightsHydrationFailed = useWeightsHydrationFailed();
@@ -529,6 +554,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     talliesHydrationFailed ||
     hydratedMobsHydrationFailed ||
     hydratedTalliesHydrationFailed ||
+    hydratedAnimalsHydrationFailed ||
+    hydratedMovesHydrationFailed ||
     animalsHydrationFailed ||
     identifiersHydrationFailed ||
     weightsHydrationFailed ||
@@ -579,6 +606,25 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const hydratedTallyIds = useMemo(
     () => new Set(hydratedTallies.map((t) => t.id)),
     [hydratedTallies],
+  );
+  // ⭐ Same fold, same two rules, extended to animals/moves (phase-checklists.md 3e) — these feed
+  // ONLY `mobDisposalSubjects`/`animalDisposalSubjects` below (the FR-131 send-order guard), never
+  // a `FlushItem` loop. Unlike `foldTallies`, no `landed()`/`hydratedXIds` counterpart exists for
+  // these two: nothing here asks "has the server already got this row", only "what does the
+  // guard's evidence currently say" — the same read `AdjustMobScreen.tsx`/`RecordLossScreen.tsx`/
+  // `residue.ts` now make. Health is deliberately NOT folded here — see the note above `animals`.
+  const foldAnimals = useMemo(
+    () => mergeById(animals, hydratedAnimals),
+    [animals, hydratedAnimals],
+  );
+  // `mergeByIdPreferHydrated`, not `mergeById`: a move's hydrated echo carries `fromMobId`/
+  // `fromLandUnitId`, which a local capture never can (compliance-checker finding, phase-
+  // checklists.md 3e) — local-wins would permanently shadow that enrichment once this device's
+  // own move round-trips back down with the same id. See `HydratedLivestock.tsx`'s
+  // `mergeByIdPreferHydrated` docstring for the full reasoning.
+  const foldMoves = useMemo(
+    () => mergeByIdPreferHydrated(moves, hydratedMoves),
+    [moves, hydratedMoves],
   );
 
   // The pending queue, in send order. Two rules decide it, and the second is not obvious:
@@ -783,8 +829,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             ? mobDisposalSubjects(
                 tally.mobId,
                 farmDay(new Date(tally.occurredAt)),
-                animals,
-                moves,
+                // ⛔ `foldAnimals`/`foldMoves` — local+hydrated, not the raw local `animals`/`moves`
+                // (phase-checklists.md 3e) — so a member standing in this mob only known via
+                // down-sync, or a walk another device recorded for one, is not invisible to the
+                // subject walk. Same class of gap `foldTallies` below already closed for the
+                // transfer chain.
+                foldAnimals,
+                foldMoves,
                 // ⛔ `foldTallies` — local+hydrated — not the raw local `tallies`, so the subject
                 // set walks the TRANSFER CHAIN the guard walks even when this device never
                 // captured the transfer itself. Without the fold the set stopped at this mob and
@@ -915,7 +966,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       // which is exactly the carried-in class the capture guard was widened for this same session.
       const intoFoodChain =
         event.type === 'sale' || (event.type === 'death' && event.slaughtered === true);
-      const subject = animals.find((a) => a.id === event.animalId);
+      // ⛔ `foldAnimals` — local+hydrated (phase-checklists.md 3e) — not the raw local `animals`,
+      // so an animal registered only on another device still resolves to a subject here. Reading
+      // `animals` alone made this fall through to the weaker `nonNull(event.animalId)` set — the
+      // animal's OWN id with no mob history — for exactly the animal a co-worker's phone knows the
+      // full history of, which is a narrower guard than `meatWithdrawalFor` runs at capture.
+      const subject = foldAnimals.find((a) => a.id === event.animalId);
       items.push({
         id: event.id,
         kind: 'lifecycle',
@@ -923,7 +979,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         send: (token) => sendLifecycleEvent(event, token),
         ...(intoFoodChain
           ? {
-              guardedBy: subject ? animalDisposalSubjects(subject, moves) : nonNull(event.animalId),
+              guardedBy: subject
+                ? animalDisposalSubjects(subject, foldMoves)
+                : nonNull(event.animalId),
             }
           : {}),
       });
@@ -961,6 +1019,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     tallies,
     foldMobs,
     foldTallies,
+    foldAnimals,
+    foldMoves,
     animals,
     identifiers,
     weights,

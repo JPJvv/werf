@@ -20,13 +20,13 @@
  * is right about.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
 import { farmDay } from '../farmTime';
-import { storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -395,6 +395,37 @@ describe('the weaning session (FR-111)', () => {
       ageDays: 205,
       status: null,
     });
+  });
+
+  it('⭐ does not offer a calf ANOTHER DEVICE already weaned, known only via hydration (phase-checklists.md 3e)', async () => {
+    // The gap this closes: `alreadyWeaned` read only local `useLifecycleEvents()` — a weaning
+    // another device already sent, once replicated down, was invisible here, so the queue would
+    // offer an animal a co-worker had already weaned and let this device record it a second time.
+    cachedSession();
+    const damId = uuidv7();
+    const calfId = uuidv7();
+    const born = farmDay(new Date(Date.now() - 205 * 86_400_000));
+    seedHerd(animal(damId), animal(calfId, { damId, dob: born }));
+    window.history.pushState({}, '', '/animals/wean');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000w099',
+        farm_id: FARM_ID,
+        animal_id: calfId,
+        type: 'weaning',
+        occurred_at: new Date().toISOString(),
+        payload: JSON.stringify({ weightKg: 205 }),
+      });
+    });
+
+    // The queue settles empty — the only calf on the farm was already weaned, on another device.
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/weaning weight/i)).toBeNull();
+    });
+    expect(screen.getByText(/nothing to wean/i)).toBeTruthy();
   });
 
   it('omits the age entirely when the date of birth is unknown', async () => {

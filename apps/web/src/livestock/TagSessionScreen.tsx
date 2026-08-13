@@ -28,6 +28,7 @@ import {
   useRecordIdentifier,
   useTakenValues,
 } from './LocalIdentifiers';
+import { useHydratedIdentifiers, useHydratedIdentifiersSettled } from './HydratedLivestock';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 export function identifierTypeLabel(
@@ -42,14 +43,29 @@ export function TagSessionScreen() {
   const { activeFarm } = useAuth();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
   const labels = useAnimalLabels();
-  const taken = useTakenValues();
+  const localTaken = useTakenValues();
+  // ⭐ Merged with hydrated identifiers (phase-checklists.md 3e) — a tag another device applied and
+  // the server has replicated down is a value already live on the farm, and this guard exists
+  // precisely so a misread digit is caught HERE rather than jamming the outbox days later with a
+  // refusal nothing on the phone explains (see the module header). `useTakenValues()` is a Set of
+  // values, not rows with an id, so this unions the two sets directly rather than `mergeById`.
+  const hydratedIdentifiers = useHydratedIdentifiers();
+  const taken = useMemo(() => {
+    if (hydratedIdentifiers.length === 0) return localTaken;
+    const merged = new Set(localTaken);
+    for (const identifier of hydratedIdentifiers) {
+      merged.add(identifier.value.trim().toLowerCase());
+    }
+    return merged;
+  }, [localTaken, hydratedIdentifiers]);
   const record = useRecordIdentifier();
   // Both called unconditionally, one per line, before combining — `useX() && useY()` would
   // short-circuit and skip calling useY() whenever useX() is false, which varies how many hooks
   // this component calls between renders and breaks React outright (Rules of Hooks).
   const animalsReady = useEffectiveAnimalsSettled();
   const identifiersReady = useIdentifiersSettled();
-  const readyToOpen = animalsReady && identifiersReady;
+  const hydratedIdentifiersReady = useHydratedIdentifiersSettled();
+  const readyToOpen = animalsReady && identifiersReady && hydratedIdentifiersReady;
 
   // The queue is fixed once every store it is built from has hydrated — animals that had no
   // number THEN. Recomputing it after every save would make the list shrink under the farmer's

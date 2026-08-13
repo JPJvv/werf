@@ -85,6 +85,54 @@ describe('projectHerd — where an animal is, when two moves share a day', () =>
   });
 });
 
+describe('projectHerd — reading a hydrated (down-synced) animal/event, not just a local one', () => {
+  // ⭐ `useEffectiveAnimals` (phase-checklists.md 3e, extended past mobs/tallies) merges
+  // `LocalHerd`/`LocalLifecycle`/`LocalMoves` with `HydratedLivestock`'s down-synced copies BEFORE
+  // calling this function — this proves the fold itself accepts and correctly folds a lifecycle
+  // event shaped exactly like a hydrated row can honestly provide (`HydratedLifecycleEvent`: no
+  // `cause`/`counterparty`/`priceCents`/etc, only what `mostFinalByAnimal` reads), so the merge
+  // cannot be shadowed by a stricter `StoredLifecycleEvent`-only type here.
+  it('folds a death shaped exactly like a hydrated row over an animal captured only locally', () => {
+    const hydratedDeath = {
+      id: '01900000-0000-7000-8000-0000000000d1',
+      animalId: ANIMAL_ID,
+      type: 'death' as const,
+      status: 'dead' as const,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+    };
+    const [projected] = projectHerd([animal()], [hydratedDeath]);
+    expect(projected?.status).toBe('dead');
+  });
+
+  it('folds a death shaped exactly like a hydrated row over an animal ALSO known only via hydration', () => {
+    // The sharper case: neither the animal row nor the death event was ever captured by this
+    // device — both arrived purely through down-sync, which is exactly what happens when a
+    // co-worker's phone registers and disposes of an animal this device has never heard of before.
+    const hydratedAnimal = { ...animal(), status: 'alive' as const };
+    const hydratedDeath = {
+      id: '01900000-0000-7000-8000-0000000000d2',
+      animalId: ANIMAL_ID,
+      type: 'death' as const,
+      status: 'dead' as const,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+    };
+    const [projected] = projectHerd([hydratedAnimal], [hydratedDeath]);
+    expect(projected?.status).toBe('dead');
+  });
+
+  it('a birth/purchase/weaning-shaped hydrated event moves no status', () => {
+    const hydratedWeaning = {
+      id: '01900000-0000-7000-8000-0000000000d3',
+      animalId: ANIMAL_ID,
+      type: 'weaning' as const,
+      status: null,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+    };
+    const [projected] = projectHerd([animal()], [hydratedWeaning]);
+    expect(projected?.status).toBe('alive');
+  });
+});
+
 describe('projectMobs — reading a hydrated (down-synced) mob, not just a local one', () => {
   // ⭐ `useEffectiveMobs` (phase-checklists.md 3e) merges `LocalMobs`/`LocalTallies` with
   // `HydratedLivestock`'s down-synced copies BEFORE calling this function — this file proves the

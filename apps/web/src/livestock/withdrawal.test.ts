@@ -9,7 +9,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { schemas } from '@werf/core';
-import { animalDisposalSubjects, meatWithdrawalForMob, mobDisposalSubjects } from './withdrawal';
+import {
+  animalDisposalSubjects,
+  meatWithdrawalFor,
+  meatWithdrawalForMob,
+  mobDisposalSubjects,
+} from './withdrawal';
 import type { StoredAnimal } from './LocalHerd';
 import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMove } from './LocalMoves';
@@ -63,6 +68,55 @@ const movedIntoOxen: StoredMove = {
   toMobId: OXEN,
   batchId: null,
 };
+
+describe('a HYDRATED animal — mobId is the CURRENT position, not the opening one (compliance-checker finding, phase-checklists.md 3e)', () => {
+  // `ox`/`movedIntoOxen` above are the LOCAL shape: `ox.mobId` is DIP_CAMP because a local animal
+  // row is append-only and frozen at capture (the opening mob, honestly). A HYDRATED animal reads
+  // `animals.mob_id` straight off the server, which is DENORMALISED to the animal's CURRENT
+  // position — `livestock.service.ts`'s `recordMove` overwrites it on every move that lands as the
+  // latest. Seeding `mobMembership`'s `openMob` from that field made the loop skip pushing the
+  // animal's true opening interval outright — its first move's `toMobId` matched the wrongly-seeded
+  // CURRENT mob — so a dose given to the animal's REAL opening mob became invisible: a false CLEAR.
+  const hydratedOx: StoredAnimal = schemas.newAnimalSchema.parse({
+    id: OX,
+    farmId: FARM,
+    species: 'cattle',
+    sex: 'male',
+    mobId: OXEN, // CURRENT, as the server denormalises it — NOT the dip camp it opened in.
+  });
+  // A HYDRATED move carries `fromMobId` — the wire's own record of where the animal actually was —
+  // which a LOCAL move (`movedIntoOxen`, above) never has, because the app never sends it.
+  const hydratedMovedIntoOxen: StoredMove = {
+    ...movedIntoOxen,
+    fromMobId: DIP_CAMP,
+  };
+
+  it('⭐ still finds a dose given to the TRUE opening mob, via the move’s own fromMobId', () => {
+    const status = meatWithdrawalFor(
+      hydratedOx,
+      '2026-08-16',
+      [dipOnDipCamp],
+      [tickaway],
+      [hydratedMovedIntoOxen],
+    );
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBe('2026-08-17');
+  });
+
+  it('the subject set the outbox holds on also reaches back to the true opening mob', () => {
+    const subjects = animalDisposalSubjects(hydratedOx, [hydratedMovedIntoOxen]);
+    expect([...subjects].sort()).toEqual([DIP_CAMP, OX, OXEN].sort());
+  });
+
+  it('without fromMobId (a genuinely local-only move), falls back to animal.mobId — unchanged behaviour', () => {
+    // The regression guard: a LOCAL animal + a LOCAL move must still work exactly as before this
+    // fix — `ox`/`movedIntoOxen` never carry a wrong "current" mobId, so falling back to
+    // `animal.mobId` when no move supplies `fromMobId` is correct, not merely tolerated.
+    const status = meatWithdrawalFor(ox, '2026-08-16', [dipOnDipCamp], [tickaway], [movedIntoOxen]);
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBe('2026-08-17');
+  });
+});
 
 describe('meatWithdrawalForMob — agreeing with the server', () => {
   it('⭐ blocks the ox mob for a dose the ox carried IN from another mob', () => {
@@ -172,18 +226,17 @@ describe('meatWithdrawalForMob — agreeing with the server', () => {
     // walked out is not held by a dose the mob received after it went, and one that never received
     // the dose is not blocked for it. Here the ox is no longer in the dip camp on the disposal day,
     // and no head-count dose reaches the dip camp itself, so the dip camp is clear.
+    const doseOnOxenAfterMove: StoredHealthEvent = {
+      ...dipOnDipCamp,
+      id: '0190f3a0-0000-7000-8000-00000000f002',
+      mobId: OXEN,
+      administeredOn: '2026-07-25',
+      occurredAt: '2026-07-25T06:00:00.000Z',
+    };
     const status = meatWithdrawalForMob(
       DIP_CAMP,
       '2026-08-16',
-      [
-        {
-          ...dipOnDipCamp,
-          id: '0190f3a0-0000-7000-8000-00000000f002',
-          mobId: OXEN,
-          administeredOn: '2026-07-25',
-          occurredAt: '2026-07-25T06:00:00.000Z',
-        },
-      ],
+      [doseOnOxenAfterMove],
       [tickaway],
       [ox],
       [movedIntoOxen],
@@ -431,5 +484,66 @@ describe('disposal subject sets — what the outbox must hold on', () => {
     };
     const subjects = mobDisposalSubjects(OXEN, '2026-08-16', [ox], [movedIntoOxen, leftOxen], []);
     expect(subjects).toEqual([OXEN]);
+  });
+});
+
+describe('a HYDRATED dose — no productId, an already-resolved meatWithholdUntil', () => {
+  // The animals/moves/health hydration slice (phase-checklists.md 3e, extended past mobs/tallies).
+  // The wire payload for a treatment/vaccination/dip event never carries `productId` — only
+  // `product` (a NAME string) and the server-computed `meatWithholdUntil` (see withdrawal.ts's
+  // module header). A dose read back through `HydratedLivestock` therefore satisfies `WithholdDose`
+  // via `meatWithholdUntil`, not `productId` — this proves `meatWithdrawalForMob` reads that field
+  // directly and does NOT need the local product register at all to honour it, unlike a LOCAL
+  // capture's preview. Fails against the pre-widening code: `StoredHealthEvent`-only typing forced
+  // every hydrated dose through a `productId` lookup that could never resolve (the field does not
+  // exist on the wire), silently dropping the dose from the fold — a false CLEAR.
+  it('⭐ blocks a mob for a hydrated dose carrying meatWithholdUntil, with NO matching product in the local register', () => {
+    const hydratedDip = {
+      id: '0190f3a0-0000-7000-8000-00000000f099',
+      animalId: null,
+      mobId: DIP_CAMP,
+      administeredOn: '2026-07-20',
+      meatWithholdUntil: '2026-08-17',
+      // Deliberately no `productId` — the field a hydrated dose can never honestly carry.
+    };
+    const status = meatWithdrawalForMob(
+      DIP_CAMP,
+      '2026-08-16',
+      [hydratedDip],
+      // The local product register is EMPTY — proving the guard does not need it once the dose
+      // already carries the server's own resolved date.
+      [],
+      [],
+      [],
+      [],
+    );
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBe('2026-08-17');
+  });
+
+  it('clears the mob the day the hydrated withholding runs out, same as a local one', () => {
+    const hydratedDip = {
+      id: '0190f3a0-0000-7000-8000-00000000f098',
+      animalId: null,
+      mobId: DIP_CAMP,
+      administeredOn: '2026-07-20',
+      meatWithholdUntil: '2026-08-17',
+    };
+    const status = meatWithdrawalForMob(DIP_CAMP, '2026-08-17', [hydratedDip], [], [], [], []);
+    expect(status.blocked).toBe(false);
+  });
+
+  it('a dose with neither productId nor meatWithholdUntil contributes nothing, honestly', () => {
+    // Neither shape — a malformed or genuinely unresolved row. The fold must not guess, exactly as
+    // a local dose against an unknown product contributes nothing (the existing rule this mirrors).
+    const bareDip = {
+      id: '0190f3a0-0000-7000-8000-00000000f097',
+      animalId: null,
+      mobId: DIP_CAMP,
+      administeredOn: '2026-07-20',
+    };
+    const status = meatWithdrawalForMob(DIP_CAMP, '2026-08-16', [bareDip], [], [], [], []);
+    expect(status.blocked).toBe(false);
+    expect(status.clearFrom).toBeNull();
   });
 });

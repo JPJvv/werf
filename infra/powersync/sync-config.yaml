@@ -20,6 +20,11 @@ streams:
       SELECT acquired_at, attributes, brand_applied_at, brand_id, breed, created_at, created_by, dam_id, deleted_at, dob, dob_estimated, enterprise_id, farm_id, id, land_unit_id, mob_id, photo_key, sex, sire_id, source, species, status, status_at, updated_at, updated_by FROM animals
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: true
+  attachments:
+    query: |
+      SELECT checksum, created_at, created_by, deleted_at, farm_id, id, mime_type, object_key, occurred_at, size_bytes, status, subject_id, subject_type, updated_at, updated_by FROM attachments
+      WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   branding_registers:
     query: |
       SELECT body_position, certificate_reference, created_at, created_by, deleted_at, farm_id, id, jurisdiction, mark, mark_type, registered_at, species, updated_at, updated_by FROM branding_registers

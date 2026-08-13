@@ -191,6 +191,16 @@ export const TENANCY = {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },
+  // Attachment metadata (Phase 3 slice 3i, offline-sync.md § 3.1). Farm-scoped and bidirectional:
+  // the binary is written to OPFS before capture reports success, and this row is that capture's
+  // metadata half, syncing exactly like any other farm-owned row. No neverSyncColumns — object_key
+  // is server-derived and opaque but not a secret (offline-sync.md's "clients never choose bucket
+  // paths" is about AUTHORSHIP of the key, not about hiding it once the server has set it), and a
+  // device reading its own attachments' status is how it knows which are still pending upload.
+  attachments: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
 } as const satisfies Record<string, TenancyEntry>;
 
 export type SyncedTable = keyof typeof TENANCY;

@@ -8,4 +8,5 @@ export * from './events';
 export * from './veterinary';
 export * from './breeding';
 export * from './theft';
+export * from './attachments';
 export * from './tables';

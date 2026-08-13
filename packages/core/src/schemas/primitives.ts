@@ -12,6 +12,7 @@ import { USER_ROLES } from '../roles';
 import { LAND_UNIT_KINDS } from '../land';
 import { ANIMAL_SEXES, ANIMAL_STATUSES, IDENTIFIER_TYPES, SPECIES } from '../animals';
 import { EVENT_TYPES } from '../events';
+import { ATTACHMENT_STATUSES, ATTACHMENT_SUBJECT_TYPES } from '../attachments';
 
 /** IDs are client-generated UUIDv7. We validate shape here; ordering is a storage concern. */
 export const uuidSchema = z.string().uuid();
@@ -33,6 +34,10 @@ export const identifierTypeSchema = z.enum(IDENTIFIER_TYPES);
 export const speciesSchema = z.enum(SPECIES);
 
 export const eventTypeSchema = z.enum(EVENT_TYPES);
+
+export const attachmentSubjectTypeSchema = z.enum(ATTACHMENT_SUBJECT_TYPES);
+
+export const attachmentStatusSchema = z.enum(ATTACHMENT_STATUSES);
 
 /** Money on the wire is integer cents. */
 export const moneySchema = z.number().int();

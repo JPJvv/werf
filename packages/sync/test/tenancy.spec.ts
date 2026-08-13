@@ -57,6 +57,12 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   species_gestation: { id: 'gest-cattle', species: 'cattle', gestation_days: 283 },
   theft_incidents: { id: 'theft-b', farm_id: FARM_B },
   theft_incident_animals: { incident_id: 'theft-b', animal_id: 'animal-b', farm_id: FARM_B },
+  attachments: {
+    id: 'attach-b',
+    farm_id: FARM_B,
+    subject_type: 'animal',
+    subject_id: 'animal-b',
+  },
 };
 
 const userAFarms = [FARM_A];

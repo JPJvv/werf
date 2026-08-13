@@ -52,6 +52,25 @@ export const LOCAL_SCHEMA_TABLES: readonly LocalTableDef[] = [
     ],
   },
   {
+    name: 'attachments',
+    columns: [
+      { name: 'checksum', type: 'TEXT' },
+      { name: 'created_at', type: 'TEXT' },
+      { name: 'created_by', type: 'TEXT' },
+      { name: 'deleted_at', type: 'TEXT' },
+      { name: 'farm_id', type: 'TEXT' },
+      { name: 'mime_type', type: 'TEXT' },
+      { name: 'object_key', type: 'TEXT' },
+      { name: 'occurred_at', type: 'TEXT' },
+      { name: 'size_bytes', type: 'INTEGER' },
+      { name: 'status', type: 'TEXT' },
+      { name: 'subject_id', type: 'TEXT' },
+      { name: 'subject_type', type: 'TEXT' },
+      { name: 'updated_at', type: 'TEXT' },
+      { name: 'updated_by', type: 'TEXT' },
+    ],
+  },
+  {
     name: 'branding_registers',
     columns: [
       { name: 'body_position', type: 'TEXT' },

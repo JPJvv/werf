@@ -1074,18 +1074,69 @@ add the one shared local-first attachment path approved on 2026-08-08.
   partitioning outright. Migration 0021 drops `create_farm_partition`; `events_default` is now the
   permanent, only partition; `PARTITIONED_SOURCE_TABLE`/`sourceTable` in `derive-sync-streams.ts`
   stay as they are (still true, now permanently rather than by accident). Full record: STATUS.md §3.
-☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
-☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
-☐ 3h Sync health reports queue depth/failure per farm without PII
-☐ 3i Attachment metadata is farm-scoped, client-UUIDv7, soft-deleted and synced through SQLite;
-  the binary stays in OPFS until its checksum-confirmed server acknowledgement is durable
-☐ 3i Animal photos and later crop/grievance documents use one deferred queue: capture commits
-  locally with no signal, browser kill/reload loses neither metadata nor blob, and retry is idempotent
-☐ 3i The API authorises the farm before issuing a short-lived presigned upload; object keys are
-  server-derived, never arbitrary client paths, and another farm can neither upload nor read them
-☐ 3i One S3-compatible adapter uses MinIO in development/integration tests and S3 in `af-south-1`
-  in production; tests cover checksum/size refusal, quota pressure, retry and orphan cleanup
-☐ 3i Existing Phase 2 `photo_key` rows migrate without inventing an attachment; null remains none
+◐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives.
+  **Queue-survival half CLOSED, 2026-08-13**: `sqlite-capture-store.spec.ts`'s new fail-first test
+  found a REAL durability bug this checklist line exists to catch — `persist()` swallowed a
+  `QuotaExceededError` and left the record in-memory only, so a browser restart before the NEXT
+  successful write lost it silently, contradicting db.md's "the write queue is never bounded and
+  never evicted." Fixed in `sqlite-capture-store.ts`: a failed persist joins a retry set
+  (`unpersisted`) drained by a bounded interval (`PERSIST_RETRY_INTERVAL_MS`, self-stops once
+  empty) rather than being dropped. ⚠️ Known, narrow follow-on (documented in `scheduleRetry`'s own
+  comment, not silently left): the store has no `close()`, so a farm switch mid-retry leaks the
+  timer — harmless for correctness (one shared on-device `werf.db`, farm-scoped by row, not by
+  file) but not yet symmetric with `hydrated-table-store.ts`'s `close()` fix; wiring it through all
+  twelve `Local*.tsx` providers is unstarted. ⛔ **Read-set window half NOT built — an owner
+  decision, not an oversight.** Empirically probed against the real service (see
+  `sync-streams.ts`'s 2026-08-13 header addendum): `subscription.parameter()` genuinely exists, but
+  the service refuses ANY expression mixing row data with a subscription/connection parameter
+  except via `=` — *"This expression already references row data, so it can't also reference
+  connection parameters unless the two are compared with an equals operator"* — so
+  `occurred_at > subscription.parameter('cutoff')` cannot load. Same problem class as
+  `farm_users.expires_at`'s `now()` ceiling (§3b), and per STATUS.md §3's standing instruction not
+  to invent a sweep-shaped fix without JP: left open. See STATUS.md § 3 for the decision this is
+  waiting on.
+☑ 3g Additive-migration tests send an old-client payload after the new schema is deployed.
+  `livestock.integration.test.ts`'s new `mob creation (FR-102)` test builds the EXACT pre-0018
+  request shape (no `initialHeadCount` key at all, not merely `undefined`) and proves today's
+  `newMobSchema` still accepts it and `recordMob` derives the baseline correctly — watched to FAIL
+  first by making `recordMob` read the body's own `initialHeadCount` instead of the captured
+  `headCount`.
+☑ 3h Sync health reports queue depth/failure per farm without PII. New `apps/web/src/sync/
+  syncHealth.ts`: a pure fold (`deriveSyncHealth`) over the SAME `queue`/`blocked`/`waiting`
+  `Outbox.tsx` already computes, wired through a new `useSyncHealth()` hook/context. "Without PII"
+  is a TYPE guarantee, not a runtime filter — `SyncHealthByKind` has no free-text field at all, only
+  counts and the closed `CaptureKind` enum — pinned by a test asserting the exact key set. ⚠️ Scope
+  note: the pure fold and its wiring into `OutboxProvider` are both unit-tested; there is
+  deliberately no consuming screen yet (this checklist line asks for a reporting SURFACE, not a new
+  UI, and every existing hook of this shape — `useRefusedCaptures`, `useHeldCaptures` — already had
+  a screen before it existed, unlike this one; a future support/diagnostics consumer is what would
+  use it).
+☑ 3i(a) Attachment metadata is farm-scoped, client-UUIDv7, soft-deleted and synced through SQLite.
+  Migration `0022_attachments.sql` (hand-written — see its own header on why `drizzle-kit generate`
+  could not be used cleanly here): `attachments` table, `attachment_subject_type`/`attachment_status`
+  enums, RLS + FORCE, indexes incl. a partial index for the orphan-cleanup sweep 3i(b) will need.
+  `TENANCY.attachments` added (`packages/sync/src/tenancy.ts`); local schema and
+  `infra/powersync/sync-config.yaml` regenerated and empirically confirmed loading clean against the
+  real `journeyapps/powersync-service:1.23.3` (restarted, "Loaded sync config" with no error) — the
+  publication is `FOR ALL TABLES`, confirmed via `pg_publication_tables`, so no publication-side fix
+  was needed this time. `tenancy.spec.ts`'s generated-from-the-registry test caught the missing
+  fixture row exactly as db.md promises adding a table without classifying it would.
+  ⛔ **Not yet built: the binary path.** "The binary stays in OPFS until its checksum-confirmed
+  server acknowledgement is durable" is 3i(c) scope, unstarted this session.
+☐ 3i(c) Animal photos and later crop/grievance documents use one deferred queue: capture commits
+  locally with no signal, browser kill/reload loses neither metadata nor blob, and retry is idempotent.
+  Not started.
+☐ 3i(b) The API authorises the farm before issuing a short-lived presigned upload; object keys are
+  server-derived, never arbitrary client paths, and another farm can neither upload nor read them.
+  Not started — gated on `@aws-sdk/client-s3`/`@aws-sdk/s3-request-presigner` being installable;
+  see STATUS.md § 5 for the exact next step.
+☐ 3i(b) One S3-compatible adapter uses MinIO in development/integration tests and S3 in `af-south-1`
+  in production; tests cover checksum/size refusal, quota pressure, retry and orphan cleanup. Not started.
+☑ 3i(d) Existing Phase 2 `photo_key` rows migrate without inventing an attachment; null remains none.
+  Grepped: no code path in `apps/web/src` has ever set `photoKey` — Phase 2 genuinely stored no
+  photo. `livestock.integration.test.ts`'s new test proves `recordAnimal` with no photo leaves
+  `photo_key` null AND creates no `attachments` row for it — creating an animal must never invent an
+  attachment. No data migration was needed because there is no non-null production data to migrate.
 ☐ Offline matrix in testing-strategy.md runs against real Postgres and the real adapter
 ☐ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed
 ```

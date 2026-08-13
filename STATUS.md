@@ -3,7 +3,10 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-13 (Finding 2 closed — partitioning retired, migration 0021; compliance-checker pass declined "not yet" by JP, still the sole open item before merge-ready)
+**Last updated:** 2026-08-13 (3f/3g/3h/3i(a)/3i(d) worked per JP's "complete as much of 3f-3i as
+possible" — 3g/3h/3i(a)/3i(d) closed, 3f half-closed (queue-survival bug found+fixed, read-set
+window left as an owner decision), 3i(b)/3i(c) not started. Compliance-checker pass still the sole
+merge blocker, unchanged this session — nothing here touched the FR-131 guard files)
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`. Not pushed yet — local
 commits only, awaiting the owner's go-ahead to push/open a PR.
@@ -17,7 +20,7 @@ commits only, awaiting the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2 from `reviewer`, `sync-auditor` or `compliance-checker`. MED/LOW fixed under §6 clause 3 or filed as issues #4–#9 (open, tracked on `main`, not merge blockers) |
-| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ✅ `sync-auditor` pass + re-pass over 3e: every finding closed, including Finding 2 (2026-08-13 — partitioning retired, migration 0021, see §3). ⛔ Still not merge-ready: this slice touches FR-131 and needs an owner-triggered `compliance-checker` pass, declined "not yet" by JP on 2026-08-13. Remaining 3e scope (animals/moves/health hydration, 3f–3i) not started. See §3/§4/§5 |
+| 3 — Offline sync | 🔶 In progress — 3a/3b/3c/3d done, 3e started (mobs/tallies), 3g/3h/3i(a)/3i(d) done, 3f half-done, 3i(b)/3i(c) not started, unmerged | `phase-3/powersync-foundation`: 3a–3d as before, plus real app-level down-sync for mobs/tallies (`SyncConnectionProvider` + `HydratedLivestock.tsx`), tripwire 3e (issue #8) CLOSED and proven both by fakes and by the real service. ✅ `sync-auditor` pass + re-pass over 3e: every finding closed, including Finding 2 (2026-08-13 — partitioning retired, migration 0021, see §3). 2026-08-13: 3g (additive-migration test), 3h (sync health surface) and 3i(a)/(d) (attachments schema/tenancy, photo_key pin) CLOSED; 3f's queue-survival half CLOSED (found+fixed a real quota-eviction bug), its retention read-set half left ☐ as an owner decision (§3); 3i(b)/3i(c) (S3 upload API, client blob queue) not started. ⛔ Still not merge-ready: this slice touches FR-131 and needs an owner-triggered `compliance-checker` pass, declined "not yet" by JP on 2026-08-13 — nothing this session touched the FR-131 guard files, so that framing is unchanged. Remaining 3e scope (animals/moves/health hydration) also not started. See §3/§4/§5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here; they were incorrectly still promised by the old Phase 2 roadmap |
 | 5 — Labour & wages | Not started | Build may use placeholder rate rows; deployment requires verified Gazette sources and external labour-law review |
 | 6 — Finance & compliance packs | Not started | Includes evidence packs, obligations, fuel/refund and reporting |
@@ -33,124 +36,89 @@ capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
 
+⛔ **OPEN, raised 2026-08-13 — 3f's retention read-set window has no cheap fix; JP's call is which
+heavier design, or whether to descope it for now.** Empirically probed against the real
+`journeyapps/powersync-service:1.23.3` (full account: `sync-streams.ts`'s header, second addendum):
+a client-supplied stream parameter genuinely exists (`subscription.parameter()`), but the service
+refuses to load ANY stream whose WHERE mixes row data with a subscription/connection parameter
+except via `=` — *"This expression already references row data, so it can't also reference
+connection parameters unless the two are compared with an equals operator."* So
+`occurred_at > subscription.parameter('cutoff')` cannot express a rolling window; only equality
+can. Two ways forward, both heavier than this slice's budget: (a) equality-bucket time into
+discrete parameters (e.g. a `sync_month` column + client subscribes to the N months it wants) —
+correctness is straightforward, cost is a derived column plus the client managing a moving
+subscription set; (b) a server-side sweep in the `membership-expiry.service.ts` shape, converting
+"outside the window" into something equality can test (e.g. a boolean/tombstone-like column) —
+same shape as the `expires_at` fix, same cost of a new background job and a replication-lag window.
+Neither was built without JP's steer. The queue-survival half of 3f (never losing a write under
+quota pressure) is unaffected and is CLOSED — see phase-checklists.md 3f and the entry below.
+⚠️ Also worth a look when this is decided: `roadmap.md`'s 3f/3g row says "12-month client-window
+test" where `offline-sync.md` § 3 says "default 24 months of events" — the two documents disagree
+on the actual window size, independent of the mechanism question above.
+
+📌 **Noted 2026-08-13 — the `drizzle-kit` snapshot history has a gap from migration 0016 onward,
+discovered while adding 0022.** `packages/db/migrations/meta/` has snapshots through `0015`, then
+none until `0022` (this session's own, since deleted — see below): migrations 0016–0021 were all
+hand-authored directly into the migrations folder with a hand-appended `_journal.json` entry, never
+run through `drizzle-kit generate`. Harmless for `migrate()` (it tracks applied migrations in the
+target Postgres itself, not from `meta/`), but the FIRST `generate` run this session, diffing
+against the stale 0015 snapshot, tried to redo all six migrations' worth of already-applied schema
+changes (re-`CREATE TYPE`, re-`ALTER TYPE ADD VALUE`, re-add `initial_head_count`, etc.) into a
+new file — caught before it was ever applied, deleted, and 0022 was hand-written instead, matching
+the pattern 0016–0021 already established. Not a blocker — hand-writing migrations already IS this
+repo's practice for anything RLS/trigger-shaped, which `generate` cannot produce anyway — but
+`generate` cannot safely be trusted for a plain additive column any more either until someone
+either backfills the missing snapshots or accepts hand-writing as the permanent norm and says so.
+JP's call, not urgent.
+
+📌 **Noted 2026-08-13 — `sqlite-capture-store.ts`'s new quota-retry timer has no `close()`.** Fixing
+3f's queue-survival bug (below) added a `setInterval`-based retry loop with no teardown hook; a
+farm switch that discards a store instance while a retry is in flight leaks that interval (self-
+clears on first success, so this is bounded, not indefinite — full account in the code comment
+above `scheduleRetry`). Same SHAPE of resource leak `hydrated-table-store.ts`'s `db.watch()` had
+before its `close()` fix (sync-auditor, 2026-08-10), narrower in effect. Wiring a matching
+`close()` through all twelve `Local*.tsx` providers is follow-on work, not done this session —
+flagged rather than silently left, per CLAUDE.md's "no silent caps."
+
 ✅ **Closed 2026-08-13 — Finding 2: per-farm events partitioning is retired, not wired up.** JP's
-first answer to the three options below was (a): wire `create_farm_partition` into
-`FarmsService.createFarm` and teach `derive-sync-streams.ts` to read partitions from `pg_inherits`
-dynamically instead of the hand-maintained map. Before implementing, a conflict surfaced that the
-original framing missed and that changed the factual basis of the decision, so it went back to JP
-rather than being built past: `generate-sync-streams.ts` writes `infra/powersync/sync-config.yaml`
-as a **static file, generated at build/deploy time**, never regenerated per farm at signup — and
-PowerSync explicitly rejects `publish_via_partition_root` (`PSYNC_S1143`, already empirically
-confirmed 2026-08-10 against `journeyapps/powersync-service:1.23.3`), so a stream can only ever
-read a partition that existed when the config was last generated. "Read `pg_inherits`
-dynamically" only helps at generation time — it cannot see a farm that signs up afterward. Under
-(a), every farm created after the last config deploy would silently down-sync nothing, forever:
-option (a) as worded would have converted Finding 2's latent risk into a **guaranteed** one for
-every real farm, which is worse than the status quo it was meant to fix. Neither a stream-per-
-partition nor a UNION view rescues this (config size scales with farm count either way; view
-changes emit no WAL, so logical replication can't follow them — same silent-zero-rows class this
-repo already found twice). **JP chose to retire partitioning outright** rather than spend time on
-a spike that was already unlikely to survive `PSYNC_S1143`. Closed by migration
-`0021_retire_farm_partitioning.sql`: `create_farm_partition` is dropped; `events_default` is now
-the permanent, only partition `events` will ever have (the `PARTITION BY LIST` structure itself
-stays — un-partitioning the table is a separate, riskier migration nothing here required, since
-RLS/grants/indexes live on the parent and are not automatically present on a detached partition).
-`derive-sync-streams.ts`'s `PARTITIONED_SOURCE_TABLE`/`sourceTable` mechanism is unchanged — it
-was already correct for a single permanent partition, now permanently rather than by accident.
-`events.integration.test.ts` and `farms.integration.test.ts`'s Finding-2 tripwire were rewritten
-from "pins today's accidentally-safe reality" to a permanent invariant, including a test that
-`create_farm_partition` no longer exists to call. Full record: `phase-checklists.md` 3e.
+first answer (wire `create_farm_partition` into `FarmsService.createFarm` + read `pg_inherits`
+dynamically) turned out to only help at config-GENERATION time, not for a farm signing up after
+the last deploy — under that plan every such farm would silently down-sync nothing, forever,
+which is worse than the status quo. Taken back to JP with that fact; **JP chose to retire
+partitioning outright.** Migration `0021_retire_farm_partitioning.sql`: `create_farm_partition`
+dropped, `events_default` is now the permanent only partition. Full record: `phase-checklists.md` 3e.
 
-⭐ **Closed 2026-08-10 — `sync-auditor` pass over the 3e slice, 2 SEV-2 + 1 LOW, all fixed same
-day.** Requested by JP ("run the necessary agents") specifically over the diff since the last
-pass's fix commit (`585ddb2..fc3d9e2`: the 3d audit, ADR-0012, the whole 3e slice). Per STATUS.md
-§6 clause 2 this pass did **not** clear — two SEV-2s — so a re-pass over the fix diff is the next
-step, not optional (clause 3's "MED/LOW merges without another pass" explicitly excludes SEV-2
-fixes). **Finding 1 (SEV-2, compliance-gated FR-131):** the withholding guard read raw local
-`tallies` at three call sites (`AdjustMobScreen.tsx`'s capture-time guard, `Outbox.tsx`'s
-`mobDisposalSubjects` taint chain-walk, `residue.ts`'s register), blind to a withholding that
-arrived only via down-sync — a mob whose entire transfer history lived in another device's
-already-sent capture previewed CLEAR on a sale the server would refuse. Root cause was two-part:
-`mapHydratedTally` silently dropped three fields the server does persist
-(`counterpartMobId`/`carriedWithholdUntil`/`declaredWithdrawalUntil`, confirmed against
-`livestock.service.ts`'s insert, not assumed from the schema alone), and all three call sites read
-raw local `tallies` instead of the `mergeById` local+hydrated fold `headAsAt` already used. Fixed
-both; each with a test watched to FAIL first (`AdjustMob.test.tsx`, `Outbox.test.tsx`,
-`AttentionScreen.test.tsx` — new). ⛔ **This means the "this diff touches no regulated code"
-framing used to justify not requesting `compliance-checker` for this slice is now stale — the fix
-touches FR-131 guard behaviour directly, and this slice is not merge-ready until an
-owner-triggered `compliance-checker` pass is requested and closes.** **Finding 2 (SEV-2):** see the
-entry above — fixed with a tripwire test, not a code fix, because the actual fix is an
-architecture decision. **LOW:** `hydrated-table-store.ts`'s `db.watch()` leaked a subscription
-across farm switches (resource leak, never a cross-farm DATA leak — farm-scoping in the query was
-always correct); fixed with `close()` + a `useEffect` cleanup. Full detail:
-`phase-checklists.md` 3e.
+⭐ **Closed 2026-08-10 — `sync-auditor` pass + re-pass over 3e, 2 SEV-2 + 1 LOW → all fixed, 2
+follow-on findings on the fixes → also fixed.** Finding 1 (SEV-2, FR-131): the withholding guard
+read raw local `tallies` at three call sites, blind to a withholding known only via down-sync —
+fixed by reading the `mergeById` local+hydrated fold everywhere (`AdjustMobScreen.tsx`,
+`Outbox.tsx`, `residue.ts`); **this is why the slice needs a compliance-checker pass before
+merge.** Finding 2: see above. LOW: `hydrated-table-store.ts`'s `db.watch()` leaked across farm
+switches, fixed with `close()`. Re-pass found a StrictMode double-invoke that permanently killed
+hydration in `pnpm dev` (fixed by constructing the store inside the effect) and a tripwire gap
+(`FarmsService.createFarm` uncovered, strengthened). Full detail: `phase-checklists.md` 3e.
 
-⭐ **Closed 2026-08-10 — `sync-auditor` RE-PASS over `fc3d9e2..dd49a20` (the fix commit above).**
-Confirmed Finding 1's three call sites genuinely fixed, no fourth call site missed, the new
-`Outbox.test.tsx` test's timing was correct, and the LOW fix matched the real SDK. Found two things,
-both fixed same day and both qualifying for STATUS.md §6 clause 3's no-further-pass-needed terminal
-condition (mechanical, confined to the files the findings name, fail-first tested): **(1) MEDIUM,
-genuinely new** — the LOW fix's `useEffect` cleanup and its `useMemo`-built store pair were not
-symmetric under React 18 StrictMode (mount → run effect → simulate unmount, run cleanup →
-remount, re-run effect, all against the SAME memoized pair), so `AbortController.abort()` permanently
-killed hydration after the first mount in `pnpm dev` — invisible to every test and to `pnpm test:e2e`
-(a production build strips the double-invoke). Fixed by moving store construction inside the effect,
-mirroring `SyncConnection.tsx`'s already-established pattern for this exact class of resource.
-**(2) Finding 2's tripwire only covered `AuthService.register`'s own direct farm insert, not
-`FarmsService.createFarm`** — the function Finding 2's text actually names, and a genuinely separate
-insert path. Strengthened to assert both. **Still does not fully clear**: Finding 2 itself (SEV-2)
-remains open pending the owner decision above — no amount of further review resolves that, only an
-answer does.
+⭐ **Found+fixed 2026-08-10 — PowerSync replicates ZERO rows for a partitioned source table
+(`events`), silently.** `publish_via_partition_root` is explicitly rejected (`PSYNC_S1143`); a
+config against the partitioned parent validates and "replicates" while delivering nothing to any
+client, ever. Fixed at the generator (`PARTITIONED_SOURCE_TABLE`/`sourceTable` → `FROM
+events_default AS events`), not hand-patched. Production-relevant for the af-south-1 publication.
+Full account: `phase-checklists.md` 3e.
 
-⭐ **Found and fixed 2026-08-10 — PowerSync silently replicates ZERO rows for a partitioned source
-table, with no error anywhere.** `events` (migration 0010) is Postgres-partitioned, one partition
-`events_default`. PowerSync attributes WAL rows to the PARTITION's relid, not the parent's, and
-explicitly rejects `publish_via_partition_root` (`PSYNC_S1143`, confirmed against
-`journeyapps/powersync-service:1.23.3`). `FROM events` validated, "replicated" (server logs showed
-flushes), and delivered exactly nothing to any client — `mobs` (unpartitioned) hydrated correctly
-throughout, which is what made this look like an app bug for four restarts. Fixed at the generator
-(`derive-sync-streams.ts`'s `PARTITIONED_SOURCE_TABLE` → `sourceTable` on `SyncStreamDef` →
-renders `FROM events_default AS events`; the alias keeps the local client table name intact,
-matched by stream key not FROM text), not hand-patched. **Production-relevant**: the af-south-1
-deploy's publication needs this identical aliased config or the down-sync of every event type
-(tallies, moves, treatments, doses, births, deaths, sales) silently delivers nothing, forever, with
-a config that validates and a server that reports success. Full account: `phase-checklists.md` 3e.
+✅ **Closed 2026-08-10 — REST-up/PowerSync-down is the PERMANENT upload topology.** `Outbox.tsx` is
+the durable upload queue; PowerSync is down-sync only; `PowerSyncBackendConnector.uploadData` is a
+fail-loud tripwire, not a stand-in. Reasoning: **[ADR-0012](docs/03-architecture/adr/ADR-0012-upload-topology.md)**.
 
-✅ **Closed 2026-08-10 — REST-up/PowerSync-down is the PERMANENT upload topology, not a Phase-3
-TODO.** `Outbox.tsx` is the authoritative durable upload queue, posting through the domain-owned
-REST endpoints; PowerSync handles down-sync only; `PowerSyncBackendConnector.uploadData` is a
-fail-loud tripwire for any unexpected native CRUD entry, not routing awaiting a later slice.
-Reasoning (checked against the installed `@powersync/common` SDK: `CrudBatch`/
-`CrudTransaction.complete()` acknowledges a batch as a whole, no per-entry completion, so 4xx
-set-aside cannot be built on it) is recorded in **[ADR-0012](docs/03-architecture/adr/ADR-0012-upload-topology.md)**,
-not repeated here; ADR-0003 is clarified (not rewritten) to point at it.
-
-**Resolved 2026-08-09 — four sync-rules questions, all empirically validated** against a real
-self-hosted `journeyapps/powersync-service:1.23.3` (not from docs, which paraphrased inconsistently
-across fetches). Sync Streams (`edition: 3`), not classic Sync Rules — the latter's JOIN/subquery
-ban blocks `businesses`/`regulatory_rates`/`veterinary_products` and cross-member `users` rows
-outright. Both now sync via `IN (SELECT ...)` predicates (⚠️ `EXISTS` does not validate under
-Streams either). `farm_users.expires_at` cannot be evaluated in any stream format (`now()` is
-rejected); closed by `MembershipExpiryService`, which soft-deletes elapsed grants every minute so
-`deleted_at IS NULL` — the predicate every stream already requires — becomes the shared revocation
-signal within a bounded window. Full evidence and the exact RLS-does-not-cover-replication
-correction from `sync-auditor`: `phase-checklists.md` 3b,
-`docs/04-delivery/phase-3-sync-expiry-enforcement-gap-2026-08-09.md`.
-
-**Resolved 2026-08-09 — Werf absorbs Voorman's planning discipline; Voorman archived, not merged.**
-Keep React/NestJS/Postgres/PostGIS/PowerSync/`af-south-1`; adopt Voorman's authority index and rule
-ownership. Google OIDC becomes primary sign-in via the ADR-0011 BFF; passkeys remain the step-up
-path; never SMS. Full evidence: `docs/04-delivery/werf-voorman-consolidation-audit-2026-08-09.md`.
-
-**Resolved 2026-08-08 — object storage belongs in Phase 3**, one shared local-first attachment
-foundation (OPFS + SQLite metadata, MinIO dev/test, S3 `af-south-1` prod). Phase 2 stores no photo
-and claims none until that slice lands.
-
-**Resolved 2026-08-09 — the PowerSync WASM engine (~2.7MB gz) is precached, not counted against
-NFR-009's 250KB interactive-path budget.** Workbox ceiling raised to 4MiB; `check-bundle-size.mjs`
-excludes the named engine chunks from the JS-gz sum. Full evidence:
-`docs/04-delivery/phase-3-capture-migration-2026-08-09.md`.
+**Resolved 2026-08-09, four items, each with full evidence in `phase-checklists.md` 3b unless
+linked:** (1) Sync Streams, not classic Sync Rules (JOIN/subquery ban blocked three tables);
+`IN (SELECT...)` validates, `EXISTS`/`now()` do not — `farm_users.expires_at` closed by
+`MembershipExpiryService`'s minute sweep instead
+(`docs/04-delivery/phase-3-sync-expiry-enforcement-gap-2026-08-09.md`). (2) Werf absorbs Voorman's
+planning discipline, archived not merged; Google OIDC primary via ADR-0011, passkeys step-up, never
+SMS (`docs/04-delivery/werf-voorman-consolidation-audit-2026-08-09.md`). (3) Object storage is a
+Phase 3 shared foundation (OPFS + SQLite metadata, MinIO dev/test, S3 prod) — Phase 2 stored no
+photo. (4) The PowerSync WASM engine (~2.7MB gz) is precached, not counted against NFR-009's 250KB
+budget (`docs/04-delivery/phase-3-capture-migration-2026-08-09.md`).
 
 ## 4. Verification
 
@@ -173,6 +141,7 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
 | `pnpm verify` (2026-08-10, all sync-auditor + re-pass findings closed) | ✅ Uncached: 102 test files / 1,065 tests, 12/12 typecheck, 7/7 builds; bundle 155.40 KB gz ≤ 250 KB. Every new/extended test watched to FAIL first, incl. `AdjustMob.test.tsx`'s new `<StrictMode>`-wrapped render test |
 | `pnpm test:e2e` (2026-08-10, same fixes) | ✅ 30 passed / 1 skipped, run twice back to back across both rounds of fixes, no flakes |
 | `pnpm verify` (2026-08-13, Finding 2 closed — migration 0021) | ✅ Uncached: 102 test files / 1,066 tests, 7/7 builds; bundle 155.40 KB gz ≤ 250 KB. `events.integration.test.ts`/`farms.integration.test.ts`'s rewritten invariants pass, incl. a new test proving `create_farm_partition` no longer exists to call |
+| `pnpm verify` (2026-08-13, 3f/3g/3h/3i(a)/3i(d)) | ✅ Uncached: 103 test files / 1,076 tests, 7/7 builds; bundle 155.96 KB gz ≤ 250 KB. Real-Postgres proof for migration 0022 (`werf-postgres`); `journeyapps/powersync-service:1.23.3` restarted on the regenerated `sync-config.yaml`, "Loaded sync config" with no error, `attachments` confirmed in the `FOR ALL TABLES` publication. Every new test watched to FAIL first, incl. `sqlite-capture-store.spec.ts`'s quota-retry test against the actual bug it fixes |
 
 ## 5. Next executable steps
 
@@ -238,8 +207,15 @@ excludes the named engine chunks from the JS-gz sum. Full evidence:
 15. ✅ Done 2026-08-13: **Finding 2 closed — partitioning retired**, migration
     `0021_retire_farm_partitioning.sql`; see §3 for the full decision record. ⛔ **Still not
     merge-ready**: FR-131 (Finding 1) still needs an owner-triggered `compliance-checker` pass —
-    JP said "not yet" on 2026-08-13. Next: JP requests that pass when ready; only after it closes
-    does 3e's remaining scope (animals/moves/health hydration, 3f–3i) resume.
+    JP said "not yet" on 2026-08-13.
+16. ✅ Done 2026-08-13, JP explicitly overrode item 15's sequencing ("complete as much of 3f-3i as
+    possible", ahead of the compliance pass — deliberate, not a lapse): **3g, 3h, 3i(a), 3i(d)
+    closed; 3f half-closed; 3i(b)/3i(c) not started.** None of this touched the FR-131 guard files
+    (`AdjustMobScreen.tsx`, `Outbox.tsx`'s taint walk, `residue.ts`) on purpose, so the compliance
+    pass JP will eventually trigger is not entangled with this session's diff. Full detail:
+    `phase-checklists.md` 3f/3g/3h/3i, and §3 above for the two owner decisions this raised
+    (retention read-set window; the drizzle snapshot gap). Next: JP reviews, then requests
+    whichever agents get this merge-ready — his own words for this session's closing step.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
+  attachments,
   brandingRegisters,
   createAppDb,
   createElevatedDb,
@@ -446,6 +447,27 @@ describe('weight capture (FR-140)', () => {
         service.recordAnimal(viewer!.id, animalBody({ farmId: a.farmId })),
       ).rejects.toThrow(TenancyError);
     });
+
+    // ⭐ 3i(d): `photo_key` is Phase 2 leftover — STATUS.md's own record says Phase 2 "stores no
+    // photo and claims none until that slice lands", and nothing in apps/web/src ever sets it. The
+    // 3i attachments table is a SEPARATE mechanism (metadata + OPFS blob + presigned upload); a
+    // null photo_key must stay null, and creating an animal must never invent an attachments row
+    // to "migrate" a photo that was never captured.
+    it('⭐ 3i(d): an animal created with no photo carries a null photo_key and no attachments row is invented', async () => {
+      const a = await tenant('Alpha');
+
+      const created = await service.recordAnimal(a.userId, animalBody({ farmId: a.farmId }));
+
+      expect(created.photoKey).toBeNull();
+      const [row] = await elevated.db.select().from(animals).where(eq(animals.id, created.id));
+      expect(row!.photoKey).toBeNull();
+
+      const linkedAttachments = await elevated.db
+        .select()
+        .from(attachments)
+        .where(eq(attachments.subjectId, created.id));
+      expect(linkedAttachments).toHaveLength(0);
+    });
   });
 
   // ── Mobs (FR-102) ───────────────────────────────────────────────────────────────────
@@ -643,6 +665,42 @@ describe('weight capture (FR-140)', () => {
 
       const rows = await elevated.db.select().from(mobs);
       expect(rows).toHaveLength(0);
+    });
+
+    // ── 3g: additive migrations must not break a device that queued a write BEFORE the
+    // migration shipped and flushes it AFTER (db.md: "Additive-only... A farmer offline for six
+    // weeks will sync writes composed against a schema from two releases ago").
+    it('⭐ 3g: an OLD client that never heard of migration 0018 still lands correctly today', async () => {
+      // The exact shape a pre-0018 app build would have sent: `initialHeadCount` did not exist in
+      // its request schema, so its serialised JSON never carried the key at all — not `undefined`,
+      // genuinely absent, as `JSON.stringify` on an object that never had the field would produce.
+      const oldClientJson: Record<string, unknown> = {
+        id: randomUUID(),
+        farmId: undefined, // set below, once the farm exists
+        name: 'Pre-0018 Flock',
+        species: 'sheep',
+        headCount: 250,
+      };
+      const a = await tenant('Alpha');
+      oldClientJson['farmId'] = a.farmId;
+
+      // Today's schema (post-0018) still accepts the old shape — `initialHeadCount` defaults, it
+      // is never required of the client.
+      const parsed = schemas.newMobSchema.parse(oldClientJson);
+      expect(parsed.initialHeadCount).toBeNull();
+
+      const mob = await service.recordMob(a.userId, parsed);
+
+      // `recordMob` derives the baseline from `headCount`, the field every app version — old and
+      // new — has always sent; it never reads the client's `initialHeadCount` (livestock.service.ts
+      // recordMob's own comment: "taken from the count that was captured, not from the body's own
+      // initialHeadCount"). So the row lands correct even though the request that produced it could
+      // not possibly have populated the column 0018 added.
+      expect(mob.headCount).toBe(250);
+      expect(mob.initialHeadCount).toBe(250);
+
+      const [row] = await elevated.db.select().from(mobs).where(eq(mobs.id, parsed.id));
+      expect(row!.initialHeadCount).toBe(250);
     });
   });
 

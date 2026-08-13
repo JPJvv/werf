@@ -255,6 +255,58 @@ describe('attachment capture (phase-checklists.md 3i)', () => {
     schemas.attachmentUploadUrlSchema.parse(JSON.parse(JSON.stringify(recreated)));
   });
 
+  it('refuses a second create for the same id when the content differs from the first', async () => {
+    const { userId, farmId } = await tenant('MismatchRetry');
+    const animalId = await anAnimal(farmId);
+    const firstBytes = Buffer.from('the first capture');
+    const secondBytes = Buffer.from('a completely different second capture');
+    const body = attachmentBody(farmId, animalId, firstBytes);
+
+    await service.createAttachment(userId, body);
+
+    await expect(
+      service.createAttachment(
+        userId,
+        attachmentBody(farmId, animalId, secondBytes, { id: body.id }),
+      ),
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('refuses (does not crash) when the id collides with a row under a DIFFERENT farm', async () => {
+    const { userId: userA, farmId: farmA } = await tenant('CollideA');
+    const { userId: userB, farmId: farmB } = await tenant('CollideB');
+    const animalA = await anAnimal(farmA);
+    const animalB = await anAnimal(farmB);
+    const sharedId = randomUUID();
+
+    await service.createAttachment(
+      userA,
+      attachmentBody(farmA, animalA, Buffer.from('farm A bytes'), { id: sharedId }),
+    );
+
+    await expect(
+      service.createAttachment(
+        userB,
+        attachmentBody(farmB, animalB, Buffer.from('farm B bytes, entirely different'), {
+          id: sharedId,
+        }),
+      ),
+    ).rejects.toThrow(ConflictError);
+  });
+
+  it('finalize bumps updatedAt on the pending to finalised transition', async () => {
+    const { userId, farmId } = await tenant('UpdatedAtBump');
+    const animalId = await anAnimal(farmId);
+    const bytes = Buffer.from('updated_at bump bytes');
+    const body = attachmentBody(farmId, animalId, bytes);
+
+    const created = await service.createAttachment(userId, body);
+    await putRealBytes(created.uploadUrl!, created.checksumHeaderValue!, bytes);
+    const finalized = await service.finalizeAttachment(userId, { id: body.id, farmId });
+
+    expect(finalized.updatedAt.getTime()).toBeGreaterThan(created.stored.updatedAt.getTime());
+  });
+
   it('refuses to create for a farm the caller is not a member of', async () => {
     const { farmId } = await tenant('OwnerFarm');
     const outsider = await tenant('Outsider');

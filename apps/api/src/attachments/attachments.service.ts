@@ -113,7 +113,26 @@ export class AttachmentsService {
           .select(attachmentProjection)
           .from(attachments)
           .where(and(eq(attachments.id, input.id), eq(attachments.farmId, input.farmId)));
-        stored = existing!;
+
+        // The id collided but not under this farm — a global PK means onConflictDoNothing
+        // no-ops even though tenancy still holds (this select finds nothing). Refuse loudly
+        // instead of dereferencing an absent row below.
+        if (!existing) {
+          throw new ConflictError('Attachment id already in use');
+        }
+
+        // offline-sync.md: "idempotent by id AND checksum, not by id alone" — two different
+        // checksums for the same id is a second, different capture, not a retry of the first.
+        if (
+          existing.checksum !== input.checksum ||
+          existing.sizeBytes !== input.sizeBytes ||
+          existing.mimeType !== input.mimeType ||
+          existing.subjectId !== input.subjectId
+        ) {
+          throw new ConflictError('Attachment id already exists with different content');
+        }
+
+        stored = existing;
       }
 
       // A row already finalised has nothing left to upload — a retried create for an id whose
@@ -183,7 +202,7 @@ export class AttachmentsService {
 
       const [finalized] = await tx
         .update(attachments)
-        .set({ status: 'finalised', updatedBy: userId })
+        .set({ status: 'finalised', updatedBy: userId, updatedAt: new Date() })
         .where(and(eq(attachments.id, input.id), eq(attachments.farmId, input.farmId)))
         .returning(attachmentProjection);
       return finalized!;

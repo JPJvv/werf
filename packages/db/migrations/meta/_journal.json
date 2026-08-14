@@ -176,6 +176,13 @@
       "when": 1786633108298,
       "tag": "0024_event_retention_window",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786731502459,
+      "tag": "0025_theft_incident_animals_surrogate",
+      "breakpoints": true
     }
   ]
 }

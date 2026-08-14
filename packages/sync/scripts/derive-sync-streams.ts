@@ -17,11 +17,6 @@ import * as dbSchema from '@werf/db';
 import { TENANCY, type SyncedTable } from '../src/tenancy';
 import type { SyncStreamDef } from '../src/sync-streams';
 
-/** Same gap as `local-schema.ts`'s `NO_SURROGATE_ID` (#10): PowerSync needs one TEXT `id` per
- * synced row; `theft_incident_animals` has a composite key and none. Format-independent — this
- * is a schema gap, not a query-language ceiling like the one Sync Streams just resolved. */
-const NO_SURROGATE_ID: ReadonlySet<SyncedTable> = new Set(['theft_incident_animals']);
-
 /**
  * Postgres tables that are PARTITIONED with `publish_via_partition_root` off (unsupported by
  * PowerSync — `PSYNC_S1143`, empirically confirmed 2026-08-10). `FROM <parent>` validates and
@@ -76,7 +71,6 @@ export function deriveSyncStreams(): readonly SyncStreamDef[] {
   for (const tableName of Object.keys(TENANCY) as SyncedTable[]) {
     const entry = TENANCY[tableName];
     if (entry.classification === 'server-only') continue;
-    if (NO_SURROGATE_ID.has(tableName)) continue;
 
     const columns = columnsFor(tablesByName, tableName);
     const whereSql = wherePredicateFor(tableName);

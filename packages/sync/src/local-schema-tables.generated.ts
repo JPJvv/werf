@@ -229,6 +229,20 @@ export const LOCAL_SCHEMA_TABLES: readonly LocalTableDef[] = [
     ],
   },
   {
+    name: 'theft_incident_animals',
+    columns: [
+      { name: 'animal_id', type: 'TEXT' },
+      { name: 'created_at', type: 'TEXT' },
+      { name: 'created_by', type: 'TEXT' },
+      { name: 'deleted_at', type: 'TEXT' },
+      { name: 'farm_id', type: 'TEXT' },
+      { name: 'incident_id', type: 'TEXT' },
+      { name: 'recovered_at', type: 'TEXT' },
+      { name: 'updated_at', type: 'TEXT' },
+      { name: 'updated_by', type: 'TEXT' },
+    ],
+  },
+  {
     name: 'theft_incidents',
     columns: [
       { name: 'case_number', type: 'TEXT' },

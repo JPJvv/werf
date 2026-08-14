@@ -37,17 +37,13 @@ import { TENANCY, type SyncedTable } from '../src/tenancy';
 import type { LocalColumnDef, LocalColumnType, LocalTableDef } from '../src/local-schema';
 
 /**
- * ⛔ KNOWN GAP, not an oversight — `theft_incident_animals` has a composite primary key
- * (`incident_id`, `animal_id`, db.md's own PRIMARY KEY clause) and no surrogate `id` column,
- * unlike every other table in this schema (db.md: "UUIDv7 primary keys, client-generated").
- * PowerSync requires a single TEXT `id` per synced row — it is how a row is identified across
- * the client/server boundary, not an implementation detail this layer can paper over. Until an
- * additive migration adds `id uuid PRIMARY KEY DEFAULT uuid_generate_v7()` to that table (the
- * same convention it already breaks), it cannot be represented locally and is excluded here
- * rather than emitted broken. Tracked as a Phase 3 follow-up; see local-schema-freshness.spec.ts
- * for the test that keeps this exclusion visible instead of silent.
+ * Tables PowerSync cannot represent locally because they have no single-column row identity.
+ * Empty since migration 0025 closed the one entry this ever held (`theft_incident_animals`,
+ * issue #10) — kept as a named set, not deleted outright, because it is exactly the kind of gap
+ * that recurs: a future table with a composite PK and no surrogate `id` lands here again, caught
+ * loudly by the throw below rather than emitted as a broken PowerSync schema.
  */
-const NO_SURROGATE_ID: ReadonlySet<SyncedTable> = new Set(['theft_incident_animals']);
+const NO_SURROGATE_ID: ReadonlySet<SyncedTable> = new Set();
 
 // SQLite (and PowerSync's Column DSL) has three affinities. Booleans and every integer width
 // round-trip through INTEGER; money-shaped/real numbers through REAL; everything else —

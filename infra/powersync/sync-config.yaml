@@ -76,6 +76,11 @@ streams:
       SELECT created_at, gestation_days, id, source, species, updated_at FROM species_gestation
       WHERE 1 IN (SELECT 1 FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: true
+  theft_incident_animals:
+    query: |
+      SELECT animal_id, created_at, created_by, deleted_at, farm_id, id, incident_id, recovered_at, updated_at, updated_by FROM theft_incident_animals
+      WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
   theft_incidents:
     query: |
       SELECT case_number, created_at, created_by, deleted_at, discovered_at, evidence_pack_key, farm_id, head_count, id, land_unit_id, last_seen_at, last_seen_location_geojson, observations, reporting_station, status, updated_at, updated_by FROM theft_incidents

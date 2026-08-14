@@ -15,7 +15,8 @@
  * the theft_incidents_sync_geojson trigger (hand-authored in the migration — drizzle has no PostGIS).
  */
 
-import { integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { auditColumns, geometry, primaryId } from './columns';
 import { farms, users } from './core';
 import { animals } from './animals';
@@ -61,10 +62,20 @@ export const theftIncidents = pgTable('theft_incidents', {
  * scopes directly under RLS — the same choice animal_identifiers made — rather than joining through
  * the incident. A link is added when the farmer marks which stock was taken; `recovered_at` is set
  * if an animal is later found.
+ *
+ * ⭐ Surrogate `id` + soft-delete + authorship added additively in migration 0025 (issue #10): the
+ * original composite `(incident_id, animal_id)` PK gave PowerSync no single-column row identity to
+ * sync on, so a hydrated theft incident's `animalIds` was always `[]` on a second device — see
+ * `derive-local-schema.ts`'s (now-removed) `NO_SURROGATE_ID` entry. The `id` is DB-generated, not
+ * client-generated like every other primary id: unlike `attachments`, this row is never
+ * independently offline-captured — it is only ever written server-side inside
+ * `LivestockService.createTheftIncident`'s bulk insert, which is already idempotent by the
+ * incident's own client-generated id, so a DB default is correct here and nowhere else.
  */
 export const theftIncidentAnimals = pgTable(
   'theft_incident_animals',
   {
+    id: primaryId(),
     farmId: uuid('farm_id')
       .notNull()
       .references(() => farms.id),
@@ -76,6 +87,16 @@ export const theftIncidentAnimals = pgTable(
       .references(() => animals.id),
     recoveredAt: timestamp('recovered_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
   },
-  (t) => [primaryKey({ columns: [t.incidentId, t.animalId] })],
+  (t) => [
+    // Replaces the dropped composite PK's uniqueness — PARTIAL so an unlinked animal (soft-deleted
+    // link) can be relinked, exactly `animal_identifiers_unique`'s shape (animals.ts).
+    uniqueIndex('theft_incident_animals_unique')
+      .on(t.incidentId, t.animalId)
+      .where(sql`${t.deletedAt} IS NULL`),
+  ],
 );

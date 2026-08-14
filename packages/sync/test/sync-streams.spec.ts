@@ -29,18 +29,12 @@ describe('sync streams — renderer', () => {
 });
 
 describe('sync streams — deriver expresses every table TENANCY says may sync', () => {
-  it('emits a stream for every non-server-only TENANCY table except the schema gap (#10)', () => {
+  it('emits a stream for every non-server-only TENANCY table (issue #10 closed, P2.6)', () => {
     const streams = deriveSyncStreams();
     const streamTables = new Set(streams.map((s) => s.table));
     for (const table of Object.keys(TENANCY) as SyncedTable[]) {
       if (TENANCY[table].classification === 'server-only') {
         expect(streamTables.has(table), `${table} is server-only but has a stream`).toBe(false);
-        continue;
-      }
-      if (table === 'theft_incident_animals') {
-        expect(streamTables.has(table), `${table} has no surrogate id (#10) but has a stream`).toBe(
-          false,
-        );
         continue;
       }
       expect(streamTables.has(table), `${table} is synced by TENANCY but has no stream`).toBe(true);

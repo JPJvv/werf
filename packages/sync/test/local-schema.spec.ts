@@ -16,7 +16,6 @@ describe('the local schema', () => {
     const localTableNames = new Set(LOCAL_SCHEMA_TABLES.map((t) => t.name));
     for (const tableName of Object.keys(TENANCY) as SyncedTable[]) {
       if (TENANCY[tableName].classification === 'server-only') continue;
-      if (tableName === 'theft_incident_animals') continue; // known gap, asserted below
       expect(localTableNames, `${tableName} should have a local table`).toContain(tableName);
     }
   });
@@ -42,12 +41,12 @@ describe('the local schema', () => {
     }
   });
 
-  it('excludes theft_incident_animals — no surrogate id, so no PowerSync row identity yet', () => {
-    // ⛔ Known gap (derive-local-schema.ts): a composite-PK table with no `id` column cannot be
-    // represented as a PowerSync row. This test is the thing that stops the exclusion going
-    // stale silently — if a migration ever adds the surrogate id, this starts failing and says
-    // so, rather than the table just quietly staying absent forever.
-    expect(LOCAL_SCHEMA_TABLES.map((t) => t.name)).not.toContain('theft_incident_animals');
+  it('includes theft_incident_animals now that it has a surrogate id (issue #10, P2.6)', () => {
+    // Migration 0025 added a client-invisible `id` (DB-generated — see theft.ts's header for why
+    // this is the one primaryId() that is not client-generated) and dropped the composite PK that
+    // previously gave PowerSync no single-column row identity to sync on. Was the gap
+    // `NO_SURROGATE_ID` carved out for; now closed, so this asserts presence rather than absence.
+    expect(LOCAL_SCHEMA_TABLES.map((t) => t.name)).toContain('theft_incident_animals');
     expect(TENANCY.theft_incident_animals.classification).toBe('farm-scoped');
   });
 

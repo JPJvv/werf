@@ -25,6 +25,7 @@ import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql, type SQL } from '
 import {
   animalIdentifiers,
   animals,
+  attachments,
   brandingRegisters,
   events,
   farms,
@@ -1107,7 +1108,6 @@ export class LivestockService {
       const animalRows = await tx
         .select({
           animalId: animals.id,
-          photoKey: animals.photoKey,
           acquiredAt: animals.acquiredAt,
           source: animals.source,
           mark: brandingRegisters.mark,
@@ -1172,6 +1172,49 @@ export class LivestockService {
         identifiersByAnimal.set(row.animalId, list);
       }
 
+      // ⭐ P2.5: the finalised attachment IS the photo — never `animals.photo_key`, a column FR-101
+      // reserved but the 3i(c) pipeline never wrote to. Farm-scoped (the same predicate every other
+      // read here carries) and `status = 'finalised'` — a still-pending upload has nothing this
+      // server can vouch for, so it is treated the same as "no photo" rather than named and left
+      // unreadable, matching the fail-honest rule the OLD `photoKey` line in the renderer used to
+      // apply for a different reason (§ evidence-pack.pdf.ts header).
+      const photoRows =
+        animalIds.length === 0
+          ? []
+          : await tx
+              .select({
+                animalId: attachments.subjectId,
+                objectKey: attachments.objectKey,
+                checksum: attachments.checksum,
+                occurredAt: attachments.occurredAt,
+                id: attachments.id,
+              })
+              .from(attachments)
+              .where(
+                and(
+                  eq(attachments.farmId, farmId),
+                  eq(attachments.subjectType, 'animal'),
+                  inArray(attachments.subjectId, animalIds),
+                  eq(attachments.status, 'finalised'),
+                  isNull(attachments.deletedAt),
+                ),
+              );
+
+      // The LATEST photo per animal wins, by the same total order `(occurredAt, id)` every other
+      // projection in this codebase uses — arrival order is not occurred_at order, and a farmer who
+      // retakes a photo means the newer one, not whichever finalised last.
+      const photoByAnimal = new Map<string, (typeof photoRows)[number]>();
+      for (const row of photoRows) {
+        const current = photoByAnimal.get(row.animalId);
+        if (
+          !current ||
+          row.occurredAt > current.occurredAt ||
+          (row.occurredAt.getTime() === current.occurredAt.getTime() && row.id > current.id)
+        ) {
+          photoByAnimal.set(row.animalId, row);
+        }
+      }
+
       // ⭐ The possession trail (legal-compliance.md § 3.2). Under the Stock Theft Act's reverse
       // onus this is the DEFENCE — a pack that identifies an animal and cannot show it was here,
       // being kept and treated, week after week, has omitted the part that does the legal work.
@@ -1191,17 +1234,21 @@ export class LivestockService {
         observations: incident.observations,
         caseNumber: incident.caseNumber,
         reportingStation: incident.reportingStation,
-        animals: animalRows.map((r) => ({
-          animalId: r.animalId,
-          identifiers: identifiersByAnimal.get(r.animalId) ?? [],
-          mark: r.mark ?? null,
-          certificateReference: r.certificateReference ?? null,
-          photoKey: r.photoKey,
-          acquiredAt: r.acquiredAt,
-          source: r.source,
-          movements: trail.movements.get(r.animalId) ?? [],
-          treatments: trail.treatments.get(r.animalId) ?? [],
-        })),
+        animals: animalRows.map((r) => {
+          const photo = photoByAnimal.get(r.animalId);
+          return {
+            animalId: r.animalId,
+            identifiers: identifiersByAnimal.get(r.animalId) ?? [],
+            mark: r.mark ?? null,
+            certificateReference: r.certificateReference ?? null,
+            photoObjectKey: photo?.objectKey ?? null,
+            photoChecksumSha256Hex: photo?.checksum ?? null,
+            acquiredAt: r.acquiredAt,
+            source: r.source,
+            movements: trail.movements.get(r.animalId) ?? [],
+            treatments: trail.treatments.get(r.animalId) ?? [],
+          };
+        }),
       });
     });
   }

@@ -19,6 +19,7 @@
 import { createHash } from 'node:crypto';
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   NotFound,
   PutObjectCommand,
@@ -66,6 +67,11 @@ export interface StoredObject {
   readonly checksumSha256Hex: string;
 }
 
+export interface PresignedDownload {
+  readonly downloadUrl: string;
+  readonly expiresAt: Date;
+}
+
 export interface ObjectStorage {
   /** A presigned PUT bound to exactly this key and this checksum — see the header note on why a
    *  mismatched body is refused at PUT time, not discovered later. */
@@ -73,8 +79,22 @@ export interface ObjectStorage {
     key: string,
     opts: { contentType: string; checksumSha256Hex: string },
   ): Promise<PresignedUpload>;
+  /**
+   * A short-lived presigned GET (P2.5) — how a client reads its OWN finalised attachment back.
+   * `AttachmentsService.getDownloadUrl` issues one only for a `finalised`, farm-owned row; this
+   * adapter itself signs whatever key it is given, exactly as `presignPut` does, and trusts the
+   * caller to have authorised the request first.
+   */
+  presignGet(key: string): Promise<PresignedDownload>;
   /** The stored object's actual size and checksum, or null if nothing has landed at this key yet. */
   headObject(key: string): Promise<StoredObject | null>;
+  /**
+   * The object's actual bytes, for SERVER-SIDE reads only (P2.5 — embedding a finalised attachment
+   * into the FR-603 evidence pack). Never used to serve a client directly: a client reads its own
+   * finalised attachments through a fresh presigned GET (`AttachmentsService`, same authorisation
+   * seam as the PUT), never through this API proxying bytes. Null if nothing is stored at `key`.
+   */
+  getObject(key: string): Promise<{ bytes: Buffer; checksumSha256Hex: string } | null>;
   /** Releases the object at `key`, for `AttachmentOrphanSweepService` (phase-checklists.md 3i(b)).
    *  A no-op, not an error, if nothing is there — an abandoned `pending` row whose PUT never
    *  happened has no object to delete, and the sweep must not fail on that ordinary case. */
@@ -117,6 +137,31 @@ export class S3ObjectStorage implements ObjectStorage {
     });
     const expiresAt = new Date(Date.now() + PRESIGNED_PUT_TTL_SECONDS * 1000);
     return { uploadUrl, checksumHeaderValue, expiresAt };
+  }
+
+  async presignGet(key: string): Promise<PresignedDownload> {
+    const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+    const downloadUrl = await getSignedUrl(this.client, command, {
+      expiresIn: PRESIGNED_PUT_TTL_SECONDS,
+    });
+    return { downloadUrl, expiresAt: new Date(Date.now() + PRESIGNED_PUT_TTL_SECONDS * 1000) };
+  }
+
+  async getObject(key: string): Promise<{ bytes: Buffer; checksumSha256Hex: string } | null> {
+    try {
+      const object = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key, ChecksumMode: 'ENABLED' }),
+      );
+      if (object.Body === undefined || object.ChecksumSHA256 === undefined) return null;
+      const bytes = Buffer.from(await object.Body.transformToByteArray());
+      return {
+        bytes,
+        checksumSha256Hex: Buffer.from(object.ChecksumSHA256, 'base64').toString('hex'),
+      };
+    } catch (err) {
+      if (err instanceof NotFound) return null;
+      throw err;
+    }
   }
 
   async headObject(key: string): Promise<StoredObject | null> {

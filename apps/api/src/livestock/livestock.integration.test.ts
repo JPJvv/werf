@@ -3637,7 +3637,11 @@ describe('weight capture (FR-140)', () => {
           text += ' ';
         }
       }
-      return text;
+      // pdfkit wraps long lines mid-string (a long object key is exactly what does it), which
+      // splits one logical run across two `TJ` arrays and doubles up the space this loop inserts
+      // between them. Collapsed here so an assertion about the WORDS never has to know or care
+      // where the renderer happened to break a line.
+      return text.replace(/\s+/g, ' ');
     }
 
     it('creates an incident, links its animals, and stores the last-seen GPS mirror via the trigger', async () => {
@@ -3732,6 +3736,20 @@ describe('weight capture (FR-140)', () => {
     it('renders the pack to a PDF a farmer can hand the Stock Theft Unit', async () => {
       const a = await tenant('Alpha');
       const { animalId } = await anAnimalWithTrail(a.farmId);
+      // A finalised attachment the renderer's caller did NOT verify/pass in below — the ordinary
+      // shape when `LivestockController` couldn't fetch or verify the bytes (object storage down,
+      // checksum mismatch). `renderEvidencePackPdf(pack)` with no second argument is exactly that.
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'a'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/heifer.jpg`,
+        status: 'finalised',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+      });
       const incident = await service.createTheftIncident(
         a.userId,
         theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
@@ -3751,6 +3769,124 @@ describe('weight capture (FR-140)', () => {
       expect(text).toContain('Treatment history');
       expect(text).toContain('image not attached to this pack');
       expect(text).not.toContain('Photograph on file: Yes');
+    });
+
+    it('P2.5: resolves the photo reference from the finalised attachment, never `animals.photo_key`', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'b'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/finalised.jpg`,
+        status: 'finalised',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+      });
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      // `anAnimalWithTrail` still sets the legacy `animals.photo_key` column (STATUS.md — a field
+      // nothing ever read); the pack must ignore it entirely and carry the ATTACHMENT's reference.
+      expect(pack.animals[0]).toMatchObject({
+        photoObjectKey: `farm/${a.farmId}/attachments/finalised.jpg`,
+        photoChecksumSha256Hex: 'b'.repeat(64),
+      });
+    });
+
+    it('P2.5: ignores a photo that never finished uploading', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'c'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/pending.jpg`,
+        status: 'pending',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+      });
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals[0]).toMatchObject({ photoObjectKey: null, photoChecksumSha256Hex: null });
+    });
+
+    it('P2.5: ignores a finalised photo that was later soft-deleted', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'd'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/deleted.jpg`,
+        status: 'finalised',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+        deletedAt: new Date('2026-07-16T00:00:00.000Z'),
+      });
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals[0]).toMatchObject({ photoObjectKey: null, photoChecksumSha256Hex: null });
+    });
+
+    it('P2.5: when an animal has more than one finalised photo, the pack carries the LATEST', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values([
+        {
+          farmId: a.farmId,
+          subjectType: 'animal',
+          subjectId: animalId,
+          mimeType: 'image/jpeg',
+          sizeBytes: 4,
+          checksum: 'e'.repeat(64),
+          objectKey: `farm/${a.farmId}/attachments/older.jpg`,
+          status: 'finalised',
+          occurredAt: new Date('2026-07-10T06:00:00.000Z'),
+        },
+        {
+          farmId: a.farmId,
+          subjectType: 'animal',
+          subjectId: animalId,
+          mimeType: 'image/jpeg',
+          sizeBytes: 4,
+          checksum: 'f'.repeat(64),
+          objectKey: `farm/${a.farmId}/attachments/newer.jpg`,
+          status: 'finalised',
+          occurredAt: new Date('2026-07-18T06:00:00.000Z'),
+        },
+      ]);
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals[0]).toMatchObject({
+        photoObjectKey: `farm/${a.farmId}/attachments/newer.jpg`,
+        photoChecksumSha256Hex: 'f'.repeat(64),
+      });
     });
 
     it('⭐ carries the POSSESSION TRAIL — movements, and doses given to the animal AND its mob', async () => {

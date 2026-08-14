@@ -83,7 +83,16 @@ export const evidenceAnimalSchema = z.object({
    * that every animal listed is covered by a registration that may cover only some of them.
    */
   certificateReference: z.string().min(1).nullable(),
-  photoKey: z.string().min(1).nullable(),
+  /**
+   * P2.5 (2026-08-14): the finalised attachment's own object key and checksum — never
+   * `animals.photo_key`, a column FR-101 reserved but the 3i(c) attachment pipeline never wrote
+   * to (STATUS.md, "a field on the wire and in the schema that no screen sets"). The RENDERER
+   * (`evidence-pack.pdf.ts`'s caller) fetches the object and verifies `photoChecksumSha256Hex`
+   * against the fetched bytes before ever embedding an image — this schema carries only the
+   * REFERENCE, the same "facts, not bytes" shape every other field here already has.
+   */
+  photoObjectKey: z.string().min(1).nullable(),
+  photoChecksumSha256Hex: z.string().min(1).nullable(),
   /** Acquisition → current: the ownership chain establishing continuous possession. */
   acquiredAt: dateSchema.nullable(),
   source: z.string().min(1).nullable(),

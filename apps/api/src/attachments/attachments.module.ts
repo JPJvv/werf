@@ -38,5 +38,9 @@ import { OBJECT_STORAGE, S3ObjectStorage, type ObjectStorage } from './object-st
       },
     },
   ],
+  // P2.5: LivestockModule needs the same port, to fetch+verify a photo's bytes server-side
+  // before embedding it in the FR-603 evidence pack (`LivestockController.buildPhotoMap`) — the
+  // exact same adapter `AttachmentsService` already reads/writes through, never a second one.
+  exports: [OBJECT_STORAGE],
 })
 export class AttachmentsModule {}

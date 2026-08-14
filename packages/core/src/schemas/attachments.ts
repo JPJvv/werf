@@ -94,3 +94,19 @@ export const finalizeAttachmentRequestSchema = z.object({
   farmId: uuidSchema,
 });
 export type FinalizeAttachmentRequest = z.infer<typeof finalizeAttachmentRequestSchema>;
+
+/** What a device sends to read back one of ITS OWN finalised attachments (P2.5). Same shape as
+ *  `finalizeAttachmentRequestSchema` — a pointer, not a claim — because the server re-checks
+ *  farm membership and `status = 'finalised'` before ever issuing a download URL. */
+export const attachmentDownloadRequestSchema = z.object({
+  id: uuidSchema,
+  farmId: uuidSchema,
+});
+export type AttachmentDownloadRequest = z.infer<typeof attachmentDownloadRequestSchema>;
+
+/** A short-lived presigned GET for one finalised attachment's bytes. */
+export const attachmentDownloadUrlSchema = z.object({
+  downloadUrl: z.string().url(),
+  expiresAt: timestampSchema,
+});
+export type AttachmentDownloadUrl = z.infer<typeof attachmentDownloadUrlSchema>;

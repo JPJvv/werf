@@ -396,4 +396,60 @@ describe('attachment capture (phase-checklists.md 3i)', () => {
       service.finalizeAttachment(outsider.userId, { id: randomUUID(), farmId }),
     ).rejects.toThrow(NotFoundError);
   });
+
+  // ── Secure reads (P2.5) — the read path this pipeline never had until now ──────────────
+  describe('getDownloadUrl — a short-lived presigned GET for one own finalised attachment', () => {
+    it('issues a URL the SAME bytes round-trip back through', async () => {
+      const { userId, farmId } = await tenant('Download');
+      const animalId = await anAnimal(farmId);
+      const bytes = Buffer.from('the bytes a download URL must hand back unchanged');
+      const body = attachmentBody(farmId, animalId, bytes);
+
+      const created = await service.createAttachment(userId, body);
+      await putRealBytes(created.uploadUrl!, created.checksumHeaderValue!, bytes);
+      await service.finalizeAttachment(userId, { id: body.id, farmId });
+
+      const download = await service.getDownloadUrl(userId, { id: body.id, farmId });
+      schemas.attachmentDownloadUrlSchema.parse(JSON.parse(JSON.stringify(download)));
+
+      const res = await fetch(download.downloadUrl);
+      expect(res.status).toBe(200);
+      expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+    });
+
+    it('refuses an attachment that has not finished uploading yet', async () => {
+      const { userId, farmId } = await tenant('DownloadPending');
+      const animalId = await anAnimal(farmId);
+      const body = attachmentBody(farmId, animalId, Buffer.from('never finalised'));
+      await service.createAttachment(userId, body);
+
+      await expect(service.getDownloadUrl(userId, { id: body.id, farmId })).rejects.toThrow(
+        ConflictError,
+      );
+    });
+
+    it('refuses a caller who is not a member of the attachment farm', async () => {
+      const { userId, farmId } = await tenant('DownloadOwner');
+      const outsider = await tenant('DownloadOutsider');
+      const animalId = await anAnimal(farmId);
+      const bytes = Buffer.from('another farms bytes');
+      const body = attachmentBody(farmId, animalId, bytes);
+
+      const created = await service.createAttachment(userId, body);
+      await putRealBytes(created.uploadUrl!, created.checksumHeaderValue!, bytes);
+      await service.finalizeAttachment(userId, { id: body.id, farmId });
+
+      await expect(
+        service.getDownloadUrl(outsider.userId, { id: body.id, farmId }),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('is a 404 for an unknown attachment id', async () => {
+      const { userId, farmId } = await tenant('DownloadUnknown');
+
+      await expect(service.getDownloadUrl(userId, { id: randomUUID(), farmId })).rejects.toThrow(
+        NotFoundError,
+      );
+    });
+  });
 });

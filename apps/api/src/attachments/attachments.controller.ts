@@ -43,4 +43,19 @@ export class AttachmentsController {
   ): Promise<FinalizedAttachment> {
     return this.attachments.finalizeAttachment(auth.userId, body);
   }
+
+  /**
+   * A short-lived presigned GET for one of the caller's own FINALISED attachments (P2.5) — the
+   * secure read path this pipeline never had. Same-farm authorisation and a `finalised`-only
+   * check both happen server-side (`AttachmentsService.getDownloadUrl`) before any URL is issued.
+   */
+  @Post('download')
+  @HttpCode(HttpStatus.OK)
+  async getDownloadUrl(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.attachmentDownloadRequestSchema))
+    body: schemas.AttachmentDownloadRequest,
+  ): Promise<schemas.AttachmentDownloadUrl> {
+    return this.attachments.getDownloadUrl(auth.userId, body);
+  }
 }

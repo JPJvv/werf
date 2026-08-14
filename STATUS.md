@@ -9,16 +9,23 @@ session closed **P2.6 — `theft_incident_animals` surrogate id + audit columns 
 two verified commits, per the design already worked out in the prior session's §5 entry (now
 executed, not re-derived): migration 0025 + schema + a real-Postgres integration test, then the
 client hydration read (`HydratedLivestock.tsx`'s `attachAnimalIds`) that actually makes the synced
-rows visible. **16 of the ~21 items on the punch list remain — see §5.** Do not re-run P1/P2.5/P2.6.
+rows visible. Then closed **P2.7 — `landrow:` dependency guard**, but WIDER than its own design
+note described: walking every `assertOwnedReferences({landUnitId})` call site in the API (rather
+than trusting the note) found two live, reachable gaps it had missed — a move's destination camp
+and a theft incident's own camp — alongside the three it named (boundary walk, mob, animal). Also
+fixed an adjacent, previously fully-unguarded defect found in the same object literal: a theft
+incident's named `animalIds` had no `animalrow:` guard either. **15 of the ~21 items on the punch
+list remain — see §5.** Do not re-run P1/P2.5/P2.6/P2.7.
 
 Prior session (second that day) closed: all four P1 blockers (SQLite capture durability, the
 attachment orphan create/finalize/sweep race, the effective-dated withdrawal fail-closed fix,
 production browser CSP/CORS) and P2.5 (secure attachment reads + the FR-603 evidence pack actually
 embedding a verified photo).
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `9e1b402` (P2.6
-client hydration) ← `6820a21` (P2.6 migration/schema) ← `de3ef93` ← `422e09d` (P2.5) ← `c2cc48a`
-(P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local commits only, awaiting go-ahead.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `256d06a` (P2.7
+landrow guard) ← `4524bb9` ← `9e1b402` (P2.6 client hydration) ← `6820a21` (P2.6 migration/schema)
+← `de3ef93` ← `422e09d` (P2.5) ← `c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local
+commits only, awaiting go-ahead.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -29,7 +36,7 @@ client hydration) ← `6820a21` (P2.6 migration/schema) ← `de3ef93` ← `422e0
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 6/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5, P2.6 done — commits `c2cc48a`, `422e09d`, `6820a21`, `9e1b402`. P2.7–P2.10, an owner-decision gate, P3.11–P3.16, and Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 7/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5, P2.6, P2.7 done — commits `c2cc48a`, `422e09d`, `6820a21`, `9e1b402`, `256d06a`. P2.8–P2.10, an owner-decision gate, P3.11–P3.16, and Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -85,11 +92,13 @@ Not a hydration defect — a hydrated-only land unit needs no such guard.
 ⛔ **Compliance-pass scope, not yet requested.** Everything since the last cleared pass
 (`9b7fa2e..HEAD`) sits inside one un-requested `compliance-checker` scope: the back-dated-move
 fail-closed fix, land hydration, 3i(c)'s `animalrow:` guard addition, `c2cc48a` (touches FR-131
-withdrawal resolution), `422e09d` (touches the FR-603 evidence pack), **and now `6820a21`/`9e1b402`
-(P2.6 — the `theft_incident_animals` migration and its client hydration read, both touching the
-stock-theft table)**. Say so before calling any of this merge-ready; per CLAUDE.md, the owner
-decides when to trigger the pass. The remaining punch-list slices in §5 will keep adding to this
-same scope — P3.14 (branding/animal ID), P3.16 (auth/POPIA) are each regulated-code
+withdrawal resolution), `422e09d` (touches the FR-603 evidence pack), `6820a21`/`9e1b402` (P2.6 —
+the `theft_incident_animals` migration and its client hydration read, both touching the stock-theft
+table), **and now `256d06a` (P2.7 — the theft incident's send path gained an `animalrow:` guard on
+its named animals, alongside the `landrow:` work)**. Say so before calling any of this merge-ready;
+per CLAUDE.md, the owner decides when to trigger the pass. The remaining punch-list slices in §5
+will keep adding to this same scope — P3.14 (branding/animal ID), P3.16 (auth/POPIA) are each
+regulated-code
 touches in their own right.
 
 **Condensed, full detail in git history / `phase-checklists.md` 3b–3i:** three `compliance-checker`
@@ -107,11 +116,11 @@ hide a worse defect for any farm signing up post-deploy — migration 0021.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-14, third session, fully uncached, after P2.6) | ✅ **112 test files / 1190 tests, 7/7 builds, 162.28 KB gz** — incl. the new `theft.integration.test.ts` (real Postgres: surrogate id round-trip, duplicate-link refusal, relink-after-unlink, RLS) and `HydratedLivestock.test.ts`'s `attachAnimalIds` unit tests |
-| `pnpm test:e2e` (2026-08-14, second session, default lane, after P1/P2.5, NOT re-run for P2.6) | ✅ 31 passed / 4 skipped as of P2.5 — P2.6 touches no e2e-relevant surface (no new screen, `pnpm verify`'s vitest coverage is what proves it) so this was not re-run; re-run before calling the branch merge-ready |
-| `WERF_REAL_STACK=1` deployed-connectivity e2e (2026-08-14, P1.4) | ✅ Real deployed-headers build, real browser, real CSP, real presigned PUT against MinIO — 2/2 passed. Not re-run after P2.5/P2.6 (neither touches client/CSP code) |
-| `pnpm --filter @werf/web build` (2026-08-14, third session) | ✅ 162.28 KB gz ≤ 250 KB budget |
-| Review agents (2026-08-13, owner-triggered, "run all relevant agents") | ✅ `compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings. `sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, fixed. `reviewer`: reproduced every claim, no contradictions. **Predates `c2cc48a`/`422e09d`/`6820a21`/`9e1b402` — see the compliance-pass scope note in §3, not yet re-triggered** |
+| `pnpm verify` (2026-08-14, third session, fully uncached, after P2.7) | ✅ **112 test files / 1195 tests, 7/7 builds, 162.34 KB gz** — incl. `theft.integration.test.ts` (real Postgres, P2.6), `HydratedLivestock.test.ts`'s `attachAnimalIds` unit tests (P2.6), and 5 new `landrow:` guard tests in `Outbox.test.tsx` (P2.7: unconditional guard, conditional guard, tri-state `toLandUnitId`, theft's dual guard, next-round recovery) |
+| `pnpm test:e2e` (2026-08-14, second session, default lane, after P1/P2.5, NOT re-run for P2.6/P2.7) | ✅ 31 passed / 4 skipped as of P2.5 — neither P2.6 nor P2.7 touches an e2e-relevant surface (no new screen; `pnpm verify`'s vitest coverage, incl. real-Postgres, proves both) so this was not re-run; re-run before calling the branch merge-ready |
+| `WERF_REAL_STACK=1` deployed-connectivity e2e (2026-08-14, P1.4) | ✅ Real deployed-headers build, real browser, real CSP, real presigned PUT against MinIO — 2/2 passed. Not re-run after P2.5/P2.6/P2.7 (none touches client/CSP code) |
+| `pnpm --filter @werf/web build` (2026-08-14, third session) | ✅ 162.34 KB gz ≤ 250 KB budget |
+| Review agents (2026-08-13, owner-triggered, "run all relevant agents") | ✅ `compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings. `sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, fixed. `reviewer`: reproduced every claim, no contradictions. **Predates `c2cc48a`/`422e09d`/`6820a21`/`9e1b402`/`256d06a` — see the compliance-pass scope note in §3, not yet re-triggered** |
 | Historical baselines (2026-08-08 through 2026-08-13) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
 
 ## 5. Next executable steps — the punch list, sliced for separate sessions
@@ -123,7 +132,7 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 **Origin of this list:** JP asked (2026-08-14, second session) for a large implementation-and-
 closure pass over a specific punch list, in three priority bands plus a doc/quality band, with an
 owner-decision gate partway through. **The second session got through P1.1–P1.4 and P2.5 (5 of
-~21 items); the third closed P2.6 (6 of ~21).** ⭐ **Budget one session per item below, or at most a tightly
+~21 items); the third closed P2.6 and P2.7 (7 of ~21).** ⭐ **Budget one session per item below, or at most a tightly
 related pair (e.g. P2.9+P2.10) — do not attempt to batch a whole band in one sitting; that is what
 made this session's list too big.** Each item is independently scoped and independently
 verifiable (own tests, own `pnpm verify`, own commit) — that is what makes slicing safe.
@@ -160,14 +169,25 @@ verifiable (own tests, own `pnpm verify`, own commit) — that is what makes sli
     separate file as an earlier note assumed. `pnpm verify`: 112 files / 1190 tests, 162.28 KB gz.
     ⛔ Touched the stock-theft table — regulated code, adds to §3's compliance-pass scope.
 
-### Not started — P2.7 through the final close-out, in order
+✅ 27. Done 2026-08-14 (third session): **P2.7 — `landrow:` dependency subjects/guards, commit
+    `256d06a`.** Closes the open item §3 tracked. Went WIDER than the prior session's design note:
+    walking every `assertOwnedReferences({landUnitId})` call site in the API (not trusting the
+    note) found the note's list — boundary walk, mob, animal — was incomplete. Two live gaps it
+    missed: a MOVE's `toLandUnitId` (server sets `event.landUnitId` from it —
+    `movement.ts`/`livestock.service.ts`), and a THEFT INCIDENT's own `landUnitId` (the camp
+    picker in `ReportTheftScreen.tsx`). Both wired. Checked and EXCLUDED two theoretical paths:
+    land-unit self-nesting (`parentId`) and per-camp rainfall — neither field is wire-reachable
+    from any capture screen today (`newLandUnitSchema`/rainfall's client store carry no such
+    field), so there is nothing to guard. Also fixed an adjacent, previously fully-unguarded
+    defect in the SAME theft-incident object literal: no `animalrow:` guard existed for the
+    incident's own named `animalIds`, despite the server checking both references — fixed
+    alongside `landrow:` since it is the same defect class in the same code. Five new tests mirror
+    the `mobrow:`/`animalrow:` coverage shape (unconditional guard, conditional guard on an
+    optional field, the tri-state `toLandUnitId`, the dual guard, next-round recovery). `pnpm
+    verify`: 112 files / 1195 tests, 162.34 KB gz. ⛔ Adds to §3's compliance-pass scope (the theft
+    incident's send path).
 
-**27. P2.7 — `landrow:` dependency subjects/guards** (already tracked as an open item in §3, closed
-by doing this slice). `Outbox.tsx` has a `mobrow:`/`animalrow:` synthetic-subject pattern so a
-capture referencing a not-yet-accepted mob/animal is HELD, not 404-set-aside. Add the equivalent
-`landrow:` guard for `land_unit_id` references (a move, an animal create, a boundary walk). Cover:
-boundary walks, mobs, animals, and the next-round recovery once the referenced land unit is
-eventually accepted. A hydrated-only land unit needs no guard (already true today, per §3's note).
+### Not started — P2.8 through the final close-out, in order
 
 **28. P2.8 — a TRUE two-browser O-3 scenario.** The current `real-offline-matrix.spec.ts` proves
 `occurred_at` survives via direct REST + one hydration read — useful but not the actual claim

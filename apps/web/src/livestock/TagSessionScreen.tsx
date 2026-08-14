@@ -89,6 +89,7 @@ export function TagSessionScreen() {
   const [value, setValue] = useState('');
   const [savedCount, setSavedCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -113,10 +114,12 @@ export function TagSessionScreen() {
     setIndex((i) => i + 1);
   };
 
-  const save = () => {
-    if (!animal || !canSave) return;
+  const save = async () => {
+    if (!animal || !canSave || saving) return;
+    setSaving(true);
 
-    record(
+    // Not "saved" until the local write is durable (P1.1).
+    await record(
       schemas.newAnimalIdentifierSchema.parse({
         id: uuidv7(),
         farmId: activeFarm.id,
@@ -131,6 +134,7 @@ export function TagSessionScreen() {
 
     setLastSaved(trimmed);
     setSavedCount((n) => n + 1);
+    setSaving(false);
     advance();
   };
 
@@ -169,7 +173,7 @@ export function TagSessionScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             <div className="mb-4 flex flex-col">
@@ -218,7 +222,7 @@ export function TagSessionScreen() {
 
             <button
               type="submit"
-              disabled={!canSave}
+              disabled={!canSave || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {t('tag.save')}

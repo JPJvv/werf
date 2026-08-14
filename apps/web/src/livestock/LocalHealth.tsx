@@ -86,7 +86,7 @@ export type HealthStoreFactory = (key: string) => HealthStore;
 
 const defaultFactory: HealthStoreFactory = (key) =>
   createSqliteCaptureStore<StoredHealthEvent>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -144,11 +144,11 @@ export function useHealthEventsHydrationFailed(): boolean {
  * never awaits the network (NFR-007). A dosing run is a batch by nature — nobody doses one animal
  * and walks away — so the group is the unit here and a single animal is a group of one.
  */
-export function useRecordHealth(): (events: readonly StoredHealthEvent[]) => void {
+export function useRecordHealth(): (events: readonly StoredHealthEvent[]) => Promise<void> {
   const store = useHealthStore();
   return useCallback(
-    (events) => {
-      for (const event of events) store.append(event);
+    async (events) => {
+      await Promise.all(events.map((event) => store.append(event)));
     },
     [store],
   );

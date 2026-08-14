@@ -42,7 +42,7 @@ export type BlobStoreFactory = () => BlobStore;
 
 const defaultFactory: AttachmentStoreFactory = (key) =>
   createSqliteCaptureStore<StoredAttachment>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -169,7 +169,7 @@ export function useRecordAttachment(): (input: AttachmentCapture) => Promise<voi
         checksum,
         occurredAt: input.occurredAt,
       };
-      meta.append(record);
+      await meta.append(record);
     },
     [meta, blobs, activeFarm],
   );

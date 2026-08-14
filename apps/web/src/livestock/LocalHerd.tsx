@@ -34,7 +34,7 @@ export type HerdStoreFactory = (key: string) => HerdStore;
 
 const defaultFactory: HerdStoreFactory = (key) =>
   createSqliteCaptureStore<StoredAnimal>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -85,8 +85,9 @@ export function useAnimalsHydrationFailed(): boolean {
   return useSyncExternalStore(store.subscribe, store.hydrationFailed);
 }
 
-/** Commit an animal to the local herd. Synchronous; never awaits the network (NFR-007). */
-export function useRecordAnimal(): (animal: StoredAnimal) => void {
+/** Commit an animal to the local herd. Never awaits the network (NFR-007); the returned promise
+ *  resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordAnimal(): (animal: StoredAnimal) => Promise<void> {
   const store = useHerdStore();
   return useCallback((animal) => store.append(animal), [store]);
 }

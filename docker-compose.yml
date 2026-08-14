@@ -67,6 +67,17 @@ services:
     environment:
       MINIO_ROOT_USER: werf-dev
       MINIO_ROOT_PASSWORD: werf-dev-secret
+      # P1.4 (2026-08-14): per-bucket CORS via the standard S3 `PutBucketCors` API returns `501
+      # NotImplemented` on this image — empirically confirmed against `minio/minio:latest` with
+      # BOTH the AWS SDK v3 and MinIO's own `mc cors set`, so this is a genuine server-side gap in
+      # this edition, not a client quirk. The community edition's CORS control is this server-wide
+      # env var instead. Real S3 in production has no such gap and uses the per-bucket
+      # `PutBucketCors` API — see `apps/api/scripts/configure-bucket-cors.mjs`, which stays the
+      # correct mechanism there. Origins match `generate-headers.mjs`'s local defaults (the built
+      # PWA under `vite preview`) plus the dev server and the deployed-header e2e proof's own
+      # static server (`apps/web/e2e/deployed-server.ts`, `deployed-connectivity.spec.ts`),
+      # comma-separated per MinIO's own contract.
+      MINIO_API_CORS_ALLOW_ORIGIN: 'http://localhost:4173,http://localhost:5173,http://127.0.0.1:4180'
     command: ['server', '/data', '--console-address', ':9001']
     ports:
       # Loopback only, same reasoning as postgres/powersync above.

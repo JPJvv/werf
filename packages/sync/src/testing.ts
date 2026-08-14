@@ -16,7 +16,10 @@
  * import graph so a production bundle can never pull it in (the `@werf/db/testing` precedent).
  */
 
-export { resetPersistenceRetryCoordinatorForTesting } from './sqlite-capture-store';
+export {
+  resetPersistenceRetryCoordinatorForTesting,
+  resetHydrationRetryCoordinatorForTesting,
+} from './sqlite-capture-store';
 
 interface FakeRecordRow {
   id: string;

@@ -67,6 +67,7 @@ export function ReportTheftScreen() {
   const [observations, setObservations] = useState('');
   const [locating, setLocating] = useState(false);
   const [fixFailed, setFixFailed] = useState<FixFailure | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -83,7 +84,8 @@ export function ReportTheftScreen() {
   };
 
   const save = async () => {
-    if (!countIsValid) return;
+    if (!countIsValid || saving) return;
+    setSaving(true);
 
     // The fix is taken at SAVE, not on load: a farmer who opens this screen in the bakkie and then
     // walks to the fence should get the point from where they are standing when they file it.
@@ -100,12 +102,14 @@ export function ReportTheftScreen() {
       setLocating(false);
       if (!fix.ok) {
         setFixFailed(fix.reason);
+        setSaving(false);
         return;
       }
       geojson = fix.geojson;
     }
 
-    report({
+    // Not "saved" — and never navigated away from — until the local write is durable (P1.1).
+    await report({
       id: uuidv7(),
       farmId: activeFarm.id,
       discoveredAt: dayToInstant(discoveredDay),
@@ -323,7 +327,7 @@ export function ReportTheftScreen() {
         <button
           type="submit"
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
-          disabled={!countIsValid || locating}
+          disabled={!countIsValid || locating || saving}
         >
           {locating
             ? t('theft.locating')

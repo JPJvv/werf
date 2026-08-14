@@ -190,6 +190,7 @@ export function AdjustMobScreen() {
   const [declaredUntil, setDeclaredUntil] = useState('');
   const [lastSaved, setLastSaved] = useState<{ name: string; head: number } | null>(null);
   const [refused, setRefused] = useState<{ detail: string | null } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -321,8 +322,9 @@ export function AdjustMobScreen() {
     setDay(farmToday());
   };
 
-  const save = () => {
-    if (!selected || reason === null || typed === null || !canSave) return;
+  const save = async () => {
+    if (!selected || reason === null || typed === null || !canSave || saving) return;
+    setSaving(true);
     // ⭐ Minted HERE, at save time, not memoised across renders. A memo keyed on `[selectedId, day]`
     // survived `reset()` — which clears neither and re-sets `day` to the value it already held — so
     // a second tally on the same mob on the same day reused the first id, the flush skipped it as a
@@ -388,7 +390,10 @@ export function AdjustMobScreen() {
     // the source and into nothing, which is what `canSave` claims to prevent. Raised by all three
     // review agents.
     try {
-      recordTallies([
+      // Not "saved" until every capture in the act is durably persisted (P1.1) — awaited, never
+      // fire-and-forget, so a browser killed right after this call has genuinely committed both
+      // halves of a transfer or neither.
+      await recordTallies([
         {
           id,
           farmId: activeFarm.id,
@@ -438,11 +443,13 @@ export function AdjustMobScreen() {
       ]);
     } catch (error) {
       setRefused({ detail: error instanceof Error ? error.message : null });
+      setSaving(false);
       return;
     }
 
     setRefused(null);
     setLastSaved({ name: selected.name, head: projected ?? 0 });
+    setSaving(false);
     reset();
   };
 
@@ -544,7 +551,7 @@ export function AdjustMobScreen() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                save();
+                void save();
               }}
             >
               <fieldset className="mb-4 border-0 p-0">
@@ -751,7 +758,7 @@ export function AdjustMobScreen() {
                   <button
                     type="submit"
                     className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
-                    disabled={!canSave}
+                    disabled={!canSave || saving}
                   >
                     {t('tally.save')}
                   </button>

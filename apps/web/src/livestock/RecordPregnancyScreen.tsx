@@ -101,6 +101,7 @@ export function RecordPregnancyScreen() {
   // they type, their value wins and a change of dam does not silently overwrite it.
   const [matingDate, setMatingDate] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const dam = useMemo(() => dams.find((a) => a.id === damId), [dams, damId]);
 
@@ -132,11 +133,13 @@ export function RecordPregnancyScreen() {
 
   const blocked = dam === undefined || testedOn === '';
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (blocked || !dam) return;
+    if (blocked || !dam || saving) return;
+    setSaving(true);
 
-    recordBreeding({
+    // Not "saved" until the local write is durable (P1.1).
+    await recordBreeding({
       id: uuidv7(),
       kind: 'pregnancyTest',
       farmId: activeFarm.id,
@@ -152,6 +155,7 @@ export function RecordPregnancyScreen() {
     setJustSaved(labels.get(dam.id) ?? speciesLabel(t, dam.species));
     setDamId('');
     setMatingDate(null);
+    setSaving(false);
   };
 
   return (
@@ -306,7 +310,7 @@ export function RecordPregnancyScreen() {
 
           <button
             type="submit"
-            disabled={blocked}
+            disabled={blocked || saving}
             className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
           >
             {t('pregnancy.save')}

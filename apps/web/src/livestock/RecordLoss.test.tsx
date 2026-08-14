@@ -84,12 +84,15 @@ function seedActiveWithdrawal(animalId: string): void {
     JSON.stringify([
       {
         id: PRODUCT_ID,
+        jurisdiction: 'ZA',
         name: 'Terramycin LA',
         registrationNumber: 'G1234 Act 36/1947',
         species: ['cattle'],
         meatWithdrawalDays: 28,
         milkWithdrawalHours: 96,
         route: 'intramuscular',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
       },
     ]),
   );
@@ -116,12 +119,15 @@ function seedMobDip(mobId: string): void {
     JSON.stringify([
       {
         id: PRODUCT_ID,
+        jurisdiction: 'ZA',
         name: 'Tickaway',
         registrationNumber: 'G4321 Act 36/1947',
         species: ['cattle'],
         meatWithdrawalDays: 28,
         milkWithdrawalHours: null,
         route: 'topical',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
       },
     ]),
   );

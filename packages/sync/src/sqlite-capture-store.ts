@@ -4,7 +4,7 @@
  * (localStorage-backed) is untouched and keeps backing `sent-log.ts`/`draft-store.ts`; this file
  * is what the 12 `Local*.tsx` providers switch to for the append-only capture logs themselves.
  *
- * Implements the SAME `CaptureStore<T>` interface with the SAME synchronous-append contract
+ * Implements the SAME `CaptureStore<T>` interface with the SAME synchronous-snapshot contract
  * (NFR-007, <50ms local commit — `.claude/rules/frontend.md`): `append()` updates the in-memory
  * snapshot and notifies subscribers before it returns, whether or not the database has finished
  * opening. Only `import type { LocalDatabase }` crosses into `local-database.ts` — never a
@@ -19,6 +19,23 @@
  * silently drop it. So hydration always merges `[...rowsFromDb, ...pendingAppends]`, never
  * replaces — the append-order guarantee `apps/web/src/sync/Outbox.tsx`'s FK/`guardedBy`/
  * `needsHead` logic depends on holds across the hydration boundary, not just within it.
+ *
+ * ⭐ P1.1 (2026-08-14): `append()` returns a promise that resolves ONLY once the record is
+ * DURABLY PERSISTED to `capture_records` — never before. A capture screen awaits it before
+ * reporting "Saved" or advancing (CLAUDE.md's offline-is-the-default-state rule extends to this:
+ * the network must never be awaited, but the LOCAL commit genuinely must be). Two failure classes
+ * are both retried indefinitely, on the same `PERSIST_RETRY_INTERVAL_MS` cadence, and NEITHER
+ * ever discards a farmer's capture (`.claude/rules/db.md`: "the write queue is never discarded by
+ * the system"):
+ *   1. The database is open (`resolvedDb` is set) but one record's own INSERT fails (quota
+ *      pressure, a transient OPFS error) — the existing per-record `persistenceRetries`
+ *      coordinator below, extended to resolve that record's own `append()` promise once it lands.
+ *   2. The database itself will not open, or migration/the initial SELECT throws — the
+ *      `hydrationRetries` coordinator retries the WHOLE open-and-hydrate sequence (calling
+ *      `database()` fresh each attempt, since a rejected promise cannot un-reject) until it
+ *      succeeds, then flushes every append made during the outage. `hydrationFailed()` flips back
+ *      to `false` on recovery, so a consumer reading it (Outbox.tsx's flush) trusts the store
+ *      again without requiring a page reload.
  */
 
 import type { CaptureStore } from './capture-store';
@@ -26,8 +43,10 @@ import type { SessionStorageLike } from './session-store';
 import type { LocalDatabase } from './local-database';
 
 export interface SqliteCaptureStoreOptions {
-  /** Resolves once the shared local database has opened. Awaited lazily, not at construction. */
-  readonly database: Promise<LocalDatabase>;
+  /** Opens (or returns) the shared local database. Called lazily, and called AGAIN on every open
+   *  retry — a promise that has already rejected cannot later resolve, so recovering from a
+   *  failed open requires a fresh attempt, not a fresh await of the same one. */
+  readonly database: () => Promise<LocalDatabase>;
   /** Same "werf-<name>:<farmId>" shape as the localStorage key it replaces. */
   readonly key: string;
   /** `window.localStorage` — read-only, consulted once for this key's one-time migration. */
@@ -39,7 +58,8 @@ export interface SqliteCaptureStoreOptions {
 // file's 90s throttle-driven interval — quota pressure from a large photo capture elsewhere in
 // the app can clear within a second once that write finishes, and there is no reason to leave a
 // farmer's capture undurable for a minute and a half waiting on a constant tuned for a different
-// failure class.
+// failure class. The same cadence backs the whole-database-open retry below (P1.1) — a second,
+// independent failure class, not a widening of this one.
 export const PERSIST_RETRY_INTERVAL_MS = 5_000;
 
 interface CaptureRecordRow {
@@ -56,6 +76,7 @@ const PERSIST_CAPTURE_SQL =
 interface PersistenceRetry {
   readonly db: LocalDatabase;
   readonly params: readonly unknown[];
+  readonly resolve: () => void;
   inFlight: boolean;
 }
 
@@ -65,11 +86,29 @@ interface PersistenceRetry {
 const persistenceRetries = new Map<string, PersistenceRetry>();
 let persistenceRetryTimer: ReturnType<typeof setInterval> | null = null;
 
+// The sibling coordinator for a failed WHOLE-DATABASE open (P1.1) — keyed by an opaque per-store
+// token (not the store's `key` string), because two store instances for the SAME key legitimately
+// coexist for a moment (React StrictMode's double-invoked `useMemo`) and each must retry its own
+// open independently rather than one silently overwriting the other's retry state.
+interface HydrationRetry {
+  readonly attempt: () => Promise<boolean>;
+  inFlight: boolean;
+}
+const hydrationRetries = new Map<object, HydrationRetry>();
+let hydrationRetryTimer: ReturnType<typeof setInterval> | null = null;
+
 /** Test isolation only; production must never discard this queue. Re-exported only by ./testing. */
 export function resetPersistenceRetryCoordinatorForTesting(): void {
   persistenceRetries.clear();
   if (persistenceRetryTimer !== null) clearInterval(persistenceRetryTimer);
   persistenceRetryTimer = null;
+}
+
+/** Test isolation only; production must never discard this queue. Re-exported only by ./testing. */
+export function resetHydrationRetryCoordinatorForTesting(): void {
+  hydrationRetries.clear();
+  if (hydrationRetryTimer !== null) clearInterval(hydrationRetryTimer);
+  hydrationRetryTimer = null;
 }
 
 function stopPersistenceTimerWhenIdle(): void {
@@ -86,6 +125,7 @@ function attemptPersistence(retryKey: string, retry: PersistenceRetry): void {
     .then(() => {
       if (persistenceRetries.get(retryKey) === retry) persistenceRetries.delete(retryKey);
       stopPersistenceTimerWhenIdle();
+      retry.resolve();
     })
     .catch(() => {
       retry.inFlight = false;
@@ -104,10 +144,46 @@ function ensurePersistenceTimer(): void {
   }, PERSIST_RETRY_INTERVAL_MS);
 }
 
-function persistCapture(db: LocalDatabase, retryKey: string, params: readonly unknown[]): void {
-  const retry: PersistenceRetry = { db, params, inFlight: false };
-  persistenceRetries.set(retryKey, retry);
-  attemptPersistence(retryKey, retry);
+/** Persists one record, retrying indefinitely on failure. The returned promise resolves ONLY
+ *  once the INSERT has actually succeeded — never on the first (possibly failing) attempt. */
+function persistDurably(
+  db: LocalDatabase,
+  retryKey: string,
+  params: readonly unknown[],
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const retry: PersistenceRetry = { db, params, resolve, inFlight: false };
+    persistenceRetries.set(retryKey, retry);
+    attemptPersistence(retryKey, retry);
+  });
+}
+
+function stopHydrationTimerWhenIdle(): void {
+  if (hydrationRetries.size !== 0 || hydrationRetryTimer === null) return;
+  clearInterval(hydrationRetryTimer);
+  hydrationRetryTimer = null;
+}
+
+function attemptHydrationRetry(token: object, retry: HydrationRetry): void {
+  if (retry.inFlight) return;
+  retry.inFlight = true;
+  void retry.attempt().then((succeeded) => {
+    retry.inFlight = false;
+    if (succeeded) {
+      hydrationRetries.delete(token);
+      stopHydrationTimerWhenIdle();
+    }
+  });
+}
+
+function ensureHydrationRetryTimer(): void {
+  if (hydrationRetryTimer !== null) return;
+  hydrationRetryTimer = setInterval(() => {
+    for (const [token, retry] of [...hydrationRetries]) {
+      attemptHydrationRetry(token, retry);
+    }
+    stopHydrationTimerWhenIdle();
+  }, PERSIST_RETRY_INTERVAL_MS);
 }
 
 /** Same tolerant parse as `capture-store.ts`'s `load()`: corrupt/missing → `[]`, never throws — a
@@ -179,6 +255,11 @@ async function migrateIfNeeded<T extends { id: string }>(
   });
 }
 
+interface PendingAppend<T> {
+  readonly record: T;
+  readonly resolve: () => void;
+}
+
 export function createSqliteCaptureStore<T extends { id: string }>(
   options: SqliteCaptureStoreOptions,
 ): CaptureStore<T> {
@@ -189,26 +270,22 @@ export function createSqliteCaptureStore<T extends { id: string }>(
   const farmId = key.slice(key.indexOf(':') + 1);
 
   let snapshot: readonly T[] = [];
-  const pendingAppends: T[] = [];
+  // Not-yet-durable appends, in append order. Every record here is already reflected in
+  // `snapshot` (append() updates that unconditionally) — this is bookkeeping for what still
+  // needs to reach `capture_records`, flushed by whichever hydration attempt next succeeds.
+  const pendingAppends: PendingAppend<T>[] = [];
   // `resolvedDb !== null` is the single source of truth for "safe to persist directly" — set
-  // only once hydration has actually SUCCEEDED, so a failed attempt (caught below) leaves it
-  // null forever and every subsequent append() keeps buffering into `pendingAppends`. Those
-  // buffered records stay correct in `snapshot` (append() updates it unconditionally) but are
-  // never durable until a future boot's retry succeeds — an accepted degraded mode, not a lost
-  // write, matching the rest of this store's failure tolerance.
+  // only once hydration has actually SUCCEEDED, so a failed attempt leaves it null and every
+  // subsequent append() keeps buffering into `pendingAppends` until a retry succeeds.
   let resolvedDb: LocalDatabase | null = null;
   let nextSeq = 0;
-  // `settled()`'s backing flag — flips true once the hydration IIFE below reaches its `finally`,
-  // on EITHER outcome. A consumer reading several stores together (Outbox.tsx's flush, most of
-  // all) needs this to tell "genuinely holds nothing" apart from "has not finished asking yet" —
-  // an unhydrated store's empty `all()` is indistinguishable from a confirmed-empty one without
-  // it, and the difference is exactly the evidence a safety ordering is judged against.
+  // `settled()`'s backing flag — flips true once the FIRST open-and-hydrate attempt finishes, on
+  // EITHER outcome. A consumer reading several stores together (Outbox.tsx's flush, most of all)
+  // needs this to tell "genuinely holds nothing" apart from "has not finished asking yet".
   let hasSettled = false;
-  // `hydrationFailed()`'s backing flag. Distinct from a corrupt ROW (tolerated below, never sets
-  // this) — this is for when the hydration ATTEMPT itself could not complete: the database would
-  // not open, the migration transaction genuinely threw, or the SELECT itself failed. `all()`
-  // being `[]` in that case is not "confirmed empty"; a consumer reading several stores together
-  // (Outbox.tsx's flush) must treat it as "cannot currently verify", never as evidence.
+  // `hydrationFailed()`'s backing flag. True while the store cannot currently vouch for its own
+  // `all()` as a complete account — set on a failed open attempt, cleared again the moment a
+  // RETRY succeeds (P1.1: recovery is real, not just "reported once and never revisited").
   let didHydrationFail = false;
   const listeners = new Set<() => void>();
 
@@ -216,19 +293,19 @@ export function createSqliteCaptureStore<T extends { id: string }>(
     for (const listener of listeners) listener();
   };
 
-  const persist = (db: LocalDatabase, record: T, seq: number): void => {
-    persistCapture(db, `${key}\u0000${record.id}`, [
+  const persist = (db: LocalDatabase, record: T, seq: number): Promise<void> =>
+    persistDurably(db, `${key}\u0000${record.id}`, [
       record.id,
       key,
       farmId,
       seq,
       JSON.stringify(record),
     ]);
-  };
 
-  void (async () => {
+  /** One open-and-hydrate attempt. Returns whether it succeeded; never throws. */
+  const tryOpenAndHydrate = async (): Promise<boolean> => {
     try {
-      const db = await database;
+      const db = await database();
       await migrateIfNeeded<T>(db, key, farmId, legacyStorage);
       const rows = await db.getAll<CaptureRecordRow>(
         'SELECT payload_json FROM capture_records WHERE store_key = ? ORDER BY seq ASC',
@@ -236,11 +313,7 @@ export function createSqliteCaptureStore<T extends { id: string }>(
       );
       // Tolerant per row, matching parseLegacyArray's philosophy — a single malformed row (e.g.
       // written by a future schema version this build does not understand) must not fail the
-      // WHOLE hydration. It used to: one bad row threw here, the catch block below caught it, and
-      // because the migration marker was already committed, EVERY future boot re-threw on the
-      // same row forever — a permanent read failure a farmer could never recover from, and every
-      // append() made after that point silently stopped being durable (resolvedDb never got set).
-      // Skipping just the bad row keeps hydration succeeding for everything else that IS readable.
+      // WHOLE hydration.
       const fromDb = rows.flatMap((row) => {
         try {
           return [JSON.parse(row.payload_json) as T];
@@ -249,30 +322,39 @@ export function createSqliteCaptureStore<T extends { id: string }>(
         }
       });
 
-      // Merge, never replace — see this module's header.
-      snapshot = [...fromDb, ...pendingAppends];
+      // Flush whatever accumulated during every failed attempt so far (possibly zero, possibly
+      // many) — merge, never replace. Snap the array before iterating so an append() arriving
+      // WHILE this flush is in flight is not silently included twice.
+      const flushed = pendingAppends.splice(0, pendingAppends.length);
+      snapshot = [...fromDb, ...flushed.map((p) => p.record)];
       nextSeq = fromDb.length;
-      for (const record of pendingAppends) persist(db, record, nextSeq++);
-      pendingAppends.length = 0;
+      for (const { record, resolve } of flushed) {
+        const seq = nextSeq++;
+        void persist(db, record, seq).then(resolve);
+      }
+
       resolvedDb = db;
-    } catch {
-      // The database would not open, or migration/the SELECT itself threw for a reason a corrupt
-      // row can no longer be (that is tolerated above, per-row, without reaching here). Anything
-      // appended before or during this window is still correct in `snapshot` — append() updates
-      // it unconditionally, independent of hydration succeeding — only the DB-backed history is
-      // missing until a future boot's retry succeeds. Never rethrown: an unhandled rejection must
-      // not crash a screen that already has the farmer's in-memory capture on it.
-      //
-      // `didHydrationFail = true` is the load-bearing part: `all()` reading `[]` here is NOT
-      // "this store confirmed it holds nothing" the way it is on a genuinely empty, successful
-      // hydration — a consumer must be able to tell the two apart (Outbox.tsx's flush does).
-      didHydrationFail = true;
-    } finally {
-      // Fires on BOTH outcomes — a subscriber (React's useSyncExternalStore, or a test awaiting
-      // this store's own settle) needs to know the hydration ATTEMPT is over, whether or not it
-      // succeeded; a notify() only on success would hang a listener forever on a failed boot.
+      didHydrationFail = false; // recovery, if this was not the first attempt
       hasSettled = true;
       notify();
+      return true;
+    } catch {
+      // The database would not open, or migration/the SELECT itself threw. Anything appended
+      // before or during this window is still correct in `snapshot` — append() updates it
+      // unconditionally — only the DB-backed history is missing until a retry succeeds.
+      hasSettled = true;
+      didHydrationFail = true;
+      notify();
+      return false;
+    }
+  };
+
+  const hydrationToken = {};
+  void (async () => {
+    const succeeded = await tryOpenAndHydrate();
+    if (!succeeded) {
+      hydrationRetries.set(hydrationToken, { attempt: tryOpenAndHydrate, inFlight: false });
+      ensureHydrationRetryTimer();
     }
   })();
 
@@ -281,14 +363,15 @@ export function createSqliteCaptureStore<T extends { id: string }>(
       return snapshot;
     },
 
-    append(record: T): void {
+    append(record: T): Promise<void> {
       snapshot = [...snapshot, record];
-      if (resolvedDb !== null) {
-        persist(resolvedDb, record, nextSeq++);
-      } else {
-        pendingAppends.push(record);
-      }
       notify();
+      if (resolvedDb !== null) {
+        return persist(resolvedDb, record, nextSeq++);
+      }
+      return new Promise<void>((resolve) => {
+        pendingAppends.push({ record, resolve });
+      });
     },
 
     subscribe(listener: () => void): () => void {
@@ -305,8 +388,9 @@ export function createSqliteCaptureStore<T extends { id: string }>(
     },
 
     close(): void {
-      // Retry commands live in the application-level coordinator above and intentionally survive
-      // this instance: clearing them here would lose a capture accepted before a farm switch.
+      // Retry commands (both coordinators) live at application scope and intentionally survive
+      // this instance: clearing them here would lose a capture accepted before a farm switch, or
+      // strand one made during an open failure that has not yet recovered.
       listeners.clear();
     },
   };

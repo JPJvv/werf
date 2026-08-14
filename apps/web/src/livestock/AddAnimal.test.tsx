@@ -15,7 +15,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
-import { storedCaptures } from '../test-support/local-db';
+import { storedCaptures, getCurrentFakeLocalDatabase } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const HERD_KEY = 'werf-herd:0190f3a0-0000-7000-8000-0000000000f1';
@@ -132,6 +132,40 @@ describe('recording an animal', () => {
     });
   });
 
+  it('[P1.1] does not report "Saved" until the local write is durable', async () => {
+    cachedSession();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    // Hold the actual SQLite INSERT open — simulates the real, non-zero window between a farmer
+    // tapping Save and the write genuinely landing. Nothing else (migration, hydration reads) is
+    // touched, so this isolates the one call the fix is about.
+    const db = await getCurrentFakeLocalDatabase();
+    const realExecute = db.execute.bind(db);
+    let releaseWrite!: () => void;
+    const held = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    db.execute = async (sql: string, params?: readonly unknown[]) => {
+      if (sql.startsWith('INSERT OR REPLACE INTO capture_records')) await held;
+      return realExecute(sql, params);
+    };
+
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    // The write is deliberately held — the confirmation must not appear, and nothing must be
+    // readable back, while the record is still only in memory.
+    expect(screen.queryByText(/saved — your work is saved/i)).toBeNull();
+    expect(await storedCaptures<Record<string, unknown>>(HERD_KEY)).toHaveLength(0);
+
+    releaseWrite();
+    await waitFor(() => {
+      expect(screen.getByText(/saved — your work is saved/i)).toBeTruthy();
+    });
+    expect(await storedCaptures<Record<string, unknown>>(HERD_KEY)).toHaveLength(1);
+  });
+
   it('records a known or estimated birth date instead of silently leaving both blank', async () => {
     cachedSession();
     const user = userEvent.setup();
@@ -142,8 +176,10 @@ describe('recording an animal', () => {
     await user.click(screen.getByRole('checkbox', { name: /date is an estimate/i }));
     await user.click(screen.getByRole('button', { name: /save animal/i }));
 
-    // append() commits to the in-memory snapshot synchronously (NFR-007), but persistence to the
-    // SQLite-backed store is fire-and-forget — wait for it to land before reading it back.
+    // append() commits to the in-memory snapshot synchronously (NFR-007) AND the screen's `save`
+    // handler awaits durable SQLite persistence before reporting "Saved" (P1.1) — by the time
+    // userEvent.click's promise resolves, the row is already there. No waitFor needed, but one
+    // costs nothing and keeps this robust to a future async boundary.
     await waitFor(async () => {
       expect(await storedCaptures<Record<string, unknown>>(HERD_KEY)).toHaveLength(1);
     });

@@ -67,6 +67,7 @@ export function AddLandUnitScreen() {
   const [hectares, setHectares] = useState('');
   const [capacity, setCapacity] = useState('');
   const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -74,9 +75,10 @@ export function AddLandUnitScreen() {
   const taken = units.some((u) => u.code.toLowerCase() === trimmedCode.toLowerCase());
   const blocked = trimmedCode === '' || taken || isBadNumber(hectares) || isBadNumber(capacity);
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (blocked) return;
+    if (blocked || saving) return;
+    setSaving(true);
 
     const unit = schemas.newLandUnitSchema.parse({
       id: uuidv7(),
@@ -89,13 +91,15 @@ export function AddLandUnitScreen() {
       // Carrying capacity is a grazing number; a block does not have one.
       carryingCapacityLsu: term === 'camp' ? optionalNumber(capacity) : null,
     });
-    recordLandUnit(unit);
+    // Not "saved" until the local write is durable (P1.1).
+    await recordLandUnit(unit);
 
     setJustSaved(unit.code);
     setCode('');
     setName('');
     setHectares('');
     setCapacity('');
+    setSaving(false);
   };
 
   const edit = (setter: (value: string) => void) => (value: string) => {
@@ -195,7 +199,7 @@ export function AddLandUnitScreen() {
 
         <button
           type="submit"
-          disabled={blocked}
+          disabled={blocked || saving}
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
           {justSaved !== null ? t(landKey(term, 'another')) : t(landKey(term, 'save'))}

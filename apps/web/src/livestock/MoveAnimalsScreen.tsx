@@ -67,6 +67,7 @@ export function MoveAnimalsScreen() {
   const [toLandUnitId, setToLandUnitId] = useState('');
   const [toMobId, setToMobId] = useState('');
   const [movedCount, setMovedCount] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const shown = useMemo(
     () =>
@@ -104,8 +105,9 @@ export function MoveAnimalsScreen() {
   );
   const blocked = !destinationNamed || wouldMove.length === 0;
 
-  const save = () => {
-    if (blocked) return;
+  const save = async () => {
+    if (blocked || saving) return;
+    setSaving(true);
     // ONE batch id across the whole walk — the group is a single action, not forty coincidences.
     const batchId = uuidv7();
     const occurredAt = new Date().toISOString();
@@ -121,10 +123,12 @@ export function MoveAnimalsScreen() {
       ...(toLandUnitId === '' ? {} : { toLandUnitId }),
       ...(toMobId === '' ? {} : { toMobId }),
     }));
-    recordMoves(moves);
+    // Not "saved" until every animal's move is durable (P1.1) — a gate opening is one act.
+    await recordMoves(moves);
 
     setMovedCount(moves.length);
     setSelected(new Set());
+    setSaving(false);
   };
 
   return (
@@ -231,7 +235,7 @@ export function MoveAnimalsScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             {landUnits.length > 0 && (
@@ -280,7 +284,7 @@ export function MoveAnimalsScreen() {
 
             <button
               type="submit"
-              disabled={blocked}
+              disabled={blocked || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {wouldMove.length > 0 ? `${t('move.save')} · ${wouldMove.length}` : t('move.save')}

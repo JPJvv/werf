@@ -28,12 +28,15 @@ const PRODUCT = '0190f3a0-0000-7000-8000-00000000d001';
 
 const tickaway: StoredVetProduct = {
   id: PRODUCT,
+  jurisdiction: 'ZA',
   name: 'Tickaway',
   registrationNumber: 'G4321 Act 36/1947',
   species: ['cattle'],
   meatWithdrawalDays: 28,
   milkWithdrawalHours: null,
   route: 'topical',
+  effectiveFrom: '2020-01-01',
+  effectiveTo: null,
 };
 
 // As FIRST captured: in the dip camp. The append-only herd store never rewrites this, which is why
@@ -626,5 +629,119 @@ describe('a HYDRATED dose — no productId, an already-resolved meatWithholdUnti
     const status = meatWithdrawalForMob(DIP_CAMP, '2026-08-16', [bareDip], [], [], [], []);
     expect(status.blocked).toBe(false);
     expect(status.clearFrom).toBeNull();
+  });
+});
+
+describe('P1.3: effective-dated products — a re-registration boundary', () => {
+  // Two VERSIONS of the same registration, distinct ids (the shape a re-registration actually
+  // takes — `veterinary_products.id` is per-version, never reused). The old row's `effectiveTo` is
+  // the day the new one starts.
+  const OLD_VERSION = '0190f3a0-0000-7000-8000-00000000d011';
+  const NEW_VERSION = '0190f3a0-0000-7000-8000-00000000d012';
+  const oldVersion: StoredVetProduct = {
+    ...tickaway,
+    id: OLD_VERSION,
+    meatWithdrawalDays: 21,
+    effectiveFrom: '2020-01-01',
+    effectiveTo: '2026-07-01',
+  };
+  const newVersion: StoredVetProduct = {
+    ...tickaway,
+    id: NEW_VERSION,
+    meatWithdrawalDays: 28,
+    effectiveFrom: '2026-07-01',
+    effectiveTo: null,
+  };
+  // Captured on 20 June, while the OLD version was in force — the device sent the OLD version's id,
+  // and that id is what a treatment event carries forever, regardless of what is in force today.
+  const doseAgainstOldVersion: StoredHealthEvent = {
+    id: '0190f3a0-0000-7000-8000-00000000f099',
+    farmId: FARM,
+    animalId: OX,
+    mobId: null,
+    kind: 'treatment',
+    occurredAt: '2026-06-20T06:00:00.000Z',
+    administeredOn: '2026-06-20',
+    productId: OLD_VERSION,
+    batchId: null,
+  };
+
+  it('resolves the EXACT version the dose was captured against, not whichever is in force today', () => {
+    // The cache holds BOTH versions (P1.3: the client no longer evicts a superseded one) — the
+    // guard must pick the OLD version's 21-day withdrawal (clears 11 July), never the NEW version's
+    // 28 days, because the dose's `productId` names a specific row, not "today's Terramycin LA".
+    const status = meatWithdrawalFor(
+      ox,
+      '2026-07-05',
+      [doseAgainstOldVersion],
+      [oldVersion, newVersion],
+    );
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBe('2026-07-11');
+  });
+
+  it('clears on the OLD version’s own date, unaffected by the new registration existing', () => {
+    const status = meatWithdrawalFor(
+      ox,
+      '2026-07-12',
+      [doseAgainstOldVersion],
+      [oldVersion, newVersion],
+    );
+    expect(status.blocked).toBe(false);
+    expect(status.clearFrom).toBe('2026-07-11');
+  });
+});
+
+describe('P1.3: a product/version missing from the local cache fails CLOSED, never clear', () => {
+  const doseAgainstUncachedProduct: StoredHealthEvent = {
+    id: '0190f3a0-0000-7000-8000-00000000f100',
+    farmId: FARM,
+    animalId: OX,
+    mobId: null,
+    kind: 'treatment',
+    occurredAt: '2026-07-20T06:00:00.000Z',
+    administeredOn: '2026-07-20',
+    productId: '0190f3a0-0000-7000-8000-00000000d099', // not in `products` below
+    batchId: null,
+  };
+
+  it('BLOCKS a disposal judged against a dose whose product this device has no record of at all', () => {
+    // The device's cache is genuinely missing this exact version — evicted, never synced, or a
+    // dose hydrated from a device ahead of this one. "Cannot say" must render as blocked, never as
+    // the animal is registered with no withdrawal (a real, different, checkable fact — see below).
+    const status = meatWithdrawalFor(ox, '2026-08-01', [doseAgainstUncachedProduct], [/* empty */]);
+    expect(status.blocked).toBe(true);
+  });
+
+  it('does NOT block on a dose whose product IS known and genuinely carries no withdrawal', () => {
+    // The contrasting case: the version is present, and its own `meatWithdrawalDays` is null. This
+    // is a real fact this device can check, not a gap — it must not be treated the same as "missing".
+    const noWithdrawalVersion: StoredVetProduct = {
+      ...tickaway,
+      id: '0190f3a0-0000-7000-8000-00000000d099',
+      meatWithdrawalDays: null,
+    };
+    const status = meatWithdrawalFor(
+      ox,
+      '2026-08-01',
+      [doseAgainstUncachedProduct],
+      [noWithdrawalVersion],
+    );
+    expect(status.blocked).toBe(false);
+    expect(status.clearFrom).toBeNull();
+  });
+
+  it('mob path: also BLOCKS rather than silently excluding the dose from the fold', () => {
+    const mobDose = { ...doseAgainstUncachedProduct, animalId: null, mobId: DIP_CAMP };
+    const status = meatWithdrawalForMob(
+      DIP_CAMP,
+      '2026-08-01',
+      [mobDose],
+      [/* empty */],
+      [],
+      [],
+      [],
+    );
+    expect(status.blocked).toBe(true);
   });
 });

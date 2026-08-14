@@ -31,8 +31,15 @@ export interface CaptureStore<T> {
    * next `append` — safe to use as a `useSyncExternalStore` snapshot.
    */
   all(): readonly T[];
-  /** Commits a record locally and notifies subscribers. Synchronous; never touches the network. */
-  append(record: T): void;
+  /**
+   * Commits a record locally and notifies subscribers; never touches the network. The returned
+   * promise resolves ONLY once the record is durably persisted — a caller (a capture screen) must
+   * await it before reporting "Saved" or advancing the flow, never before. This store's own
+   * `persist()` is synchronous storage, so the promise is already resolved by the time it is
+   * returned; the SQLite-backed sibling (`createSqliteCaptureStore`) is where this genuinely
+   * awaits an async commit.
+   */
+  append(record: T): Promise<void>;
   /** Subscribe to changes; returns an unsubscribe. The listener fires after each `append`. */
   subscribe(listener: () => void): () => void;
   /**
@@ -84,7 +91,7 @@ export function createCaptureStore<T>(options: CaptureStoreOptions): CaptureStor
       return snapshot;
     },
 
-    append(record: T): void {
+    async append(record: T): Promise<void> {
       snapshot = [...snapshot, record];
       persist(storage, key, snapshot);
       for (const listener of listeners) listener();

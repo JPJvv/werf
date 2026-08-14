@@ -99,6 +99,7 @@ export function AddAnimalScreen() {
   const [acquiredOn, setAcquiredOn] = useState(farmToday);
   const [priceRands, setPriceRands] = useState('');
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -135,9 +136,11 @@ export function AddAnimalScreen() {
     selectedSpecies === '' ||
     schemas.attributeSchemaFor(selectedSpecies).safeParse(attributes).success;
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid) return;
+    if (!selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid || saving)
+      return;
+    setSaving(true);
 
     const occurredAt =
       bought && acquiredOn !== today ? new Date(`${acquiredOn}T12:00:00.000Z`) : new Date();
@@ -157,21 +160,27 @@ export function AddAnimalScreen() {
       // rather than trawling the event log (FR-603).
       ...(bought ? { source: seller.trim(), acquiredAt: acquiredOn } : {}),
     });
-    recordAnimal(animal);
+    const saves: Promise<void>[] = [recordAnimal(animal)];
 
     // The money side (FR-106). A purchase changes no status — the animal arrived alive — so it is
     // an event about the animal, not a state it is in.
     if (bought) {
-      recordPurchase({
-        id: uuidv7(),
-        farmId: activeFarm.id,
-        animalId: animal.id,
-        occurredAt,
-        currentStatus: 'alive',
-        counterparty: seller.trim(),
-        priceCents: toCents(priceRands),
-      });
+      saves.push(
+        recordPurchase({
+          id: uuidv7(),
+          farmId: activeFarm.id,
+          animalId: animal.id,
+          occurredAt,
+          currentStatus: 'alive',
+          counterparty: seller.trim(),
+          priceCents: toCents(priceRands),
+        }),
+      );
     }
+
+    // Not "saved" until every local write is durable (P1.1) — never before, and never gated on
+    // the network, which never appears in this path.
+    await Promise.all(saves);
 
     // Kept: herd/species, sex, and the seller — a farmer buying a truckload buys them from one
     // person. Cleared: the per-animal breed and price.
@@ -183,6 +192,7 @@ export function AddAnimalScreen() {
     // carrying the last one forward would quietly stamp it on the next fifty head.
     setHornStatus('');
     setWoolClass('');
+    setSaving(false);
     setJustSaved(true);
   };
 
@@ -473,7 +483,9 @@ export function AddAnimalScreen() {
 
         <button
           type="submit"
-          disabled={!selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid}
+          disabled={
+            !selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid || saving
+          }
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
           {justSaved ? t('animals.new.another') : t('animals.new.save')}

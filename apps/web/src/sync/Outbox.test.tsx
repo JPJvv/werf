@@ -436,12 +436,15 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
       JSON.stringify([
         {
           id: '0190f3a0-0000-7000-8000-0000000000d1',
+          jurisdiction: 'ZA',
           name: 'Tickaway',
           registrationNumber: 'G4321 Act 36/1947',
           species: ['cattle'],
           meatWithdrawalDays: 28,
           milkWithdrawalHours: null,
           route: 'topical',
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
         },
       ]),
     );
@@ -625,12 +628,15 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
       JSON.stringify([
         {
           id: '0190f3a0-0000-7000-8000-0000000000d1',
+          jurisdiction: 'ZA',
           name: 'Tickaway',
           registrationNumber: 'G4321 Act 36/1947',
           species: ['sheep'],
           meatWithdrawalDays: 28,
           milkWithdrawalHours: null,
           route: 'topical',
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
         },
       ]),
     );
@@ -727,12 +733,15 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
       JSON.stringify([
         {
           id: '0190f3a0-0000-7000-8000-0000000000d2',
+          jurisdiction: 'ZA',
           name: 'Tickaway',
           registrationNumber: 'G4321 Act 36/1947',
           species: ['cattle'],
           meatWithdrawalDays: 28,
           milkWithdrawalHours: null,
           route: 'topical',
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
         },
       ]),
     );

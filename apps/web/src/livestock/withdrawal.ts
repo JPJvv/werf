@@ -536,23 +536,44 @@ function collectMobSubjects(
  * blocking. Identical to the server's comparison, deliberately.
  */
 /**
+ * ⭐ P1.3 (2026-08-14): the two ways a dose's clear date can come back UNRESOLVED are not the same
+ * fact, and collapsing them used to fail OPEN — the exact direction a food-safety boundary must
+ * not fail (`.claude/rules/frontend.md`'s "a food-safety boundary must fail toward BLOCKING").
+ *
+ *  - `known`: this device's cache holds the EXACT product version the dose was captured against
+ *    (`withdrawalDays.has(productId)`). If that version is registered with NO meat withdrawal,
+ *    `days` is `null` and the dose genuinely contributes nothing — a real, checkable fact.
+ *  - `unknown`: the cache does NOT hold that version at all — evicted, never synced, or a dose
+ *    hydrated from a device whose cache is ahead of this one's. This device cannot say whether the
+ *    animal is protected, and "cannot say" must never render as "clear".
+ */
+type ClearResult =
+  { readonly kind: 'known'; readonly clear: string | undefined } | { readonly kind: 'unknown' };
+
+/**
  * The clear date for ONE dose. `meatWithholdUntil`, when present, is the server's own resolved
  * answer (a hydrated dose) and wins outright — recomputing from a product register would be a
  * second, narrower computation of the same regulated number. Only a LOCAL preview falls through to
- * the register lookup, and only when the device recognises the product at all.
+ * the register lookup, and only when the device recognises the product VERSION at all — see
+ * `ClearResult`.
  */
 function clearDateFor(
   event: WithholdDose,
   withdrawalDays: ReadonlyMap<string, number | null>,
-): string | undefined {
-  if (event.meatWithholdUntil !== undefined) return event.meatWithholdUntil;
-  if (event.productId === undefined) return undefined;
-  const days = withdrawalDays.get(event.productId);
-  // A product the device does not know about contributes nothing. That is the honest answer —
-  // guessing a withdrawal would be inventing a regulated number — and the server still holds the
-  // real one, so the animal is protected even when this device cannot say so.
-  if (days === undefined || days === null) return undefined;
-  return withholdUntil(event.administeredOn, days);
+): ClearResult {
+  if (event.meatWithholdUntil !== undefined)
+    return { kind: 'known', clear: event.meatWithholdUntil };
+  if (event.productId === undefined) return { kind: 'known', clear: undefined };
+  if (!withdrawalDays.has(event.productId)) {
+    // This EXACT version is missing from the cache — not "registered, no withdrawal", but "this
+    // device has no evidence either way". The server still holds the real registration and still
+    // refuses what it must; this device must refuse to vouch for it as clear.
+    return { kind: 'unknown' };
+  }
+  const days = withdrawalDays.get(event.productId)!;
+  // A KNOWN version with no meat withdrawal is a real, checkable fact — not a gap.
+  if (days === null) return { kind: 'known', clear: undefined };
+  return { kind: 'known', clear: withholdUntil(event.administeredOn, days) };
 }
 
 function latestClearAcross(
@@ -563,14 +584,22 @@ function latestClearAcross(
   const withdrawalDays = new Map(products.map((p) => [p.id, p.meatWithdrawalDays]));
 
   let latest: string | undefined;
+  let unresolved = false;
   for (const event of events) {
     // The day bound, before anything else: this is not about which product it was.
     if (event.administeredOn > disposalOn) continue;
-    const clear = clearDateFor(event, withdrawalDays);
-    if (clear === undefined) continue;
-    if (latest === undefined || clear > latest) latest = clear;
+    const result = clearDateFor(event, withdrawalDays);
+    if (result.kind === 'unknown') {
+      // Fail closed: a dose this device cannot resolve must block, never be silently excluded from
+      // the fold as if it never happened.
+      unresolved = true;
+      continue;
+    }
+    if (result.clear === undefined) continue;
+    if (latest === undefined || result.clear > latest) latest = result.clear;
   }
 
+  if (unresolved) return { clearFrom: latest ?? null, blocked: true };
   return {
     clearFrom: latest ?? null,
     blocked: isWithinWithdrawal(latest, disposalOn),

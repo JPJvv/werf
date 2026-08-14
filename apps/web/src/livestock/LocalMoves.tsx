@@ -56,7 +56,7 @@ export type MoveStoreFactory = (key: string) => MoveStore;
 
 const defaultFactory: MoveStoreFactory = (key) =>
   createSqliteCaptureStore<StoredMove>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -112,11 +112,11 @@ export function useMovesHydrationFailed(): boolean {
  * the network (NFR-007). A farmer walks a mob, not an animal, so the group is the unit here and a
  * single-animal move is simply a group of one.
  */
-export function useRecordMoves(): (moves: readonly StoredMove[]) => void {
+export function useRecordMoves(): (moves: readonly StoredMove[]) => Promise<void> {
   const store = useMoveStore();
   return useCallback(
-    (moves) => {
-      for (const move of moves) store.append(move);
+    async (moves) => {
+      await Promise.all(moves.map((move) => store.append(move)));
     },
     [store],
   );

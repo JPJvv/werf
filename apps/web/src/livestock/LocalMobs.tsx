@@ -31,7 +31,7 @@ export type MobStoreFactory = (key: string) => MobStore;
 
 const defaultFactory: MobStoreFactory = (key) =>
   createSqliteCaptureStore<StoredMob>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -79,8 +79,9 @@ export function useMobsHydrationFailed(): boolean {
   return useSyncExternalStore(store.subscribe, store.hydrationFailed);
 }
 
-/** Commit a mob to the local register. Synchronous; never awaits the network (NFR-007). */
-export function useRecordMob(): (mob: StoredMob) => void {
+/** Commit a mob to the local register. Never awaits the network (NFR-007); the returned promise
+ *  resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordMob(): (mob: StoredMob) => Promise<void> {
   const store = useMobStore();
   return useCallback((mob) => store.append(mob), [store]);
 }

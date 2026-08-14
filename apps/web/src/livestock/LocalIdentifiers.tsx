@@ -31,7 +31,7 @@ export type IdentifierStoreFactory = (key: string) => IdentifierStore;
 
 const defaultFactory: IdentifierStoreFactory = (key) =>
   createSqliteCaptureStore<StoredIdentifier>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -115,8 +115,9 @@ export function useTakenValues(): ReadonlySet<string> {
   );
 }
 
-/** Commit an identifier to the local register. Synchronous; never awaits the network (NFR-007). */
-export function useRecordIdentifier(): (identifier: StoredIdentifier) => void {
+/** Commit an identifier to the local register. Never awaits the network (NFR-007); the returned
+ *  promise resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordIdentifier(): (identifier: StoredIdentifier) => Promise<void> {
   const store = useIdentifierStore();
   return useCallback((identifier) => store.append(identifier), [store]);
 }

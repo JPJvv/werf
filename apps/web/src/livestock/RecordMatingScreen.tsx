@@ -70,6 +70,7 @@ export function RecordMatingScreen() {
   const [bullInAt, setBullInAt] = useState(() => farmToday());
   const [bullOutAt, setBullOutAt] = useState('');
   const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const dam = useMemo(() => dams.find((a) => a.id === damId), [dams, damId]);
 
@@ -85,9 +86,10 @@ export function RecordMatingScreen() {
     windowIsBackwards ||
     (external && sireCode.trim() === '');
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (blocked || !dam) return;
+    if (blocked || !dam || saving) return;
+    setSaving(true);
 
     // The event sits at the EARLIEST day the service could have happened. For a window that is
     // bull-in: an append-only event placed at the start of the exposure never claims something
@@ -95,7 +97,8 @@ export function RecordMatingScreen() {
     // on the payload — which is the whole reason they are there.
     const anchorDay = timing === 'day' ? servedOn : bullInAt;
 
-    recordBreeding({
+    // Not "saved" until the local write is durable (P1.1).
+    await recordBreeding({
       id: uuidv7(),
       kind: 'mating',
       farmId: activeFarm.id,
@@ -112,6 +115,7 @@ export function RecordMatingScreen() {
     setDamId('');
     setSireChoice('');
     setSireCode('');
+    setSaving(false);
   };
 
   return (
@@ -319,7 +323,7 @@ export function RecordMatingScreen() {
 
           <button
             type="submit"
-            disabled={blocked}
+            disabled={blocked || saving}
             className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
           >
             {t('mating.save')}

@@ -14,9 +14,16 @@
  *     reference-classified table; this endpoint is the Phase 2 stand-in, and the client above it
  *     does not change when that happens.
  *
- * Only rows IN FORCE are returned. A registration that has been superseded still matters for
- * reading old events — the withdrawal that applied is the one stored on the event (ADR-0005) — but
- * it must not be offered as something to select today.
+ * ⭐ P1.3 (2026-08-14): `listVeterinaryProducts` returns EVERY version for the jurisdiction when
+ * `onDay` is omitted, not just today's. A superseded registration still matters for two things the
+ * device does offline: resolving the clear date of a treatment captured against it (the withdrawal
+ * that applied is the one in force ON THE TREATMENT DAY, ADR-0005 — a device that evicted the old
+ * row could not preview that date, or worse, could not tell "registered with no withdrawal" apart
+ * from "I have never heard of this product" and pass it as clear) and letting a farmer catching up
+ * after a fortnight offline select the version that was actually in force on the day they are
+ * capturing FOR, not the version in force today. `onDay`, when given, still narrows to what was in
+ * force on that one day — used by nothing today but kept and tested, since a caller that only ever
+ * needs one day's answer should not have to filter a whole jurisdiction's history client-side.
  */
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -25,7 +32,6 @@ import { farms, speciesGestation, veterinaryProducts, type AppDb } from '@werf/d
 import { NotFoundError } from '@werf/core';
 import { APP_DB } from '../db/db.module';
 import { assertCanCapture, type CaptureTx } from '../common/event-capture';
-import { farmToday } from '../common/farm-time';
 
 /** What the client is given: everything it needs to select a product and show a clear date. */
 const productProjection = {
@@ -65,15 +71,15 @@ export class ReferenceService {
   constructor(@Inject(APP_DB) private readonly app: AppDb) {}
 
   /**
-   * The veterinary products a farm may record a treatment against (FR-131), for the farm's
-   * jurisdiction and in force on the given day.
+   * The veterinary products a farm may resolve a treatment against (FR-131), for the farm's
+   * jurisdiction — every version ever registered when `onDay` is omitted (see this class's
+   * header), or only the one in force on `onDay` when it is given.
    *
-   * `onDay` is a parameter rather than `now()` for the same reason every regulated lookup is: a
-   * client catching up after a fortnight offline is selecting for the day the treatment HAPPENED,
-   * not for today. It defaults to today only because the common case is a device refreshing its
-   * cache before it is used — and that default is resolved HERE, after the jurisdiction is known,
-   * so it is today ON THE FARM. Defaulting it in the controller meant `toISOString().slice(0, 10)`,
-   * which between 00:00 and 02:00 SAST names yesterday and resolves the register a day early.
+   * `onDay`, when given, is a parameter rather than `now()` for the same reason every regulated
+   * lookup is: a client catching up after a fortnight offline may be asking for the day a
+   * treatment HAPPENED, not for today. Resolved HERE, after the jurisdiction is known, so a caller
+   * that does pass "today" means today ON THE FARM — the controller must never default it itself
+   * (`toISOString().slice(0, 10)` between 00:00 and 02:00 SAST names yesterday).
    */
   async listVeterinaryProducts(
     userId: string,
@@ -86,19 +92,21 @@ export class ReferenceService {
       // jurisdiction comes from a farm the caller must actually be on.
       await assertCanCapture(tx, userId, farmId);
       const jurisdiction = await farmJurisdiction(tx, farmId);
-      const day = onDay ?? farmToday(jurisdiction);
+      const jurisdictionFilter = eq(veterinaryProducts.jurisdiction, jurisdiction);
+      const where =
+        onDay === undefined
+          ? jurisdictionFilter
+          : and(
+              jurisdictionFilter,
+              lte(veterinaryProducts.effectiveFrom, onDay),
+              or(isNull(veterinaryProducts.effectiveTo), gt(veterinaryProducts.effectiveTo, onDay)),
+            );
 
       return tx
         .select(productProjection)
         .from(veterinaryProducts)
-        .where(
-          and(
-            eq(veterinaryProducts.jurisdiction, jurisdiction),
-            lte(veterinaryProducts.effectiveFrom, day),
-            or(isNull(veterinaryProducts.effectiveTo), gt(veterinaryProducts.effectiveTo, day)),
-          ),
-        )
-        .orderBy(veterinaryProducts.name);
+        .where(where)
+        .orderBy(veterinaryProducts.name, veterinaryProducts.effectiveFrom);
     });
   }
 

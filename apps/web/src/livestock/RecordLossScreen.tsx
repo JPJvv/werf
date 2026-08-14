@@ -127,6 +127,7 @@ export function RecordLossScreen() {
   const [locating, setLocating] = useState(false);
   const [fixFailed, setFixFailed] = useState<FixFailure | null>(null);
   const [lastSaved, setLastSaved] = useState<SavedSummary | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -184,6 +185,16 @@ export function RecordLossScreen() {
     labels.get(animal.id) ?? speciesLabel(t, animal.species);
 
   const save = async () => {
+    if (!selected || saving) return;
+    setSaving(true);
+    try {
+      await saveOutcome();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveOutcome = async () => {
     if (!selected) return;
     const base = {
       id: uuidv7(),
@@ -197,7 +208,7 @@ export function RecordLossScreen() {
 
     if (outcome === 'died') {
       if (cause.trim().length === 0) return;
-      recordDeath({ ...base, cause: cause.trim() });
+      await recordDeath({ ...base, cause: cause.trim() });
     } else if (outcome === 'slaughtered') {
       if (withheld) return;
       // The cause is the act itself, so nothing is asked for: standing at a carcass with gloves on,
@@ -207,14 +218,14 @@ export function RecordLossScreen() {
       // English device and "Geslag" from an Afrikaans one into a register a residue traceback or an
       // export auditor reads — farmer-facing copy leaking into the data, which is the mirror of the
       // defect that put raw English in front of the farmer. The machine-readable fact is the flag.
-      recordDeath({ ...base, cause: SLAUGHTER_CAUSE, slaughtered: true });
+      await recordDeath({ ...base, cause: SLAUGHTER_CAUSE, slaughtered: true });
     } else if (outcome === 'sold') {
       if (counterparty.trim().length === 0 || !priceIsValid(priceRands)) return;
       // The same backstop the slaughter branch carries, and for the same reason: `canSave` is what
       // the farmer sees, this is what the code guarantees. A sale is a route into the food chain
       // exactly as a slaughter is, and it had no second line.
       if (withheld || disposalDay === '') return;
-      recordSale({
+      await recordSale({
         ...base,
         counterparty: counterparty.trim(),
         priceCents: toCents(priceRands),
@@ -233,7 +244,7 @@ export function RecordLossScreen() {
         setFixFailed(fix.reason);
         return;
       }
-      recordMissing({
+      await recordMissing({
         ...base,
         // The day the farmer gave, not today: a missing report is filed after the fact, and a
         // theft dated to the day it was noticed is a theft dated wrong.
@@ -245,6 +256,7 @@ export function RecordLossScreen() {
       return;
     }
 
+    // Not "saved" until the local write is durable (P1.1) — every branch above is awaited first.
     setLastSaved({ what: nameOf(selected), outcome });
     reset();
   };
@@ -535,7 +547,7 @@ export function RecordLossScreen() {
                 <button
                   type="submit"
                   className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
-                  disabled={!canSave}
+                  disabled={!canSave || saving}
                 >
                   {locating
                     ? t('loss.locating')

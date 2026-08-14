@@ -95,12 +95,15 @@ function seedDip(): void {
     JSON.stringify([
       {
         id: PRODUCT_ID,
+        jurisdiction: 'ZA',
         name: 'Tickaway',
         registrationNumber: 'G4321 Act 36/1947',
         species: ['sheep'],
         meatWithdrawalDays: 28,
         milkWithdrawalHours: null,
         route: 'topical',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
       },
     ]),
   );

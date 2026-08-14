@@ -104,7 +104,7 @@ export type TallyStoreFactory = (key: string) => TallyStore;
 
 const defaultFactory: TallyStoreFactory = (key) =>
   createSqliteCaptureStore<StoredTally>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -162,7 +162,7 @@ export function useTalliesHydrationFailed(): boolean {
  * refusal to take more head out than the group has — so a bad capture throws before it can enter
  * the append-only log, and the screen shows the domain's own message rather than inventing one.
  */
-export function useRecordTally(): (capture: TallyCapture) => void {
+export function useRecordTally(): (capture: TallyCapture) => Promise<void> {
   const record = useRecordTallies();
   return useCallback((c) => record([c]), [record]);
 }
@@ -180,12 +180,12 @@ export function useRecordTally(): (capture: TallyCapture) => void {
  * A capture store cannot roll back: it is append-only on purpose, because it holds a farmer's work.
  * So the only place to be atomic is BEFORE the first append.
  */
-export function useRecordTallies(): (captures: readonly TallyCapture[]) => void {
+export function useRecordTallies(): (captures: readonly TallyCapture[]) => Promise<void> {
   const store = useTallyStore();
   return useCallback(
-    (captures) => {
+    async (captures) => {
       const built = captures.map((c) => ({ c, event: buildTally(c) }));
-      for (const { c, event } of built) appendTally(store, c, event);
+      await Promise.all(built.map(({ c, event }) => appendTally(store, c, event)));
     },
     [store],
   );
@@ -228,14 +228,14 @@ function buildTally(c: TallyCapture) {
   return event;
 }
 
-/** The append, once every capture in the act has been proved buildable. */
+/** The append, once every capture in the act has been proved buildable. Resolves once durable. */
 function appendTally(
   store: TallyStore,
   c: TallyCapture,
   event: ReturnType<typeof buildTally>,
-): void {
+): Promise<void> {
   const payload = event.payload as { delta?: number; countedHead?: number };
-  store.append({
+  return store.append({
     id: c.id,
     farmId: c.farmId,
     mobId: c.mobId,

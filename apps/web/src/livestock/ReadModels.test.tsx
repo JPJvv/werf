@@ -164,12 +164,15 @@ describe('the home grid as an instrument (FR-017)', () => {
       JSON.stringify([
         {
           id: PRODUCT_ID,
+          jurisdiction: 'ZA',
           name: 'Terramycin LA',
           registrationNumber: null,
           species: ['cattle'],
           meatWithdrawalDays: 28,
           milkWithdrawalHours: null,
           route: null,
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
         },
       ]),
     );

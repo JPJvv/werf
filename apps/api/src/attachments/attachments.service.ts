@@ -133,6 +133,23 @@ export class AttachmentsService {
         }
 
         stored = existing;
+
+        // ⭐ P1.2: a LATE RETRY REVIVES the row atomically, in this same transaction, BEFORE a
+        // fresh presign is ever issued. The orphan sweep (`attachment-orphan-sweep.service.ts`)
+        // soft-deletes a `pending` row it believes abandoned — but that row can still be
+        // genuinely mid-flight on a device that was only offline, never gone, and this create
+        // call finding it here (matching content, matching id) IS that device's proof of life.
+        // Without reviving here, a row that goes on to finalise successfully stays permanently
+        // `deleted_at`-tombstoned — invisible to every canonical/sync read path that filters on
+        // it, despite the API reporting a normal 2xx the whole way through.
+        if (stored.deletedAt !== null) {
+          const [revived] = await tx
+            .update(attachments)
+            .set({ deletedAt: null, updatedAt: sql`clock_timestamp()` })
+            .where(and(eq(attachments.id, stored.id), eq(attachments.farmId, input.farmId)))
+            .returning(attachmentProjection);
+          stored = revived!;
+        }
       }
 
       // A row already finalised has nothing left to upload — a retried create for an id whose
@@ -200,6 +217,17 @@ export class AttachmentsService {
         throw new ValidationError('Uploaded object checksum does not match the captured checksum');
       }
 
+      // ⭐ P1.2: the TOCTOU race this closes — the orphan sweep can claim (soft-delete) this exact
+      // row and release its object BETWEEN the `headObject` read above and this write. Gating the
+      // UPDATE on `status = 'pending' AND deleted_at IS NULL` makes the two writers mutually
+      // exclusive at the database, not merely unlikely to overlap: Postgres serialises concurrent
+      // UPDATEs to the same row, and whichever of this statement or the sweep's own conditional
+      // UPDATE (`attachment-orphan-sweep.service.ts`) commits first is the one whose WHERE clause
+      // the other re-evaluates against — so at most one of {finalised, deleted} can ever become
+      // true for a given row, never both. A 0-row result here means the sweep won; it is reported
+      // as a refusal so the client's own retry (a fresh `createAttachment`, which revives the row)
+      // gets "a genuine second hearing" next flush round (Outbox.tsx) — never a permanent loss,
+      // because the client still holds the blob locally until finalize actually succeeds (3i(c)).
       const [finalized] = await tx
         .update(attachments)
         .set({
@@ -210,9 +238,55 @@ export class AttachmentsService {
           // gate caught. Keep one clock domain and guarantee this state transition is observable.
           updatedAt: sql`GREATEST(${attachments.updatedAt} + interval '1 millisecond', clock_timestamp())`,
         })
-        .where(and(eq(attachments.id, input.id), eq(attachments.farmId, input.farmId)))
+        .where(
+          and(
+            eq(attachments.id, input.id),
+            eq(attachments.farmId, input.farmId),
+            eq(attachments.status, 'pending'),
+            isNull(attachments.deletedAt),
+          ),
+        )
         .returning(attachmentProjection);
-      return finalized!;
+
+      if (!finalized) {
+        // Lost the race to the orphan sweep: the object this `headObject` just confirmed may
+        // already be gone by now. Refuse rather than report success for a row this transaction
+        // can no longer vouch for.
+        throw new ConflictError(
+          'This upload was reclaimed for cleanup before it could be finalised — retry the upload',
+        );
+      }
+      return finalized;
+    });
+  }
+
+  /**
+   * P2.5: a short-lived presigned GET for one of the caller's OWN finalised attachments — the
+   * secure read path this pipeline never had (3i(c) built the write side only). `assertCanCapture`
+   * proves farm membership through the RLS-bound connection first, exactly as `createAttachment`
+   * does; only THEN is a presigned URL issued, so a foreign or not-yet-finalised attachment is
+   * refused before this ever reaches object storage.
+   */
+  async getDownloadUrl(
+    userId: string,
+    input: schemas.AttachmentDownloadRequest,
+  ): Promise<schemas.AttachmentDownloadUrl> {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+
+      const [row] = await tx
+        .select(attachmentProjection)
+        .from(attachments)
+        .where(and(eq(attachments.id, input.id), eq(attachments.farmId, input.farmId)));
+      if (!row || row.deletedAt !== null) throw new NotFoundError('Attachment not found');
+      // Not yet finalised = nothing durable to read back. `headObject`/`getObject` would either
+      // find nothing or find bytes this row has not yet verified — refusing here is the same
+      // "do not vouch for what has not been confirmed" discipline `finalizeAttachment` itself uses.
+      if (row.status !== 'finalised' || row.objectKey === null) {
+        throw new ConflictError('This attachment has not finished uploading yet');
+      }
+
+      return this.storage.presignGet(row.objectKey);
     });
   }
 }

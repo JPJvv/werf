@@ -52,7 +52,7 @@ export type RainfallStoreFactory = (key: string) => RainfallStore;
 
 const defaultFactory: RainfallStoreFactory = (key) =>
   createSqliteCaptureStore<StoredRainfall>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -109,7 +109,7 @@ export function useRainfallHydrationFailed(): boolean {
  * bad reading throws here rather than entering the append-only log; only then is the JSON-safe
  * projection persisted.
  */
-export function useRecordRainfall(): (capture: RainfallCapture) => void {
+export function useRecordRainfall(): (capture: RainfallCapture) => Promise<void> {
   const store = useRainfallStore();
   return useCallback(
     (capture) => {
@@ -120,7 +120,7 @@ export function useRecordRainfall(): (capture: RainfallCapture) => void {
         mm: capture.mm,
         ...(capture.gauge === undefined ? {} : { gauge: capture.gauge }),
       });
-      store.append({
+      return store.append({
         id: capture.id,
         farmId: capture.farmId,
         mm: capture.mm,

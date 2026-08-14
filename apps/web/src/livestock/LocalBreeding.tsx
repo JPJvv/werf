@@ -93,7 +93,7 @@ export type BreedingStoreFactory = (key: string) => BreedingStore;
 
 const defaultFactory: BreedingStoreFactory = (key) =>
   createSqliteCaptureStore<StoredBreedingEvent>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -151,11 +151,11 @@ export function useBreedingEventsHydrationFailed(): boolean {
  * tested — so there is no batch here and adding one would be inventing a grouping the work does
  * not have.
  */
-export function useRecordBreeding(): (event: StoredBreedingEvent) => void {
+export function useRecordBreeding(): (event: StoredBreedingEvent) => Promise<void> {
   const store = useBreedingStore();
   return useCallback(
     (event) => {
-      store.append(event);
+      return store.append(event);
     },
     [store],
   );

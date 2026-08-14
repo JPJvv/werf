@@ -53,6 +53,7 @@ export function AddMobScreen() {
   const [head, setHead] = useState('');
   const [campId, setCampId] = useState('');
   const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -64,9 +65,10 @@ export function AddMobScreen() {
   const count = headCount(head);
   const blocked = name.trim() === '' || count === null || species === '';
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (blocked) return;
+    if (blocked || saving) return;
+    setSaving(true);
 
     const mob = schemas.newMobSchema.parse({
       id: uuidv7(),
@@ -81,11 +83,13 @@ export function AddMobScreen() {
       initialHeadCount: count,
       landUnitId: campId === '' ? null : campId,
     });
-    recordMob(mob);
+    // Not "saved" until the local write is durable (P1.1).
+    await recordMob(mob);
 
     setJustSaved(mob.name);
     setName('');
     setHead('');
+    setSaving(false);
   };
 
   const edit = (setter: (value: string) => void) => (value: string) => {
@@ -195,7 +199,7 @@ export function AddMobScreen() {
 
           <button
             type="submit"
-            disabled={blocked}
+            disabled={blocked || saving}
             className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
           >
             {species === ''

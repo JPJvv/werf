@@ -80,12 +80,15 @@ function seedProducts(meatWithdrawalDays: number | null): void {
     JSON.stringify([
       {
         id: PRODUCT_ID,
+        jurisdiction: 'ZA',
         name: 'Terramycin LA',
         registrationNumber: 'G1234 Act 36/1947',
         species: ['cattle'],
         meatWithdrawalDays,
         milkWithdrawalHours: 96,
         route: 'intramuscular',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
       },
     ]),
   );

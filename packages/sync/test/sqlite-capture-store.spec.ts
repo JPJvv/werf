@@ -20,6 +20,7 @@ import {
 import {
   createFakeLocalDatabase,
   resetPersistenceRetryCoordinatorForTesting,
+  resetHydrationRetryCoordinatorForTesting,
 } from '../src/testing';
 import type { LocalDatabase } from '../src/local-database';
 
@@ -28,7 +29,10 @@ interface Animal {
   species: string;
 }
 
-afterEach(() => resetPersistenceRetryCoordinatorForTesting());
+afterEach(() => {
+  resetPersistenceRetryCoordinatorForTesting();
+  resetHydrationRetryCoordinatorForTesting();
+});
 
 /** An in-memory stand-in for localStorage — the migration's read-only source. */
 function memoryStorage(initial: Record<string, string> = {}): SessionStorageLike {
@@ -59,7 +63,7 @@ describe('the SQLite-backed capture store', () => {
     const getItemSpy = vi.spyOn(legacyStorage, 'getItem');
 
     const first = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -69,7 +73,7 @@ describe('the SQLite-backed capture store', () => {
 
     getItemSpy.mockClear();
     const second = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -90,7 +94,7 @@ describe('the SQLite-backed capture store', () => {
     });
 
     const store = createSqliteCaptureStore<Animal>({
-      database: dbPromise,
+      database: () => dbPromise,
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -121,7 +125,7 @@ describe('the SQLite-backed capture store', () => {
     const db = createFakeLocalDatabase() as unknown as LocalDatabase;
     const legacyStorage = memoryStorage();
     const store = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -165,7 +169,7 @@ describe('the SQLite-backed capture store', () => {
     );
 
     const store = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage: memoryStorage(),
     });
@@ -198,7 +202,7 @@ describe('the SQLite-backed capture store', () => {
     const legacyStorage = memoryStorage({ 'herd:farm-a': '{ not json' });
 
     const store = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -221,7 +225,7 @@ describe('the SQLite-backed capture store', () => {
     const typedDb = db as unknown as LocalDatabase;
 
     const interrupted = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(typedDb),
+      database: () => Promise.resolve(typedDb),
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -238,7 +242,7 @@ describe('the SQLite-backed capture store', () => {
 
     // Retry — legacy storage was never touched by the failed attempt, so it is still there.
     const retried = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(typedDb),
+      database: () => Promise.resolve(typedDb),
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -262,12 +266,12 @@ describe('the SQLite-backed capture store', () => {
     });
 
     const first = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage,
     });
     const second = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage,
     });
@@ -287,7 +291,7 @@ describe('the SQLite-backed capture store', () => {
   it('gives each subscriber the same stable snapshot until the next real change', async () => {
     const db = createFakeLocalDatabase() as unknown as LocalDatabase;
     const store = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db),
+      database: () => Promise.resolve(db),
       key: 'herd:farm-a',
       legacyStorage: memoryStorage(),
     });
@@ -307,7 +311,7 @@ describe('the SQLite-backed capture store', () => {
       throw new Error('QuotaExceededError');
     };
     const store = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db as unknown as LocalDatabase),
+      database: () => Promise.resolve(db as unknown as LocalDatabase),
       key: 'herd:farm-a',
       legacyStorage: memoryStorage(),
     });
@@ -339,7 +343,7 @@ describe('the SQLite-backed capture store', () => {
       const typedDb = db as unknown as LocalDatabase;
 
       const first = createSqliteCaptureStore<Animal>({
-        database: Promise.resolve(typedDb),
+        database: () => Promise.resolve(typedDb),
         key: 'herd:farm-a',
         legacyStorage: memoryStorage(),
       });
@@ -375,7 +379,7 @@ describe('the SQLite-backed capture store', () => {
       // SAME backing, exactly as a fresh page load re-hydrates from OPFS. Nothing in the first
       // store's in-memory state carries over.
       const secondBoot = createSqliteCaptureStore<Animal>({
-        database: Promise.resolve(typedDb),
+        database: () => Promise.resolve(typedDb),
         key: 'herd:farm-a',
         legacyStorage: memoryStorage(),
       });
@@ -392,7 +396,7 @@ describe('the SQLite-backed capture store', () => {
       resolveDb = resolve;
     });
     const store = createSqliteCaptureStore<Animal>({
-      database: dbPromise,
+      database: () => dbPromise,
       key: 'herd:farm-a',
       legacyStorage: memoryStorage(),
     });
@@ -407,7 +411,7 @@ describe('the SQLite-backed capture store', () => {
 
   it('hydrationFailed() stays false on a normal, successful hydration', async () => {
     const store = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(createFakeLocalDatabase() as unknown as LocalDatabase),
+      database: () => Promise.resolve(createFakeLocalDatabase() as unknown as LocalDatabase),
       key: 'herd:farm-a',
       legacyStorage: memoryStorage(),
     });
@@ -432,7 +436,7 @@ describe('the SQLite-backed capture store', () => {
       };
       const typedDb = db as unknown as LocalDatabase;
       const store = createSqliteCaptureStore<Animal>({
-        database: Promise.resolve(typedDb),
+        database: () => Promise.resolve(typedDb),
         key: 'close:farm-close',
         legacyStorage: memoryStorage(),
       });
@@ -459,6 +463,113 @@ describe('the SQLite-backed capture store', () => {
     }
   });
 
+  // P1.1: `append()` must not report durability until the SQLite INSERT has actually committed.
+  // A capture screen awaits this promise before showing "Saved" or advancing — proving the promise
+  // does not resolve until the row is actually in `capture_records` is what makes that safe.
+  it('[P1.1] append() resolves only once the record is durably persisted, never before', async () => {
+    const db = createFakeLocalDatabase() as unknown as LocalDatabase;
+    const store = createSqliteCaptureStore<Animal>({
+      database: () => Promise.resolve(db),
+      key: 'herd:farm-a',
+      legacyStorage: memoryStorage(),
+    });
+    await waitForHydration(store);
+
+    await store.append({ id: '1', species: 'cattle' });
+
+    // By the time the promise resolves, the row is already durable — no further ticks needed.
+    const rows = await (db as unknown as ReturnType<typeof createFakeLocalDatabase>).getAll<{
+      payload_json: string;
+    }>('SELECT payload_json FROM capture_records WHERE store_key = ?', ['herd:farm-a']);
+    expect(rows.map((row) => (JSON.parse(row.payload_json) as Animal).id)).toContain('1');
+  });
+
+  // P1.1: an append() made while quota pressure is blocking every INSERT must not resolve — and
+  // therefore a screen awaiting it must not show "Saved" — until a retry actually lands the row.
+  it('[P1.1] append() stays pending through quota pressure and resolves only once the retry succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      const db = createFakeLocalDatabase();
+      let quotaExceeded = true;
+      const realExecute = db.execute.bind(db);
+      db.execute = async (sql: string, params?: readonly unknown[]) => {
+        if (quotaExceeded && sql.startsWith('INSERT OR REPLACE INTO capture_records')) {
+          throw new Error('QuotaExceededError');
+        }
+        return realExecute(sql, params);
+      };
+      const typedDb = db as unknown as LocalDatabase;
+      const store = createSqliteCaptureStore<Animal>({
+        database: () => Promise.resolve(typedDb),
+        key: 'herd:farm-a',
+        legacyStorage: memoryStorage(),
+      });
+      await waitForHydration(store);
+
+      let resolved = false;
+      const appended = store.append({ id: '1', species: 'cattle' }).then(() => {
+        resolved = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(resolved).toBe(false); // quota still full — must not have reported durable yet
+
+      quotaExceeded = false;
+      await vi.advanceTimersByTimeAsync(PERSIST_RETRY_INTERVAL_MS);
+      await appended;
+      expect(resolved).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // P1.1: a database that fails to open (OPFS busy, a migration throws, the SELECT itself throws)
+  // must keep retrying the OPEN itself, not just a record already known to be past that point — a
+  // capture made during the failure window must eventually become durable without a page reload.
+  it('[P1.1] a failed database open is retried, and appends made during the failure become durable once it recovers', async () => {
+    vi.useFakeTimers();
+    try {
+      let attempt = 0;
+      const real = createFakeLocalDatabase();
+      const typedReal = real as unknown as LocalDatabase;
+      const flaky = (): Promise<LocalDatabase> => {
+        attempt += 1;
+        if (attempt < 3) return Promise.reject(new Error('OPFS temporarily unavailable'));
+        return Promise.resolve(typedReal);
+      };
+
+      const store = createSqliteCaptureStore<Animal>({
+        database: flaky,
+        key: 'herd:farm-a',
+        legacyStorage: memoryStorage(),
+      });
+      await waitForHydration(store);
+      expect(store.hydrationFailed()).toBe(true);
+
+      let resolved = false;
+      const appended = store.append({ id: 'recovered', species: 'cattle' }).then(() => {
+        resolved = true;
+      });
+      expect(store.all()).toEqual([{ id: 'recovered', species: 'cattle' }]); // reactive immediately
+      expect(resolved).toBe(false); // not durable yet — the database still will not open
+
+      // Two more retry ticks: attempt 2 (still fails), attempt 3 (the database opens).
+      await vi.advanceTimersByTimeAsync(PERSIST_RETRY_INTERVAL_MS);
+      await vi.advanceTimersByTimeAsync(PERSIST_RETRY_INTERVAL_MS);
+      await appended;
+
+      expect(resolved).toBe(true);
+      expect(store.hydrationFailed()).toBe(false); // recovered — a consumer can trust it again
+      const rows = await real.getAll<{ payload_json: string }>(
+        'SELECT payload_json FROM capture_records WHERE store_key = ?',
+        ['herd:farm-a'],
+      );
+      expect(rows.map((row) => (JSON.parse(row.payload_json) as Animal).id)).toEqual(['recovered']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('settled() also flips true on a FAILED hydration — a waiter must not hang forever', async () => {
     // A consumer waiting on settled() to decide whether it is safe to act on this store's `all()`
     // (Outbox.tsx's flush, most of all) must eventually get an answer even when hydration itself
@@ -469,7 +580,7 @@ describe('the SQLite-backed capture store', () => {
       throw new Error('simulated: database will not open');
     };
     const store = createSqliteCaptureStore<Animal>({
-      database: Promise.resolve(db as unknown as LocalDatabase),
+      database: () => Promise.resolve(db as unknown as LocalDatabase),
       key: 'herd:farm-a',
       legacyStorage: memoryStorage(),
     });

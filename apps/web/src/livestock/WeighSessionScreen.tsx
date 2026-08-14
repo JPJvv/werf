@@ -48,6 +48,7 @@ export function WeighSessionScreen() {
   const [kg, setKg] = useState('');
   const [savedCount, setSavedCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<SavedSummary | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const animal = animals[index];
   // Read every render for the animal in front of us; at save time this is its readings so far.
@@ -73,8 +74,9 @@ export function WeighSessionScreen() {
     setIndex((i) => i + 1);
   };
 
-  const save = () => {
-    if (!animal || !canSave) return;
+  const save = async () => {
+    if (!animal || !canSave || saving) return;
+    setSaving(true);
     const now = new Date();
 
     // Growth since the most recent prior reading for this animal (FR-141), if any. A same-instant
@@ -91,7 +93,9 @@ export function WeighSessionScreen() {
       }
     }
 
-    record({
+    // Not "saved" until the local write is durable (P1.1) — never before, never gated on the
+    // network, which never appears in this path.
+    await record({
       id: uuidv7(),
       farmId: activeFarm.id,
       animalId: animal.id,
@@ -102,6 +106,7 @@ export function WeighSessionScreen() {
 
     setLastSaved(adg === undefined ? { kg: value } : { kg: value, adg });
     setSavedCount((n) => n + 1);
+    setSaving(false);
     advance();
   };
 
@@ -175,7 +180,7 @@ export function WeighSessionScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             <div className="mb-6 flex flex-col">
@@ -196,7 +201,7 @@ export function WeighSessionScreen() {
 
             <button
               type="submit"
-              disabled={!canSave}
+              disabled={!canSave || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {t('weigh.save')}

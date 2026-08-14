@@ -183,6 +183,31 @@ describe('the veterinary product register (FR-131)', () => {
     expect(before[0]!.meatWithdrawalDays).toBe(21);
   });
 
+  it('[P1.3] returns EVERY version for the jurisdiction when no day is given, not just today’s', async () => {
+    // The device's own cache refresh (referenceApi.listVeterinaryProducts) never sends `onDay` — it
+    // needs the whole history so a treatment captured against a SUPERSEDED registration can still
+    // resolve its clear date, and so a farmer back-dating a capture can select the version that was
+    // actually in force on the day being captured, not today's.
+    const a = await tenant('AllVersions');
+    await aProduct({
+      name: 'Terramycin LA',
+      effectiveFrom: '2020-01-01',
+      effectiveTo: '2026-04-01',
+      meatWithdrawalDays: 21,
+    });
+    await aProduct({
+      name: 'Terramycin LA',
+      effectiveFrom: '2026-04-01',
+      meatWithdrawalDays: 28,
+    });
+
+    const all = await service.listVeterinaryProducts(a.userId, a.farmId);
+
+    expect(all).toHaveLength(2);
+    expect(all.map((p) => p.meatWithdrawalDays).sort()).toEqual([21, 28]);
+    expect(all.every((p) => p.effectiveFrom !== null)).toBe(true);
+  });
+
   it('refuses a stranger as "no such farm" rather than answering for it', async () => {
     const a = await tenant('Ref');
     const b = await tenant('Other');

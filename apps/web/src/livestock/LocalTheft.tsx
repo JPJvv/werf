@@ -79,7 +79,7 @@ export type TheftStoreFactory = (key: string) => TheftStore;
 
 const defaultFactory: TheftStoreFactory = (key) =>
   createSqliteCaptureStore<StoredTheftIncident>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -139,7 +139,7 @@ export function useTheftIncidentsHydrationFailed(): boolean {
  * evidence and can fix it, rather than days later in a flush nobody is watching. It is also what
  * structurally enforces the no-suspect contract on the way in.
  */
-export function useReportTheft(): (capture: TheftIncidentCapture) => void {
+export function useReportTheft(): (capture: TheftIncidentCapture) => Promise<void> {
   const store = useTheftStore();
   return useCallback(
     (capture) => {
@@ -160,7 +160,7 @@ export function useReportTheft(): (capture: TheftIncidentCapture) => void {
       // value is deliberately discarded: it carries Dates where the log needs ISO strings, and
       // `record` is already the JSON-safe projection of exactly the fields that passed.
       schemas.newTheftIncidentSchema.parse(record);
-      store.append(record);
+      return store.append(record);
     },
     [store],
   );

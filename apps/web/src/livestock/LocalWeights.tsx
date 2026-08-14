@@ -55,7 +55,7 @@ export type WeightStoreFactory = (key: string) => WeightStore;
 
 const defaultFactory: WeightStoreFactory = (key) =>
   createSqliteCaptureStore<StoredWeight>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -118,7 +118,7 @@ export function useAnimalWeights(animalId: string): readonly StoredWeight[] {
  * so a bad reading throws here rather than entering the append-only log; only then is the JSON-safe
  * projection persisted.
  */
-export function useRecordWeight(): (capture: WeightCapture) => void {
+export function useRecordWeight(): (capture: WeightCapture) => Promise<void> {
   const store = useWeightStore();
   return useCallback(
     (capture) => {
@@ -130,7 +130,7 @@ export function useRecordWeight(): (capture: WeightCapture) => void {
         kg: capture.kg,
         method: capture.method,
       });
-      store.append({
+      return store.append({
         id: capture.id,
         farmId: capture.farmId,
         animalId: capture.animalId,

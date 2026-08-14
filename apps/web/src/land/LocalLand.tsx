@@ -71,14 +71,14 @@ export type WalkDraftStoreFactory = (key: string) => WalkDraftStore;
 
 const defaultFactory: LandStoreFactory = (key) =>
   createSqliteCaptureStore<StoredLandUnit>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
 
 const defaultWalkFactory: BoundaryWalkStoreFactory = (key) =>
   createSqliteCaptureStore<StoredBoundaryWalk>({
-    database: getLocalDatabase(),
+    database: getLocalDatabase,
     key,
     legacyStorage: window.localStorage,
   });
@@ -161,8 +161,9 @@ export function useLandUnitsHydrationFailed(): boolean {
   return useSyncExternalStore(units.subscribe, units.hydrationFailed);
 }
 
-/** Commit a camp/block to the local register. Synchronous; never awaits the network (NFR-007). */
-export function useRecordLandUnit(): (unit: StoredLandUnit) => void {
+/** Commit a camp/block to the local register. Never awaits the network (NFR-007); the returned
+ *  promise resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordLandUnit(): (unit: StoredLandUnit) => Promise<void> {
   const { units } = useLandStores();
   return useCallback((unit) => units.append(unit), [units]);
 }
@@ -222,8 +223,9 @@ export function useBoundaryWalksHydrationFailed(): boolean {
   return useSyncExternalStore(walks.subscribe, walks.hydrationFailed);
 }
 
-/** Commit a finished walk locally. Synchronous; the outbox sends it when there is a signal. */
-export function useRecordBoundaryWalk(): (walk: StoredBoundaryWalk) => void {
+/** Commit a finished walk locally; the outbox sends it when there is a signal. The returned
+ *  promise resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordBoundaryWalk(): (walk: StoredBoundaryWalk) => Promise<void> {
   const { walks } = useLandStores();
   return useCallback((walk) => walks.append(walk), [walks]);
 }

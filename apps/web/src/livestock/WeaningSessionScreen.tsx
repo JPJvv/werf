@@ -67,6 +67,7 @@ export function WeaningSessionScreen() {
   const [kg, setKg] = useState('');
   const [savedCount, setSavedCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -101,12 +102,14 @@ export function WeaningSessionScreen() {
     setIndex((i) => i + 1);
   };
 
-  const save = () => {
-    if (!animal || !canSave) return;
+  const save = async () => {
+    if (!animal || !canSave || saving) return;
+    setSaving(true);
     const occurredAt = new Date();
     const age = ageDays(animal.dob, occurredAt);
 
-    record({
+    // Not "saved" until the local write is durable (P1.1).
+    await record({
       id: uuidv7(),
       farmId: activeFarm.id,
       animalId: animal.id,
@@ -118,6 +121,7 @@ export function WeaningSessionScreen() {
 
     setLastSaved(value);
     setSavedCount((n) => n + 1);
+    setSaving(false);
     advance();
   };
 
@@ -162,7 +166,7 @@ export function WeaningSessionScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             <div className="mb-6 flex flex-col">
@@ -183,7 +187,7 @@ export function WeaningSessionScreen() {
 
             <button
               type="submit"
-              disabled={!canSave}
+              disabled={!canSave || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {t('weigh.save')}

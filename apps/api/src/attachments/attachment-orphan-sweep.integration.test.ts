@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID, randomBytes as nodeRandomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import { CreateBucketCommand, HeadObjectCommand, NotFound, S3Client } from '@aws-sdk/client-s3';
 import {
@@ -290,6 +290,88 @@ describe('attachment orphan sweep (phase-checklists.md 3i(b))', () => {
     const finalized = await service.finalizeAttachment(userId, { id: body.id, farmId });
     expect(finalized.status).toBe('finalised');
     expect(finalized.checksum).toBe(sha256Hex(bytes));
+    // [P1.2 regression] A row revived by a late retry must come all the way back to LIVE — not
+    // finalised while still wearing the sweep's tombstone. A `deleted_at` left set here is
+    // invisible to every canonical/sync read path that filters on it (the standard convention
+    // across this schema), so a successfully re-uploaded photo would silently never appear in the
+    // FR-603 evidence pack or anywhere else, despite the API reporting success.
+    expect(finalized.deletedAt).toBeNull();
+    const [row] = await elevated.db.select().from(attachments).where(eq(attachments.id, body.id));
+    expect(row?.deletedAt).toBeNull();
+  });
+
+  it('[P1.2] a concurrent sweep claim beats an in-flight finalize, deterministically — never both', async () => {
+    // The exact race this fix closes: `finalizeAttachment`'s own `headObject` check succeeds (the
+    // object is genuinely there), and ONLY THEN does the sweep's claim land — the interleaving
+    // that would let a naive implementation report "finalised" for a row whose object is about to
+    // be released. Reproduced deterministically by running the sweep's own claim UPDATE directly,
+    // at the precise moment between finalize's `headObject` read and its own write, rather than
+    // hoping two real `Promise.all` calls interleave the same way on every run.
+    const { userId, farmId } = await tenant('RaceFinalizeVsSweep');
+    const animalId = await anAnimal(farmId);
+    const bytes = Buffer.from('uploaded just as the sweep reached for it');
+    const body = attachmentBody(farmId, animalId, bytes);
+    const created = await service.createAttachment(userId, body);
+    const putRes = await putRealBytes(created.uploadUrl!, created.checksumHeaderValue!, bytes);
+    expect(putRes.status).toBe(200);
+    expect(await objectExists(created.stored.objectKey!)).toBe(true);
+
+    // The object is uploaded and would satisfy finalize's own `headObject` re-derivation right
+    // now — but the sweep's CLAIM (the same conditional UPDATE `sweepOrphanedUploads` runs, tested
+    // directly rather than through the full sweep so this simulates the claim committing at the
+    // exact instant it would in the real race, object-release still to come) lands first.
+    const [claimedRow] = await elevated.db
+      .update(attachments)
+      .set({ deletedAt: sql`now()` })
+      .where(and(eq(attachments.id, body.id), eq(attachments.status, 'pending')))
+      .returning({ id: attachments.id });
+    expect(claimedRow?.id).toBe(body.id); // the claim itself must succeed — otherwise this test proves nothing
+
+    // finalize is still in flight for the farmer's device, unaware the row was just claimed. The
+    // object it is about to re-derive from is STILL PRESENT (the sweep has not released it yet in
+    // this simulated interleaving) — so only the database-level gate, not a missing object, can
+    // be what stops this from reporting false success.
+    expect(await objectExists(created.stored.objectKey!)).toBe(true);
+    await expect(service.finalizeAttachment(userId, { id: body.id, farmId })).rejects.toThrow(
+      /reclaimed for cleanup/i,
+    );
+
+    // Never both: the row must not be finalised while a tombstone sits on it.
+    const [row] = await elevated.db.select().from(attachments).where(eq(attachments.id, body.id));
+    expect(row?.status).toBe('pending');
+    expect(row?.deletedAt).toBeInstanceOf(Date);
+
+    // And the device's own retry (createAttachment finds the claimed row, revives it, a fresh PUT,
+    // finalize) still recovers the exact same capture — the race cost nothing.
+    const retried = await service.createAttachment(userId, body);
+    expect(retried.stored.deletedAt).toBeNull();
+    const retriedPut = await putRealBytes(retried.uploadUrl!, retried.checksumHeaderValue!, bytes);
+    expect(retriedPut.status).toBe(200);
+    const finalized = await service.finalizeAttachment(userId, { id: body.id, farmId });
+    expect(finalized.status).toBe('finalised');
+    expect(finalized.deletedAt).toBeNull();
+  });
+
+  it('[P1.2] a finalize that wins the race leaves nothing for a subsequent sweep pass to claim', async () => {
+    // The mirror image: finalize commits first. Even though the row is well past the sweep
+    // threshold by the time the sweep runs, `status = 'finalised'` no longer matches the sweep's
+    // claim predicate — the same gate, from the other side.
+    const { userId, farmId } = await tenant('RaceSweepVsFinalize');
+    const animalId = await anAnimal(farmId);
+    const bytes = Buffer.from('finalized a moment before the sweep would have reached it');
+    const body = attachmentBody(farmId, animalId, bytes);
+    const created = await service.createAttachment(userId, body);
+    await putRealBytes(created.uploadUrl!, created.checksumHeaderValue!, bytes);
+    const finalized = await service.finalizeAttachment(userId, { id: body.id, farmId });
+    expect(finalized.status).toBe('finalised');
+    await backdate(body.id);
+
+    await expect(sweep.sweepOrphanedUploads()).resolves.toBe(0);
+
+    const [row] = await elevated.db.select().from(attachments).where(eq(attachments.id, body.id));
+    expect(row?.status).toBe('finalised');
+    expect(row?.deletedAt).toBeNull();
+    expect(await objectExists(created.stored.objectKey!)).toBe(true);
   });
 
   it('is idempotent — re-running the sweep with nothing new to find does nothing', async () => {

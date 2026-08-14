@@ -71,10 +71,12 @@ function applyExecute(
  * uses against `SessionStorageLike`.
  */
 /** Every canonical (server-owned, down-synced) table a `HydratedTableStore` reads — `mobs`/
- *  `events` from the original 3e slice, plus `animals`/`animal_identifiers`/`theft_incidents`
- *  added for the animals/moves/health/identifiers/theft/weights/breeding hydration slice. */
+ *  `events` from the original 3e slice, `animals`/`animal_identifiers`/`theft_incidents` added for
+ *  the animals/moves/health/identifiers/theft/weights/breeding hydration slice, and `land_units`
+ *  added for the land hydration slice (2026-08-14) — boundary walks stay on `events` (`type =
+ *  'boundary_walk'`), narrowed the same way tallies/moves/health already are. */
 export type CanonicalTable =
-  'mobs' | 'events' | 'animals' | 'animal_identifiers' | 'theft_incidents';
+  'mobs' | 'events' | 'animals' | 'animal_identifiers' | 'theft_incidents' | 'land_units';
 
 export interface FakeLocalDatabase {
   init(): Promise<void>;
@@ -217,6 +219,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     animals: new Map(),
     animal_identifiers: new Map(),
     theft_incidents: new Map(),
+    land_units: new Map(),
   };
   const canonicalTable = (table: CanonicalTable) => canonicalTables[table];
   const watchers: CanonicalWatcher[] = [];
@@ -343,7 +346,9 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
               ? 'animals'
               : sql.includes('FROM theft_incidents')
                 ? 'theft_incidents'
-                : undefined;
+                : sql.includes('FROM land_units')
+                  ? 'land_units'
+                  : undefined;
       if (table === undefined) {
         throw new Error(`fake database: unrecognized watch() — ${sql}`);
       }

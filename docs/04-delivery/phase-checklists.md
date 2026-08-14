@@ -938,10 +938,27 @@ add the one shared local-first attachment path approved on 2026-08-08.
   documented as a tripwire for that invariant, not a stopgap for missing routing. Owner question
   raised in STATUS.md §3: this reading conflicts with how earlier STATUS/doc entries phrased
   `uploadData` as "not yet wired — 3d"; flagged rather than silently resolved.
-☑ 3e Two-device conflict matrix — CLOSED for mobs/tallies AND for animals/moves/health/
-  identifiers/theft/weights/breeding, extending the same fold rule to the rest of livestock. Land
-  hydration merging is STILL NOT built — named here so it is not silently assumed covered by this
-  box's checkmark. Append-only events coexist; aggregate projections fold from the immutable
+☑ 3e Two-device conflict matrix — CLOSED for mobs/tallies, for animals/moves/health/
+  identifiers/theft/weights/breeding, AND for land (camps/blocks + boundary walks — closed
+  2026-08-14). `apps/web/src/land/HydratedLand.tsx` mirrors `HydratedLivestock.tsx`'s pattern: two
+  `createHydratedTableStore`s (`land_units`, and `events` narrowed to `type = 'boundary_walk'`),
+  merged with the local register via `LocalLand.tsx`'s new `useEffectiveLandUnits`/
+  `useEffectiveBoundaryWalks` (`mergeById`, local-wins — traced against source, not assumed by
+  analogy: nothing in the client trusts a land unit's own `boundaryGeojson`/`hectares` fields for
+  the CURRENT boundary, `useCurrentBoundary` always re-derives it from the walk log, so a stale
+  local copy is harmless; a hydrated walk's payload carries exactly the three fields a local one
+  already does, no `fromMobId`-style enrichment asymmetry, so `mergeByIdPreferHydrated` would buy
+  nothing). Consumers switched: `LandScreen.tsx`, `AddLandUnitScreen.tsx`'s duplicate-code check
+  (now catches a code another device already claimed, not just this device's own), and
+  `WalkBoundaryScreen.tsx`/`MoveAnimalsScreen.tsx`'s camp pickers. `Outbox.tsx`'s send-queue stays
+  local-only by design (a hydrated land unit must never be re-POSTed); only its display-only
+  `landUnitCodes` map reads the merge. The shared test fake (`packages/sync/src/testing.ts`) was
+  widened to recognise `land_units` as a canonical table (boundary walks needed no change — they
+  already flow through the generic `events`/`eventTypesFor` path). 5 new tests
+  (`HydratedLand.test.tsx`), 4 of 5 watched to FAIL first via `git stash`; the 5th (a local walk's
+  own hydrated echo landing later) is a backward-compat regression guard that necessarily passes
+  either side, same shape as this file's other mixed fail-first sets. Append-only events coexist;
+  aggregate projections fold from the immutable
   `initialHeadCount` baseline over the `(occurred_at, id)` total order — same rule the server
   applies, same result either side. `HydratedLivestock.tsx` grew eight new hydrated stores
   (`useHydratedAnimals`, `useHydratedLifecycleEvents`, `useHydratedMoves`, `useHydratedHealthEvents`,
@@ -1031,10 +1048,21 @@ add the one shared local-first attachment path approved on 2026-08-08.
   read") fixed same session rather than deferred — this repo's own top recurring-defect class is a
   comment whose premise outlived the code. **The FR-131 compliance gate on this diff is now
   closed.**
-◐ 3e Recount resets rather than adds, and arrival order cannot change the derived result — proven
-  for mobs/tallies: `Outbox.test.tsx`'s "a hydrated RECOUNT still resets, and funds a decrease the
+☑ 3e Recount resets rather than adds, and arrival order cannot change the derived result — proven
+  for mobs/tallies (`Outbox.test.tsx`'s "a hydrated RECOUNT still resets, and funds a decrease the
   created baseline alone could not" and "hydration arriving OUT OF chronological order projects
-  the same result".
+  the same result") AND now for land boundaries, closed 2026-08-14. Checked against source, not
+  assumed by analogy: `@werf/domain`'s `boundary.ts` module header states the shape explicitly — "A
+  BOUNDARY IS AN ABSOLUTE THAT RESETS, NOT A DELTA THAT COMPOSES. It is the same shape as a recount
+  and for the same reason" — and `LocalLand.tsx`'s `latestWalkFor` already re-derived the CURRENT
+  boundary from the whole walk log by `(occurredAt, id)` before this slice, exactly as
+  `projectHeadCount` does for a tally. `HydratedLand.test.tsx`'s "shows the CURRENT boundary as the
+  latest walk by total order, whichever device sent it" hydrates the LATER walk (10 March) BEFORE
+  the earlier one (1 March) and proves the earlier one never wins — the same out-of-order proof, one
+  aggregate over. No OTHER aggregate in this domain has the absolute-reset shape: animals/moves/
+  health/identifiers/theft/weights/breeding are either a state machine (status), last-write-wins
+  (position), or a pure append log with no running total to reset — traced against `herd.ts`, not
+  assumed, before closing this box rather than leaving it open by default.
 ☑ 3e HYDRATION TRIPWIRE, LEFT BY THE TENTH PASS — CLOSED. `landed()` in `apps/web/src/sync/
   Outbox.tsx` is now `sentLog.has(id) || hydratedTallyIds.has(id)`, where `hydratedTallyIds` comes
   from `HydratedLivestock.tsx`'s `useHydratedTallies()` (`packages/sync/src/hydrated-table-store.ts`,

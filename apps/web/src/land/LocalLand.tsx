@@ -32,6 +32,8 @@ import type { WalkFix } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
 import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
+import { mergeById } from '../livestock/HydratedLivestock';
+import { useHydratedLandUnits, useHydratedBoundaryWalks } from './HydratedLand';
 
 /** What the register holds: land units composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredLandUnit = schemas.NewLandUnit;
@@ -165,6 +167,39 @@ export function useRecordLandUnit(): (unit: StoredLandUnit) => void {
   return useCallback((unit) => units.append(unit), [units]);
 }
 
+/**
+ * This device's own camps/blocks, MERGED with camps/blocks another device created and the server
+ * has already replicated down (phase-checklists.md 3e, land hydration — closed 2026-08-14). Without
+ * this, a camp nobody on THIS device ever typed in would not appear at all — invisible to the
+ * duplicate-code check, invisible as a move destination, invisible on the land list.
+ *
+ * `mergeById` (local-wins), not `mergeByIdPreferHydrated`: nothing in this file trusts a land
+ * unit's own `boundaryGeojson`/`hectares` fields for the CURRENT boundary — `useCurrentBoundary`
+ * always re-derives it from the (separately merged) walk log, the same "re-derive, don't trust the
+ * column" rule `herd.ts` applies to an animal's `status`/position. `code`/`name`/`kind` are set once
+ * at creation and never edited, so they cannot diverge between the local and hydrated copies of a
+ * row this device itself created.
+ */
+export function useEffectiveLandUnits(): readonly StoredLandUnit[] {
+  const units = useLandUnits();
+  const hydratedUnits = useHydratedLandUnits();
+  return useMemo(() => mergeById(units, hydratedUnits), [units, hydratedUnits]);
+}
+
+/**
+ * This device's own boundary walks, MERGED with walks another device sent and the server has
+ * already replicated down. `mergeById` (local-wins): a hydrated walk's payload carries exactly the
+ * three fields a local one already does (`boundaryGeojson`/`corners`/`areaHectares` — see
+ * `HydratedLand.tsx`'s `mapHydratedBoundaryWalk`), no enrichment asymmetry the way a move's
+ * `fromMobId` has, so preferring the hydrated copy on a shared id would buy nothing a plain merge
+ * does not already give for free.
+ */
+export function useEffectiveBoundaryWalks(): readonly StoredBoundaryWalk[] {
+  const walks = useBoundaryWalks();
+  const hydratedWalks = useHydratedBoundaryWalks();
+  return useMemo(() => mergeById(walks, hydratedWalks), [walks, hydratedWalks]);
+}
+
 /** Every boundary walk this device holds, in capture order. */
 export function useBoundaryWalks(): readonly StoredBoundaryWalk[] {
   const { walks } = useLandStores();
@@ -206,9 +241,16 @@ export function useRecordBoundaryWalk(): (walk: StoredBoundaryWalk) => void {
  *
  * Compared with `<` on the strings rather than `localeCompare`, for the same reason `mob-tally.ts`
  * was changed: a locale comparison is collation-dependent and the server's is not.
+ *
+ * ⭐ Reads `useEffectiveBoundaryWalks` (local+hydrated merged), not the local-only store, so a walk
+ * another device sent is not invisible here — the same "hydration arriving out of chronological
+ * order projects the same result" property `Outbox.test.tsx` proves for mob tallies applies
+ * identically to a boundary: it is the same absolute-that-resets shape (`@werf/domain`'s
+ * `boundary.ts` module header names this explicitly), re-derived from the whole log by this same
+ * total order regardless of which device captured which walk or when this device heard about it.
  */
 export function useCurrentBoundary(landUnitId: string): StoredBoundaryWalk | undefined {
-  const walks = useBoundaryWalks();
+  const walks = useEffectiveBoundaryWalks();
   return useMemo(() => latestWalkFor(walks, landUnitId), [walks, landUnitId]);
 }
 

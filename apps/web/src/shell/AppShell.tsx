@@ -7,6 +7,7 @@ import { SyncConnectionProvider } from '../sync/SyncConnection';
 import { InstallPrompt } from '../pwa/InstallPrompt';
 import { FarmSwitcher } from './FarmSwitcher';
 import { LocalLandProvider } from '../land/LocalLand';
+import { HydratedLandProvider } from '../land/HydratedLand';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
 import { LocalTalliesProvider } from '../livestock/LocalTallies';
@@ -44,6 +45,10 @@ import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
  */
 const CAPTURE_STORES = [
   LocalLandProvider,
+  // Also not a capture store — the DOWN-SYNC half of land (phase-checklists.md 3e, land hydration —
+  // closed 2026-08-14). `LocalLand.tsx`'s `useEffectiveLandUnits`/`useEffectiveBoundaryWalks` and
+  // `Outbox.tsx` both read it, so it has to sit above both, same as `HydratedLivestockProvider` below.
+  HydratedLandProvider,
   LocalMobsProvider,
   LocalTalliesProvider,
   LocalHerdProvider,

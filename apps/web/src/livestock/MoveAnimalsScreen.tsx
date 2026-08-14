@@ -24,7 +24,7 @@ import type { TranslationKey } from '../i18n/dictionaries';
 import { vocabularyFor } from '../i18n/terminology';
 import type { EnterpriseType } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
-import { useLandUnits } from '../land/LocalLand';
+import { useEffectiveLandUnits } from '../land/LocalLand';
 import { useEffectiveAnimals, useEffectiveMobs } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { useRecordMoves, type StoredMove } from './LocalMoves';
@@ -42,7 +42,11 @@ function whereLabel(
 export function MoveAnimalsScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const landUnits = useLandUnits();
+  // ⭐ Merged with hydrated land units (phase-checklists.md 3e, land hydration — closed 2026-08-14,
+  // `useEffectiveLandUnits`) — a camp another device created is a real origin/destination a gate
+  // can walk animals through, not just one this device happened to type in itself. Was local-only
+  // until this slice, in explicit contrast to the mobs merge one line below.
+  const landUnits = useEffectiveLandUnits();
   // ⭐ Merged with hydrated mobs (phase-checklists.md 3e, `useEffectiveMobs`) — a mob another device
   // created is a real destination a gate can walk animals into, not just one this device happened
   // to make itself.

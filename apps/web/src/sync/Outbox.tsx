@@ -52,6 +52,7 @@ import {
   useLandUnitsSettled,
 } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
+import { useHydratedLandUnits } from '../land/HydratedLand';
 import { useAnimals, useAnimalsHydrationFailed, useAnimalsSettled } from '../livestock/LocalHerd';
 import { useMobs, useMobsHydrationFailed, useMobsSettled } from '../livestock/LocalMobs';
 import {
@@ -431,6 +432,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
   const boundaryWalks = useBoundaryWalks();
+  // ⭐ The down-sync half of land (phase-checklists.md 3e, land hydration — closed 2026-08-14) — a
+  // camp another device created, already replicated to this one. Read ONLY for `landUnitCodes`
+  // below (display), never for the send-queue loops above: those stay on the raw local `landUnits`
+  // so a hydrated row is never re-queued for send, the same rule every other kind here follows.
+  const hydratedLandUnits = useHydratedLandUnits();
   const mobs = useMobs();
   const tallies = useTallies();
   // ⭐ The down-sync half of the same two tables (phase-checklists.md 3e) — mobs another device
@@ -572,10 +578,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // The sent-log is farm-scoped by key, exactly like the stores it shadows: one farm's send-state
   // never counts against another's pending total.
   // What each camp is CALLED, for the same reason `labels` exists: a refused boundary walk must be
-  // named by the code on the gate ("Camp 3") rather than by a uuid the farmer has never seen.
+  // named by the code on the gate ("Camp 3") rather than by a uuid the farmer has never seen. Local
+  // + hydrated merged (`mergeById`, local-wins) — a walk this device sends can reference a camp only
+  // known via down-sync, and that camp's code must still resolve here rather than falling back to
+  // the bare id.
   const landUnitCodes = useMemo(
-    () => new Map(landUnits.map((unit) => [unit.id, unit.code])),
-    [landUnits],
+    () => new Map(mergeById(landUnits, hydratedLandUnits).map((unit) => [unit.id, unit.code])),
+    [landUnits, hydratedLandUnits],
   );
 
   const farmId = activeFarm?.id ?? 'none';

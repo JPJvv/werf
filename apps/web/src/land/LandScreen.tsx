@@ -22,13 +22,15 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
-import { useCurrentBoundary, useLandUnits } from './LocalLand';
+import { useCurrentBoundary, useEffectiveLandUnits } from './LocalLand';
 import { landKey } from './AddLandUnitScreen';
 
 export function LandScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const units = useLandUnits();
+  // Merged with hydrated land units (phase-checklists.md 3e) — a camp another device created must
+  // appear here too, not just the ones this device itself typed in.
+  const units = useEffectiveLandUnits();
   // Live head per camp, individual animals and groups together (FR-705).
   const { byLandUnit } = useHerdSummary();
 

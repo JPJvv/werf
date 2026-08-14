@@ -14,9 +14,14 @@
  *
  * The code (the farmer's own label — "Camp 3", "B12") is unique per farm in the database, so a
  * duplicate is refused HERE, against the register the device already holds, rather than being
- * discovered days later when the queue finally reaches a server and cannot drain. Two devices both
- * offline naming a camp "3" in the same week is a genuine conflict this cannot see; that one is a
- * Phase 3 sync-conflict concern, and the server refuses it with a message rather than merging.
+ * discovered days later when the queue finally reaches a server and cannot drain.
+ *
+ * ⭐ Checked against LOCAL+HYDRATED (phase-checklists.md 3e, land hydration), not just what this
+ * device itself has typed. Two devices both offline naming a camp "3" in the same week is still a
+ * genuine conflict this cannot see — neither has heard of the other's capture yet — but ONE common
+ * case this now catches that it could not before: a farmer's second device, already caught up via
+ * down-sync, retyping a code the FIRST device named days ago. The server still refuses what neither
+ * device could see coming, with a message rather than a silent merge.
  */
 
 import { useMemo, useState, type FormEvent } from 'react';
@@ -26,7 +31,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { vocabularyFor, type LandTerm } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
-import { useLandUnits, useRecordLandUnit } from './LocalLand';
+import { useEffectiveLandUnits, useRecordLandUnit } from './LocalLand';
 
 /** A sentence about a piece of ground, in this farm's word for it. */
 export function landKey(term: LandTerm, part: string): TranslationKey {
@@ -49,7 +54,7 @@ function isBadNumber(text: string): boolean {
 export function AddLandUnitScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const units = useLandUnits();
+  const units = useEffectiveLandUnits();
   const recordLandUnit = useRecordLandUnit();
 
   const term = useMemo(

@@ -38,7 +38,12 @@ import { vocabularyFor } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { currentFix, type FixFailure } from '../geo/geolocation';
 import { landKey } from './AddLandUnitScreen';
-import { useCurrentBoundary, useLandUnits, useRecordBoundaryWalk, useWalkDraft } from './LocalLand';
+import {
+  useCurrentBoundary,
+  useEffectiveLandUnits,
+  useRecordBoundaryWalk,
+  useWalkDraft,
+} from './LocalLand';
 
 /**
  * Above this, a fix is worth saying something about: in the open a phone reports 3–10 m, so 20 m
@@ -54,7 +59,9 @@ const showHectares = (hectares: number): string => hectares.toFixed(1);
 export function WalkBoundaryScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const units = useLandUnits();
+  // Merged with hydrated land units (phase-checklists.md 3e) — a camp another device created is a
+  // real piece of ground this device can walk, not just one it typed in itself.
+  const units = useEffectiveLandUnits();
   const recordWalk = useRecordBoundaryWalk();
   const [params] = useSearchParams();
 

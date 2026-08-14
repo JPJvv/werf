@@ -11,6 +11,10 @@ missed a move's destination camp and a theft incident's own camp; also fixed an 
 `animalrow:` gap on the same theft-incident object). Full detail in §5. **15 of ~21 punch-list
 items remain.** Do not re-run P1/P2.5/P2.6/P2.7.
 
+✅ **Owner-triggered `compliance-checker` over `9b7fa2e..3a1993c`: CLEARED, no SEV-1/SEV-2.** One
+MED (FR-603 evidence pack didn't filter soft-deleted `theft_incident_animals` links) fixed
+same-session, commit `baf4b4d` — full account in §3.
+
 🔶 **P2.8 IN PROGRESS, blocked on infra — see §5 item 28 for the full account.** A second,
 UI-driven real-stack e2e test was added to `real-offline-matrix.spec.ts`, commit `38268b5`. Its
 sibling test (the pre-existing REST-based occurred_at proof) re-verified PASSING against the live
@@ -25,10 +29,11 @@ needing the live stack, including this test.
 Prior session (second that day) closed: all four P1 blockers and P2.5 (secure attachment reads +
 the FR-603 evidence pack).
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `38268b5` (P2.8
-e2e test, WIP — unverified, see §5 item 28) ← `256d06a` (P2.7 landrow guard) ← `4524bb9` ←
-`9e1b402` (P2.6 client hydration) ← `6820a21` (P2.6 migration/schema) ← `de3ef93` ← `422e09d`
-(P2.5) ← `c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local commits only.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `baf4b4d`
+(compliance-checker fix, this session) ← `3a1993c` ← `38268b5` (P2.8 e2e test, WIP — still
+unverified, see §5 item 28) ← `256d06a` (P2.7 landrow guard) ← `4524bb9` ← `9e1b402` (P2.6 client
+hydration) ← `6820a21` (P2.6 migration/schema) ← `de3ef93` ← `422e09d` (P2.5) ← `c2cc48a`
+(P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -85,17 +90,10 @@ audit mechanism is scheduled now, ahead of any field that needs it. → _Answer:
   coverage column instead of reading as blanket coverage. O-6/O-7/O-8 NOT built (see the audit-row
   owner decision above); O-4/O-5/O-9/O-10 partial; O-12/O-15 belong to phases 4/5.
 
-⛔ **Compliance-pass scope, not yet requested.** Everything since the last cleared pass
-(`9b7fa2e..HEAD`) sits inside one un-requested `compliance-checker` scope: the back-dated-move
-fail-closed fix, land hydration, 3i(c)'s `animalrow:` guard addition, `c2cc48a` (touches FR-131
-withdrawal resolution), `422e09d` (touches the FR-603 evidence pack), `6820a21`/`9e1b402` (P2.6 —
-the `theft_incident_animals` migration and its client hydration read, both touching the stock-theft
-table), **and now `256d06a` (P2.7 — the theft incident's send path gained an `animalrow:` guard on
-its named animals, alongside the `landrow:` work)**. Say so before calling any of this merge-ready;
-per CLAUDE.md, the owner decides when to trigger the pass. The remaining punch-list slices in §5
-will keep adding to this same scope — P3.14 (branding/animal ID), P3.16 (auth/POPIA) are each
-regulated-code
-touches in their own right.
+✅ **Compliance-pass scope through `baf4b4d` — CLOSED 2026-08-14 (third session, top-of-file
+note).** Covered `9b7fa2e..3a1993c`: back-dated-move fail-closed, land hydration, 3i(c)'s
+`animalrow:` guard, `c2cc48a`, `422e09d`, P2.6's `6820a21`/`9e1b402`, P2.7's `256d06a`. ⛔ **New
+scope opens from `baf4b4d` forward** — P2.8+ hasn't been through a pass; P3.14/P3.16 add more.
 
 **Condensed, full detail in git history / `phase-checklists.md` 3b–3i (2026-08-13):** three
 `compliance-checker` passes over the animals/moves/health hydration diff → APPROVABLE (`ba7f680`);
@@ -111,10 +109,12 @@ hide a worse defect for any farm signing up post-deploy.
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
 | `pnpm verify` (2026-08-14, third session, fully uncached, after P2.7) | ✅ **112 test files / 1195 tests, 7/7 builds, 162.34 KB gz** — incl. `theft.integration.test.ts` (real Postgres, P2.6), `HydratedLivestock.test.ts`'s `attachAnimalIds` unit tests (P2.6), and 5 new `landrow:` guard tests in `Outbox.test.tsx` (P2.7: unconditional guard, conditional guard, tri-state `toLandUnitId`, theft's dual guard, next-round recovery) |
+| `pnpm test` + `pnpm build` (2026-08-14, third session, after the compliance-fix commit `baf4b4d`) | ✅ **112 test files / 1196 tests** (the +1 is the new evidence-pack soft-delete-exclusion test, watched to fail against the pre-fix code first), 7/7 builds, 162.34 KB gz |
 | `pnpm test:e2e` (2026-08-14, second session, default lane, after P1/P2.5, NOT re-run for P2.6/P2.7) | ✅ 31 passed / 4 skipped as of P2.5 — neither P2.6 nor P2.7 touches an e2e-relevant surface (no new screen; `pnpm verify`'s vitest coverage, incl. real-Postgres, proves both) so this was not re-run; re-run before calling the branch merge-ready |
 | `WERF_REAL_STACK=1` deployed-connectivity e2e (2026-08-14, P1.4) | ✅ Real deployed-headers build, real browser, real CSP, real presigned PUT against MinIO — 2/2 passed. Not re-run after P2.5/P2.6/P2.7 (none touches client/CSP code) |
 | `pnpm --filter @werf/web build` (2026-08-14, third session) | ✅ 162.34 KB gz ≤ 250 KB budget |
-| Review agents (2026-08-13, owner-triggered, "run all relevant agents") | ✅ `compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings. `sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, fixed. `reviewer`: reproduced every claim, no contradictions. **Predates `c2cc48a`/`422e09d`/`6820a21`/`9e1b402`/`256d06a` — see the compliance-pass scope note in §3, not yet re-triggered** |
+| Review agents (2026-08-13, owner-triggered, "run all relevant agents") | ✅ `compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings. `sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, fixed. `reviewer`: reproduced every claim, no contradictions. Superseded by the row below for the `9b7fa2e..HEAD` range |
+| `compliance-checker` (2026-08-14, third session, owner-triggered, over `9b7fa2e..3a1993c`) | ✅ **CLEARED — no SEV-1/SEV-2.** One MED fixed same-session, commit `baf4b4d` (see top-of-file note and §3). `sync-auditor`/`reviewer` NOT re-run this pass — only `compliance-checker` was requested |
 | Historical baselines (2026-08-08 through 2026-08-13) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
 
 ## 5. Next executable steps — the punch list, sliced for separate sessions

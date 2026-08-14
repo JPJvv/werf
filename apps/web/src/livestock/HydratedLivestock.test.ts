@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { mergeById, mergeByIdPreferHydrated } from './HydratedLivestock';
+import {
+  attachAnimalIds,
+  mergeById,
+  mergeByIdPreferHydrated,
+  type HydratedTheftIncidentAnimalLink,
+} from './HydratedLivestock';
+import type { StoredTheftIncident } from './LocalTheft';
 
 interface Row {
   readonly id: string;
@@ -96,5 +102,65 @@ describe('mergeByIdPreferHydrated', () => {
     expect(merged).toHaveLength(2);
     expect(merged).toContainEqual({ id: 'pending', tag: 'local-pending' });
     expect(merged).toContainEqual({ id: 'synced', tag: 'hydrated' });
+  });
+});
+
+/**
+ * `attachAnimalIds` — the fold that closes issue #10 (P2.6): `theft_incident_animals` needed a
+ * surrogate id (migration 0025) before PowerSync could sync it at all, which is why a hydrated
+ * theft incident's `animalIds` was always `[]` on a second device. `mapHydratedTheftIncident`
+ * still sets `[]` (a hydrated incident row carries no join) — this is the function that fills it
+ * in from the separately watched link table.
+ */
+describe('attachAnimalIds', () => {
+  const incident = (id: string): StoredTheftIncident => ({
+    id,
+    farmId: 'farm-a',
+    discoveredAt: '2026-07-20T10:00:00.000Z',
+    lastSeenAt: null,
+    lastSeenLocationGeojson: null,
+    landUnitId: null,
+    headCount: 3,
+    caseNumber: null,
+    reportingStation: null,
+    observations: null,
+    animalIds: [],
+  });
+  const link = (incidentId: string, animalId: string): HydratedTheftIncidentAnimalLink => ({
+    id: `link-${incidentId}-${animalId}`,
+    farmId: 'farm-a',
+    incidentId,
+    animalId,
+  });
+
+  it('returns the incidents untouched when no links have hydrated', () => {
+    const incidents = [incident('theft-1')];
+    expect(attachAnimalIds(incidents, [])).toBe(incidents); // same reference — no needless copy
+  });
+
+  it('⭐ fills in animalIds for an incident known only via hydration — the bug this closes', () => {
+    // Exactly the second-device case: this device never captured the incident OR the links
+    // locally — both arrived purely through down-sync, as two separately watched tables.
+    const incidents = [incident('theft-1')];
+    const links = [link('theft-1', 'animal-a'), link('theft-1', 'animal-b')];
+    const filled = attachAnimalIds(incidents, links);
+    expect(filled).toHaveLength(1);
+    expect(filled[0]?.animalIds).toEqual(['animal-a', 'animal-b']);
+  });
+
+  it('leaves an incident with no links of its own at [] even when other incidents have links', () => {
+    const incidents = [incident('theft-1'), incident('theft-2')];
+    const links = [link('theft-1', 'animal-a')];
+    const filled = attachAnimalIds(incidents, links);
+    expect(filled.find((i) => i.id === 'theft-1')?.animalIds).toEqual(['animal-a']);
+    expect(filled.find((i) => i.id === 'theft-2')?.animalIds).toEqual([]);
+  });
+
+  it('never lets one incident’s links leak onto another’s animalIds', () => {
+    const incidents = [incident('theft-1'), incident('theft-2')];
+    const links = [link('theft-1', 'animal-a'), link('theft-2', 'animal-b')];
+    const filled = attachAnimalIds(incidents, links);
+    expect(filled.find((i) => i.id === 'theft-1')?.animalIds).toEqual(['animal-a']);
+    expect(filled.find((i) => i.id === 'theft-2')?.animalIds).toEqual(['animal-b']);
   });
 });

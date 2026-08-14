@@ -21,6 +21,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -78,6 +79,15 @@ const IDENTIFIERS_SQL =
 const THEFT_INCIDENTS_SQL =
   'SELECT id, farm_id, discovered_at, last_seen_at, last_seen_location_geojson, land_unit_id, ' +
   'head_count, case_number, reporting_station, observations FROM theft_incidents ' +
+  'WHERE farm_id = ? AND deleted_at IS NULL';
+
+// ⭐ The per-animal join (surrogate id added migration 0025, issue #10) — a SEPARATE table, watched
+// separately and folded onto incidents in TS (`useHydratedTheftIncidents`), the same "no JOINs in a
+// hydrated query" shape every other query in this file already uses. Deliberately not GROUP_CONCAT
+// in a single joined query: it would be the only JOIN in this file and untestable against the fake
+// local database (`@werf/sync/testing`), which recognizes queries by single-table shape.
+const THEFT_INCIDENT_ANIMALS_SQL =
+  'SELECT id, farm_id, incident_id, animal_id FROM theft_incident_animals ' +
   'WHERE farm_id = ? AND deleted_at IS NULL';
 
 const WEIGHT_EVENTS_SQL =
@@ -439,9 +449,9 @@ function mapHydratedIdentifier(row: Record<string, unknown>): StoredIdentifier |
   };
 }
 
-/** `animalIds` is always `[]` — `theft_incident_animals` (the per-animal join) cannot sync locally
- *  at all (issue #10: a composite-PK table with no surrogate id, which PowerSync cannot represent).
- *  The incident row itself hydrates; which animals it names does not, yet. */
+/** `animalIds` is always `[]` here — a hydrated incident row carries no join. It is filled in by
+ *  `useHydratedTheftIncidents`, which folds `theftIncidentAnimalLinks` on afterward (issue #10,
+ *  closed migration 0025). */
 function mapHydratedTheftIncident(row: Record<string, unknown>): StoredTheftIncident | null {
   const id = row['id'];
   const farmId = row['farm_id'];
@@ -470,6 +480,35 @@ function mapHydratedTheftIncident(row: Record<string, unknown>): StoredTheftInci
     observations: str('observations'),
     animalIds: [],
   };
+}
+
+/** One row of the per-animal join a theft incident concerns (issue #10, migration 0025). Not
+ *  exported as its own hook — folded onto incidents by `useHydratedTheftIncidents` before any
+ *  screen sees it, the same way a hydrated move's `fromMobId` is derived rather than read raw.
+ *  Exported as a TYPE only, for `attachAnimalIds`'s unit tests. */
+export interface HydratedTheftIncidentAnimalLink {
+  readonly id: string;
+  readonly farmId: string;
+  readonly incidentId: string;
+  readonly animalId: string;
+}
+
+function mapHydratedTheftIncidentAnimalLink(
+  row: Record<string, unknown>,
+): HydratedTheftIncidentAnimalLink | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const incidentId = row['incident_id'];
+  const animalId = row['animal_id'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof incidentId !== 'string' ||
+    typeof animalId !== 'string'
+  ) {
+    return null;
+  }
+  return { id, farmId, incidentId, animalId };
 }
 
 function mapHydratedWeight(row: Record<string, unknown>): StoredWeight | null {
@@ -582,6 +621,7 @@ interface HydratedLivestockValue {
   readonly healthEvents: HydratedTableStore<HydratedHealthDose>;
   readonly identifiers: HydratedTableStore<StoredIdentifier>;
   readonly theftIncidents: HydratedTableStore<StoredTheftIncident>;
+  readonly theftIncidentAnimalLinks: HydratedTableStore<HydratedTheftIncidentAnimalLink>;
   readonly weights: HydratedTableStore<StoredWeight>;
   readonly breedingEvents: HydratedTableStore<StoredBreedingEvent>;
 }
@@ -618,6 +658,7 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
     healthEvents: emptyHydratedTableStore<HydratedHealthDose>(),
     identifiers: emptyHydratedTableStore<StoredIdentifier>(),
     theftIncidents: emptyHydratedTableStore<StoredTheftIncident>(),
+    theftIncidentAnimalLinks: emptyHydratedTableStore<HydratedTheftIncidentAnimalLink>(),
     weights: emptyHydratedTableStore<StoredWeight>(),
     breedingEvents: emptyHydratedTableStore<StoredBreedingEvent>(),
   }));
@@ -683,6 +724,12 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
         params: [farmId],
         mapRow: mapHydratedTheftIncident,
       }),
+      theftIncidentAnimalLinks: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: THEFT_INCIDENT_ANIMALS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedTheftIncidentAnimalLink,
+      }),
       weights: createHydratedTableStore({
         database: getLocalDatabase(),
         sql: WEIGHT_EVENTS_SQL,
@@ -706,6 +753,7 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
       pair.healthEvents.close();
       pair.identifiers.close();
       pair.theftIncidents.close();
+      pair.theftIncidentAnimalLinks.close();
       pair.weights.close();
       pair.breedingEvents.close();
     };
@@ -841,21 +889,64 @@ export function useHydratedIdentifiersHydrationFailed(): boolean {
   return useSyncExternalStore(identifiers.subscribe, identifiers.hydrationFailed);
 }
 
-/** Theft incidents another device filed and the server has replicated to this one. The row only —
- *  `theft_incident_animals` cannot sync locally at all yet (issue #10), so `animalIds` is `[]`. */
+/** Groups `links` by `incidentId` and replaces each incident's `animalIds` with the matching
+ *  group — pure, so `useHydratedTheftIncidents` can memoize it. An incident with no links keeps
+ *  the `[]` `mapHydratedTheftIncident` already set. Exported for unit testing, the same reason
+ *  `mergeById`/`mergeByIdPreferHydrated` are: no React, no fake database, no farm scoping to
+ *  thread through — the property this fold has to hold is a fact about the function alone. */
+export function attachAnimalIds(
+  incidents: readonly StoredTheftIncident[],
+  links: readonly HydratedTheftIncidentAnimalLink[],
+): readonly StoredTheftIncident[] {
+  if (links.length === 0) return incidents;
+  const byIncident = new Map<string, string[]>();
+  for (const link of links) {
+    const group = byIncident.get(link.incidentId);
+    if (group) group.push(link.animalId);
+    else byIncident.set(link.incidentId, [link.animalId]);
+  }
+  return incidents.map((incident) => {
+    const animalIds = byIncident.get(incident.id);
+    return animalIds === undefined ? incident : { ...incident, animalIds };
+  });
+}
+
+/** Theft incidents another device filed and the server has replicated to this one, `animalIds`
+ *  included: folded on here from the separately watched `theft_incident_animals` join (issue #10,
+ *  closed migration 0025) rather than read raw off either store — no screen should have to know
+ *  the ownership chain is two tables under the hood, the same "derive, don't read the column
+ *  raw" rule `herd.ts` applies to a hydrated animal's `status`/position. */
 export function useHydratedTheftIncidents(): readonly StoredTheftIncident[] {
-  const { theftIncidents } = useHydratedLivestock();
-  return useSyncExternalStore(theftIncidents.subscribe, theftIncidents.all);
+  const { theftIncidents, theftIncidentAnimalLinks } = useHydratedLivestock();
+  const incidents = useSyncExternalStore(theftIncidents.subscribe, theftIncidents.all);
+  const links = useSyncExternalStore(
+    theftIncidentAnimalLinks.subscribe,
+    theftIncidentAnimalLinks.all,
+  );
+  return useMemo(() => attachAnimalIds(incidents, links), [incidents, links]);
 }
 
 export function useHydratedTheftIncidentsSettled(): boolean {
-  const { theftIncidents } = useHydratedLivestock();
-  return useSyncExternalStore(theftIncidents.subscribe, theftIncidents.settled);
+  const { theftIncidents, theftIncidentAnimalLinks } = useHydratedLivestock();
+  const incidentsSettled = useSyncExternalStore(theftIncidents.subscribe, theftIncidents.settled);
+  const linksSettled = useSyncExternalStore(
+    theftIncidentAnimalLinks.subscribe,
+    theftIncidentAnimalLinks.settled,
+  );
+  return incidentsSettled && linksSettled;
 }
 
 export function useHydratedTheftIncidentsHydrationFailed(): boolean {
-  const { theftIncidents } = useHydratedLivestock();
-  return useSyncExternalStore(theftIncidents.subscribe, theftIncidents.hydrationFailed);
+  const { theftIncidents, theftIncidentAnimalLinks } = useHydratedLivestock();
+  const incidentsFailed = useSyncExternalStore(
+    theftIncidents.subscribe,
+    theftIncidents.hydrationFailed,
+  );
+  const linksFailed = useSyncExternalStore(
+    theftIncidentAnimalLinks.subscribe,
+    theftIncidentAnimalLinks.hydrationFailed,
+  );
+  return incidentsFailed || linksFailed;
 }
 
 /** Weigh readings another device took and the server has replicated to this one. */

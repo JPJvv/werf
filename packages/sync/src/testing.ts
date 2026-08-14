@@ -75,11 +75,18 @@ function applyExecute(
  */
 /** Every canonical (server-owned, down-synced) table a `HydratedTableStore` reads — `mobs`/
  *  `events` from the original 3e slice, `animals`/`animal_identifiers`/`theft_incidents` added for
- *  the animals/moves/health/identifiers/theft/weights/breeding hydration slice, and `land_units`
- *  added for the land hydration slice (2026-08-14) — boundary walks stay on `events` (`type =
- *  'boundary_walk'`), narrowed the same way tallies/moves/health already are. */
+ *  the animals/moves/health/identifiers/theft/weights/breeding hydration slice, `land_units`
+ *  added for the land hydration slice (2026-08-14), and `theft_incident_animals` added once
+ *  migration 0025 gave it a surrogate id to sync on (issue #10, P2.6) — boundary walks stay on
+ *  `events` (`type = 'boundary_walk'`), narrowed the same way tallies/moves/health already are. */
 export type CanonicalTable =
-  'mobs' | 'events' | 'animals' | 'animal_identifiers' | 'theft_incidents' | 'land_units';
+  | 'mobs'
+  | 'events'
+  | 'animals'
+  | 'animal_identifiers'
+  | 'theft_incidents'
+  | 'theft_incident_animals'
+  | 'land_units';
 
 export interface FakeLocalDatabase {
   init(): Promise<void>;
@@ -222,6 +229,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     animals: new Map(),
     animal_identifiers: new Map(),
     theft_incidents: new Map(),
+    theft_incident_animals: new Map(),
     land_units: new Map(),
   };
   const canonicalTable = (table: CanonicalTable) => canonicalTables[table];
@@ -338,7 +346,9 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     ): void {
       // Order matters only in that each check is a distinct, non-overlapping substring — `FROM
       // animal_identifiers` never matches `FROM animals` (different characters immediately after
-      // "FROM animal"), so there is no ambiguity to resolve by ordering.
+      // "FROM animal"), and `FROM theft_incident_animals` never matches `FROM theft_incidents`
+      // (an underscore, not an "s", follows "theft_incident" in the former) — so there is no
+      // ambiguity to resolve by ordering.
       const table: CanonicalTable | undefined = sql.includes('FROM mobs')
         ? 'mobs'
         : sql.includes('FROM events')
@@ -347,11 +357,13 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
             ? 'animal_identifiers'
             : sql.includes('FROM animals')
               ? 'animals'
-              : sql.includes('FROM theft_incidents')
-                ? 'theft_incidents'
-                : sql.includes('FROM land_units')
-                  ? 'land_units'
-                  : undefined;
+              : sql.includes('FROM theft_incident_animals')
+                ? 'theft_incident_animals'
+                : sql.includes('FROM theft_incidents')
+                  ? 'theft_incidents'
+                  : sql.includes('FROM land_units')
+                    ? 'land_units'
+                    : undefined;
       if (table === undefined) {
         throw new Error(`fake database: unrecognized watch() — ${sql}`);
       }

@@ -4,6 +4,7 @@ import { APP_CONFIG } from '../db/db.module';
 import type { AppConfig } from '../config/config';
 import { AttachmentsController } from './attachments.controller';
 import { AttachmentsService } from './attachments.service';
+import { AttachmentOrphanSweepService } from './attachment-orphan-sweep.service';
 import { OBJECT_STORAGE, S3ObjectStorage, type ObjectStorage } from './object-storage';
 
 /**
@@ -21,6 +22,7 @@ import { OBJECT_STORAGE, S3ObjectStorage, type ObjectStorage } from './object-st
   controllers: [AttachmentsController],
   providers: [
     AttachmentsService,
+    AttachmentOrphanSweepService,
     {
       provide: OBJECT_STORAGE,
       inject: [APP_CONFIG],

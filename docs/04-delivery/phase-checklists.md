@@ -1288,9 +1288,35 @@ add the one shared local-first attachment path approved on 2026-08-08.
   checksum-lie test (the latter written directly to the bucket, bypassing the presign — the PUT-time
   enforcement makes a mismatched object impossible to produce any other way) both pass.
   docker-compose gains a `minio` service + one-shot bucket init for dev parity.
-  ⛔ **Quota pressure, retry-on-transient-failure and orphan cleanup NOT built** — the agreed stage
-  boundary for this slice (STATUS.md § 5); the partial index `0022_attachments.sql` added for an
-  orphan sweep exists but nothing reads it yet.
+  **Retry-on-transient-failure and orphan cleanup CLOSED 2026-08-14; quota pressure deliberately
+  left open.**
+  - **Retry-on-transient-failure**: not hand-rolled — the AWS SDK v3 `S3Client` already retries a
+    transient `headObject`/`deleteObject` failure (5xx, throttling, network timeout) with its
+    default STANDARD retry mode (3 attempts, exponential backoff + jitter, via
+    `@smithy/middleware-retry`), applied automatically to every `.send()` call. Documented in
+    `object-storage.ts`'s header rather than reimplemented, with the one real exception named:
+    `presignPut` never calls `.send()` (`getSignedUrl` only signs locally), so the actual PUT a
+    client performs is outside this adapter's reach — `Outbox.tsx`'s own retry (3i(c): the whole
+    three-leg send is idempotent, so a failed round retries from `createAttachment` next reconnect)
+    covers that leg instead.
+  - **Orphan cleanup**: `AttachmentOrphanSweepService` (new), mirroring `MembershipExpiryService`'s
+    interval-sweep shape — an hourly `@Cron` job that finds `pending` rows past
+    `ATTACHMENT_ORPHAN_THRESHOLD_HOURS` (24h) old via the `attachments_pending_idx` partial index
+    `0022_attachments.sql` added for exactly this query, releases the object at that key (best-
+    effort — `ObjectStorage` gained a `deleteObject` method), and soft-deletes the row. Traced, not
+    assumed, that this is SAFE against a device genuinely offline for a week rather than abandoned:
+    neither `createAttachment` nor `finalizeAttachment` filters on `deleted_at`, so a late retry
+    still finds the row by id, gets a fresh presign at the same deterministic key, and completes —
+    proven by an integration test that sweeps a row, THEN successfully finishes its upload through
+    the normal service calls. 6 new tests against real Postgres + real MinIO
+    (`attachment-orphan-sweep.integration.test.ts`): no-upload orphan, uploaded-but-unfinalized
+    orphan (the object itself is verified gone via a raw `HeadObject`), a recent pending row
+    untouched, an old finalised row untouched, the late-retry-still-completes proof, and
+    sweep-is-idempotent.
+  - **Quota pressure NOT built, deliberately** — S3/MinIO storage-capacity refusal has no
+    meaningful way to simulate against `minio/minio:latest` without configuring bucket-level quotas
+    via MinIO's admin API in the testcontainer, which is real additional test infrastructure this
+    slice did not build. Flagged in STATUS.md rather than claimed covered.
 ☑ 3i(d) Existing Phase 2 `photo_key` rows migrate without inventing an attachment; null remains none.
   Grepped: no code path in `apps/web/src` has ever set `photoKey` — Phase 2 genuinely stored no
   photo. `livestock.integration.test.ts`'s new test proves `recordAnimal` with no photo leaves

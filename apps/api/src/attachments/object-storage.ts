@@ -18,6 +18,7 @@
 
 import { createHash } from 'node:crypto';
 import {
+  DeleteObjectCommand,
   HeadObjectCommand,
   NotFound,
   PutObjectCommand,
@@ -26,6 +27,21 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { AppConfig } from '../config/config';
+
+/**
+ * ⭐ RETRY-ON-TRANSIENT-FAILURE (phase-checklists.md 3i(b)) is not hand-rolled here — the `S3Client`
+ * constructed below already retries a `presignPut`/`headObject`/`deleteObject` call that fails
+ * transiently (a 5xx, throttling, a network timeout) using the AWS SDK v3 default: the STANDARD
+ * retry mode, 3 attempts, exponential backoff with jitter, via `@smithy/middleware-retry`, applied
+ * automatically to every `S3Client.send()` call. Reimplementing that here would be a second,
+ * narrower version of behaviour the SDK already gives every call for free — the class of duplicate
+ * this repo has been bitten by more than once. `presignPut` is the one exception worth naming: it
+ * never calls `.send()` at all (`getSignedUrl` only computes a SigV4 signature locally), so there is
+ * no network call for a retry to apply to — the actual PUT the client performs against that URL is
+ * a plain browser `fetch`, outside this adapter's reach, and `Outbox.tsx`'s own retry (the whole
+ * three-leg send is idempotent, so a failed round simply retries from `createAttachment` next
+ * reconnect) is what covers that leg.
+ */
 
 /** The dependency-injection token for the port. */
 export const OBJECT_STORAGE = Symbol('OBJECT_STORAGE');
@@ -59,6 +75,10 @@ export interface ObjectStorage {
   ): Promise<PresignedUpload>;
   /** The stored object's actual size and checksum, or null if nothing has landed at this key yet. */
   headObject(key: string): Promise<StoredObject | null>;
+  /** Releases the object at `key`, for `AttachmentOrphanSweepService` (phase-checklists.md 3i(b)).
+   *  A no-op, not an error, if nothing is there — an abandoned `pending` row whose PUT never
+   *  happened has no object to delete, and the sweep must not fail on that ordinary case. */
+  deleteObject(key: string): Promise<void>;
 }
 
 /** Config shape `AttachmentsModule` extracts from `AppConfig.objectStorage` — see its own doc for
@@ -117,6 +137,12 @@ export class S3ObjectStorage implements ObjectStorage {
       if (err instanceof NotFound) return null;
       throw err;
     }
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    // S3's own `DeleteObject` is a no-op on a missing key (204, not 404) — no `NotFound` branch
+    // needed here the way `headObject` needs one.
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }
 

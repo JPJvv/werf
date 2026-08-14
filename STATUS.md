@@ -5,12 +5,13 @@
 
 **Last updated:** 2026-08-14. Session goal: complete Phase 3 as close to approvable as possible.
 Closed this session: the back-dated-local-move owner decision (fail-closed), 3e's land hydration
-(the last open case in the two-device conflict matrix), and **3i(c)** — the attachment capture/
-upload deferred queue, previously deliberately deferred. See §3 for each.
+(the last open case in the two-device conflict matrix), **3i(c)** (the attachment capture/upload
+deferred queue, previously deliberately deferred), and 3i(b)'s retry/orphan-cleanup residuals
+(quota pressure deliberately left open). See §3 for each.
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `8dcdaf5` (land
-hydration) + this session's uncommitted 3i(c) work. Not pushed — local commits only, awaiting the
-owner's go-ahead to push/open a PR.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `273755f` (3i(c))
++ this session's uncommitted 3i(b) orphan-sweep work. Not pushed — local commits only, awaiting
+the owner's go-ahead to push/open a PR.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -21,7 +22,7 @@ owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 In progress, close to exit-gate | 3a–3h done. 3e CLOSED in full (mobs/tallies, animals/moves/health/identifiers/theft/weights/breeding, AND land — see §3). 3i(a)/(b)/(d) done. **3i(c) now CLOSED this session** (§3) — the attachment queue box that was the last ◐ in the checklist. Two boxes still open: the real-Postgres offline-matrix e2e sweep, and 3i(b)'s quota/retry/orphan-cleanup residuals. See §5 |
+| 3 — Offline sync | 🔶 In progress, close to exit-gate | 3a–3h done. 3e CLOSED in full (mobs/tallies, animals/moves/health/identifiers/theft/weights/breeding, AND land — see §3). 3i(a)/(d) done; **3i(b) and 3i(c) both CLOSED this session** (§3) — 3i(c) was the last fully-◐ box, 3i(b)'s retry/orphan-cleanup residuals are closed with quota pressure deliberately left open (documented gap, not a silent one). One box still open: the real-Postgres offline-matrix e2e sweep (O-3 specifically — see §5) |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -112,6 +113,23 @@ Built from the prior session's design notes, followed literally:
 - Touches FR-131-adjacent code (the `animalrow:` guard on the animal/attachment path) — part of the
   compliance-pass scope below, not separately gated.
 
+✅ **CLOSED 2026-08-14 — 3i(b)'s retry-on-transient-failure and orphan-cleanup residuals; quota
+pressure left deliberately open.** Retry: not hand-rolled — documented in `object-storage.ts`'s
+header that the AWS SDK v3 `S3Client` already retries a transient `headObject`/`deleteObject`
+failure with its default STANDARD mode (3 attempts, exponential backoff); `presignPut` is the one
+call with no network in it (`getSignedUrl` signs locally), so the actual PUT's retry is
+`Outbox.tsx`'s own (3i(c): the whole three-leg send retries from `createAttachment` next reconnect).
+Orphan cleanup: new `AttachmentOrphanSweepService` (`apps/api/src/attachments/`), mirroring
+`MembershipExpiryService`'s hourly `@Cron` shape — sweeps `pending` rows older than
+`ATTACHMENT_ORPHAN_THRESHOLD_HOURS` (24h) via the `attachments_pending_idx` partial index, releases
+the S3/MinIO object (new `ObjectStorage.deleteObject`), soft-deletes the row. Traced safe against a
+device genuinely offline for a week (not abandoned): neither `createAttachment` nor
+`finalizeAttachment` filters on `deleted_at`, so a late retry still completes — proven directly by
+an integration test that sweeps a row and then finishes its upload through the normal service
+calls. 6 new tests against real Postgres + real MinIO. Quota pressure NOT built — no meaningful way
+to simulate S3/MinIO storage-capacity refusal without configuring bucket quotas via MinIO's admin
+API in the testcontainer, which is real additional infrastructure this slice did not build.
+
 ⛔ **Compliance-pass scope, not yet requested.** Everything since the last cleared pass
 (`9b7fa2e..HEAD`) sits inside one un-requested `compliance-checker` scope: the back-dated-move
 fail-closed fix, land hydration, and 3i(c)'s `animalrow:` guard addition. Say so before calling any
@@ -145,16 +163,15 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 `docs/phase-3-6-scope` still needs rebasing onto `main` before any Phase 3–6 scope-doc work.
 
 21. ✅ Done 2026-08-14: back-dated-move fail-closed, land hydration, 3i(c) — see §3.
-22. **Next: two exit-gate boxes remain open.**
-    - The offline matrix (`testing-strategy.md` §4) needs its real-Postgres/real-adapter sweep for
-      the rows Phase 3 actually owns (O-1 through O-11 roughly; O-12+ belong to later phases). O-1/
-      O-2 are already covered (local-only, real browser). O-11 is covered by 3g against real
-      Postgres. O-5/6/7 are partially covered by `real-sync-hydration.spec.ts`. The gate-verbatim
-      row, O-3 (six weeks offline → sync → `occurred_at` intact), has no real-stack test yet.
-    - 3i(b)'s quota-pressure/transient-retry/orphan-cleanup residuals (the `attachments_pending_idx`
-      partial index exists; nothing reads it yet — mirror `MembershipExpiryService`'s interval-sweep
-      shape for the orphan cleanup).
-23. Issue #10 (`theft_incident_animals` surrogate-id gap — a hydrated theft incident's `animalIds`
+22. ✅ Done 2026-08-14: 3i(b)'s retry-on-transient-failure and orphan-cleanup residuals — see §3.
+    Quota pressure deliberately left open (documented, not silently dropped).
+23. **Next: one exit-gate box remains open.** The offline matrix (`testing-strategy.md` §4) needs
+    its real-Postgres/real-adapter sweep for the rows Phase 3 actually owns (O-1 through O-11
+    roughly; O-12+ belong to later phases). O-1/O-2 are already covered (local-only, real browser).
+    O-11 is covered by 3g against real Postgres. O-5/6/7 are partially covered by
+    `real-sync-hydration.spec.ts`. The gate-verbatim row, O-3 (six weeks offline → sync →
+    `occurred_at` intact), has no real-stack test yet.
+24. Issue #10 (`theft_incident_animals` surrogate-id gap — a hydrated theft incident's `animalIds`
     is always `[]`) still untouched, tracked separately, not a Phase 3 exit-gate blocker.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway

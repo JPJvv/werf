@@ -1135,6 +1135,7 @@ export class LivestockService {
           and(
             eq(theftIncidentAnimals.incidentId, incidentId),
             eq(theftIncidentAnimals.farmId, farmId),
+            isNull(theftIncidentAnimals.deletedAt),
           ),
         );
 

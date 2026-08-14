@@ -12,7 +12,7 @@ import { inflateSync } from 'node:zlib';
 import type { input as ZodInput } from 'zod';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
@@ -3731,6 +3731,43 @@ describe('weight capture (FR-140)', () => {
       });
       // ⛔ The pack can never carry an accusation (POPIA s26).
       expect(pack).not.toHaveProperty('suspect');
+    });
+
+    it('excludes an unlinked (soft-deleted) animal from the pack, not just from the list view', async () => {
+      // Migration 0025 added theft_incident_animals.deleted_at so a farmer can unlink an animal
+      // named in error and relink it later (the partial unique index in packages/db/src/schema/
+      // theft.ts exists for exactly this). The evidence pack is handed to the SAPS Stock Theft
+      // Unit under the reverse-onus Stock Theft Act — it must reflect the CURRENT link set, not
+      // every animal ever linked.
+      const a = await tenant('Alpha');
+      const kept = await anAnimalWithTrail(a.farmId);
+      const [unmarked] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, species: 'cattle', sex: 'female' })
+        .returning();
+      const unlinkedAnimalId = unmarked!.id;
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({
+          farmId: a.farmId,
+          headCount: 2,
+          animalIds: [kept.animalId, unlinkedAnimalId],
+        }),
+      );
+
+      await elevated.db
+        .update(theftIncidentAnimals)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(theftIncidentAnimals.incidentId, incident.id),
+            eq(theftIncidentAnimals.animalId, unlinkedAnimalId),
+          ),
+        );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals.map((animal) => animal.animalId)).toEqual([kept.animalId]);
     });
 
     it('renders the pack to a PDF a farmer can hand the Stock Theft Unit', async () => {

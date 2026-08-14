@@ -1227,22 +1227,48 @@ add the one shared local-first attachment path approved on 2026-08-08.
   fixture row exactly as db.md promises adding a table without classifying it would.
   ⛔ **Not yet built: the binary path.** "The binary stays in OPFS until its checksum-confirmed
   server acknowledgement is durable" is 3i(c) scope, unstarted this session.
-◐ 3i(c) Animal photos and later crop/grievance documents use one deferred queue: capture commits
+☑ 3i(c) Animal photos and later crop/grievance documents use one deferred queue: capture commits
   locally with no signal, browser kill/reload loses neither metadata nor blob, and retry is idempotent.
-  ⛔ **Deliberately NOT started this session — a scoping decision, not an oversight.** `Outbox.tsx`
-  is the most defect-dense file in the repo (ten review passes, each finding a bug in the previous
-  pass's fix); a correct integration is not "append a `FlushItem`" — it needs an `animalrow:`
-  subject namespace mirroring `mobrow:` (so an attachment behind an unsent/refused animal is HELD,
-  not 404-set-aside), touches the animal items' `provides`, and needs `Outbox.test.tsx` coverage
-  plus an OPFS-durability e2e (`local-db-diagnostic.spec.ts`'s shape) since OPFS is browser-only and
-  the unit tier cannot reach it. Design decisions made so the next session starts warm rather than
-  re-deriving them: (a) the three-leg send (create → PUT → finalize) is end-to-end idempotent by
-  construction (3i(b)), so it can be ONE `FlushItem`, not three; (b) ordering is FK-only, after
-  animals — no safety ordering applies (nothing here is evidence a disposal guard reads), but it
-  needs the new `animalrow:` subject; (c) the local blob is released only once `finalize` returns,
-  never on the PUT's own 200 — a PUT can succeed while the app is killed before `finalize` runs, and
-  the queue must still hold the blob to retry that leg; (d) a `BlobStore` port/OPFS-adapter split,
-  the same port/adapter shape 3i(b)'s `ObjectStorage` uses, for testability without a browser.
+  **CLOSED 2026-08-14**, built from the design notes the prior session left, followed literally:
+  - **`BlobStore` port + one real OPFS adapter** (`packages/sync/src/blob-store.ts`/
+    `opfs-blob-store.ts`), mirroring `apps/api`'s `ObjectStorage` split. New `apps/web/src/
+    attachments/LocalAttachments.tsx` holds the metadata half (SQLite-backed `CaptureStore`, same
+    shape as every other `Local*.tsx`) and the blob half separately — `capture_records.
+    payload_json` is TEXT, so a `Blob` has nowhere to live in it. `attachmentApi.ts`'s
+    `sendAttachment` runs create → PUT → finalize inside ONE `FlushItem.send`, never split into
+    three queue entries — the three-leg send is end-to-end idempotent by construction (3i(b)), and
+    `createAttachment` is called FRESH every attempt (never a cached presigned URL, per
+    offline-sync.md §3.1's "clients never store presigned URLs").
+  - **`animalrow:` subject added** to animal `FlushItem`s in `Outbox.tsx`, mirroring the existing
+    `mobrow:` pattern — a photo behind an unsent/refused animal is HELD, not 404-set-aside.
+  - **The blob is released only once `finalize` returns**, never on the PUT's own 200 — proven with
+    an interruption test: PUT succeeds, `finalize` fails (network drop), the app "restarts"
+    (unmount/remount), the blob is still in `BlobStore`, and a retry completes the send fully.
+  - **A PUT failure is treated as transient**, never a permanent refusal — `createAttachment`'s
+    idempotency means the whole send just retries from leg 1 with a fresh signature next round;
+    there is no queue-safe way to tell "never succeeds" from "needs a new signature" without
+    parsing S3's XML error body, which this app has no other reason to understand.
+  - **One real capture UI**: `RecordPhotoScreen.tsx` (`/animals/photo`), the same walk-the-herd
+    rhythm as `WeighSessionScreen.tsx`. Deliberately does NOT render photos hydrated from other
+    devices — this box is capture/durability/retry only, not a read-path slice.
+  - **Real OPFS proof**, not just the fake: `apps/web/e2e/attachment-blob-diagnostic.spec.ts`
+    mirrors `local-db-diagnostic.spec.ts`'s two-navigation shape (write, fresh navigate, read back)
+    — jsdom has no OPFS, so this is the only tier that can prove persistence rather than an
+    in-memory illusion of it. Every other test uses `@werf/sync/testing`'s new
+    `createInMemoryBlobStore`, wired through the same `vi.mock` seam as `getLocalDatabase()`.
+  - Found and fixed along the way: jsdom's `Blob` has no `.arrayBuffer()` — a real environment gap
+    (every browser this product targets has had it for years), polyfilled once in `test-setup.ts`
+    via `FileReader`, matching the existing `matchMedia` stub's "patch the environment, not the
+    code" discipline; `AuthProvider`'s boot-time refresh effect (fires when a fresh mount's
+    in-memory session has no access token — the ordinary shape of "closed and reopened") needed a
+    properly-shaped mocked response in the interruption test, not a blind `{}}` accept-all.
+  - Evidence: 9 new tests in `Outbox.test.tsx` (refused/aborted-round/landed/interruption
+    scenarios, all fail-first except the backward-compat guards), 4 in new `RecordPhoto.test.tsx`,
+    1 real-OPFS e2e. `pnpm --filter @werf/web build`: 161.37 KB gz ≤ 250 KB. Full `pnpm test:e2e`:
+    31 passed / 1 skipped.
+  - Touches FR-131-adjacent code (the `animalrow:` guard sits beside the animal disposal guard) —
+    inside the same not-yet-requested compliance-pass scope as the rest of this session's diff
+    (STATUS.md §3), not separately gated.
 ◐ 3i(b) The API authorises the farm before issuing a short-lived presigned upload; object keys are
   server-derived, never arbitrary client paths, and another farm can neither upload nor read them.
   **Closed.** `apps/api/src/attachments/`: `createAttachment`/`finalizeAttachment`

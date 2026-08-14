@@ -52,6 +52,7 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   breeding: 'notSent.kind.breeding',
   theft: 'notSent.kind.theft',
   rainfall: 'notSent.kind.rainfall',
+  attachment: 'notSent.kind.attachment',
 };
 
 /**

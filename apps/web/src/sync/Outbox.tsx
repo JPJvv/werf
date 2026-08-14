@@ -53,6 +53,13 @@ import {
 } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useHydratedLandUnits } from '../land/HydratedLand';
+import {
+  useAttachments,
+  useAttachmentsHydrationFailed,
+  useAttachmentsSettled,
+  useAttachmentBlobStore,
+} from '../attachments/LocalAttachments';
+import { sendAttachment } from '../attachments/attachmentApi';
 import { useAnimals, useAnimalsHydrationFailed, useAnimalsSettled } from '../livestock/LocalHerd';
 import { useMobs, useMobsHydrationFailed, useMobsSettled } from '../livestock/LocalMobs';
 import {
@@ -223,7 +230,8 @@ export type CaptureKind =
   | 'health'
   | 'breeding'
   | 'theft'
-  | 'rainfall';
+  | 'rainfall'
+  | 'attachment';
 
 /** One queued capture: its id (for the sent-log), what it is, and how to send it. */
 interface FlushItem {
@@ -469,8 +477,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
   const rainfall = useRainfall();
+  const attachments = useAttachments();
+  // Never a `FlushItem` field, never read outside `sendAttachment` — the outbox holds no blob
+  // itself, only the handle to where the local capture store already keeps them.
+  const attachmentBlobStore = useAttachmentBlobStore();
 
-  // ⭐ EVERY STORE THIS QUEUE READS, SETTLED, BEFORE ANY OF IT IS TRUSTED. Each of the 13 stores
+  // ⭐ EVERY STORE THIS QUEUE READS, SETTLED, BEFORE ANY OF IT IS TRUSTED. Each of the 14 stores
   // above hydrates independently and asynchronously (phase-checklists.md 3c) — the SQLite-backed
   // capture stores start empty and fill in on their own schedule, not necessarily together. An
   // unhydrated store's `all()` is `[]`, which is INDISTINGUISHABLE from "this farm genuinely has
@@ -507,6 +519,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breedingSettled = useBreedingEventsSettled();
   const theftSettled = useTheftIncidentsSettled();
   const rainfallSettled = useRainfallSettled();
+  const attachmentsSettled = useAttachmentsSettled();
   const allSettled =
     landUnitsSettled &&
     boundaryWalksSettled &&
@@ -524,7 +537,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     healthSettled &&
     breedingSettled &&
     theftSettled &&
-    rainfallSettled;
+    rainfallSettled &&
+    attachmentsSettled;
 
   // ⭐ FINDING 1 (sync-auditor, 2026-08-09): `settled()` flips true on EITHER outcome, by design
   // (a store that can never open must not strand every other store's flush forever) — but that
@@ -553,6 +567,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breedingHydrationFailed = useBreedingEventsHydrationFailed();
   const theftHydrationFailed = useTheftIncidentsHydrationFailed();
   const rainfallHydrationFailed = useRainfallHydrationFailed();
+  const attachmentsHydrationFailed = useAttachmentsHydrationFailed();
   const anyHydrationFailed =
     landUnitsHydrationFailed ||
     boundaryWalksHydrationFailed ||
@@ -570,7 +585,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     healthHydrationFailed ||
     breedingHydrationFailed ||
     theftHydrationFailed ||
-    rainfallHydrationFailed;
+    rainfallHydrationFailed ||
+    attachmentsHydrationFailed;
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
   const online = useSyncStatus().status !== 'offline';
@@ -698,6 +714,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'animal',
           detail: labels.get(animal.id) ?? null,
           send: (token) => livestockApi.createAnimal(animal, token),
+          // The row an attachment behind it is a foreign key to (phase-checklists.md 3i(c)) —
+          // same shape as `mobrow:` above. Refused or held, a photo of this animal must wait
+          // rather than 404ing individually for the same one cause.
+          provides: [`animalrow:${animal.id}`],
         });
       }
     }
@@ -1008,6 +1028,25 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
+    // An attachment references its subject (an animal today) and nothing else — FK-only, same
+    // class as a boundary walk or a weight, with no safety ordering: nothing here creates evidence
+    // a server-side guard reads, and nothing judges one.
+    for (const attachment of attachments) {
+      if (!sent.has(attachment.id)) {
+        items.push({
+          id: attachment.id,
+          kind: 'attachment',
+          detail:
+            attachment.subjectType === 'animal' ? (labels.get(attachment.subjectId) ?? null) : null,
+          send: (token) => sendAttachment(attachment, attachmentBlobStore, token),
+          // Held behind its subject's own row, exactly as a tally is held behind `mobrow:` — an
+          // attachment for an animal this device has not yet had accepted must wait rather than
+          // 404ing individually for the same one cause.
+          guardedBy:
+            attachment.subjectType === 'animal' ? [`animalrow:${attachment.subjectId}`] : [],
+        });
+      }
+    }
     // Rainfall references no animal, so it has no place in the FK ordering above — it can go last.
     for (const reading of rainfall) {
       if (!sent.has(reading.id)) {
@@ -1039,6 +1078,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     breeding,
     theftIncidents,
     rainfall,
+    attachments,
+    attachmentBlobStore,
     sent,
   ]);
   const pendingCount = queue.length;

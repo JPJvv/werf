@@ -23,6 +23,7 @@ import { LocalBreedingProvider } from '../livestock/LocalBreeding';
 import { LocalSpeciesGestationProvider } from '../livestock/LocalSpeciesGestation';
 import { LocalTheftProvider } from '../livestock/LocalTheft';
 import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
+import { LocalAttachmentsProvider } from '../attachments/LocalAttachments';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -66,6 +67,9 @@ const CAPTURE_STORES = [
   LocalSpeciesGestationProvider,
   LocalTheftProvider,
   LocalRainfallProvider,
+  // Split-store like `LocalLand` above — its blob half lives in OPFS, not the SQLite-backed
+  // metadata table this list otherwise composes (phase-checklists.md 3i(c)).
+  LocalAttachmentsProvider,
   // Also not a capture store — the DOWN-SYNC half of mobs/tallies (phase-checklists.md 3e).
   // `Outbox.tsx` and `herd.ts` both read it, so it has to sit above both, same as
   // `LocalMobsProvider`/`LocalTalliesProvider` above it in this list.

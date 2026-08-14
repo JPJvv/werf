@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
 import { App } from '../App';
 import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeBlobStore } from '../test-support/blob-store';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -2010,5 +2011,216 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     expect(await screen.findByText('Saved and sent')).toBeTruthy();
     expect(fetchMock.mock.calls.length).toBeGreaterThan(attemptsBeforeRetry);
+  });
+});
+
+describe('sending an attachment (phase-checklists.md 3i(c))', () => {
+  const ATTACHMENT_ID = '0190f3a0-0000-7000-8000-0000000000f5';
+  const UPLOAD_URL = 'https://minio.test/bucket/attachment-key?sig=abc';
+
+  function seedAnimalAndAttachment(): void {
+    const animal = schemas.newAnimalSchema.parse({
+      id: ANIMAL_ID,
+      farmId: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+    });
+    window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
+    window.localStorage.setItem(
+      `werf-attachments:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: ATTACHMENT_ID,
+          farmId: FARM_ID,
+          subjectType: 'animal',
+          subjectId: ANIMAL_ID,
+          mimeType: 'image/jpeg',
+          sizeBytes: 4,
+          checksum: 'a'.repeat(64),
+          occurredAt: '2026-07-20T06:00:00.000Z',
+        },
+      ]),
+    );
+  }
+
+  /** A three-leg-aware fetch, so each test can choose how the ANIMAL leg and the FINALIZE leg
+   *  behave without repeating the URL-branching every time. `create`/PUT always accept — no test
+   *  below needs them to do otherwise. */
+  function attachmentFetchMock(
+    opts: {
+      animal?: 'accept' | 'refuse' | 'networkFail';
+      finalize?: 'accept' | 'networkFail';
+    } = {},
+  ) {
+    const { animal = 'accept', finalize = 'accept' } = opts;
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/livestock/animals') && method === 'POST') {
+        if (animal === 'networkFail') throw new TypeError('Failed to fetch');
+        if (animal === 'refuse') {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response;
+        }
+        return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+      }
+      if (url.endsWith('/attachments') && method === 'POST') {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            attachmentId: ATTACHMENT_ID,
+            uploadUrl: UPLOAD_URL,
+            checksumHeaderValue: 'YWJjZA==',
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          }),
+        } as unknown as Response;
+      }
+      if (url === UPLOAD_URL && method === 'PUT') {
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      }
+      if (url.endsWith('/attachments/finalize') && method === 'POST') {
+        if (finalize === 'networkFail') throw new TypeError('Failed to fetch');
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      }
+      // AuthProvider's boot effect refreshes on any mount whose in-memory session has no
+      // access token — the ordinary shape of a "cold start", which the interruption test below
+      // deliberately re-renders through. A generic `{}` fallback fails `adopt()`'s own shape
+      // check and leaves the flush with no token to send anything, forever — this branch is what
+      // every OTHER `acceptingFetch()`-style mock in this file gets for free by accepting
+      // everything blindly, which this mock cannot do since it must also branch on the presigned
+      // PUT going to a non-API host.
+      if (url.endsWith('/auth/refresh') && method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            accessToken: 'refreshed-access-token',
+            expiresIn: 900,
+            user: SESSION_USER,
+            farms: [
+              { id: FARM_ID, name: 'Rietfontein', enterpriseTypes: ['beef_cattle'], role: 'owner' },
+            ],
+            activeFarmId: FARM_ID,
+            secondFactor: 'complete',
+          }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+  }
+
+  it('⭐ holds a photo behind a refused animal, and never attempts the upload', async () => {
+    // The `animalrow:` subject (phase-checklists.md 3i(c)), the same taint shape `mobrow:` already
+    // proves for a tally on a mob the server has not accepted: a refused animal must hold the
+    // photo behind it rather than let it 404 individually for the same one cause.
+    cachedSession();
+    seedAnimalAndAttachment();
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock({ animal: 'refuse' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/livestock/animals'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/attachments'))).toBe(false);
+    // Held, not lost: the blob is untouched and the attachment never joined the sent-log.
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(true);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(ATTACHMENT_ID);
+  });
+
+  it('never attempts a photo when the animal ahead of it in the queue aborts the round', async () => {
+    // FK ordering, not the taint mechanism this time: a transient failure on the animal aborts the
+    // WHOLE round, so the attachment queued behind it (send order, `Outbox.tsx`'s FK comment) is
+    // never even attempted this round — proving where the queue construction actually placed it.
+    cachedSession();
+    seedAnimalAndAttachment();
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock({ animal: 'networkFail' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/livestock/animals'))).toBe(
+        true,
+      );
+    });
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/attachments'))).toBe(false);
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(true);
+  });
+
+  it('⭐ sends the whole three-leg upload once its animal has landed, and releases the blob', async () => {
+    cachedSession();
+    seedAnimalAndAttachment();
+    // The animal is ALREADY sent — this device's own earlier round — so this round never attempts
+    // it again; the attachment's `guardedBy` subject was simply never tainted.
+    window.localStorage.setItem(`werf-sent:${FARM_ID}`, JSON.stringify([ANIMAL_ID]));
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    const calls = fetchMock.mock.calls.map(
+      (c) => [String(c[0]), (c[1] as RequestInit | undefined)?.method] as const,
+    );
+    expect(calls.some(([u, m]) => u.endsWith('/attachments') && m === 'POST')).toBe(true);
+    expect(calls.some(([u, m]) => u === UPLOAD_URL && m === 'PUT')).toBe(true);
+    expect(calls.some(([u, m]) => u.endsWith('/attachments/finalize') && m === 'POST')).toBe(true);
+    expect(calls.some(([u]) => u.endsWith('/livestock/animals'))).toBe(false);
+    // Finalize genuinely returned, so the local blob is gone.
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).toContain(ATTACHMENT_ID);
+  });
+
+  it('⭐ keeps the blob through an interruption between a successful PUT and finalize, and completes on retry', async () => {
+    // Design note (c), phase-checklists.md 3i(c): the local blob is released ONLY once finalize
+    // returns, never on the PUT's own success — because a PUT can land while the app is killed
+    // before finalize runs, and the retry needs the bytes still there to attempt that leg again.
+    cachedSession();
+    seedAnimalAndAttachment();
+    window.localStorage.setItem(`werf-sent:${FARM_ID}`, JSON.stringify([ANIMAL_ID]));
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock({ finalize: 'networkFail' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { unmount } = render(<App />);
+
+    // The PUT reached the object store; finalize's response never arrived (a network failure
+    // aborts the round rather than refusing it). Waited out to the FINALIZE attempt, not just the
+    // PUT — unmounting the instant the PUT call is observed would race the still-in-flight
+    // `sendAttachment` continuation against the teardown below. The property under test: the blob
+    // is STILL there once the whole interrupted attempt has genuinely settled.
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.map(
+        (c) => [String(c[0]), (c[1] as RequestInit | undefined)?.method] as const,
+      );
+      expect(calls.some(([u, m]) => u.endsWith('/attachments/finalize') && m === 'POST')).toBe(
+        true,
+      );
+    });
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(true);
+
+    // The app restarts — unmounted, then a fresh render against the SAME fake blob store (this
+    // module's memoized-per-test singleton), the way `getCurrentFakeLocalDatabase` already models
+    // a cold start elsewhere in this file.
+    unmount();
+    const resumedFetch = attachmentFetchMock();
+    vi.stubGlobal('fetch', resumedFetch);
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).toContain(ATTACHMENT_ID);
   });
 });

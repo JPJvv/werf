@@ -45,6 +45,43 @@ export async function postCapture(path: string, body: unknown, accessToken: stri
 }
 
 /**
+ * `postCapture`, but the endpoint's response body is the point rather than discardable — an
+ * attachment's `createAttachment` leg needs the presigned `uploadUrl` back, and every OTHER
+ * capture endpoint this app posts to is a bare 201 with nothing worth reading. Same three-way
+ * error taxonomy as `postCapture`; the only difference is what happens on `response.ok`.
+ */
+export async function postCaptureAndRead<T>(
+  path: string,
+  body: unknown,
+  accessToken: string,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new NetworkUnavailableError();
+  }
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => ({}));
+    const { code, message } = payload as { code?: string; message?: string };
+    throw new AuthApiError(
+      code ?? 'UNKNOWN',
+      message ?? 'Capture was not accepted',
+      response.status,
+    );
+  }
+  return (await response.json()) as T;
+}
+
+/**
  * The INBOUND direction, with the same error taxonomy — the reference registers the crush needs
  * offline, and the residue register the server derives.
  *

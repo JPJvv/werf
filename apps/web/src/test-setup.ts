@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { getCurrentFakeLocalDatabase, resetFakeLocalDatabase } from './test-support/local-db';
+import { getCurrentFakeBlobStore, resetFakeBlobStore } from './test-support/blob-store';
 
 // Unmount rendered React trees after every test. Without this, DOM accumulates
 // across tests in a file and getByRole/getByText fail with "multiple elements".
@@ -23,9 +24,33 @@ vi.mock('./sync/local-db', () => ({
   getLocalDatabase: getCurrentFakeLocalDatabase,
 }));
 
+// Same reasoning as the SQLite mock above, for the OPFS-backed half of an attachment
+// (phase-checklists.md 3i(c)): jsdom has no OPFS, and `LocalAttachmentsProvider` mounts on every
+// <App/> render regardless of whether a test touches attachments.
+vi.mock('./attachments/blob-store', () => ({
+  getBlobStore: getCurrentFakeBlobStore,
+}));
+
 beforeEach(() => {
   resetFakeLocalDatabase();
+  resetFakeBlobStore();
 });
+
+// jsdom's Blob/File implementation has no `arrayBuffer()` (real browsers, including every one
+// this product targets, have had it for years) — `LocalAttachments.tsx`'s `sha256Hex` calls it to
+// checksum a photo at capture. `FileReader` IS implemented in jsdom, so the polyfill reads through
+// that rather than reimplementing anything — same "patch the environment gap, not the code"
+// discipline as the `matchMedia` stub below.
+if (typeof Blob !== 'undefined' && typeof Blob.prototype.arrayBuffer !== 'function') {
+  Blob.prototype.arrayBuffer = function arrayBuffer(this: Blob): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
 
 // jsdom does not implement matchMedia. The theme code guards its absence, but a
 // stub lets "Match my phone" (system) paths run in tests. Defaults to light.

@@ -52,6 +52,11 @@ export {
   type SqliteCaptureStoreOptions,
 } from './sqlite-capture-store';
 export { createDraftStore, type DraftStore, type DraftStoreOptions } from './draft-store';
+// The blob half of an attachment (phase-checklists.md 3i(c)) — a narrow port plus the one real
+// OPFS adapter. Safe to export eagerly, unlike `local-database.ts`: `navigator.storage` is a
+// plain browser standard, not `@powersync/web`, so nothing here pulls WASM into the bundle.
+export type { BlobStore } from './blob-store';
+export { createOpfsBlobStore } from './opfs-blob-store';
 export { createSentLog, type SentLog, type SentLogOptions } from './sent-log';
 export {
   createReferenceCache,

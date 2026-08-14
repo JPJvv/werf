@@ -417,3 +417,36 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
   // package actually issues, not a real generic SQL result.
   return fake as FakeLocalDatabase;
 }
+
+/**
+ * A fake `BlobStore` (phase-checklists.md 3i(c)) — a plain in-memory `Map`, since `Blob` itself
+ * already works under jsdom/Node (unlike OPFS, which does not exist there — see
+ * `opfs-blob-store.ts`'s header). Not a mock of our own code: the real port has three methods and
+ * this implements all three against a `Map` rather than intercepting calls to the real adapter.
+ */
+export function createInMemoryBlobStore(): FakeBlobStore {
+  const blobs = new Map<string, Blob>();
+  return {
+    async put(key, blob) {
+      blobs.set(key, blob);
+    },
+    async get(key) {
+      return blobs.get(key) ?? null;
+    },
+    async delete(key) {
+      blobs.delete(key);
+    },
+    has(key: string): boolean {
+      return blobs.has(key);
+    },
+  };
+}
+
+/** `BlobStore` plus one test-only escape hatch: asserting a blob was actually released, without
+ *  every caller needing to `get()` and check `null` for what is really a presence question. */
+export interface FakeBlobStore {
+  put(key: string, blob: Blob): Promise<void>;
+  get(key: string): Promise<Blob | null>;
+  delete(key: string): Promise<void>;
+  has(key: string): boolean;
+}

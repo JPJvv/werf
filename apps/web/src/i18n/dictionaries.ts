@@ -118,6 +118,7 @@ const en = {
   'notSent.kind.theft': 'A stock-theft report',
   'notSent.kind.rainfall': 'A rainfall reading',
   'notSent.kind.tally': 'A count change for',
+  'notSent.kind.attachment': 'A photo for',
   // Each answers the next question before it is asked. The tag case is separated out because it is
   // far and away the commonest refusal and it has an answer the generic line cannot give.
   'notSent.why.tagTaken':
@@ -369,6 +370,7 @@ const en = {
   'animals.new.done': 'Done',
   'animals.weigh': 'Weigh session',
   'animals.loss': 'Record a loss',
+  'animals.photo': 'Add a photo',
   'animals.theft': 'Stock theft',
   'animals.tag': 'Tag animals',
   'animals.untagged': 'without a number',
@@ -756,6 +758,18 @@ const en = {
   'weigh.emptyAction': 'Record an animal',
   'weigh.done.count': 'weighed',
   'weigh.done.link': 'Done',
+  // Attaching a photo (phase-checklists.md 3i(c)). Same crush rhythm as the weigh session.
+  'photo.title': 'Add a photo',
+  'photo.of': 'of',
+  'photo.field': 'Photo',
+  'photo.save': 'Save & next',
+  'photo.saving': 'Saving…',
+  'photo.skip': 'Skip this one',
+  'photo.back': 'Back to animals',
+  'photo.empty': 'No animals to photograph yet. Record one first — it saves with no signal.',
+  'photo.emptyAction': 'Record an animal',
+  'photo.done.count': 'photographed',
+  'photo.done.link': 'Done',
   // Species and sex, in the farmer's words rather than the enum's.
   // Age/sex classes (FR-705). Tokens, not words, all the way from the domain — so Afrikaans can
   // say "koeie" without the English "cow" being baked into the rule that decides the class.
@@ -907,6 +921,7 @@ const af: Record<TranslationKey, string> = {
   'notSent.kind.theft': '’n Veediefstalverslag',
   'notSent.kind.rainfall': '’n Reënvallesing',
   'notSent.kind.tally': '’n Getalverandering vir',
+  'notSent.kind.attachment': '’n Foto vir',
   'notSent.why.tagTaken':
     'Daardie nommer is reeds op ’n ander dier. Lees dit weer van die dier af en teken dit met die regte nommer aan — hierdie een bly hier tot jy dit doen.',
   'notSent.why.conflict':
@@ -1120,6 +1135,7 @@ const af: Record<TranslationKey, string> = {
   'animals.new.done': 'Klaar',
   'animals.weigh': 'Weegsessie',
   'animals.loss': 'Teken ’n verlies aan',
+  'animals.photo': 'Voeg ’n foto by',
   'animals.theft': 'Veediefstal',
   'animals.tag': 'Merk diere',
   'animals.untagged': 'sonder ’n nommer',
@@ -1448,6 +1464,18 @@ const af: Record<TranslationKey, string> = {
   'weigh.emptyAction': 'Teken ’n dier aan',
   'weigh.done.count': 'geweeg',
   'weigh.done.link': 'Klaar',
+  'photo.title': 'Voeg ’n foto by',
+  'photo.of': 'van',
+  'photo.field': 'Foto',
+  'photo.save': 'Stoor & volgende',
+  'photo.saving': 'Stoor tans…',
+  'photo.skip': 'Slaan hierdie een oor',
+  'photo.back': 'Terug na diere',
+  'photo.empty':
+    'Nog geen diere om te fotografeer nie. Teken eers een aan — dit stoor sonder sein.',
+  'photo.emptyAction': 'Teken ’n dier aan',
+  'photo.done.count': 'gefotografeer',
+  'photo.done.link': 'Klaar',
   'class.female': 'koeie/ooie',
   'class.male': 'bulle/ramme',
   'class.castrate': 'osse/hamels',

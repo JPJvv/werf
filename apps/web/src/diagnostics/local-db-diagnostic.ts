@@ -1,5 +1,5 @@
 import { uuidv7 } from '@werf/core';
-import { createSyncConnector } from '@werf/sync';
+import { createSyncConnector, createOpfsBlobStore } from '@werf/sync';
 
 /**
  * NOT part of the app. This is the browser-open proof STATUS.md's Phase 3 next-steps demanded
@@ -23,6 +23,12 @@ import { createSyncConnector } from '@werf/sync';
  * worker chunk. `mode=connect` additionally requires a real access token minted by a signed-in,
  * 2FA-enrolled session (`?accessToken=`) — dev-only, hand-supplied; never something this page
  * mints or stores itself.
+ *
+ * `mode=blob-write`/`mode=blob-read` (phase-checklists.md 3i(c)) prove the SAME two things for
+ * the OPFS half of an attachment: `createOpfsBlobStore` is a plain browser standard
+ * (`navigator.storage.getDirectory()`), not `@powersync/web`, so it needs no dynamic import to
+ * stay out of NFR-009's budget — but jsdom/Node have no OPFS either, so it is just as untestable
+ * outside a real browser as the SQLite half above, for the same reason.
  */
 
 const RESULT_ELEMENT_ID = 'local-db-diagnostic-result';
@@ -104,6 +110,24 @@ async function run(): Promise<void> {
         'SELECT id, name FROM farms ORDER BY name',
       );
       resultEl.textContent = `ok:${rows.length}:${rows.map((r) => r.name).join(',')}`;
+      resultEl.dataset.status = 'ok';
+    } else if (mode === 'blob-write') {
+      // phase-checklists.md 3i(c) — the OPFS half of an attachment, proven the same way the
+      // SQLite half above is: a real store, a real write, read back from a FRESH NAVIGATION so
+      // this proves persistence rather than an in-memory illusion of it.
+      const store = createOpfsBlobStore();
+      const id = uuidv7();
+      await store.put(id, new Blob(['diagnostic-blob-bytes'], { type: 'text/plain' }));
+      resultEl.textContent = `ok:${id}`;
+      resultEl.dataset.status = 'ok';
+    } else if (mode === 'blob-read') {
+      const store = createOpfsBlobStore();
+      const id = params.get('id');
+      if (!id) throw new Error('mode=blob-read requires ?id=');
+      const blob = await store.get(id);
+      if (!blob) throw new Error('blob not found');
+      const text = await blob.text();
+      resultEl.textContent = `ok:${text}`;
       resultEl.dataset.status = 'ok';
     } else {
       throw new Error(`unknown mode "${mode}"`);

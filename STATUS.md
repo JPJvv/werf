@@ -61,13 +61,6 @@ audit row") has nothing to test against today. Two ways to close: (a) `db.md` is
 FUTURE mechanism for whenever a genuinely LWW-editable field is added, and should say so; or (b) an
 audit mechanism is scheduled now, ahead of any field that needs it. → _Answer:_
 
-⛔ **Tracked, not fixed — the `landrow:` guard gap** (found while wiring land hydration). `Outbox.tsx`
-has a `mobrow:` synthetic subject so a tally on a mob the server hasn't accepted is HELD, not
-404-set-aside. No equivalent `landrow:` exists for land units — a move/animal/boundary-walk capture
-referencing a `land_unit_id` this device queued but refused this round is not held behind it. A
-distinct guard-system change (mirroring `mobrow:`), deserving its own scoped pass, not a drive-by.
-Not a hydration defect — a hydrated-only land unit needs no such guard.
-
 ✅ **CLOSED 2026-08-14 (first session), condensed — full detail in git history:**
 - Back-dated local move, fail-closed (JP's choice): `withdrawal.ts`'s `mobMembership` refuses
   (`blocked: true`) rather than trust the fallback interval when an animal's earliest known move is
@@ -170,7 +163,7 @@ verifiable (own tests, own `pnpm verify`, own commit) — that is what makes sli
     ⛔ Touched the stock-theft table — regulated code, adds to §3's compliance-pass scope.
 
 ✅ 27. Done 2026-08-14 (third session): **P2.7 — `landrow:` dependency subjects/guards, commit
-    `256d06a`.** Closes the open item §3 tracked. Went WIDER than the prior session's design note:
+    `256d06a`.** Went WIDER than the prior session's design note:
     walking every `assertOwnedReferences({landUnitId})` call site in the API (not trusting the
     note) found the note's list — boundary walk, mob, animal — was incomplete. Two live gaps it
     missed: a MOVE's `toLandUnitId` (server sets `event.landUnitId` from it —

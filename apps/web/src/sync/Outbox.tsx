@@ -673,6 +673,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'landUnit',
           detail: unit.name,
           send: (token) => landApi.createLandUnit(unit, token),
+          // The row every boundary walk, mob, animal, move and theft incident behind it is a
+          // foreign key to (P2.7, issue tracked in STATUS.md — same shape as `mobrow:`/
+          // `animalrow:`). Refused or held, everything naming this camp must wait rather than
+          // each earning its own 404 for the same one cause.
+          provides: [`landrow:${unit.id}`],
         });
       }
     }
@@ -683,6 +688,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // different questions. Nothing in this pair creates evidence a server-side guard reads, and
     // nothing judges it: a boundary is not a withholding, a disposal, or a head count. Where the
     // walk lands relative to everything below it is a matter of foreign keys alone.
+    //
+    // ⭐ `guardedBy` is a SEPARATE axis from that ordering claim: a camp created this same round and
+    // then refused (a duplicate code, a second device's clash) means the server never has it, and a
+    // walk sent anyway 404s for the one cause a farmer cannot see from this screen. `landUnitId` is
+    // never null on a walk — it is the shape OF a camp — so the guard is unconditional (P2.7).
     for (const walk of boundaryWalks) {
       if (!sent.has(walk.id)) {
         items.push({
@@ -690,6 +700,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'boundaryWalk',
           detail: landUnitCodes.get(walk.landUnitId) ?? null,
           send: (token) => landApi.recordBoundaryWalk(walk, token),
+          guardedBy: [`landrow:${walk.landUnitId}`],
         });
       }
     }
@@ -704,6 +715,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // The row every tally on this mob is a foreign key to. Refused or held, the tallies
           // behind it must wait rather than each earning its own 404 for the same one cause.
           provides: [`mobrow:${mob.id}`],
+          // ⭐ P2.7: a mob created IN a not-yet-accepted camp must wait behind that camp, the same
+          // shape a walk waits behind the camp it is the shape of. `landUnitId` is optional (a mob
+          // may carry no camp at all), so this is conditional, unlike `walk`'s unconditional guard.
+          ...(mob.landUnitId !== null ? { guardedBy: [`landrow:${mob.landUnitId}`] } : {}),
         });
       }
     }
@@ -718,6 +733,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // same shape as `mobrow:` above. Refused or held, a photo of this animal must wait
           // rather than 404ing individually for the same one cause.
           provides: [`animalrow:${animal.id}`],
+          // ⭐ P2.7: same reasoning as the mob above — an animal created directly into a
+          // not-yet-accepted camp must wait behind it.
+          ...(animal.landUnitId !== null ? { guardedBy: [`landrow:${animal.landUnitId}`] } : {}),
         });
       }
     }
@@ -758,6 +776,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // Settles the animal's membership, and the mob it walks INTO — both are subjects a later
           // disposal is judged against.
           provides: nonNull(move.animalId, move.toMobId),
+          // ⭐ P2.7: a move INTO a not-yet-accepted camp — `toLandUnitId` is the event's own
+          // `land_unit_id` server-side (`recordMove` in `movement.ts`), so a refused/held camp
+          // 404s the move exactly as it would a boundary walk. `undefined` means "camp unchanged"
+          // (nothing to guard against) and `null` means "taken off a mapped camp" (also nothing to
+          // guard against) — only a genuine destination camp id needs the wait.
+          ...(typeof move.toLandUnitId === 'string'
+            ? { guardedBy: [`landrow:${move.toLandUnitId}`] }
+            : {}),
         });
       }
     }
@@ -1018,13 +1044,24 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // A theft incident points at a camp AND at the animals it concerns, so it comes after both.
     // Its evidence pack cannot be generated until it has been through here, which is why the
     // incidents screen reads the sent-set below rather than offering a button that would 404.
+    //
+    // ⭐ P2.7: this header already said "points at a camp AND at the animals it concerns", but
+    // neither dependency was actually guarded — a refused/held camp or a refused/held animal
+    // named in the same offline session 404'd the incident with no held/refused signal to show
+    // for it. `createTheftIncident` (`livestock.service.ts`) checks BOTH: `assertOwnedReferences`
+    // for `landUnitId`, and a direct existence check for every id in `animalIds`.
     for (const incident of theftIncidents) {
       if (!sent.has(incident.id)) {
+        const guardedByFor = [
+          ...(incident.landUnitId !== null ? [`landrow:${incident.landUnitId}`] : []),
+          ...incident.animalIds.map((animalId) => `animalrow:${animalId}`),
+        ];
         items.push({
           id: incident.id,
           kind: 'theft',
           detail: null,
           send: (token) => livestockApi.createTheftIncident(incident, token),
+          ...(guardedByFor.length > 0 ? { guardedBy: guardedByFor } : {}),
         });
       }
     }

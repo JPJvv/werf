@@ -2233,3 +2233,262 @@ describe('sending an attachment (phase-checklists.md 3i(c))', () => {
     expect(sent).toContain(ATTACHMENT_ID);
   });
 });
+
+describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue tracked in STATUS.md)', () => {
+  const LAND_UNIT_ID = '0190f3a0-0000-7000-8000-0000000000f9';
+  const WALK_ID = '0190f3a0-0000-7000-8000-0000000000fa';
+  const MOVE2_ID = '0190f3a0-0000-7000-8000-0000000000fb';
+  const THEFT_ID = '0190f3a0-0000-7000-8000-0000000000fc';
+
+  function seedLandUnit(): void {
+    window.localStorage.setItem(
+      `werf-land:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LAND_UNIT_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: null,
+          kind: 'camp',
+          code: 'Camp 3',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+      ]),
+    );
+  }
+
+  /** Refuses land-unit creation, accepts everything else (201) — the shape every held-behind-camp
+   *  test needs, since a held item must never itself be attempted. */
+  function landRefusingFetch() {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/land-units') && method === 'POST') {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ code: 'CONFLICT', message: 'a camp with this code exists' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+  }
+
+  it('⭐ holds a boundary walk behind a refused camp — the unconditional guard', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-boundary-walks:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: WALK_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          corners: [{ lon: 26.21, lat: -29.12, accuracyM: 5 }],
+          boundaryGeojson: '{"type":"Polygon","coordinates":[[]]}',
+          areaHectares: 12,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/land-units'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/land-units/boundary-walks'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(WALK_ID);
+  });
+
+  it('⭐ holds a mob created in a refused camp — the conditional guard on an optional field', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Flock A',
+          species: 'cattle',
+          landUnitId: LAND_UNIT_ID,
+          enterpriseId: null,
+          headCount: 300,
+          initialHeadCount: 300,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mobs'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(MOB_ID);
+  });
+
+  it('⭐ holds a move INTO a refused camp, but not a move that only changes mob', async () => {
+    cachedSession();
+    seedLandUnit();
+    const animal = schemas.newAnimalSchema.parse({
+      id: ANIMAL_ID,
+      farmId: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+    });
+    window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
+    window.localStorage.setItem(
+      `werf-moves:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOVE2_ID,
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          occurredAt: '2026-07-20T08:00:00.000Z',
+          toLandUnitId: LAND_UNIT_ID,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/moves'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(MOVE2_ID);
+  });
+
+  it('⭐ holds a theft incident behind BOTH a refused camp and a refused named animal', async () => {
+    // The two dependency kinds a theft incident carries (Outbox.tsx's own header on the loop),
+    // proven together: `landUnitId` from the camp picker AND `animalIds` from the ownership
+    // chain — `createTheftIncident` (livestock.service.ts) checks both, and until P2.7 neither
+    // was guarded, so either 404'd the incident with no held/refused signal to show for it.
+    cachedSession();
+    seedLandUnit();
+    const animal = schemas.newAnimalSchema.parse({
+      id: ANIMAL_ID,
+      farmId: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+    });
+    window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
+    window.localStorage.setItem(
+      `werf-theft:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: THEFT_ID,
+          farmId: FARM_ID,
+          discoveredAt: '2026-07-20T10:00:00.000Z',
+          lastSeenAt: null,
+          lastSeenLocationGeojson: null,
+          landUnitId: LAND_UNIT_ID,
+          headCount: 1,
+          caseNumber: null,
+          reportingStation: null,
+          observations: null,
+          animalIds: [ANIMAL_ID],
+        },
+      ]),
+    );
+    // The camp is refused; the animal is accepted (a distinct, independent cause to prove BOTH
+    // guardedBy subjects hold the incident, not only whichever one happens to run first).
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/livestock/animals'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/livestock/theft-incidents'))).toBe(false);
+  });
+
+  it('⭐ recovers on the NEXT round once the camp lands — the same taint mechanism as mobrow:/animalrow:', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Flock A',
+          species: 'cattle',
+          landUnitId: LAND_UNIT_ID,
+          enterpriseId: null,
+          headCount: 300,
+          initialHeadCount: 300,
+        },
+      ]),
+    );
+    // The camp is transiently refused this round (a network hiccup, modelled as a genuine
+    // refusal so the item is set aside rather than aborting the whole round), then accepted the
+    // next time the farmer opens the app with a signal — the ordinary "resolve and retry" path.
+    let campAccepted = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/land-units') && method === 'POST') {
+        if (!campAccepted) {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'a camp with this code exists' }),
+          } as unknown as Response;
+        }
+        return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+      }
+      // The second render is a fresh app instance — AuthProvider's boot effect refreshes on any
+      // mount whose in-memory session has no access token, which every cold start is (this
+      // file's attachment tests hit the same thing on their own remount). A generic `{}` fallback
+      // fails `adopt()`'s shape check and leaves the flush with no token to send anything, ever.
+      if (url.endsWith('/auth/refresh') && method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            accessToken: 'refreshed-access-token',
+            expiresIn: 900,
+            user: SESSION_USER,
+            farms: [
+              { id: FARM_ID, name: 'Rietfontein', enterpriseTypes: ['beef_cattle'], role: 'owner' },
+            ],
+            activeFarmId: FARM_ID,
+            secondFactor: 'complete',
+          }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { unmount } = render(<App />);
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mobs'))).toBe(false);
+
+    // The farmer edits the camp code and tries again — a fresh app instance, the way a farmer
+    // actually gets a second attempt (this file's own cold-start convention elsewhere).
+    unmount();
+    campAccepted = true;
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).toContain(LAND_UNIT_ID);
+    expect(sent).toContain(MOB_ID);
+  });
+});

@@ -1014,9 +1014,11 @@ add the one shared local-first attachment path approved on 2026-08-08.
   interchangeable once both exist, was corrected — false for moves/health, and the premise finding 2
   falsified. Both findings' fixes are fail-first tested, including an e2e reproduction
   (`RecordLoss.test.tsx`) seeding BOTH the local move log and the hydrated `events` table with the
-  SAME move id — the exact shadow-copy trace. Open owner decision (STATUS.md §3, unanswered): a
-  back-dated local move with no hydrated context has no correct client-side answer — fail-closed vs.
-  documented preview limitation, not itself a defect the re-pass called blocking.
+  SAME move id — the exact shadow-copy trace. ✅ **The back-dated-local-move owner decision this
+  paragraph left open is CLOSED, 2026-08-14 — JP chose fail-closed.** See STATUS.md §3 for the full
+  record: `mobMembership` now returns an `ambiguous` flag, and `meatWithdrawalFor`/
+  `meatWithdrawalForMob` refuse rather than trust the fallback opening interval when an animal known
+  off this device has no resolvable one.
   ✅ **A THIRD `compliance-checker` pass, scoped strictly to the finding-2 fix diff (STATUS.md §6
   clause 1 — not the accumulated slice), returned APPROVABLE.** Verified exhaustively (grep, not
   sampling) that all 10 call sites switched; traced against source that the tally/animal exclusion

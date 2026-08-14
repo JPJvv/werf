@@ -101,7 +101,11 @@ export function RecordLossScreen() {
   // this device never itself captured — only heard about via down-sync — was invisible to `stored`,
   // so `selectedStored` came back `undefined` and the guard below silently skipped ENTIRELY (not
   // narrowly wrong — off) for exactly the animal a co-worker's phone knows the treatment history of.
-  const stored = mergeById(useAnimals(), useHydratedAnimals());
+  const hydratedAnimals = useHydratedAnimals();
+  const stored = mergeById(useAnimals(), hydratedAnimals);
+  // The raw hydrated-animal id set (STATUS.md §3, fail-closed) — see `withdrawal.ts`'s
+  // `mobMembership` "OWNER DECISION" note.
+  const hydratedAnimalIds = new Set(hydratedAnimals.map((a) => a.id));
   // `mergeByIdPreferHydrated`: a move's hydrated echo carries `fromMobId`/`fromLandUnitId`, which a
   // local capture never can — local-wins would shadow that enrichment once this device's own move
   // round-trips back with the same id (compliance-checker finding, phase-checklists.md 3e). See
@@ -140,7 +144,14 @@ export function RecordLossScreen() {
   const withdrawal =
     selectedStored === undefined
       ? null
-      : meatWithdrawalFor(selectedStored, disposalDay, foldHealth, products, moves);
+      : meatWithdrawalFor(
+          selectedStored,
+          disposalDay,
+          foldHealth,
+          products,
+          moves,
+          hydratedAnimalIds,
+        );
   // Both routes into the food chain, and the guard has to cover both. A server-only check on the
   // slaughter path arrives days after the animal has been eaten.
   const intoFoodChain = outcome === 'sold' || outcome === 'slaughtered';

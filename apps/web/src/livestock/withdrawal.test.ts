@@ -118,6 +118,87 @@ describe('a HYDRATED animal — mobId is the CURRENT position, not the opening o
   });
 });
 
+describe('a back-dated local move with no hydrated context (STATUS.md §3, owner decision 2026-08-14, fail-closed)', () => {
+  // `ox` is known OFF this device (its id is in `hydratedAnimalIds` — another device, or this one's
+  // own creation, has round-tripped it) but the only move this device holds for it is the LOCAL
+  // `movedIntoOxen`, which — being local — never carries `fromMobId`. This device genuinely cannot
+  // rule out an EARLIER move (on some other mob entirely) it has simply not received yet, so the
+  // fallback interval `mobMembership` still computes (DIP_CAMP, "since the beginning of time") is a
+  // guess, not a fact. `SOME_OTHER_MOB` and `strayDose` exist so a `blocked: true` below can only
+  // come from that guess being refused to stand in, never from a dose actually matching a KNOWN
+  // interval — proving the fail-closed path fires on its own, not by coincidence.
+  const SOME_OTHER_MOB = '0190f3a0-0000-7000-8000-00000000b077';
+  const hydratedKnown: ReadonlySet<string> = new Set([OX]);
+  const strayDose: StoredHealthEvent = {
+    id: '0190f3a0-0000-7000-8000-00000000f077',
+    farmId: FARM,
+    animalId: null,
+    mobId: SOME_OTHER_MOB,
+    kind: 'dip',
+    occurredAt: '2026-01-01T06:00:00.000Z',
+    administeredOn: '2026-01-01',
+    productId: PRODUCT,
+    batchId: null,
+  };
+
+  it('⭐ meatWithdrawalFor fails closed rather than trust the animal.mobId fallback', () => {
+    const status = meatWithdrawalFor(
+      ox,
+      '2026-08-16',
+      [strayDose],
+      [tickaway],
+      [movedIntoOxen],
+      hydratedKnown,
+    );
+    expect(status.blocked).toBe(true);
+    expect(status.clearFrom).toBeNull();
+  });
+
+  it('an animal known ONLY to this device is unaffected — same call, empty hydratedAnimalIds', () => {
+    // The backward-compatibility guard: an omitted (or genuinely empty) `hydratedAnimalIds` must
+    // reproduce the pre-existing behaviour exactly, since a purely local animal's own capture log
+    // IS its complete history and no other device could hold an earlier move for it.
+    const status = meatWithdrawalFor(ox, '2026-08-16', [strayDose], [tickaway], [movedIntoOxen]);
+    expect(status.blocked).toBe(false);
+  });
+
+  it('an animal with NO known moves at all is unaffected even when hydrated-known', () => {
+    // `animal.mobId` is the ONLY position this device has EVER known for it, ambiguous or not —
+    // there is no earlier move to be missing, so nothing here can be back-dated relative to it.
+    const status = meatWithdrawalFor(ox, '2026-08-16', [strayDose], [tickaway], [], hydratedKnown);
+    expect(status.blocked).toBe(false);
+  });
+
+  it('⭐ meatWithdrawalForMob fails the whole mob closed when an ambiguous member stands in it', () => {
+    const status = meatWithdrawalForMob(
+      OXEN,
+      '2026-08-16',
+      [strayDose],
+      [tickaway],
+      [ox],
+      [movedIntoOxen],
+      [],
+      hydratedKnown,
+    );
+    expect(status.blocked).toBe(true);
+  });
+
+  it('a hydrated echo of the SAME move (carrying fromMobId) resolves the ambiguity', () => {
+    // Once the move round-trips — the ordinary case, just slower than same-session — the earliest
+    // known move is no longer local-only, and the fail-closed path stops firing on its own.
+    const hydratedMove: StoredMove = { ...movedIntoOxen, fromMobId: DIP_CAMP };
+    const status = meatWithdrawalFor(
+      ox,
+      '2026-08-16',
+      [strayDose],
+      [tickaway],
+      [hydratedMove],
+      hydratedKnown,
+    );
+    expect(status.blocked).toBe(false);
+  });
+});
+
 describe('meatWithdrawalForMob — agreeing with the server', () => {
   it('⭐ blocks the ox mob for a dose the ox carried IN from another mob', () => {
     // Mirrors livestock.integration.test.ts:2326. The dip names the dip camp, not the ox mob, and

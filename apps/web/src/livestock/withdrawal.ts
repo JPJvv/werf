@@ -108,8 +108,26 @@ interface MobInterval {
  * CLEAR on the one guard this file exists to keep from ever being wrong in that direction. A LOCAL
  * move never carries `fromMobId` (the app never sends it — see `LocalMoves.tsx`'s `StoredMove`), so
  * this only ever engages for a HYDRATED move, which is exactly where the bug was.
+ *
+ * ⛔ OWNER DECISION (STATUS.md §3, 2026-08-14, fail-closed): the fallback above is only trustworthy
+ * when the animal cannot possibly have history this device is missing. That is true for an animal
+ * this device alone has ever known about — the herd store is append-only, so its own capture log
+ * IS the complete history. It is NOT true the moment the animal is known server-side
+ * (`hydratedAnimalIds`, the raw `useHydratedAnimals()` set — present whether this device or another
+ * one created the row): another device could have moved it before this device's earliest KNOWN
+ * move, and a `fromMobId`-less earliest move (structurally every LOCAL move) gives no way to tell.
+ * `ambiguous` is that exact gap made explicit rather than silently guessed past — set only when
+ * there IS at least one known move (an animal with none has never left `animal.mobId` by anything
+ * this device has ever captured, ambiguous or not) whose opening is unresolved AND the animal is
+ * known off this device. Callers fail the whole judgement closed rather than trust the fallback
+ * interval this function still computes for them (needed so `reachedAnimal`'s later, KNOWN
+ * intervals keep working; only the BLOCKING decision must refuse to lean on the guessed one).
  */
-function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): readonly MobInterval[] {
+function mobMembership(
+  animal: StoredAnimal,
+  moves: readonly StoredMove[],
+  hydratedAnimalIds: ReadonlySet<string> = EMPTY_ID_SET,
+): { readonly intervals: readonly MobInterval[]; readonly ambiguous: boolean } {
   const mine = moves
     .filter((m) => m.animalId === animal.id && m.toMobId !== undefined)
     // ⭐ (occurredAt, id), the same TOTAL order the server runs. Day-grained moves tie on the
@@ -131,6 +149,8 @@ function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): read
 
   const intervals: MobInterval[] = [];
   const openingFromWire = mine[0]?.fromMobId;
+  const ambiguous =
+    mine.length > 0 && openingFromWire === undefined && hydratedAnimalIds.has(animal.id);
   let openMob = openingFromWire !== undefined ? openingFromWire : (animal.mobId ?? null);
   let openedOn = '0000-01-01';
 
@@ -143,8 +163,11 @@ function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): read
     openedOn = movedOn;
   }
   if (openMob !== null) intervals.push({ mobId: openMob, fromDay: openedOn, toDay: null });
-  return intervals;
+  return { intervals, ambiguous };
 }
+
+/** A stable empty set so an omitted `hydratedAnimalIds` never allocates and never matches. */
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 
 /** Was this mob the animal's on that day? Inclusive at both ends, like the server. */
 function inMobOn(wasIn: readonly MobInterval[], mobId: string, day: string): boolean {
@@ -183,12 +206,18 @@ export function meatWithdrawalFor(
   events: readonly WithholdDose[],
   products: readonly StoredVetProduct[],
   moves: readonly StoredMove[] = [],
+  /** The raw hydrated-animal id set — see `mobMembership`'s "OWNER DECISION" note. */
+  hydratedAnimalIds: ReadonlySet<string> = EMPTY_ID_SET,
 ): WithdrawalStatus {
   // Before anything is read: an unreadable day cannot be judged. See `unreadableDay`.
   if (unreadableDay(disposalOn)) return { clearFrom: null, blocked: true };
-  const wasIn = mobMembership(animal, moves);
+  const wasIn = mobMembership(animal, moves, hydratedAnimalIds);
+  // A back-dated local move with no hydrated context: the true opening mob cannot be known, so a
+  // dose given to it before this animal's earliest KNOWN move would be silently invisible either
+  // way. Fail closed rather than trust the fallback interval `mobMembership` still computed.
+  if (wasIn.ambiguous) return { clearFrom: null, blocked: true };
   return latestClearAcross(
-    events.filter((e) => reachedAnimal(e, animal, wasIn)),
+    events.filter((e) => reachedAnimal(e, animal, wasIn.intervals)),
     disposalOn,
     products,
   );
@@ -228,11 +257,18 @@ export function meatWithdrawalForMob(
    * that refused. A caller with no arrivals must say `[]` out loud.
    */
   tallies: readonly ArrivedHead[],
+  /** The raw hydrated-animal id set — see `mobMembership`'s "OWNER DECISION" note. */
+  hydratedAnimalIds: ReadonlySet<string> = EMPTY_ID_SET,
 ): WithdrawalStatus {
   // ⭐ HERE rather than inside, because `mobWithdrawal` recombines `blocked` with an arrival's date
   // and would discard a fail-closed verdict returned deeper in. See `unreadableDay`.
   if (unreadableDay(disposalOn)) return { clearFrom: null, blocked: true };
-  return mobWithdrawal(mobId, disposalOn, { events, products, animals, moves, tallies }, new Set());
+  return mobWithdrawal(
+    mobId,
+    disposalOn,
+    { events, products, animals, moves, tallies, hydratedAnimalIds },
+    new Set(),
+  );
 }
 
 /** Everything the mob rule reads, threaded through the transfer chain unchanged. */
@@ -242,6 +278,7 @@ interface MobWithdrawalContext {
   readonly animals: readonly StoredAnimal[];
   readonly moves: readonly StoredMove[];
   readonly tallies: readonly ArrivedHead[];
+  readonly hydratedAnimalIds: ReadonlySet<string>;
 }
 
 /**
@@ -254,7 +291,7 @@ function mobWithdrawal(
   ctx: MobWithdrawalContext,
   visited: ReadonlySet<string>,
 ): WithdrawalStatus {
-  const { events, products, animals, moves } = ctx;
+  const { events, products, animals, moves, hydratedAnimalIds } = ctx;
   const seen = new Set(visited).add(mobId);
   // Every individually-registered animal STANDING IN this mob on the disposal day, with the mob
   // history that says which doses reached it. A tally takes head out without naming which, so any
@@ -262,8 +299,13 @@ function mobWithdrawal(
   // exactly the per-member question the server asks: this is `meatWithdrawalFor` run from the mob
   // side rather than a second, narrower rule.
   const members = animals
-    .map((animal) => ({ animal, wasIn: mobMembership(animal, moves) }))
-    .filter((m) => inMobOn(m.wasIn, mobId, disposalOn));
+    .map((animal) => ({ animal, wasIn: mobMembership(animal, moves, hydratedAnimalIds) }))
+    .filter((m) => inMobOn(m.wasIn.intervals, mobId, disposalOn));
+  // A member counted here by the FALLBACK interval `mobMembership` still computes for an ambiguous
+  // animal — see its "OWNER DECISION" note. The mob's disposal is judged on the same head this
+  // member's own individual disposal would be, so the same fail-closed answer applies: the mob
+  // cannot be cleared on the strength of a guessed membership.
+  const ambiguousMember = members.some((m) => m.wasIn.ambiguous);
 
   const reaches = (event: WithholdDose): boolean => {
     // The COUNTED portion of the mob — head with no `animals` rows — is reached by the mob's own
@@ -274,15 +316,15 @@ function mobWithdrawal(
     // blind to that second case — it returned false for every `animal_id = NULL` dose whose mob was
     // not this one, so a dipped ox walked into the sale mob CLEAR on the device while the server,
     // reconstructing per member, refused it days after the truck had left.
-    return members.some((m) => reachedAnimal(event, m.animal, m.wasIn));
+    return members.some((m) => reachedAnimal(event, m.animal, m.wasIn.intervals));
   };
   const dosed = latestClearAcross(events.filter(reaches), disposalOn, products);
   const arrived = latestArrivedWithhold(mobId, disposalOn, ctx, seen);
-  if (arrived === null) return dosed;
+  if (arrived === null) return ambiguousMember ? { ...dosed, blocked: true } : dosed;
 
   const clearFrom =
     dosed.clearFrom === null || arrived > dosed.clearFrom ? arrived : dosed.clearFrom;
-  return { clearFrom, blocked: isWithinWithdrawal(clearFrom, disposalOn) };
+  return { clearFrom, blocked: ambiguousMember || isWithinWithdrawal(clearFrom, disposalOn) };
 }
 
 /**
@@ -383,7 +425,11 @@ export function animalDisposalSubjects(
   animal: StoredAnimal,
   moves: readonly StoredMove[] = [],
 ): readonly string[] {
-  return [animal.id, ...mobMembership(animal, moves).map((interval) => interval.mobId)];
+  // No `hydratedAnimalIds` here, deliberately: this is the SEND-time taint set for an already-
+  // ACCEPTED capture, not the capture-time blocking decision — an ambiguous disposal never reaches
+  // the outbox in the first place, because `meatWithdrawalFor`/`meatWithdrawalForMob` (which DO
+  // read `hydratedAnimalIds`) refuse it at capture. See `mobMembership`'s "OWNER DECISION" note.
+  return [animal.id, ...mobMembership(animal, moves).intervals.map((interval) => interval.mobId)];
 }
 
 /**
@@ -446,7 +492,9 @@ function collectMobSubjects(
   out.add(mobId);
 
   for (const animal of ctx.animals) {
-    const intervals = mobMembership(animal, ctx.moves);
+    // No `hydratedAnimalIds` here, deliberately — see `animalDisposalSubjects`'s comment: this is
+    // the send-time taint set, and an ambiguous disposal never reaches it.
+    const { intervals } = mobMembership(animal, ctx.moves);
     if (inMobOn(intervals, mobId, disposalOn)) {
       out.add(animal.id);
       for (const interval of intervals) out.add(interval.mobId);

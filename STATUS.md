@@ -94,16 +94,24 @@ diff is now closed.** Full `pnpm verify`: 106 files / 1,127 tests, 7/7 builds, 1
 `pnpm test:e2e`: 30/1 skip. **Committed as `ba7f680`** (JP's explicit go-ahead). Not pushed —
 pushing/opening a PR is still a separate, unrequested go-ahead.
 
-⛔ **Open owner decision — a narrower residual finding 2's re-pass flagged but did NOT call a
-defect: a BACK-DATED local move.** If a farmer captures a move today for a walk that happened days
-ago, and this device has never received that animal's earlier hydrated moves, the device genuinely
-has no way to know the TRUE opening mob at that past instant — there is no correct client-side
-answer, only a preview that may be wrong until the next hydration. Two ways to close this:
-**(a) fail-closed** — a back-dated move with no hydrated context blocks the FR-131 preview outright
-rather than guessing, or **(b) accept as a documented preview limitation** — the guard already
-recomputes authoritatively at capture time in the common (non-back-dated) case, and the SERVER'S own
-guard (not this preview) is still the actual enforcement boundary.
-→ _Answer:_
+✅ **Closed 2026-08-14 — a narrower residual finding 2's re-pass flagged but did NOT call a
+defect: a BACK-DATED local move. JP chose (a) fail-closed.** `withdrawal.ts`'s `mobMembership` now
+returns an `ambiguous` flag alongside its intervals — set only when there IS at least one known
+move for the animal, its earliest one is a LOCAL move (structurally never carries `fromMobId`), AND
+the animal is known off this device (`hydratedAnimalIds`, the raw `useHydratedAnimals()` id set —
+present whether this device or another one created the row). An animal known only to THIS device is
+unaffected: its own append-only capture log IS its complete history, back-dated or not, so
+`animal.mobId` is always a safe opening. `meatWithdrawalFor` and `meatWithdrawalForMob` both refuse
+(`blocked: true, clearFrom: null`) rather than trust the fallback interval `mobMembership` still
+computes for `reachedAnimal`'s later, KNOWN intervals. `animalDisposalSubjects`/`mobDisposalSubjects`
+(the SEND-time taint sets) deliberately do NOT read `hydratedAnimalIds` — an ambiguous disposal never
+reaches the outbox, since the two blocking functions above refuse it at capture. Threaded through the
+four capture-time call sites that read `hydratedAnimals` already (`RecordLossScreen.tsx`,
+`AdjustMobScreen.tsx`, `residue.ts`, `herd.ts`'s `useWithholdingCount`). Five new fail-first tests in
+`withdrawal.test.ts` (`pnpm --filter web exec vitest run` against the pre-fix code via `git stash`:
+2 of the 5 genuinely fail pre-fix — the other 3 are backward-compat regression guards that pass
+either way, by design). Full `apps/web` suite (livestock + sync, 227 tests) and `typecheck` green,
+no regressions.
 
 ✅ **Closed 2026-08-13 — owner-triggered `compliance-checker` pass over the full branch
 (`13a0d46..HEAD`) ran at JP's request ("run all relevant agents ... report back what blocks

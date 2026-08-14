@@ -157,6 +157,9 @@ export function AdjustMobScreen() {
   const moves = useMoves();
   const hydratedMoves = useHydratedMoves();
   const foldHerd = useMemo(() => mergeById(herd, hydratedHerd), [herd, hydratedHerd]);
+  // The raw hydrated-animal id set (STATUS.md §3, fail-closed) — see `withdrawal.ts`'s
+  // `mobMembership` "OWNER DECISION" note.
+  const hydratedAnimalIds = useMemo(() => new Set(hydratedHerd.map((a) => a.id)), [hydratedHerd]);
   // `mergeByIdPreferHydrated` for moves/health: their hydrated echoes carry server-derived
   // enrichment (`fromMobId`/`fromLandUnitId`, `meatWithholdUntil`) a local capture never can —
   // local-wins would shadow it once this device's own capture round-trips back with the same id
@@ -280,6 +283,7 @@ export function AdjustMobScreen() {
           foldHerd,
           foldMoves,
           foldTallies,
+          hydratedAnimalIds,
         );
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
   // The reasons that are recorded rather than refused still say so — same rule as the death path.

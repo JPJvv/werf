@@ -99,8 +99,21 @@ export function localResidueFlags(input: {
    * judged against. Defaults to `tallies` so a caller with nothing hydrated need not repeat itself.
    */
   readonly evidenceTallies?: readonly ArrivedHead[];
+  /** The raw hydrated-animal id set (STATUS.md §3, fail-closed) — see `withdrawal.ts`'s
+   *  `mobMembership` "OWNER DECISION" note. Defaults to empty so a caller with nothing hydrated
+   *  need not repeat itself, same as `evidenceTallies`. */
+  readonly hydratedAnimalIds?: ReadonlySet<string>;
 }): readonly LocalResidueFlag[] {
-  const { animals, lifecycle, tallies, health, products, moves, evidenceTallies = tallies } = input;
+  const {
+    animals,
+    lifecycle,
+    tallies,
+    health,
+    products,
+    moves,
+    evidenceTallies = tallies,
+    hydratedAnimalIds = new Set<string>(),
+  } = input;
   const byId = new Map(animals.map((a) => [a.id, a]));
   const flags: LocalResidueFlag[] = [];
 
@@ -114,7 +127,14 @@ export function localResidueFlags(input: {
     if (animal === undefined) continue;
 
     const occurredOn = farmDay(new Date(event.occurredAt));
-    const status = meatWithdrawalFor(animal, occurredOn, health, products, moves);
+    const status = meatWithdrawalFor(
+      animal,
+      occurredOn,
+      health,
+      products,
+      moves,
+      hydratedAnimalIds,
+    );
     if (!status.blocked) continue;
 
     flags.push({
@@ -153,6 +173,7 @@ export function localResidueFlags(input: {
       animals,
       moves,
       evidenceTallies,
+      hydratedAnimalIds,
     );
     if (!status.blocked) continue;
 
@@ -199,6 +220,12 @@ export function useLocalResidueFlags(): readonly LocalResidueFlag[] {
     () => mergeById(animals, hydratedAnimals),
     [animals, hydratedAnimals],
   );
+  // The raw hydrated-animal id set (STATUS.md §3, fail-closed) — see `withdrawal.ts`'s
+  // `mobMembership` "OWNER DECISION" note.
+  const hydratedAnimalIds = useMemo(
+    () => new Set(hydratedAnimals.map((a) => a.id)),
+    [hydratedAnimals],
+  );
   // `mergeByIdPreferHydrated` for moves/health: their hydrated echoes carry server-derived
   // enrichment (`fromMobId`/`fromLandUnitId`, `meatWithholdUntil`) a local capture never can —
   // local-wins would shadow it once this device's own capture round-trips back with the same id
@@ -222,7 +249,17 @@ export function useLocalResidueFlags(): readonly LocalResidueFlag[] {
         health: foldHealth,
         products,
         moves: foldMoves,
+        hydratedAnimalIds,
       }),
-    [foldAnimals, lifecycle, tallies, evidenceTallies, foldHealth, products, foldMoves],
+    [
+      foldAnimals,
+      lifecycle,
+      tallies,
+      evidenceTallies,
+      foldHealth,
+      products,
+      foldMoves,
+      hydratedAnimalIds,
+    ],
   );
 }

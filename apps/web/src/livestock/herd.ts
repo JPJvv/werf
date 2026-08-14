@@ -374,12 +374,16 @@ export function useWithholdingCount(herdId?: string): number {
     const foldMoves = mergeByIdPreferHydrated(moves, hydratedMoves);
     const foldHealth = mergeByIdPreferHydrated<WithholdDose>(healthEvents, hydratedHealthEvents);
     const byId = new Map(foldRaw.map((a) => [a.id, a]));
+    // The raw hydrated-animal id set (STATUS.md §3, fail-closed) — an animal known off this
+    // device cannot lean on `animal.mobId` as a stand-in opening mob when its earliest known move
+    // is a back-dated local one with no `fromMobId`. See `withdrawal.ts`'s `mobMembership`.
+    const hydratedAnimalIds = new Set(hydratedRaw.map((a) => a.id));
     return animals.filter((a) => {
       const stored = byId.get(a.id);
       return (
         a.status === 'alive' &&
         stored !== undefined &&
-        meatWithdrawalFor(stored, today, foldHealth, products, foldMoves).blocked
+        meatWithdrawalFor(stored, today, foldHealth, products, foldMoves, hydratedAnimalIds).blocked
       );
     }).length;
   }, [

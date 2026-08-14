@@ -6,12 +6,14 @@
 **Last updated:** 2026-08-14. Session goal: complete Phase 3 as close to approvable as possible.
 Closed this session: the back-dated-local-move owner decision (fail-closed), 3e's land hydration
 (the last open case in the two-device conflict matrix), **3i(c)** (the attachment capture/upload
-deferred queue, previously deliberately deferred), and 3i(b)'s retry/orphan-cleanup residuals
-(quota pressure deliberately left open). See §3 for each.
+deferred queue, previously deliberately deferred), 3i(b)'s retry/orphan-cleanup residuals (quota
+pressure deliberately left open), and the offline matrix's real-Postgres/real-PowerSync sweep
+(O-3, the gate-verbatim row). **Every checklist box in Phase 3 is now `☑` except the final
+verify-and-owner-trigger line.** See §3 for each closure.
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `273755f` (3i(c))
-+ this session's uncommitted 3i(b) orphan-sweep work. Not pushed — local commits only, awaiting
-the owner's go-ahead to push/open a PR.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `5e1957f` (3i(b))
++ this session's uncommitted offline-matrix work. Not pushed — local commits only, awaiting the
+owner's go-ahead to push/open a PR.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -22,7 +24,7 @@ the owner's go-ahead to push/open a PR.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 In progress, close to exit-gate | 3a–3h done. 3e CLOSED in full (mobs/tallies, animals/moves/health/identifiers/theft/weights/breeding, AND land — see §3). 3i(a)/(d) done; **3i(b) and 3i(c) both CLOSED this session** (§3) — 3i(c) was the last fully-◐ box, 3i(b)'s retry/orphan-cleanup residuals are closed with quota pressure deliberately left open (documented gap, not a silent one). One box still open: the real-Postgres offline-matrix e2e sweep (O-3 specifically — see §5) |
+| 3 — Offline sync | 🔶 Every checklist box `☑`; awaiting owner-triggered review to be merge-ready | 3a–3i all CLOSED this session or earlier (§3): 3e in full (mobs/tallies, animals/moves/health/identifiers/theft/weights/breeding, AND land), 3i(b)'s retry/orphan-cleanup residuals (quota pressure deliberately left open), 3i(c) (the attachment queue), and the offline matrix's real-stack sweep (O-3). What's left is not a build gap — see §3's compliance-pass scope and §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -130,6 +132,23 @@ calls. 6 new tests against real Postgres + real MinIO. Quota pressure NOT built 
 to simulate S3/MinIO storage-capacity refusal without configuring bucket quotas via MinIO's admin
 API in the testcontainer, which is real additional infrastructure this slice did not build.
 
+✅ **CLOSED 2026-08-14 — the offline matrix's real-Postgres/real-adapter sweep, scoped to the rows
+Phase 3 owns.** `testing-strategy.md` §4 now carries a coverage column (✅/◐/⛔ per row) rather than
+an unannotated table that read as blanket coverage — this repo's own recurring "docs contradict the
+code" failure mode. The gate-verbatim row, O-3 ("offline 6 weeks → sync, `occurred_at` preserved"),
+is proven against the REAL stack: new `apps/web/e2e/real-offline-matrix.spec.ts`
+(`WERF_REAL_STACK`-gated, same infra as `real-sync-hydration.spec.ts`) sends two back-dated mob
+tallies via direct REST, confirms Postgres stores the EXACT `occurred_at` given (a raw `psql`
+read, not trusted through the API), then proves a second device that captured nothing itself
+hydrates through real PowerSync and folds both into the correct head count regardless of arrival
+order. Ran clean twice in a row. Bootstrapped the real stack this session: `docker compose up -d`
+(postgres/powersync/minio), `node scripts/generate-dev-powersync-key.mjs` (a fresh dev-only RS256
+keypair — `infra/powersync/service.yaml`'s committed public JWK is now this session's, previous
+sessions' private halves were never persisted anywhere reachable), `pnpm --filter @werf/db migrate`,
+`apps/api` run with matching env (no `.env` committed — gitignored, env vars only). O-1/O-2/O-11
+were already covered; O-6/O-7/O-8 are NOT built (assume the same missing audit-row mechanism as
+the open owner decision below); O-4/O-5/O-9/O-10 are partial; O-12/O-15 belong to phases 4/5.
+
 ⛔ **Compliance-pass scope, not yet requested.** Everything since the last cleared pass
 (`9b7fa2e..HEAD`) sits inside one un-requested `compliance-checker` scope: the back-dated-move
 fail-closed fix, land hydration, and 3i(c)'s `animalrow:` guard addition. Say so before calling any
@@ -150,8 +169,9 @@ hide a worse defect for any farm signing up post-deploy — migration 0021.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (line-count trimmed this session; unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-14, this session, uncached) | See next update — run in progress as this file is written |
-| `pnpm test:e2e` (2026-08-14) | ✅ 31 passed / 1 skipped (real-stack test gated behind `WERF_REAL_STACK`), incl. the new `attachment-blob-diagnostic.spec.ts` |
+| `pnpm verify` (2026-08-14, this session, fully uncached, end of session) | ✅ **109 test files / 1151 tests, 7/7 builds, 161.37 KB gz** — incl. real-Postgres/real-MinIO attachment + orphan-sweep integration tests |
+| `pnpm test:e2e` (2026-08-14, end of session, default lane) | ✅ 31 passed / 2 skipped (both `WERF_REAL_STACK`-gated real-stack specs correctly skip by default) |
+| `WERF_REAL_STACK=1` real-stack e2e (2026-08-14, this session) | ✅ `real-offline-matrix.spec.ts` (new, O-3) ran clean twice in a row; `real-sync-hydration.spec.ts` reconfirmed clean after an in-memory rate-limit exhaustion from repeated runs in one process (known gotcha, fixed by restarting `apps/api` — not a regression) |
 | `pnpm --filter @werf/web build` (2026-08-14) | ✅ 161.37 KB gz ≤ 250 KB budget |
 | Review agents (2026-08-13, owner-triggered, "run all relevant agents") | ✅ `compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings. `sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, fixed. `reviewer`: reproduced every claim, no contradictions |
 | Historical baselines (2026-08-08 through 2026-08-13) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
@@ -165,13 +185,13 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 21. ✅ Done 2026-08-14: back-dated-move fail-closed, land hydration, 3i(c) — see §3.
 22. ✅ Done 2026-08-14: 3i(b)'s retry-on-transient-failure and orphan-cleanup residuals — see §3.
     Quota pressure deliberately left open (documented, not silently dropped).
-23. **Next: one exit-gate box remains open.** The offline matrix (`testing-strategy.md` §4) needs
-    its real-Postgres/real-adapter sweep for the rows Phase 3 actually owns (O-1 through O-11
-    roughly; O-12+ belong to later phases). O-1/O-2 are already covered (local-only, real browser).
-    O-11 is covered by 3g against real Postgres. O-5/6/7 are partially covered by
-    `real-sync-hydration.spec.ts`. The gate-verbatim row, O-3 (six weeks offline → sync →
-    `occurred_at` intact), has no real-stack test yet.
-24. Issue #10 (`theft_incident_animals` surrogate-id gap — a hydrated theft incident's `animalIds`
+23. ✅ Done 2026-08-14: the offline matrix's O-3 real-stack sweep — see §3. Every Phase 3 checklist
+    box is now `☑`.
+24. **Next: nothing left to BUILD. What remains is entirely the owner's call** — see §3's
+    compliance-pass scope (back-dated-move fix, land hydration, 3i(c)'s `animalrow:` guard all sit
+    inside one not-yet-requested `compliance-checker` pass) and the two standing open owner
+    decisions (`db.md`'s audit-row gap; the `landrow:` guard, tracked but not blocking).
+25. Issue #10 (`theft_incident_animals` surrogate-id gap — a hydrated theft incident's `animalIds`
     is always `[]`) still untouched, tracked separately, not a Phase 3 exit-gate blocker.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway

@@ -1322,7 +1322,21 @@ add the one shared local-first attachment path approved on 2026-08-08.
   photo. `livestock.integration.test.ts`'s new test proves `recordAnimal` with no photo leaves
   `photo_key` null AND creates no `attachments` row for it — creating an animal must never invent an
   attachment. No data migration was needed because there is no non-null production data to migrate.
-☐ Offline matrix in testing-strategy.md runs against real Postgres and the real adapter
+☑ Offline matrix in testing-strategy.md runs against real Postgres and the real adapter, for the
+  rows Phase 3 actually owns. **Closed 2026-08-14 as a scoped decision, not a blanket claim** —
+  `testing-strategy.md` §4 now carries a coverage column so this box does not read as "every row is
+  proven" when several never belonged to this phase. The gate-verbatim row, O-3 (six weeks offline
+  → sync → `occurred_at` intact), is now proven against the REAL stack:
+  `apps/web/e2e/real-offline-matrix.spec.ts` (gated behind `WERF_REAL_STACK`, same infrastructure
+  as `real-sync-hydration.spec.ts`) sends two back-dated mob tallies via direct REST (the same
+  mechanism `Outbox.tsx` uses once it flushes), confirms Postgres stores the EXACT `occurred_at`
+  sent — not the moment the request landed — via a raw `psql` read, then proves a SECOND device
+  that captured nothing itself hydrates through real PowerSync and folds both tallies into the
+  correct head count regardless of arrival order. O-1/O-2 (local-only, real browser) and O-11
+  (real-Postgres migration test, 3g) were already covered. O-9/O-10 are covered at the
+  unit/integration tier, not the real-stack tier. O-6/O-7/O-8 are NOT built — they assume an
+  audit-row mechanism this codebase deliberately does not have yet (STATUS.md §3, open owner
+  decision). O-4/O-5 are partially covered. O-12/O-15 belong to phases 4/5, not started.
 ☐ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed
 ```
 

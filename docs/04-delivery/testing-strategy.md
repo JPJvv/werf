@@ -189,26 +189,28 @@ It is generated from the classification table, so **adding a table without addin
 
 Playwright with `context.setOffline(true)`. **This suite is the product's insurance policy.** Every row maps to a scenario in [offline-sync.md §7](../03-architecture/offline-sync.md).
 
-| # | Test | Asserts | Story |
-|---|---|---|---|
-| O-1 | Write offline → kill browser → reopen offline | Record present, still queued | US-010 |
-| O-2 | Write offline → **reboot device** → reopen | Record present | US-010 |
-| O-3 | Offline 6 weeks → sync | All applied, **`occurred_at` preserved**, reports use `occurred_at` | US-010 |
-| O-4 | Kill connection mid-upload | Resumes from checkpoint, no dup, no loss | UC-050 A3.1 |
-| O-5 | Two devices, different fields | Both survive, no audit row | US-040 |
-| O-6 | Two devices, same field | Later `occurred_at` wins + audit row | US-040 |
-| O-7 | Two devices, same birth | Two rows + review item, nothing deleted | US-040 |
-| O-8 | Sale vs death | `dead`, sale flagged, audit row | US-040 |
-| O-9 | **Refresh token expires with 47 queued writes** | **Queue HELD, uploaded after login** | UC-050 A2.1 |
-| O-10 | Storage quota exceeded | Read set degrades, **queue intact** | UC-050 E7.1 |
-| O-11 | Old client → new schema | Applied or quarantined, **never lost** | offline-sync §6 |
-| O-12 | PHI check offline | Blocked locally, no server round trip | US-030 |
-| O-13 | Withdrawal check offline | Blocked locally | US-032 |
-| O-14 | Mark missing offline | GPS + timestamp captured locally | US-031 |
-| O-15 | Payroll offline | **Refuses, plainly, without losing attendance** | UC-020 E2 |
-| O-16 | **TOTP offline** | Code verifies with the radio off — it is time-based | ADR-0007 |
-| O-17 | **Passkey auth offline** | Platform authenticator works locally; only *registration* needs network | ADR-0007 |
-| O-18 | Reference data offline, jurisdiction-filtered | ZA device holds ZA withdrawal periods, nothing else | ADR-0006 |
+| # | Test | Asserts | Story | Phase 3 coverage (2026-08-14) |
+|---|---|---|---|---|
+| O-1 | Write offline → kill browser → reopen offline | Record present, still queued | US-010 | ✅ `offline-capture.spec.ts` (real browser, local-only — no server contact needed for this row) |
+| O-2 | Write offline → **reboot device** → reopen | Record present | US-010 | ✅ `offline-capture.spec.ts` / `capture-migration.spec.ts` (real browser, local-only) |
+| O-3 | Offline 6 weeks → sync | All applied, **`occurred_at` preserved**, reports use `occurred_at` | US-010 | ✅ `real-offline-matrix.spec.ts`, real Postgres + real PowerSync (`WERF_REAL_STACK`) — a back-dated capture's `occurred_at` verified byte-exact in Postgres, then a second device's fold reads the same date, not arrival order |
+| O-4 | Kill connection mid-upload | Resumes from checkpoint, no dup, no loss | UC-050 A3.1 | ◐ Covered for attachments specifically (3i(c)'s interruption test: PUT succeeds, finalize fails, app restarts, retry completes) — not a general mid-upload-of-any-capture-kind test |
+| O-5 | Two devices, different fields | Both survive, no audit row | US-040 | ◐ Partially — `real-sync-hydration.spec.ts` proves one two-device shape (a hydrated birth funding a decrease); the fake-driven 3e conflict-matrix suites cover more shapes, not against the real stack |
+| O-6 | Two devices, same field | Later `occurred_at` wins + audit row | US-040 | ⛔ No audit-row mechanism exists (STATUS.md §3, open owner decision) — this row's premise assumes field-LWW-editable data, which this codebase deliberately has none of yet |
+| O-7 | Two devices, same birth | Two rows + review item, nothing deleted | US-040 | ⛔ Not built — no "review item" surface exists for a duplicate birth today |
+| O-8 | Sale vs death | `dead`, sale flagged, audit row | US-040 | ⛔ Same audit-row gap as O-6 |
+| O-9 | **Refresh token expires with 47 queued writes** | **Queue HELD, uploaded after login** | UC-050 A2.1 | ✅ `Outbox.test.tsx`'s invariant-5 test (fake-driven, pins the behaviour precisely); no real-stack variant built |
+| O-10 | Storage quota exceeded | Read set degrades, **queue intact** | UC-050 E7.1 | ✅ Unit/integration level (3f's durability coordinator); no real-browser-quota-exhaustion e2e |
+| O-11 | Old client → new schema | Applied or quarantined, **never lost** | offline-sync §6 | ✅ `livestock.integration.test.ts`'s additive-migration test, against real Postgres (3g) |
+| O-12 | PHI check offline | Blocked locally, no server round trip | US-030 | ⛔ Phase 4 (crops) — PHI does not exist yet |
+| O-13 | Withdrawal check offline | Blocked locally | US-032 | ✅ FR-131 guard, extensively covered (`withdrawal.test.ts`, `AdjustMob.test.tsx`, `RecordLoss.test.tsx`) |
+| O-14 | Mark missing offline | GPS + timestamp captured locally | US-031 | ✅ Phase 2, `RecordLossScreen`'s missing-report path |
+| O-15 | Payroll offline | **Refuses, plainly, without losing attendance** | UC-020 E2 | ⛔ Phase 5 (labour) — not started |
+| O-16 | **TOTP offline** | Code verifies with the radio off — it is time-based | ADR-0007 | ✅ Phase 1, `totp.ts` tested against RFC vectors, no network in the verify path |
+| O-17 | **Passkey auth offline** | Platform authenticator works locally; only *registration* needs network | ADR-0007 | ✅ Phase 1 |
+| O-18 | Reference data offline, jurisdiction-filtered | ZA device holds ZA withdrawal periods, nothing else | ADR-0006 | ✅ Phase 2/3, the reference-cache read path |
+
+**Reading the coverage column**: ✅ = a real test exists and was verified this session (or in an earlier one, re-confirmed here); ◐ = partial — the mechanism is proven, but not every angle the row implies; ⛔ = not built, either because the row's own premise doesn't hold yet in this codebase (O-6/O-8's audit row) or because it belongs to a phase that hasn't started (O-12/O-15). This replaces an unannotated table that read as a claim of blanket coverage it never had — `docs-contradict-the-code`'s own recurring failure mode in this repo.
 
 ```ts
 // apps/web/e2e/offline/durability.spec.ts

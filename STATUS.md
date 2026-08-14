@@ -3,29 +3,32 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-14 (third session that day). Continuing the same large punch-list
-closure JP started earlier that day (see the condensed P1/P2.5 record below and §3/§5). This
-session closed **P2.6 — `theft_incident_animals` surrogate id + audit columns (issue #10)** in
-two verified commits, per the design already worked out in the prior session's §5 entry (now
-executed, not re-derived): migration 0025 + schema + a real-Postgres integration test, then the
-client hydration read (`HydratedLivestock.tsx`'s `attachAnimalIds`) that actually makes the synced
-rows visible. Then closed **P2.7 — `landrow:` dependency guard**, but WIDER than its own design
-note described: walking every `assertOwnedReferences({landUnitId})` call site in the API (rather
-than trusting the note) found two live, reachable gaps it had missed — a move's destination camp
-and a theft incident's own camp — alongside the three it named (boundary walk, mob, animal). Also
-fixed an adjacent, previously fully-unguarded defect found in the same object literal: a theft
-incident's named `animalIds` had no `animalrow:` guard either. **15 of the ~21 items on the punch
-list remain — see §5.** Do not re-run P1/P2.5/P2.6/P2.7.
+**Last updated:** 2026-08-14 (third session that day, still going). Continuing the punch-list
+closure JP started that day (condensed P1/P2.5 record in §5). This session closed **P2.6**
+(`theft_incident_animals` surrogate id, issue #10 — migration 0025 + client hydration, two
+commits) and **P2.7** (`landrow:` dependency guard — went wider than its design note, which had
+missed a move's destination camp and a theft incident's own camp; also fixed an adjacent
+`animalrow:` gap on the same theft-incident object). Full detail in §5. **15 of ~21 punch-list
+items remain.** Do not re-run P1/P2.5/P2.6/P2.7.
 
-Prior session (second that day) closed: all four P1 blockers (SQLite capture durability, the
-attachment orphan create/finalize/sweep race, the effective-dated withdrawal fail-closed fix,
-production browser CSP/CORS) and P2.5 (secure attachment reads + the FR-603 evidence pack actually
-embedding a verified photo).
+🔶 **P2.8 IN PROGRESS, blocked on infra — see §5 item 28 for the full account.** A second,
+UI-driven real-stack e2e test was added to `real-offline-matrix.spec.ts`, commit `38268b5`. Its
+sibling test (the pre-existing REST-based occurred_at proof) re-verified PASSING against the live
+stack. The new test itself is lint/format-clean but **NOT YET RUN end-to-end** — repeated
+registration calls this session tripped `apps/api`'s in-memory rate limiter (burst 2/min, then
+sustained 5/60min → 60min block), and restarting `apps/api` to clear it failed: it needs secrets
+(`databaseUrl`, `jwtSecret`, `piiEncryptionKey`, `powerSyncJwtPrivateKey`, …) injected via shell
+env, not a committed `.env`, which this session does not have. ⛔ **`apps/api` is currently
+STOPPED** (killed mid-restart-attempt) — bring it back up with your own env before anything
+needing the live stack, including this test.
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `256d06a` (P2.7
-landrow guard) ← `4524bb9` ← `9e1b402` (P2.6 client hydration) ← `6820a21` (P2.6 migration/schema)
-← `de3ef93` ← `422e09d` (P2.5) ← `c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local
-commits only, awaiting go-ahead.
+Prior session (second that day) closed: all four P1 blockers and P2.5 (secure attachment reads +
+the FR-603 evidence pack).
+
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `38268b5` (P2.8
+e2e test, WIP — unverified, see §5 item 28) ← `256d06a` (P2.7 landrow guard) ← `4524bb9` ←
+`9e1b402` (P2.6 client hydration) ← `6820a21` (P2.6 migration/schema) ← `de3ef93` ← `422e09d`
+(P2.5) ← `c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -94,15 +97,13 @@ will keep adding to this same scope — P3.14 (branding/animal ID), P3.16 (auth/
 regulated-code
 touches in their own right.
 
-**Condensed, full detail in git history / `phase-checklists.md` 3b–3i:** three `compliance-checker`
-passes over the animals/moves/health hydration diff (2026-08-13, two real findings fixed, third pass
-scoped to the fix diff → APPROVABLE, committed `ba7f680`); an owner-triggered `compliance-checker`
-pass over the whole branch (CLEARED, zero findings) and a `sync-auditor` pass over the attachments
-module (2 MEDIUM + 1 LOW, all fixed under §6 clause 3); 3f closed (quota-failed writes survive via
-one application-scoped retry coordinator; 24-month equality-bucket event retention); the
-`drizzle-kit` snapshot gap reconciled via no-op baseline migration 0023 + generated 0024; Finding 2
-(per-farm events partitioning) retired outright after the "wire it up properly" option was found to
-hide a worse defect for any farm signing up post-deploy — migration 0021.
+**Condensed, full detail in git history / `phase-checklists.md` 3b–3i (2026-08-13):** three
+`compliance-checker` passes over the animals/moves/health hydration diff → APPROVABLE (`ba7f680`);
+an owner-triggered `compliance-checker` pass over the whole branch (CLEARED) and a `sync-auditor`
+pass over attachments (2 MEDIUM + 1 LOW, fixed under §6 clause 3); 3f closed (retry coordinator;
+24-month event retention); `drizzle-kit` snapshot gap reconciled (migrations 0023/0024); per-farm
+events partitioning retired outright (migration 0021) after "wire it up properly" was found to
+hide a worse defect for any farm signing up post-deploy.
 
 ## 4. Verification
 
@@ -124,71 +125,72 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 
 **Origin of this list:** JP asked (2026-08-14, second session) for a large implementation-and-
 closure pass over a specific punch list, in three priority bands plus a doc/quality band, with an
-owner-decision gate partway through. **The second session got through P1.1–P1.4 and P2.5 (5 of
-~21 items); the third closed P2.6 and P2.7 (7 of ~21).** ⭐ **Budget one session per item below, or at most a tightly
-related pair (e.g. P2.9+P2.10) — do not attempt to batch a whole band in one sitting; that is what
-made this session's list too big.** Each item is independently scoped and independently
-verifiable (own tests, own `pnpm verify`, own commit) — that is what makes slicing safe.
+owner-decision gate partway through. **Second session: P1.1–P1.4 and P2.5 (5/~21). Third: P2.6
+and P2.7 closed, P2.8 in progress (7.5/~21).** ⭐ **Budget one session per item, or at most a
+tightly related pair (e.g. P2.9+P2.10) — do not batch a whole band.** Each item is independently
+scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is what makes slicing safe.
 
 ✅ 21–23. Done 2026-08-14 (first session): back-dated-move fail-closed, land hydration, 3i(c),
     3i(b) residuals, O-3's real-stack sweep — see §3. Every **phase-checklist** box is `☑`; the
     punch list below is a stricter pass on top of that, not a reopening of it.
 ✅ 24. Done 2026-08-14 (second session): **P1 — data-loss/safety blockers, all four, commit `c2cc48a`.**
-    SQLite capture durability (`append()` resolves only once durable; whole-database-open retry).
-    Attachment orphan create/finalize/sweep race (revive-on-retry + symmetric conditional UPDATE).
-    Effective-dated withdrawal fail-closed (every product version cached; missing version → BLOCKED,
-    never clear). Production CSP/CORS (generated deployed headers; MinIO/S3 CORS; proven in a real
-    browser against a real deployed build).
+    SQLite capture durability; attachment orphan create/finalize/sweep race (revive-on-retry +
+    symmetric conditional UPDATE); effective-dated withdrawal fail-closed (missing version →
+    BLOCKED, never clear); production CSP/CORS (proven in a real browser against a real deploy).
 ✅ 25. Done 2026-08-14 (second session): **P2.5 — secure attachment reads + FR-603 evidence-pack
     photos, commit `422e09d`.** `POST /attachments/download`; the evidence pack now embeds a
     checksum-verified photo instead of naming an `animals.photo_key` reference nothing ever wrote.
 ✅ 26. Done 2026-08-14 (third session): **P2.6 — `theft_incident_animals` surrogate id + audit
-    columns (issue #10), two commits.** `6820a21` (migration/schema): migration 0025 adds a
-    DB-generated `id` (the one `primaryId()` in the schema that is NOT client-generated — this row
-    is only ever written server-side inside `LivestockService.createTheftIncident`'s already-
-    idempotent bulk insert), `updated_at`/`deleted_at`/`created_by`/`updated_by`, drops the
-    composite PK, and replaces its uniqueness with a partial unique index (relink-after-unlink,
-    same shape as `animal_identifiers_unique`); removed `NO_SURROGATE_ID` from BOTH
-    `derive-local-schema.ts` AND `derive-sync-streams.ts` (the latter was an **undocumented second
-    copy** of the same gap — the design note above only named the first; without fixing both, the
-    table would have a local SQLite table but no Sync Stream, so still never actually replicate).
-    Proven against real Postgres (`theft.integration.test.ts`, new). `9e1b402` (client hydration):
-    `HydratedLivestock.tsx` gained a second `HydratedTableStore` for the link table (NOT a SQL JOIN
-    — the fake `LocalDatabase` in `@werf/sync/testing` only recognizes single-table queries, and a
-    JOIN would have been the only one in the file), folded onto incidents by the new
-    `attachAnimalIds`, unit-tested in isolation the same way `mergeById`/`mergeByIdPreferHydrated`
-    are. `useHydratedTheftIncidentsSettled`/`HydrationFailed` now combine both stores. No
-    `HydratedTheft.tsx` file — theft hydration already lived in `HydratedLivestock.tsx`, not a
-    separate file as an earlier note assumed. `pnpm verify`: 112 files / 1190 tests, 162.28 KB gz.
+    columns (issue #10), two commits.** `6820a21`: migration 0025 adds a DB-generated `id` (the
+    one `primaryId()` NOT client-generated — this row is only ever written server-side inside
+    `LivestockService.createTheftIncident`'s already-idempotent bulk insert), drops the composite
+    PK for a partial unique index (relink-after-unlink); removed `NO_SURROGATE_ID` from BOTH
+    `derive-local-schema.ts` AND `derive-sync-streams.ts` (the latter an **undocumented second
+    copy** the design note missed — without both, no Sync Stream would ever exist). Proven
+    against real Postgres (`theft.integration.test.ts`, new). `9e1b402`: `HydratedLivestock.tsx`
+    gained a second `HydratedTableStore` for the link table (not a SQL JOIN — the fake
+    `LocalDatabase` in `@werf/sync/testing` only recognizes single-table queries), folded onto
+    incidents by the new `attachAnimalIds`. `pnpm verify`: 112 files / 1190 tests, 162.28 KB gz.
     ⛔ Touched the stock-theft table — regulated code, adds to §3's compliance-pass scope.
 
 ✅ 27. Done 2026-08-14 (third session): **P2.7 — `landrow:` dependency subjects/guards, commit
-    `256d06a`.** Went WIDER than the prior session's design note:
-    walking every `assertOwnedReferences({landUnitId})` call site in the API (not trusting the
-    note) found the note's list — boundary walk, mob, animal — was incomplete. Two live gaps it
-    missed: a MOVE's `toLandUnitId` (server sets `event.landUnitId` from it —
-    `movement.ts`/`livestock.service.ts`), and a THEFT INCIDENT's own `landUnitId` (the camp
-    picker in `ReportTheftScreen.tsx`). Both wired. Checked and EXCLUDED two theoretical paths:
-    land-unit self-nesting (`parentId`) and per-camp rainfall — neither field is wire-reachable
-    from any capture screen today (`newLandUnitSchema`/rainfall's client store carry no such
-    field), so there is nothing to guard. Also fixed an adjacent, previously fully-unguarded
-    defect in the SAME theft-incident object literal: no `animalrow:` guard existed for the
-    incident's own named `animalIds`, despite the server checking both references — fixed
-    alongside `landrow:` since it is the same defect class in the same code. Five new tests mirror
-    the `mobrow:`/`animalrow:` coverage shape (unconditional guard, conditional guard on an
-    optional field, the tri-state `toLandUnitId`, the dual guard, next-round recovery). `pnpm
-    verify`: 112 files / 1195 tests, 162.34 KB gz. ⛔ Adds to §3's compliance-pass scope (the theft
-    incident's send path).
+    `256d06a`.** Went WIDER than the design note: walking every
+    `assertOwnedReferences({landUnitId})` call site in the API (not trusting the note) found its
+    list — boundary walk, mob, animal — was incomplete. Two live gaps it missed: a MOVE's
+    `toLandUnitId` (server sets `event.landUnitId` from it) and a THEFT INCIDENT's own
+    `landUnitId` (`ReportTheftScreen.tsx`'s camp picker). Both wired. Checked and EXCLUDED two
+    theoretical paths (land-unit self-nesting, per-camp rainfall) — neither field is
+    wire-reachable from any capture screen today. Also fixed an adjacent, previously fully-
+    unguarded defect in the SAME object literal: no `animalrow:` guard existed for the incident's
+    named `animalIds` either, despite the server checking both. Five new tests mirror the
+    `mobrow:`/`animalrow:` coverage shape. `pnpm verify`: 112 files / 1195 tests, 162.34 KB gz.
+    ⛔ Adds to §3's compliance-pass scope (the theft incident's send path).
 
-### Not started — P2.8 through the final close-out, in order
-
-**28. P2.8 — a TRUE two-browser O-3 scenario.** The current `real-offline-matrix.spec.ts` proves
-`occurred_at` survives via direct REST + one hydration read — useful but not the actual claim
-(offline capture → reconnect → flush → second device). Replace/extend it: device A captures into
-SQLite with the network OFF, closes and reopens the browser (OPFS survives), reconnects, the Outbox
-flushes for real, Postgres gets the exact `occurred_at`, and a SEPARATE Playwright browser context
-(device B) hydrates through real PowerSync and projects correctly. Two real `browser.newContext()`s,
-not one context reused.
+🔶 28. IN PROGRESS 2026-08-14 (third session): **P2.8 — a TRUE two-browser O-3 scenario.**
+Extended (not replaced) `real-offline-matrix.spec.ts` with a second test, same describe block:
+device A registers, then captures a mob + a BACK-DATED birth tally through the REAL capture
+screens with `context.setOffline(true)`, reloads on the deep `/animals/groups/count` route while
+still offline (real OPFS + real service-worker shell), reconnects, and the real `Outbox.tsx`
+flush sends it — then a genuinely SEPARATE `browser.newContext()` (device B) authenticates
+independently and hydrates purely through real PowerSync replication. Verified via direct
+Postgres query (mob `head_count`, tally `occurred_at`) before device B ever reads anything, same
+discipline as the existing REST-based test. Header comment updated to explain both tests now
+live there and why neither subsumes the other.
+- ✅ The PRE-EXISTING test re-ran clean against the live stack (proves the header/helper edits safe).
+- ⛔ **The NEW test has NOT been run end-to-end** — lint/prettier-clean, every selector/route
+  borrowed from a passing precedent (`offline-capture.spec.ts`, `real-sync-hydration.spec.ts`,
+  `AddMob.test.tsx`, `AdjustMob.test.tsx`), but not a green run. `apps/api`'s registration
+  throttle (`security/rate-limits.ts`: burst 2/min→5min block; sustained 5/60min→**60min
+  block**) tripped from repeated runs — each test registers once, and the two together in one
+  minute trip burst alone. Restarting `apps/api` to clear it **failed and left it stopped**:
+  `pnpm --filter @werf/api dev` needs `databaseUrl`, `databaseElevatedUrl`, `jwtSecret`,
+  `piiEncryptionKey`, `powerSyncJwtPrivateKey` (+ PowerSync JWT/audience vars, see
+  `real-sync-hydration.spec.ts`'s header) via shell env, not a committed `.env` — this session
+  didn't hold those. JP chose to skip the live run rather than share them.
+- **Next: bring `apps/api` up with its usual env**, run the new test ALONE (`-g "P2.8"`, not
+  back-to-back with the REST one — same burst window), wait out/reset the 60min block if still
+  live, then commit `real-offline-matrix.spec.ts` and close this item — the diff is written, this
+  is a verification step, not a design one.
 
 **29. P2.9 — enforce UUIDv7 at the canonical boundary.** Client-created entities' ids must be
 validated as UUIDv7 (not merely `uuidSchema`'s generic UUID check) at the schema/API boundary,

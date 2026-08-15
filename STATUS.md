@@ -8,10 +8,10 @@
 2/7 sub-items closed** (see §5). **About 5 of ~21 punch-list items remain.** Do not re-run
 P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
 
-✅ **Owner-triggered `reviewer` + `sync-auditor` + `compliance-checker`, all three, over
-`baf4b4d..428200a`: ALL CLEARED, no SEV-1/SEV-2/MED.** `reviewer` raised one LOW (STATUS.md
-mis-citing `auth.service.ts`) that was checked directly and REFUTED — the cited comment exists
-verbatim at `auth.service.ts:68-71`; no STATUS.md change was made. Full account in §3.
+✅ **Owner-triggered `compliance-checker` over `428200a..45775ea` (18 commits: P2.10, conflict
+audit, P3.11–P3.15, P3.16's first two sub-items): CLEARED, no SEV-1/SEV-2/MED/LOW.** Full account
+in §3. Earlier: `reviewer` + `sync-auditor` + `compliance-checker` over `baf4b4d..428200a`, also
+ALL CLEARED — `reviewer`'s one LOW (a STATUS.md mis-citation) was checked and REFUTED.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
 `e24a281` (P3.16 challenge sweep) ← `06ca3d6` (P3.16 invite fix) ← `aa2b023` (P3.15 parser) ←
@@ -40,6 +40,19 @@ noisy accessibility fixture, human-gated regulated verification, a false uncache
 missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+✅ **Compliance-pass scope `428200a..45775ea` — CLOSED 2026-08-15 (twelfth session,
+owner-triggered).** 18 commits: P2.10 adversarial tenancy verification, the conflict audit/review
+feature (migration 0026), P3.11–P3.15, and P3.16's first two sub-items (invite soft-deleted-
+identity fix, WebAuthn challenge sweep). **CLEARED, no SEV-1/SEV-2/MED/LOW.** Specifically traced:
+no hardcoded regulated numbers introduced; `parseRandsToCents` (P3.15) never crosses a float
+boundary and all three call sites it replaced were verified actually switched over; P3.13's seven
+new business-contact/address columns are excluded from every Sync Stream (asserted by
+`tenancy.spec.ts`, not just documented); `audit_log` immutability is proven by an integration test
+that attempts both an `UPDATE` and a `DELETE` against a real row and asserts both are rejected;
+P3.16's invite fix is proven to both refuse the membership AND leave the erased row un-revived.
+P3.12 (Google OIDC/BFF) confirmed docs-only in this range, nothing to check yet. ⛔ New scope opens
+from `45775ea` forward.
 
 ✅ **CLOSED 2026-08-15 — owner chose A: implement conflict audit/review now.** Migration 0026 adds
 immutable server-only `audit_log` evidence plus a separate review queue; both facts, rule, winner,
@@ -95,6 +108,7 @@ hide a worse defect for any farm signing up post-deploy.
 | `pnpm verify` (2026-08-15, twelfth session, fully uncached, after P3.16's first two sub-items) | ✅ **115 test files / 1247 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz** |
 | `pnpm test:e2e` (2026-08-15, tenth session, default lane, after P3.14) | ✅ 31 passed / 5 skipped — light/dark capture-screen a11y includes `/animals/brands`; the 3 `WERF_REAL_STACK`-gated specs still require the final live-stack sweep |
 | `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
+| `compliance-checker` `428200a..45775ea` (2026-08-15, twelfth session) | ✅ CLEARED, no SEV-1/SEV-2/MED/LOW — full account in §3 |
 | Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
 | Historical baselines (2026-08-08 through 2026-08-14) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
 

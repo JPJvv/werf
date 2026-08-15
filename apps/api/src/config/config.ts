@@ -36,6 +36,16 @@ export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const SECOND_FACTOR_CHALLENGE_TTL_SECONDS = 5 * 60;
 
 /**
+ * Maximum age of the human authentication that may authorise adding a credential.
+ *
+ * A refresh carries `authenticated_at` forward, so this is ten minutes from the actual
+ * sign-in rather than ten minutes from whichever background refresh happened most
+ * recently. The enrolment ceremonies themselves expire after five minutes, leaving a
+ * full ceremony window after a begin request that passed this check (ADR-0011).
+ */
+export const STEP_UP_AUTH_TTL_SECONDS = 10 * 60;
+
+/**
  * PowerSync connection token lifetime. Matches `ACCESS_TOKEN_TTL_SECONDS`: this token is a
  * cache of the same authorisation decision (a live, 2FA-satisfied session), handed to a
  * different verifier (the self-hosted PowerSync service, not this API), so there is no reason

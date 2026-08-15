@@ -141,6 +141,7 @@ function renderAt(path: string, element: React.ReactElement) {
           <Routes>
             <Route path={path} element={element} />
             <Route path="/" element={<h1>Rietfontein</h1>} />
+            {path !== '/sign-in' && <Route path="/sign-in" element={<h1>Sign in again</h1>} />}
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -206,6 +207,29 @@ describe('enrolling a second factor (FR-014)', () => {
     // ⭐ A passkey-only owner whose phone drowns has no other way back in, which is exactly why
     // the codes are minted on THIS path and not only alongside TOTP.
     expect(screen.getByText(/safe/i)).toBeTruthy();
+  });
+
+  it('sends a stale session through a full sign-in before starting enrolment', async () => {
+    cacheSession('required');
+    stubFetch([
+      {
+        match: /2fa\/passkey$/,
+        status: 403,
+        body: {
+          code: 'STEP_UP_REQUIRED',
+          message: 'Sign in again before changing sign-in methods',
+        },
+      },
+      { match: /auth\/logout$/, status: 204, body: {} },
+    ]);
+    const user = userEvent.setup();
+    renderAt('/security/second-factor', <SecondFactorEnrolmentScreen />);
+
+    await user.click(screen.getByRole('button', { name: /use this phone as the key/i }));
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/sign in again/i);
+    await user.click(screen.getByRole('button', { name: /^sign in again$/i }));
+    expect(await screen.findByRole('heading', { name: /sign in again/i })).toBeTruthy();
   });
 
   it('treats a cancelled prompt as unfinished, not as an error', async () => {

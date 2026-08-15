@@ -15,6 +15,7 @@ import {
   NotFoundError,
   SecondFactorEnrolmentRequiredError,
   SessionInvalidError,
+  StepUpRequiredError,
   TenancyError,
   ValidationError,
   WerfError,
@@ -64,6 +65,15 @@ export class WerfErrorFilter implements ExceptionFilter {
         body: {
           code: 'SECOND_FACTOR_ENROLMENT_REQUIRED',
           message: 'Set up your authenticator app to continue',
+        },
+      };
+    }
+    if (error instanceof StepUpRequiredError) {
+      return {
+        status: HttpStatus.FORBIDDEN,
+        body: {
+          code: 'STEP_UP_REQUIRED',
+          message: 'Sign in again before changing sign-in methods',
         },
       };
     }

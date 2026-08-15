@@ -217,9 +217,8 @@ calf/birth for human review, while all calves from one legitimate multiple birth
 surface is integrated into “Needs your attention” and its home count. Verification: **113 files /
 1210 tests, 12/12 typecheck tasks, 7/7 builds, 164.57 KB gz**. O-6/O-7/O-8, audit immutability,
 review closure, legitimate twins, and cached UI copy all have direct coverage.
-
-**32. P3.11 — step-up auth before TOTP/passkey enrolment** (ADR-0011 — read it first, it may already
-answer most of the design).
+✅ **32. Done 2026-08-15 (seventh session): P3.11 — recent step-up before TOTP/passkey enrolment.** Both enrolment-start routes require a full human authentication no older than 10 minutes; refresh rotation preserves the original `authenticated_at`, so a stolen long-lived session cannot mint a TOTP seed or WebAuthn registration challenge. A stale caller receives 403 `STEP_UP_REQUIRED`, and the English/Afrikaans client clears the old session and returns to full sign-in, where an existing passkey remains the preferred phishing-resistant route and TOTP/recovery remains ADR-0011's transitional fallback.
+Real-Postgres guard and browser recovery coverage: **46/46 focused; `pnpm verify` 113 files / 1212 tests, 12/12 typecheck tasks, 7/7 builds, 164.84 KB gz**.
 
 **33. P3.12 — Google-first OIDC/BFF migration phasing.** A phasing/design decision more than a code
 slice — may produce a doc (an ADR) rather than shipped code this session.

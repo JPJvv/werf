@@ -18,7 +18,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import { SecondFactorEnrolmentRequiredError } from '@werf/core';
+import { SecondFactorEnrolmentRequiredError, StepUpRequiredError } from '@werf/core';
+import { STEP_UP_AUTH_TTL_SECONDS } from '../config/config';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
 import { TwoFactorService } from './two-factor.service';
@@ -38,6 +39,15 @@ export const Public = (): MethodDecorator => SetMetadata(IS_PUBLIC, true);
 export const ALLOWS_PENDING_ENROLMENT = 'werf:allows-pending-enrolment';
 export const AllowsPendingEnrolment = (): MethodDecorator =>
   SetMetadata(ALLOWS_PENDING_ENROLMENT, true);
+
+/**
+ * Marks a credential-changing endpoint that needs a fresh human authentication.
+ * Refreshing the cookie does not satisfy this: the guard reads the original login time
+ * that SessionService carries through the rotation family.
+ */
+export const REQUIRES_RECENT_AUTHENTICATION = 'werf:requires-recent-authentication';
+export const RequiresRecentAuthentication = (): MethodDecorator =>
+  SetMetadata(REQUIRES_RECENT_AUTHENTICATION, true);
 
 /** Who the caller is. Attached to the request by the guard, read by `@CurrentUser()`. */
 export interface AuthContext {
@@ -94,6 +104,17 @@ export class AuthGuard implements CanActivate {
     // tenant's data — one key-handling mistake away from full impersonation, with no
     // second lock. The session is already loaded; comparing it is free.
     if (session.userId !== claims.sub) throw new UnauthorizedException();
+
+    const requiresRecentAuthentication = this.reflector.getAllAndOverride<boolean>(
+      REQUIRES_RECENT_AUTHENTICATION,
+      [context.getHandler(), context.getClass()],
+    );
+    if (
+      requiresRecentAuthentication &&
+      session.authenticatedAt.getTime() < Date.now() - STEP_UP_AUTH_TTL_SECONDS * 1000
+    ) {
+      throw new StepUpRequiredError();
+    }
 
     // 2FA is mandatory for owner and bookkeeper (FR-014). "Mandatory" has to mean the
     // server refuses to serve them, not that the client shows a nag screen — a nag is

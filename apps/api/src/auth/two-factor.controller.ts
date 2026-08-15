@@ -22,7 +22,7 @@ import type { Response } from 'express';
 import { schemas } from '@werf/core';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AuthCeremonyRateLimit, SecondFactorRateLimit } from '../security/rate-limits';
-import { AllowsPendingEnrolment, Public } from './auth.guard';
+import { AllowsPendingEnrolment, Public, RequiresRecentAuthentication } from './auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { AuthContext } from './auth.guard';
 import { AuthService } from './auth.service';
@@ -44,6 +44,7 @@ export class TwoFactorController {
    * second call while an authenticator is already enrolled is a conflict, not a re-read.
    */
   @AllowsPendingEnrolment()
+  @RequiresRecentAuthentication()
   @AuthCeremonyRateLimit()
   @Post('totp')
   @HttpCode(HttpStatus.OK)
@@ -76,6 +77,7 @@ export class TwoFactorController {
    * browser hands to `navigator.credentials.create()`.
    */
   @AllowsPendingEnrolment()
+  @RequiresRecentAuthentication()
   @AuthCeremonyRateLimit()
   @Post('passkey')
   @HttpCode(HttpStatus.OK)

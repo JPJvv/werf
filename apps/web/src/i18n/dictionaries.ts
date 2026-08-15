@@ -197,6 +197,9 @@ const en = {
   'security.enrol.secret': 'Or type this in by hand',
   'security.enrol.confirm': 'Confirm',
   'security.enrol.failed': 'Could not set this up just now. Try again.',
+  'security.enrol.stepUp':
+    'For your security, sign in again before adding a new way to open this account.',
+  'security.enrol.stepUpAction': 'Sign in again',
   'security.recovery.title': 'Write these down',
   'security.recovery.body':
     'Ten codes, each usable once, for the day the phone is gone. Print them and put them in the safe.',
@@ -1009,6 +1012,9 @@ const af: Record<TranslationKey, string> = {
   'security.enrol.secret': 'Of tik dit met die hand in',
   'security.enrol.confirm': 'Bevestig',
   'security.enrol.failed': 'Kon dit nie nou opstel nie. Probeer weer.',
+  'security.enrol.stepUp':
+    'Vir jou veiligheid, meld weer aan voordat jy ’n nuwe manier byvoeg om hierdie rekening oop te maak.',
+  'security.enrol.stepUpAction': 'Meld weer aan',
   'security.recovery.title': 'Skryf hierdie neer',
   'security.recovery.body':
     'Tien kodes, elkeen een keer bruikbaar, vir die dag wanneer die foon weg is. Druk hulle en sit hulle in die kluis.',

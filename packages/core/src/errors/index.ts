@@ -14,6 +14,7 @@ export type WerfErrorCode =
   | 'INVALID_CREDENTIALS'
   | 'SESSION_INVALID'
   | 'SECOND_FACTOR_ENROLMENT_REQUIRED'
+  | 'STEP_UP_REQUIRED'
   | 'CONFLICT';
 
 export abstract class WerfError extends Error {
@@ -106,6 +107,19 @@ export class SecondFactorEnrolmentRequiredError extends WerfError {
 
   constructor() {
     super('This role requires a second factor before the account can be used');
+  }
+}
+
+/**
+ * The caller has a live session, but its human authentication is too old for a
+ * credential-changing operation. Specific because the safe recovery is actionable:
+ * perform a new full sign-in, including the account's existing second factor.
+ */
+export class StepUpRequiredError extends WerfError {
+  readonly code = 'STEP_UP_REQUIRED';
+
+  constructor() {
+    super('Sign in again before changing sign-in methods');
   }
 }
 

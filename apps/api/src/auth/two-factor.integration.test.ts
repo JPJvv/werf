@@ -28,11 +28,16 @@ import {
   InvalidCredentialsError,
   SecondFactorEnrolmentRequiredError,
   SessionInvalidError,
+  StepUpRequiredError,
   schemas,
 } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
-import { REFRESH_TOKEN_TTL_SECONDS, SECOND_FACTOR_CHALLENGE_TTL_SECONDS } from '../config/config';
-import { AuthGuard, AllowsPendingEnrolment } from './auth.guard';
+import {
+  REFRESH_TOKEN_TTL_SECONDS,
+  SECOND_FACTOR_CHALLENGE_TTL_SECONDS,
+  STEP_UP_AUTH_TTL_SECONDS,
+} from '../config/config';
+import { AuthGuard, AllowsPendingEnrolment, RequiresRecentAuthentication } from './auth.guard';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
@@ -565,9 +570,15 @@ describe('second factor', () => {
       ordinary(): void {}
       @AllowsPendingEnrolment()
       enrolment(): void {}
+      @AllowsPendingEnrolment()
+      @RequiresRecentAuthentication()
+      enrolmentStart(): void {}
     }
 
-    const contextFor = (handler: 'ordinary' | 'enrolment', token: string): ExecutionContext =>
+    const contextFor = (
+      handler: 'ordinary' | 'enrolment' | 'enrolmentStart',
+      token: string,
+    ): ExecutionContext =>
       ({
         switchToHttp: () => ({
           getRequest: () => ({ headers: { authorization: `Bearer ${token}` } }),
@@ -596,6 +607,27 @@ describe('second factor', () => {
       await expect(guard().canActivate(contextFor('enrolment', session.accessToken))).resolves.toBe(
         true,
       );
+    });
+
+    it('requires a new full sign-in before a stale session may start factor enrolment', async () => {
+      const session = await auth.register(REGISTRATION);
+      const claims = await tokens.verifyAccessToken(session.accessToken);
+
+      await elevated.db
+        .update(userSessions)
+        .set({
+          authenticatedAt: new Date(Date.now() - (STEP_UP_AUTH_TTL_SECONDS + 1) * 1000),
+        })
+        .where(eq(userSessions.id, claims.sid));
+
+      // The session is still live and can reach the enrolment area, but it cannot mint
+      // a new seed/challenge until the human performs a full sign-in again.
+      await expect(guard().canActivate(contextFor('enrolment', session.accessToken))).resolves.toBe(
+        true,
+      );
+      await expect(
+        guard().canActivate(contextFor('enrolmentStart', session.accessToken)),
+      ).rejects.toThrow(StepUpRequiredError);
     });
 
     it('lifts the confinement the moment enrolment completes', async () => {

@@ -153,7 +153,7 @@ was left implicit by this document and by the original ADR-0003 text below until
 | DB | **Postgres 16 + PostGIS** | PostGIS is required (camps, blocks, GPS). RDS Multi-AZ in af-south-1. |
 | Queue | BullMQ + Redis | PDFs, exports, imports, the scheduled compliance jobs. |
 | Objects | S3 (af-south-1); MinIO in dev/test | Phase 3 shared attachment path: OPFS-first capture, synced farm-scoped metadata, then presigned direct upload through one S3-compatible adapter. |
-| Auth | Custom JWT in the API | Not Auth0/Clerk: offline sessions (30-day) and per-farm RBAC are not their model, and the data must stay in SA. |
+| Auth | NestJS OIDC BFF + opaque Werf session; interim API JWT during migration | Google proves identity only; Werf retains the 30-day offline session, per-farm RBAC and RLS authority. ADR-0011 and its [migration plan](../04-delivery/google-bff-migration-plan.md) define the staged removal of the browser JWT. |
 | Monorepo | pnpm workspaces + Turborepo | |
 | Tests | Vitest · Playwright · Testcontainers | Real Postgres in tests. Never mock the database. |
 | IaC | Terraform | |

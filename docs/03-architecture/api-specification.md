@@ -115,6 +115,8 @@ POST   /v1/auth/2fa/reset-request          → 202 { availableAt }   # 48h delay
 
 Google OIDC and the cookie-only BFF end state are defined in ADR-0011. Until that migration is
 complete, the password endpoints are compatibility routes, not the desired onboarding direction.
+The additive route sequence, old-PWA overlap and removal gates are defined in the
+[Google OIDC and cookie-BFF migration plan](../04-delivery/google-bff-migration-plan.md).
 
 **The rule that matters:** if a refresh token has expired and the client has a pending write queue, **the queue is held, not discarded** (UC-050 A2.1). Prompt for login, then upload. Discarding a farmer's month of work because a token expired is the single worst thing this system could do, and it is a two-line mistake to make.
 

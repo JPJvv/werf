@@ -86,3 +86,9 @@ should now be the normal account entry, with Werf controlling its own session an
 
 This ADR supersedes ADR-0007 only for primary login and browser session transport. ADR-0007's
 passkey, TOTP, recovery, no-SMS and no-worker-biometric decisions remain active.
+
+## Implementation plan
+
+The independently deployable sequence, compatibility window, rollback gates and test matrix live in
+[Google OIDC and cookie-BFF migration plan](../../04-delivery/google-bff-migration-plan.md). That
+document executes this decision; it does not replace or weaken it.

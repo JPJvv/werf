@@ -16,9 +16,10 @@ import {
   Inject,
   Param,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { schemas } from '@werf/core';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AuthCeremonyRateLimit, SecondFactorRateLimit } from '../security/rate-limits';
@@ -27,6 +28,7 @@ import { CurrentUser } from './current-user.decorator';
 import type { AuthContext } from './auth.guard';
 import { AuthService } from './auth.service';
 import { attachSessionCookie } from './session-cookie';
+import { authAuditContextFrom } from './auth-audit';
 import { PasskeyService } from './passkey.service';
 import { TwoFactorService } from './two-factor.service';
 
@@ -143,8 +145,12 @@ export class TwoFactorController {
   async passkeyVerify(
     @Body(new ZodValidationPipe(schemas.passkeyAuthenticationRequestSchema))
     body: schemas.PasskeyAuthenticationRequest,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<schemas.BrowserAuthSession> {
-    return attachSessionCookie(response, await this.auth.verifyPasskey(body));
+    return attachSessionCookie(
+      response,
+      await this.auth.verifyPasskey(body, authAuditContextFrom(request)),
+    );
   }
 }

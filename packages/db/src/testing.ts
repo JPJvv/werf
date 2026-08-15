@@ -117,7 +117,8 @@ export async function bootWerfTestDatabase(): Promise<WerfTestDatabase> {
       // their own rows into both through the elevated path.
       await db.execute(sql`
         TRUNCATE TABLE
-          audit_log, conflict_reviews, webauthn_challenges, user_sessions, user_passkeys,
+          auth_audit_log, audit_log, conflict_reviews, webauthn_challenges, user_sessions,
+          user_passkeys,
           theft_incident_animals, theft_incidents,
           events, animal_identifiers, animals, branding_registers, mobs, land_units, farm_users,
           enterprises, farms, businesses, users, regulatory_rates, veterinary_products

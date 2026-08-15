@@ -10,6 +10,7 @@ import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  authAuditLog,
   createAppDb,
   createElevatedDb,
   enterprises,
@@ -381,6 +382,19 @@ describe('farm management', () => {
         );
       expect(membership!.role).toBe('manager');
       expect(membership!.invitedAt).not.toBeNull();
+
+      const [event] = await elevated.db
+        .select()
+        .from(authAuditLog)
+        .where(eq(authAuditLog.event, 'invitation'));
+      expect(event).toMatchObject({
+        outcome: 'success',
+        actorUserId: a.userId,
+        subjectUserId: await inviteeId(SIPHO.email),
+        farmId: a.farmId,
+        metadata: { role: 'manager', reinvitation: false },
+      });
+      expect(JSON.stringify(event)).not.toContain(SIPHO.email);
     });
 
     it('grants nothing until the invitee accepts', async () => {
@@ -715,6 +729,20 @@ describe('farm management', () => {
       expect(after!.activeFarmId).toBe(second.id);
       expect(after!.refreshTokenHash).toBe(before!.refreshTokenHash);
       expect(after!.revokedAt).toBeNull();
+
+      const [event] = await elevated.db
+        .select()
+        .from(authAuditLog)
+        .where(eq(authAuditLog.event, 'farm_switch'));
+      expect(event).toMatchObject({
+        outcome: 'success',
+        actorUserId: a.userId,
+        subjectUserId: a.userId,
+        farmId: second.id,
+        sessionId: before!.id,
+        sessionFamilyId: before!.familyId,
+        metadata: { fromFarmId: a.farmId },
+      });
     });
 
     it('refuses to switch to a farm the caller has no membership on', async () => {

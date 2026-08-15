@@ -111,6 +111,9 @@ export const TENANCY = {
   // challenge is un-replayable because the SERVER decides what was issued and whether it
   // has been spent. A device that held this table could answer its own questions.
   webauthn_challenges: { classification: 'server-only' },
+  // Immutable authentication telemetry. It can contain source IPs, session provenance and
+  // account-level events that do not belong on a member device or in an offline cache.
+  auth_audit_log: { classification: 'server-only' },
   farm_users: {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },

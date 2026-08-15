@@ -20,6 +20,7 @@ import { APP_DB, ELEVATED_DB } from '../db/db.module';
 import { MAILER, type Mailer } from '../mail/mailer';
 import { enterprisesByFarm } from '../common/session-farm';
 import { SessionService } from '../auth/session.service';
+import { type AuthAuditContext, writeAuthAudit } from '../auth/auth-audit';
 
 /** Default names for the enterprise row each chosen type creates. The farmer renames them. */
 const ENTERPRISE_DEFAULT_NAMES: Record<EnterpriseType, string> = {
@@ -250,6 +251,7 @@ export class FarmsService {
     userId: string,
     farmId: string,
     input: schemas.InviteUserRequest,
+    context: AuthAuditContext = {},
   ): Promise<{ status: 'pending'; role: string }> {
     await this.assertMembership(userId, farmId, ['owner']);
 
@@ -315,6 +317,16 @@ export class FarmsService {
           })
           .where(eq(farmUsers.id, priorMembership.id));
 
+        await writeAuthAudit(tx, {
+          event: 'invitation',
+          outcome: 'success',
+          actorUserId: userId,
+          subjectUserId: invitee.id,
+          farmId,
+          ...context,
+          metadata: { role: input.role, reinvitation: true },
+        });
+
         return { status: 'pending' as const, role: input.role };
       }
 
@@ -324,6 +336,16 @@ export class FarmsService {
         role: input.role,
         invitedAt: new Date(),
         acceptedAt: null,
+      });
+
+      await writeAuthAudit(tx, {
+        event: 'invitation',
+        outcome: 'success',
+        actorUserId: userId,
+        subjectUserId: invitee.id,
+        farmId,
+        ...context,
+        metadata: { role: input.role, reinvitation: false },
       });
 
       return { status: 'pending' as const, role: input.role };
@@ -400,9 +422,14 @@ export class FarmsService {
    * Points the current session at a different farm (FR-004) — no re-login, because a
    * session belongs to a person and roles belong to farms.
    */
-  async switchActiveFarm(userId: string, sessionId: string, farmId: string): Promise<void> {
+  async switchActiveFarm(
+    userId: string,
+    sessionId: string,
+    farmId: string,
+    context: AuthAuditContext = {},
+  ): Promise<void> {
     await this.assertMembership(userId, farmId, null);
-    await this.sessions.setActiveFarm(sessionId, userId, farmId);
+    await this.sessions.setActiveFarm(sessionId, userId, farmId, context);
   }
 
   /** Confirms membership (and optionally role) through the RLS-bound connection. */

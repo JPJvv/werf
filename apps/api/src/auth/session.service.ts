@@ -12,6 +12,7 @@ import { userSessions, type ElevatedDb } from '@werf/db';
 import { SessionInvalidError, uuidv7 } from '@werf/core';
 import { REFRESH_TOKEN_TTL_SECONDS, SECOND_FACTOR_CHALLENGE_TTL_SECONDS } from '../config/config';
 import { ELEVATED_DB } from '../db/db.module';
+import { type AuthAuditContext, type AuthAuditEntry, writeAuthAudit } from './auth-audit';
 import { TokenService } from './token.service';
 
 /**
@@ -24,7 +25,13 @@ const isLive = () =>
 /** What the rotation transaction found. Reported, not thrown — see `rotate`. */
 type RotateOutcome =
   | { kind: 'ok'; session: IssuedSession }
-  | { kind: 'reuse'; familyId: string }
+  | {
+      kind: 'reuse';
+      familyId: string;
+      sessionId: string;
+      userId: string;
+      activeFarmId: string | null;
+    }
   | { kind: 'invalid'; reason: 'unknown' | 'revoked' | 'expired' };
 
 export interface IssuedSession {
@@ -37,6 +44,8 @@ export interface IssuedSession {
   readonly secondFactorAt: Date | null;
 }
 
+type IssuedSessionAudit = Omit<AuthAuditEntry, 'sessionId' | 'sessionFamilyId'>;
+
 @Injectable()
 export class SessionService {
   constructor(
@@ -45,15 +54,20 @@ export class SessionService {
   ) {}
 
   /** Starts a NEW rotation family. This is a login, not a refresh. */
-  async issue(params: {
-    userId: string;
-    activeFarmId: string | null;
-    deviceLabel: string | null;
-    secondFactorSatisfied: boolean;
-  }): Promise<IssuedSession> {
+  async issue(
+    params: {
+      userId: string;
+      activeFarmId: string | null;
+      deviceLabel: string | null;
+      secondFactorSatisfied: boolean;
+    },
+    audit?: IssuedSessionAudit,
+  ): Promise<IssuedSession> {
     // v7, like every other id we store: the family index stays dense (db.md).
     const familyId = uuidv7();
-    return this.insert({ ...params, familyId });
+    const insert = (tx?: Parameters<Parameters<ElevatedDb['db']['transaction']>[0]>[0]) =>
+      this.insert({ ...params, familyId }, tx, audit);
+    return audit ? this.elevated.db.transaction(insert) : insert();
   }
 
   /**
@@ -66,7 +80,7 @@ export class SessionService {
    * re-authenticates, which is an annoyance, and the attacker loses the session, which is
    * the point. Silently issuing a new token would let a stolen token live forever.
    */
-  async rotate(refreshToken: string): Promise<IssuedSession> {
+  async rotate(refreshToken: string, context: AuthAuditContext = {}): Promise<IssuedSession> {
     const hash = this.tokens.hashRefreshToken(refreshToken);
 
     // The transaction REPORTS what it found rather than throwing, and the throwing happens
@@ -82,7 +96,15 @@ export class SessionService {
         .for('update');
 
       if (!session) return { kind: 'invalid', reason: 'unknown' };
-      if (session.rotatedAt !== null) return { kind: 'reuse', familyId: session.familyId };
+      if (session.rotatedAt !== null) {
+        return {
+          kind: 'reuse',
+          familyId: session.familyId,
+          sessionId: session.id,
+          userId: session.userId,
+          activeFarmId: session.activeFarmId,
+        };
+      }
       if (session.revokedAt !== null) return { kind: 'invalid', reason: 'revoked' };
       if (session.expiresAt.getTime() <= Date.now()) {
         return { kind: 'invalid', reason: 'expired' };
@@ -124,7 +146,16 @@ export class SessionService {
     });
 
     if (outcome.kind === 'reuse') {
-      await this.revokeFamily(outcome.familyId, 'reuse-detected');
+      await this.revokeFamily(outcome.familyId, 'reuse-detected', {
+        event: 'session_reuse',
+        outcome: 'failure',
+        subjectUserId: outcome.userId,
+        farmId: outcome.activeFarmId,
+        sessionId: outcome.sessionId,
+        sessionFamilyId: outcome.familyId,
+        ...context,
+        metadata: { reason: 'refresh_token_reuse' },
+      });
       throw new SessionInvalidError('reused');
     }
     if (outcome.kind === 'invalid') throw new SessionInvalidError(outcome.reason);
@@ -133,11 +164,17 @@ export class SessionService {
   }
 
   /** Ends one session. Its family dies with it — logout means logout on this device. */
-  async revokeFamily(familyId: string, reason: string): Promise<void> {
-    await this.elevated.db
-      .update(userSessions)
-      .set({ revokedAt: new Date(), revokedReason: reason })
-      .where(and(eq(userSessions.familyId, familyId), isNull(userSessions.revokedAt)));
+  async revokeFamily(familyId: string, reason: string, audit?: AuthAuditEntry): Promise<void> {
+    await this.elevated.db.transaction(async (tx) => {
+      const revoked = await tx
+        .update(userSessions)
+        .set({ revokedAt: new Date(), revokedReason: reason })
+        .where(and(eq(userSessions.familyId, familyId), isNull(userSessions.revokedAt)))
+        .returning({ id: userSessions.id });
+
+      // Idempotent logout/revocation must not manufacture duplicate evidence on retries.
+      if (audit && revoked.length > 0) await writeAuthAudit(tx, audit);
+    });
   }
 
   /**
@@ -185,18 +222,42 @@ export class SessionService {
    * elevated write whose only protection is the discipline of its callers is one refactor
    * away from being a cross-tenant hijack of somebody else's session.
    */
-  async setActiveFarm(sessionId: string, userId: string, farmId: string): Promise<void> {
-    await this.elevated.db
-      .update(userSessions)
-      .set({ activeFarmId: farmId })
-      .where(
-        and(
-          eq(userSessions.id, sessionId),
-          eq(userSessions.userId, userId),
-          isNull(userSessions.revokedAt),
-          isLive(),
-        ),
+  async setActiveFarm(
+    sessionId: string,
+    userId: string,
+    farmId: string,
+    context: AuthAuditContext = {},
+  ): Promise<void> {
+    await this.elevated.db.transaction(async (tx) => {
+      const predicate = and(
+        eq(userSessions.id, sessionId),
+        eq(userSessions.userId, userId),
+        isNull(userSessions.revokedAt),
+        isLive(),
       );
+      const [session] = await tx
+        .select({
+          activeFarmId: userSessions.activeFarmId,
+          familyId: userSessions.familyId,
+        })
+        .from(userSessions)
+        .where(predicate)
+        .for('update');
+      if (!session) return;
+
+      await tx.update(userSessions).set({ activeFarmId: farmId }).where(predicate);
+      await writeAuthAudit(tx, {
+        event: 'farm_switch',
+        outcome: 'success',
+        actorUserId: userId,
+        subjectUserId: userId,
+        farmId,
+        sessionId,
+        sessionFamilyId: session.familyId,
+        ...context,
+        metadata: { fromFarmId: session.activeFarmId },
+      });
+    });
   }
 
   private async insert(
@@ -210,6 +271,7 @@ export class SessionService {
       secondFactorAt?: Date | null;
     },
     tx?: Parameters<Parameters<ElevatedDb['db']['transaction']>[0]>[0],
+    audit?: IssuedSessionAudit,
   ): Promise<IssuedSession> {
     const db = tx ?? this.elevated.db;
     const refreshToken = this.tokens.generateRefreshToken();
@@ -239,6 +301,14 @@ export class SessionService {
         lastUsedAt: now,
       })
       .returning();
+
+    if (audit) {
+      await writeAuthAudit(db, {
+        ...audit,
+        sessionId: row!.id,
+        sessionFamilyId: row!.familyId,
+      });
+    }
 
     return {
       sessionId: row!.id,

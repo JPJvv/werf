@@ -33,9 +33,10 @@ const FARM = {
 };
 
 // These are deliberately full keyboard-and-pointer journeys. Under the uncached verify lane they
-// share a process with Docker-backed integration suites, where the default 5 s unit-test ceiling is
-// too tight for userEvent's per-keystroke semantics. Ten seconds still fails a genuinely stalled UI.
-const UI_FLOW_TIMEOUT_MS = 10_000;
+// share a process with Docker-backed integration suites, where userEvent's per-keystroke semantics
+// pushed more than one healthy journey past ten seconds. Keep one explicit suite-wide budget so the
+// definition-of-done lane is reproducible while a genuinely stalled UI still fails promptly.
+const UI_FLOW_TIMEOUT_MS = 20_000;
 vi.setConfig({ testTimeout: UI_FLOW_TIMEOUT_MS });
 
 function session(secondFactor: 'required' | 'complete') {

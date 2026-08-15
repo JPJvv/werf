@@ -649,29 +649,24 @@ CREATE TABLE compliance_items (
 
 ## 8. Audit
 
-```sql
-CREATE TABLE audit_log (
-  id            bigserial PRIMARY KEY,
-  farm_id       uuid NOT NULL,
-  user_id       uuid,
-  table_name    text NOT NULL,
-  record_id     uuid NOT NULL,
-  action        text NOT NULL,        -- 'insert','update','delete','conflict_resolved'
-  before        jsonb,
-  after         jsonb,
-  source        text,                 -- 'web','sync','api','system'
-  ip_address    inet,
-  occurred_at   timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX audit_log_record ON audit_log (table_name, record_id, occurred_at DESC);
-CREATE INDEX audit_log_farm   ON audit_log (farm_id, occurred_at DESC);
+Two immutable logs hold two different kinds of evidence rather than forcing either one to invent
+identifiers it does not have:
 
--- ⭐ Immutable at the database level (NFR-211). Not by convention. By grant.
-REVOKE UPDATE, DELETE ON audit_log FROM PUBLIC;
-REVOKE UPDATE, DELETE ON audit_log FROM werf_app;
-```
+- `audit_log` is farm-scoped conflict evidence. It retains both facts, the rule, winner,
+  actor/session provenance and a deterministic conflict key; retries cannot manufacture a second
+  explanation.
+- `auth_audit_log` records login success/challenge/failure, logout, farm switch, invitation and
+  refresh-token reuse detection. `farm_id`, actor and subject may be null because an unknown-account
+  failure happens before a tenant or identity exists. It stores controlled reason/method/role
+  metadata plus the individual session and stable rotation-family ids, source IP and bounded user
+  agent; never an email, password, token, challenge or credential.
 
-`bigserial`, not UUIDv7 — audit rows are written server-side only and never sync, so there is no offline ID problem, and a sequence gives cheap ordering.
+Both use `bigserial`, not UUIDv7: they are server-authored and never sync, so a sequence gives cheap
+ordering without violating the client-ID rule. Both reject `UPDATE` and `DELETE` through a database
+trigger. The ordinary `werf_app` role cannot access `auth_audit_log` at all; it is written only by
+the explicit elevated authentication paths. RLS is enabled and forced with zero policies as a
+second lock. Migration 0028 and its integration tests pin all three properties (immutability,
+ordinary-role denial and server-only classification) for NFR-211.
 
 ---
 
@@ -725,7 +720,7 @@ Every table is one of these. This table is the input to both the sync rules and 
 | **Full sync** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers` | Farm-scoped, bidirectional |
 | **Reference sync** | `chemical_products`, `veterinary_products`, `regulatory_rates`, `notifiable_diseases`, `public_holidays` | **Filtered by the farm's `jurisdiction`**, read-only. Required for offline PHI/withdrawal checks. A ZA device never downloads Namibian withdrawal periods. |
 | **Filtered sync** | `employees` (minus encrypted columns), `attendance` events | Role-gated |
-| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
+| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `auth_audit_log`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
 
 The "server only" row is a security decision as much as an architectural one. A stolen phone should not contain 40 workers' payslips.
 

@@ -18,6 +18,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import * as animals from './animals';
 import * as attachments from './attachments';
 import * as auth from './auth';
+import * as authAudit from './auth-audit';
 import * as branding from './branding';
 import * as breeding from './breeding';
 import * as core from './core';
@@ -31,6 +32,7 @@ const modules = [
   animals,
   attachments,
   auth,
+  authAudit,
   branding,
   breeding,
   core,

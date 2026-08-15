@@ -26,6 +26,7 @@ import {
 } from '../security/rate-limits';
 import { Public, type AuthContext } from './auth.guard';
 import { CurrentUser } from './current-user.decorator';
+import { authAuditContextFrom } from './auth-audit';
 import { AuthService } from './auth.service';
 import { attachSessionCookie, clearSessionCookie, sessionTokenFrom } from './session-cookie';
 
@@ -53,9 +54,10 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(schemas.loginRequestSchema))
   async login(
     @Body() body: schemas.LoginRequest,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<schemas.BrowserAuthSession | schemas.SecondFactorRequired> {
-    const result = await this.auth.login(body);
+    const result = await this.auth.login(body, authAuditContextFrom(request));
     return 'secondFactorRequired' in result ? result : attachSessionCookie(response, result);
   }
 
@@ -69,7 +71,10 @@ export class AuthController {
   ): Promise<schemas.BrowserAuthSession> {
     const token = sessionTokenFrom(request);
     if (!token) throw new SessionInvalidError('unknown');
-    return attachSessionCookie(response, await this.auth.refresh(token));
+    return attachSessionCookie(
+      response,
+      await this.auth.refresh(token, authAuditContextFrom(request)),
+    );
   }
 
   /**
@@ -85,9 +90,13 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(schemas.verifySecondFactorRequestSchema))
   async verifySecondFactor(
     @Body() body: schemas.VerifySecondFactorRequest,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<schemas.BrowserAuthSession> {
-    return attachSessionCookie(response, await this.auth.verifySecondFactor(body));
+    return attachSessionCookie(
+      response,
+      await this.auth.verifySecondFactor(body, authAuditContextFrom(request)),
+    );
   }
 
   /**
@@ -118,6 +127,6 @@ export class AuthController {
     const token = sessionTokenFrom(request);
     // Clear first: an absent/expired server record must not keep this browser signed in.
     clearSessionCookie(response);
-    if (token) await this.auth.logout(token);
+    if (token) await this.auth.logout(token, authAuditContextFrom(request));
   }
 }

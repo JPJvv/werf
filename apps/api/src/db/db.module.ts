@@ -16,9 +16,10 @@ export const APP_DB = Symbol('APP_DB');
 
 /**
  * The RLS-bypassing connection. Legitimate uses are few and all of them precede a
- * membership: registering a business, creating its first farm, and the refresh path
- * (which must find a session before it knows whose it is). The one lifecycle exception is
- * the membership-expiry sweep: it must tombstone rows RLS has already made invisible.
+ * membership: registering a business, creating its first farm, the refresh path (which must find
+ * a session before it knows whose it is), and immutable auth evidence (a failed login may have no
+ * identity to scope by, and the ordinary role is intentionally denied the table). The lifecycle
+ * exception is the membership-expiry sweep: it must tombstone rows RLS already made invisible.
  */
 export const ELEVATED_DB = Symbol('ELEVATED_DB');
 

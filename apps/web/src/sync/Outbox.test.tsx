@@ -30,6 +30,7 @@ const DIP_ID = '0190f3a0-0000-7000-8000-0000000000c1';
 const TALLY_ID = '0190f3a0-0000-7000-8000-0000000000c2';
 const MOVE_ID = '0190f3a0-0000-7000-8000-0000000000c3';
 const SALE_ID = '0190f3a0-0000-7000-8000-0000000000e3';
+const BRAND_ID = '0190f3a0-0000-7000-8000-0000000000b7';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -98,6 +99,26 @@ function seedCaptures(): void {
       },
     ]),
   );
+}
+
+function seedBrandAndLinkedAnimal(): void {
+  const register = schemas.newBrandingRegisterSchema.parse({
+    id: BRAND_ID,
+    farmId: FARM_ID,
+    mark: 'AM7',
+    markType: 'hot_brand',
+    species: ['cattle'],
+  });
+  const animal = schemas.newAnimalSchema.parse({
+    id: ANIMAL_ID,
+    farmId: FARM_ID,
+    species: 'cattle',
+    sex: 'female',
+    brandId: BRAND_ID,
+    brandAppliedAt: '2026-07-01',
+  });
+  window.localStorage.setItem(`werf-branding:${FARM_ID}`, JSON.stringify([register]));
+  window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
 }
 
 /**
@@ -245,6 +266,46 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     const init = fetchMock.mock.calls[0]![1]!;
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer access-token');
+  });
+
+  it('sends a newly recorded mark before the linked animal FK (FR-601/602)', async () => {
+    cachedSession();
+    seedBrandAndLinkedAnimal();
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+
+    const paths = postedPaths(fetchMock);
+    const brandAt = paths.findIndex((path) => path.endsWith('/livestock/branding-registers'));
+    const animalAt = paths.findIndex((path) => path.endsWith('/livestock/animals'));
+    expect(brandAt).toBeGreaterThanOrEqual(0);
+    expect(animalAt).toBeGreaterThanOrEqual(0);
+    expect(brandAt).toBeLessThan(animalAt);
+  });
+
+  it('holds a linked animal when its newly recorded mark is refused', async () => {
+    cachedSession();
+    seedBrandAndLinkedAnimal();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith('/livestock/branding-registers')) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: async () => ({ code: 'VALIDATION', message: 'Registered mark was not accepted' }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, status: 201, json: async () => ({}) } as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(postedPaths(fetchMock)).toContainEqual(expect.stringMatching(/branding-registers$/));
+    });
+    expect(postedPaths(fetchMock).some((path) => path.endsWith('/livestock/animals'))).toBe(false);
   });
 
   it('⭐ sends the DOSE and the MOVE before the disposal the server must judge against them', async () => {

@@ -103,6 +103,8 @@ const theftIncidentProjection = {
 
 /** Postgres' unique-violation SQLSTATE. */
 const UNIQUE_VIOLATION = '23505';
+/** PostgreSQL check-constraint violation SQLSTATE. */
+const CHECK_VIOLATION = '23514';
 
 /**
  * Turns the live-rows-only unique violation on (farm_id, type, value) into a ConflictError a farmer
@@ -126,8 +128,27 @@ function rethrowDuplicateIdentifier(value: string) {
   };
 }
 
+/** Turns the ZA mark-length DB check into a permanent 4xx refusal, never an endless 5xx retry. */
+function rethrowInvalidRegisteredMark(error: unknown): never {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === CHECK_VIOLATION &&
+    (error as { constraint?: unknown }).constraint === 'branding_registers_mark_length'
+  ) {
+    throw new ValidationError(
+      'The registered mark does not meet this farm jurisdiction’s rules. Copy it exactly from the certificate.',
+    );
+  }
+  throw error;
+}
+
 /** The persisted animal as returned to the caller. */
 export type CapturedAnimal = Awaited<ReturnType<LivestockService['recordAnimal']>>;
+/** The persisted registered identification mark (FR-601). */
+export type CapturedBrandingRegister = Awaited<
+  ReturnType<LivestockService['createBrandingRegister']>
+>;
 /** The persisted mob as returned to the caller. */
 export type CapturedMob = Awaited<ReturnType<LivestockService['recordMob']>>;
 /** The persisted identifier as returned to the caller. */
@@ -139,6 +160,47 @@ export type CapturedTheftIncident = Awaited<ReturnType<LivestockService['createT
 @Injectable()
 export class LivestockService {
   constructor(@Inject(APP_DB) private readonly app: AppDb) {}
+
+  /**
+   * Registers a farm's identification mark (FR-601). The client creates the row offline and the
+   * outbox sends it before any animal that references it. Jurisdiction is always read from the
+   * farm, never trusted from the device; authorship comes from the authenticated session.
+   */
+  async createBrandingRegister(userId: string, input: schemas.NewBrandingRegister) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      const [farm] = await tx
+        .select({ jurisdiction: farms.jurisdiction })
+        .from(farms)
+        .where(and(eq(farms.id, input.farmId), isNull(farms.deletedAt)));
+      if (!farm) throw new NotFoundError('Farm not found');
+
+      const [row] = await tx
+        .insert(brandingRegisters)
+        .values({
+          id: input.id,
+          farmId: input.farmId,
+          jurisdiction: farm.jurisdiction,
+          mark: input.mark,
+          markType: input.markType,
+          species: input.species,
+          bodyPosition: input.bodyPosition,
+          certificateReference: input.certificateReference,
+          registeredAt: input.registeredAt,
+          createdBy: userId,
+        })
+        .onConflictDoNothing({ target: brandingRegisters.id })
+        .returning()
+        .catch(rethrowInvalidRegisteredMark);
+
+      if (row) return row;
+      const [existing] = await tx
+        .select()
+        .from(brandingRegisters)
+        .where(and(eq(brandingRegisters.id, input.id), eq(brandingRegisters.farmId, input.farmId)));
+      return existing!;
+    });
+  }
 
   /**
    * Creates an animal (FR-101) as a herd row. This is the FK root the flush sends FIRST: a
@@ -163,6 +225,21 @@ export class LivestockService {
         enterpriseId: input.enterpriseId,
         brandId: input.brandId,
       });
+      if (input.brandId !== null) {
+        const [brand] = await tx
+          .select({ species: brandingRegisters.species })
+          .from(brandingRegisters)
+          .where(
+            and(
+              eq(brandingRegisters.id, input.brandId),
+              eq(brandingRegisters.farmId, input.farmId),
+              isNull(brandingRegisters.deletedAt),
+            ),
+          );
+        if (!brand?.species.includes(input.species)) {
+          throw new ValidationError('This registered mark does not cover the animal’s species');
+        }
+      }
 
       const [row] = await tx
         .insert(animals)

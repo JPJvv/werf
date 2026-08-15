@@ -20,6 +20,7 @@ import { OBJECT_STORAGE, type ObjectStorage } from '../attachments/object-storag
 import {
   LivestockService,
   type CapturedAnimal,
+  type CapturedBrandingRegister,
   type CapturedEvent,
   type CapturedIdentifier,
   type CapturedMob,
@@ -37,6 +38,17 @@ export class LivestockController {
     @Inject(LivestockService) private readonly livestock: LivestockService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
+
+  /** Create a registered identification mark offline-first (FR-601), idempotent on its UUIDv7. */
+  @Post('branding-registers')
+  @HttpCode(HttpStatus.CREATED)
+  async createBrandingRegister(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.newBrandingRegisterSchema))
+    body: schemas.NewBrandingRegister,
+  ): Promise<CapturedBrandingRegister> {
+    return this.livestock.createBrandingRegister(auth.userId, body);
+  }
 
   /**
    * Create an animal (FR-101). The FK root of the capture graph, so the client flush sends

@@ -46,6 +46,38 @@ describe('newAnimalSchema', () => {
     ).toThrow();
   });
 
+  it('records a registered mark and its application day as one fact (FR-602)', () => {
+    expect(() =>
+      newAnimalSchema.parse({
+        id: ID,
+        farmId: ID2,
+        species: 'cattle',
+        sex: 'female',
+        brandId: ID2,
+      }),
+    ).toThrow(/day it was applied/i);
+    expect(() =>
+      newAnimalSchema.parse({
+        id: ID,
+        farmId: ID2,
+        species: 'cattle',
+        sex: 'female',
+        brandAppliedAt: '2026-07-01',
+      }),
+    ).toThrow(/registered mark/i);
+
+    expect(
+      newAnimalSchema.parse({
+        id: ID,
+        farmId: ID2,
+        species: 'cattle',
+        sex: 'female',
+        brandId: ID2,
+        brandAppliedAt: '2026-07-01',
+      }),
+    ).toMatchObject({ brandId: ID2, brandAppliedAt: '2026-07-01' });
+  });
+
   it('record schema coerces audit timestamps to Date but leaves dob a string', () => {
     const a = animalSchema.parse({
       id: ID,

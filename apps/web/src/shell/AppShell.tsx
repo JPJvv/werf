@@ -25,6 +25,7 @@ import { LocalTheftProvider } from '../livestock/LocalTheft';
 import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
 import { LocalAttachmentsProvider } from '../attachments/LocalAttachments';
 import { LocalConflictReviewsProvider } from '../livestock/LocalConflictReviews';
+import { LocalBrandingProvider } from '../livestock/LocalBranding';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -53,6 +54,7 @@ const CAPTURE_STORES = [
   HydratedLandProvider,
   LocalMobsProvider,
   LocalTalliesProvider,
+  LocalBrandingProvider,
   LocalHerdProvider,
   LocalIdentifiersProvider,
   LocalWeightsProvider,

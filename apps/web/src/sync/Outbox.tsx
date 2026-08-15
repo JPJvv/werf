@@ -61,6 +61,11 @@ import {
 } from '../attachments/LocalAttachments';
 import { sendAttachment } from '../attachments/attachmentApi';
 import { useAnimals, useAnimalsHydrationFailed, useAnimalsSettled } from '../livestock/LocalHerd';
+import {
+  useBrandingRegisters,
+  useBrandingRegistersHydrationFailed,
+  useBrandingRegistersSettled,
+} from '../livestock/LocalBranding';
 import { useMobs, useMobsHydrationFailed, useMobsSettled } from '../livestock/LocalMobs';
 import {
   useTallies,
@@ -222,6 +227,7 @@ export type CaptureKind =
   | 'boundaryWalk'
   | 'mob'
   | 'tally'
+  | 'branding'
   | 'animal'
   | 'identifier'
   | 'weight'
@@ -453,6 +459,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // `needsHead`'s own comment, for exactly how.
   const hydratedMobs = useHydratedMobs();
   const hydratedTallies = useHydratedTallies();
+  const brandingRegisters = useBrandingRegisters();
   const animals = useAnimals();
   // ⭐ Same down-sync half, extended to animals/moves (phase-checklists.md 3e) — an animal another
   // device registered, or a walk another device recorded, already replicated to this one.
@@ -482,7 +489,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // itself, only the handle to where the local capture store already keeps them.
   const attachmentBlobStore = useAttachmentBlobStore();
 
-  // ⭐ EVERY STORE THIS QUEUE READS, SETTLED, BEFORE ANY OF IT IS TRUSTED. Each of the 14 stores
+  // ⭐ EVERY STORE THIS QUEUE READS, SETTLED, BEFORE ANY OF IT IS TRUSTED. Each store
   // above hydrates independently and asynchronously (phase-checklists.md 3c) — the SQLite-backed
   // capture stores start empty and fill in on their own schedule, not necessarily together. An
   // unhydrated store's `all()` is `[]`, which is INDISTINGUISHABLE from "this farm genuinely has
@@ -510,6 +517,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const hydratedTalliesSettled = useHydratedTalliesSettled();
   const hydratedAnimalsSettled = useHydratedAnimalsSettled();
   const hydratedMovesSettled = useHydratedMovesSettled();
+  const brandingRegistersSettled = useBrandingRegistersSettled();
   const animalsSettled = useAnimalsSettled();
   const identifiersSettled = useIdentifiersSettled();
   const weightsSettled = useWeightsSettled();
@@ -529,6 +537,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     hydratedTalliesSettled &&
     hydratedAnimalsSettled &&
     hydratedMovesSettled &&
+    brandingRegistersSettled &&
     animalsSettled &&
     identifiersSettled &&
     weightsSettled &&
@@ -558,6 +567,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const hydratedTalliesHydrationFailed = useHydratedTalliesHydrationFailed();
   const hydratedAnimalsHydrationFailed = useHydratedAnimalsHydrationFailed();
   const hydratedMovesHydrationFailed = useHydratedMovesHydrationFailed();
+  const brandingRegistersHydrationFailed = useBrandingRegistersHydrationFailed();
   const animalsHydrationFailed = useAnimalsHydrationFailed();
   const identifiersHydrationFailed = useIdentifiersHydrationFailed();
   const weightsHydrationFailed = useWeightsHydrationFailed();
@@ -577,6 +587,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     hydratedTalliesHydrationFailed ||
     hydratedAnimalsHydrationFailed ||
     hydratedMovesHydrationFailed ||
+    brandingRegistersHydrationFailed ||
     animalsHydrationFailed ||
     identifiersHydrationFailed ||
     weightsHydrationFailed ||
@@ -722,8 +733,25 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
+    // A registered mark is an FK root for `animals.brand_id`. It references only the farm, so it
+    // can be sent here after the other roots and must be sent before every linked animal below.
+    for (const register of brandingRegisters) {
+      if (!sent.has(register.id)) {
+        items.push({
+          id: register.id,
+          kind: 'branding',
+          detail: register.mark,
+          send: (token) => livestockApi.createBrandingRegister(register, token),
+          provides: [`brandrow:${register.id}`],
+        });
+      }
+    }
     for (const animal of animals) {
       if (!sent.has(animal.id)) {
+        const guardedByFor = [
+          ...(animal.landUnitId !== null ? [`landrow:${animal.landUnitId}`] : []),
+          ...(animal.brandId !== null ? [`brandrow:${animal.brandId}`] : []),
+        ];
         items.push({
           id: animal.id,
           kind: 'animal',
@@ -735,7 +763,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           provides: [`animalrow:${animal.id}`],
           // ⭐ P2.7: same reasoning as the mob above — an animal created directly into a
           // not-yet-accepted camp must wait behind it.
-          ...(animal.landUnitId !== null ? { guardedBy: [`landrow:${animal.landUnitId}`] } : {}),
+          ...(guardedByFor.length > 0 ? { guardedBy: guardedByFor } : {}),
         });
       }
     }
@@ -1101,6 +1129,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     landUnitCodes,
     boundaryWalks,
     mobs,
+    brandingRegisters,
     tallies,
     foldMobs,
     foldTallies,

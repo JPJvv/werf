@@ -23,6 +23,7 @@ import { RecordLossScreen } from './livestock/RecordLossScreen';
 import { RecordPhotoScreen } from './livestock/RecordPhotoScreen';
 import { TheftIncidentsScreen } from './livestock/TheftIncidentsScreen';
 import { AttentionScreen } from './livestock/AttentionScreen';
+import { BrandingRegisterScreen } from './livestock/BrandingRegisterScreen';
 import { ReportTheftScreen } from './livestock/ReportTheftScreen';
 import { LandScreen } from './land/LandScreen';
 import { AddLandUnitScreen } from './land/AddLandUnitScreen';
@@ -68,6 +69,7 @@ export function App() {
                 <Route path="animals/new" element={<AddAnimalScreen />} />
                 <Route path="animals/loss" element={<RecordLossScreen />} />
                 <Route path="animals/photo" element={<RecordPhotoScreen />} />
+                <Route path="animals/brands" element={<BrandingRegisterScreen />} />
                 <Route path="animals/tag" element={<TagSessionScreen />} />
                 <Route path="animals/groups/new" element={<AddMobScreen />} />
                 <Route path="animals/groups/count" element={<AdjustMobScreen />} />

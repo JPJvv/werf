@@ -13,12 +13,14 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { schemas } from '@werf/core';
+import { schemas } from '@werf/core';
 import { App } from '../App';
 import { storedCaptures, getCurrentFakeLocalDatabase } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const HERD_KEY = 'werf-herd:0190f3a0-0000-7000-8000-0000000000f1';
+const BRANDING_KEY = 'werf-branding:0190f3a0-0000-7000-8000-0000000000f1';
+const BRAND_ID = '0190f3a0-0000-7000-8000-0000000000b1';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -185,6 +187,35 @@ describe('recording an animal', () => {
     });
     const [captured] = await storedCaptures<Record<string, unknown>>(HERD_KEY);
     expect(captured).toMatchObject({ dob: '2024-09-17', dobEstimated: true });
+  });
+
+  it('links the animal to a compatible registered mark in the same offline save (FR-602)', async () => {
+    cachedSession();
+    window.localStorage.setItem(
+      BRANDING_KEY,
+      JSON.stringify([
+        schemas.newBrandingRegisterSchema.parse({
+          id: BRAND_ID,
+          farmId: '0190f3a0-0000-7000-8000-0000000000f1',
+          mark: 'AM7',
+          markType: 'hot_brand',
+          species: ['cattle'],
+        }),
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/new');
+    render(<App />);
+
+    const mark = await screen.findByLabelText(/registered mark/i);
+    await user.selectOptions(mark, BRAND_ID);
+    const applied = screen.getByLabelText(/mark applied on/i);
+    await user.clear(applied);
+    await user.type(applied, '2026-07-01');
+    await user.click(screen.getByRole('button', { name: /save animal/i }));
+
+    const [captured] = await storedCaptures<Record<string, unknown>>(HERD_KEY);
+    expect(captured).toMatchObject({ brandId: BRAND_ID, brandAppliedAt: '2026-07-01' });
   });
 
   it('offers only the species the farm actually runs', () => {

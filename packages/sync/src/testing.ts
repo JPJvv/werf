@@ -76,9 +76,10 @@ function applyExecute(
 /** Every canonical (server-owned, down-synced) table a `HydratedTableStore` reads — `mobs`/
  *  `events` from the original 3e slice, `animals`/`animal_identifiers`/`theft_incidents` added for
  *  the animals/moves/health/identifiers/theft/weights/breeding hydration slice, `land_units`
- *  added for the land hydration slice (2026-08-14), and `theft_incident_animals` added once
- *  migration 0025 gave it a surrogate id to sync on (issue #10, P2.6) — boundary walks stay on
- *  `events` (`type = 'boundary_walk'`), narrowed the same way tallies/moves/health already are. */
+ *  added for the land hydration slice (2026-08-14), `branding_registers` for FR-601/602, and
+ *  `theft_incident_animals` added once migration 0025 gave it a surrogate id to sync on (issue
+ *  #10, P2.6) — boundary walks stay on `events` (`type = 'boundary_walk'`), narrowed the same way
+ *  tallies/moves/health already are. */
 export type CanonicalTable =
   | 'mobs'
   | 'events'
@@ -86,6 +87,7 @@ export type CanonicalTable =
   | 'animal_identifiers'
   | 'theft_incidents'
   | 'theft_incident_animals'
+  | 'branding_registers'
   | 'land_units';
 
 export interface FakeLocalDatabase {
@@ -230,6 +232,7 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     animal_identifiers: new Map(),
     theft_incidents: new Map(),
     theft_incident_animals: new Map(),
+    branding_registers: new Map(),
     land_units: new Map(),
   };
   const canonicalTable = (table: CanonicalTable) => canonicalTables[table];
@@ -361,9 +364,11 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
                 ? 'theft_incident_animals'
                 : sql.includes('FROM theft_incidents')
                   ? 'theft_incidents'
-                  : sql.includes('FROM land_units')
-                    ? 'land_units'
-                    : undefined;
+                  : sql.includes('FROM branding_registers')
+                    ? 'branding_registers'
+                    : sql.includes('FROM land_units')
+                      ? 'land_units'
+                      : undefined;
       if (table === undefined) {
         throw new Error(`fake database: unrecognized watch() — ${sql}`);
       }

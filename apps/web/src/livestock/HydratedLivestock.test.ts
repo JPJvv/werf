@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachAnimalIds,
+  mapHydratedBrandingRegister,
   mergeById,
   mergeByIdPreferHydrated,
   type HydratedTheftIncidentAnimalLink,
@@ -57,6 +58,37 @@ describe('mergeById', () => {
       { id: 'shared', tag: 'local' },
       { id: 'only-hydrated', tag: 'hydrated' },
     ]);
+  });
+});
+
+describe('branding-register hydration (FR-601)', () => {
+  it('maps the JSON-encoded Postgres species array into the shared register shape', () => {
+    expect(
+      mapHydratedBrandingRegister({
+        id: '0190f3a0-0000-7000-8000-0000000000b1',
+        farm_id: '0190f3a0-0000-7000-8000-0000000000f1',
+        jurisdiction: 'ZA',
+        mark: 'AM7',
+        mark_type: 'hot_brand',
+        species: '["cattle","sheep"]',
+        body_position: 'left hip',
+        certificate_reference: 'AIS-42',
+        registered_at: '2026-07-01',
+      }),
+    ).toMatchObject({ mark: 'AM7', species: ['cattle', 'sheep'] });
+  });
+
+  it('skips an unreadable array rather than breaking the whole local register', () => {
+    expect(
+      mapHydratedBrandingRegister({
+        id: '0190f3a0-0000-7000-8000-0000000000b1',
+        farm_id: '0190f3a0-0000-7000-8000-0000000000f1',
+        jurisdiction: 'ZA',
+        mark: 'AM7',
+        mark_type: 'hot_brand',
+        species: 'not-json',
+      }),
+    ).toBeNull();
   });
 });
 

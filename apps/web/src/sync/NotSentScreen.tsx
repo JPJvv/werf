@@ -43,6 +43,7 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   boundaryWalk: 'notSent.kind.boundaryWalk',
   mob: 'notSent.kind.mob',
   tally: 'notSent.kind.tally',
+  branding: 'notSent.kind.branding',
   animal: 'notSent.kind.animal',
   identifier: 'notSent.kind.identifier',
   weight: 'notSent.kind.weight',

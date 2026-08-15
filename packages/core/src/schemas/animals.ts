@@ -79,6 +79,17 @@ export const newAnimalSchema = animalSchema
     brandAppliedAt: animalSchema.shape.brandAppliedAt.default(null),
     attributes: z.record(z.string(), z.unknown()).default({}),
     photoKey: animalSchema.shape.photoKey.default(null),
+  })
+  .superRefine((animal, context) => {
+    // A mark link without its application day cannot support the FR-602 overdue check; a day
+    // without a mark claims an application nobody can identify. The pair is one fact.
+    if ((animal.brandId === null) !== (animal.brandAppliedAt === null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: animal.brandId === null ? ['brandId'] : ['brandAppliedAt'],
+        message: 'A registered mark and the day it was applied must be recorded together',
+      });
+    }
   });
 export type NewAnimal = z.infer<typeof newAnimalSchema>;
 

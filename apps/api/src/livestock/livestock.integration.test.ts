@@ -111,6 +111,19 @@ const animalBody = (
     ...over,
   });
 
+/** A registered identification mark composed offline (FR-601). */
+const brandingBody = (
+  over: Partial<ZodInput<typeof schemas.newBrandingRegisterSchema>>,
+): schemas.NewBrandingRegister =>
+  schemas.newBrandingRegisterSchema.parse({
+    id: uuidv7(),
+    farmId: over.farmId,
+    mark: 'AM7',
+    markType: 'hot_brand',
+    species: ['cattle'],
+    ...over,
+  });
+
 /** A minimal valid death body; overlay the fields a test cares about. */
 const deathBody = (
   over: Partial<ZodInput<typeof schemas.recordDeathRequestSchema>>,
@@ -487,6 +500,72 @@ describe('weight capture (FR-140)', () => {
     });
   });
 
+  describe('branding register creation (FR-601)', () => {
+    it('stores the certificate details under the farm jurisdiction and authenticated author', async () => {
+      const a = await tenant('Alpha');
+
+      const created = await service.createBrandingRegister(
+        a.userId,
+        brandingBody({
+          farmId: a.farmId,
+          bodyPosition: 'left hip',
+          certificateReference: 'AIS-2026-0042',
+          registeredAt: '2026-07-01',
+        }),
+      );
+
+      expect(created).toMatchObject({
+        farmId: a.farmId,
+        jurisdiction: 'ZA',
+        mark: 'AM7',
+        bodyPosition: 'left hip',
+        certificateReference: 'AIS-2026-0042',
+        createdBy: a.userId,
+      });
+    });
+
+    it('is idempotent on the client id and invisible to a stranger', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const body = brandingBody({ farmId: a.farmId });
+
+      const first = await service.createBrandingRegister(a.userId, body);
+      const again = await service.createBrandingRegister(a.userId, body);
+      expect(again.id).toBe(first.id);
+
+      await expect(service.createBrandingRegister(b.userId, body)).rejects.toThrow(NotFoundError);
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(brandingRegisters));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('returns a permanent validation refusal for a mark the jurisdiction DB rule rejects', async () => {
+      const a = await tenant('Alpha');
+      await expect(
+        service.createBrandingRegister(a.userId, brandingBody({ farmId: a.farmId, mark: 'FOUR' })),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses to link an animal to a mark whose certificate does not cover its species', async () => {
+      const a = await tenant('Alpha');
+      const sheepMark = await service.createBrandingRegister(
+        a.userId,
+        brandingBody({ farmId: a.farmId, species: ['sheep'] }),
+      );
+
+      await expect(
+        service.recordAnimal(
+          a.userId,
+          animalBody({
+            farmId: a.farmId,
+            species: 'cattle',
+            brandId: sheepMark.id,
+            brandAppliedAt: '2026-07-01',
+          }),
+        ),
+      ).rejects.toThrow(/does not cover/i);
+    });
+  });
+
   // ── Mobs (FR-102) ───────────────────────────────────────────────────────────────────
   describe('species-specific attributes (FR-107)', () => {
     it('stores the attributes the species actually has', async () => {
@@ -649,7 +728,14 @@ describe('weight capture (FR-140)', () => {
       ).rejects.toThrow(NotFoundError);
 
       await expect(
-        service.recordAnimal(a.userId, animalBody({ farmId: a.farmId, brandId: bravosBrand!.id })),
+        service.recordAnimal(
+          a.userId,
+          animalBody({
+            farmId: a.farmId,
+            brandId: bravosBrand!.id,
+            brandAppliedAt: '2026-07-01',
+          }),
+        ),
       ).rejects.toThrow(NotFoundError);
 
       const rows = await app.asUser(a.userId, (tx) => tx.select().from(animals));

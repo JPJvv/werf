@@ -55,6 +55,10 @@ export const livestockApi = {
   createAnimal: (animal: schemas.NewAnimal, token: string): Promise<void> =>
     post('/livestock/animals', animal, token),
 
+  /** FK root for an animal's `brandId`; the outbox sends this before the animal. */
+  createBrandingRegister: (register: schemas.NewBrandingRegister, token: string): Promise<void> =>
+    post('/livestock/branding-registers', register, token),
+
   /** Sent after land units (a mob can carry `land_unit_id`) and before animals (FR-102). */
   createMob: (mob: schemas.NewMob, token: string): Promise<void> =>
     post('/livestock/mobs', mob, token),

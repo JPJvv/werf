@@ -28,11 +28,12 @@ import {
 } from 'react';
 import { createHydratedTableStore, type HydratedTableStore } from '@werf/sync';
 import type { TallyRecord } from '@werf/domain';
-import type { AnimalStatus } from '@werf/core';
+import { schemas, type AnimalStatus } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
 import type { StoredMob } from './LocalMobs';
 import type { StoredAnimal } from './LocalHerd';
+import type { StoredBrandingRegister } from './LocalBranding';
 import type { StoredMove } from './LocalMoves';
 import type { StoredIdentifier } from './LocalIdentifiers';
 import type { StoredTheftIncident } from './LocalTheft';
@@ -56,6 +57,11 @@ const ANIMALS_SQL =
   'SELECT id, farm_id, enterprise_id, species, breed, sex, dob, dob_estimated, status, status_at, ' +
   'dam_id, sire_id, mob_id, land_unit_id, source, acquired_at, brand_id, brand_applied_at, ' +
   'attributes, photo_key FROM animals WHERE farm_id = ? AND deleted_at IS NULL';
+
+const BRANDING_REGISTERS_SQL =
+  'SELECT id, farm_id, jurisdiction, mark, mark_type, species, body_position, ' +
+  'certificate_reference, registered_at FROM branding_registers ' +
+  'WHERE farm_id = ? AND deleted_at IS NULL';
 
 /** The lifecycle event types `projectHerd`/`residue.ts`/the weaning queue fold — see `herd.ts`. */
 const LIFECYCLE_EVENT_TYPES = "('birth','death','sale','missing','purchase','weaning')";
@@ -247,6 +253,34 @@ function mapHydratedAnimal(row: Record<string, unknown>): StoredAnimal | null {
     attributes,
     photoKey: str('photo_key'),
   };
+}
+
+/** PostgreSQL arrays cross the SQLite boundary as JSON text; tolerate a native array in tests. */
+export function mapHydratedBrandingRegister(
+  row: Record<string, unknown>,
+): StoredBrandingRegister | null {
+  const speciesRaw = row['species'];
+  let species: unknown = speciesRaw;
+  if (typeof speciesRaw === 'string') {
+    try {
+      species = JSON.parse(speciesRaw) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  const parsed = schemas.newBrandingRegisterSchema.safeParse({
+    id: row['id'],
+    farmId: row['farm_id'],
+    jurisdiction: row['jurisdiction'],
+    mark: row['mark'],
+    markType: row['mark_type'],
+    species,
+    bodyPosition: row['body_position'],
+    certificateReference: row['certificate_reference'],
+    registeredAt: row['registered_at'],
+  });
+  return parsed.success ? parsed.data : null;
 }
 
 /**
@@ -616,6 +650,7 @@ interface HydratedLivestockValue {
   readonly mobs: HydratedTableStore<StoredMob>;
   readonly tallies: HydratedTableStore<TallyRecord>;
   readonly animals: HydratedTableStore<StoredAnimal>;
+  readonly brandingRegisters: HydratedTableStore<StoredBrandingRegister>;
   readonly lifecycleEvents: HydratedTableStore<HydratedLifecycleEvent>;
   readonly moves: HydratedTableStore<StoredMove>;
   readonly healthEvents: HydratedTableStore<HydratedHealthDose>;
@@ -653,6 +688,7 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
     mobs: emptyHydratedTableStore<StoredMob>(),
     tallies: emptyHydratedTableStore<TallyRecord>(),
     animals: emptyHydratedTableStore<StoredAnimal>(),
+    brandingRegisters: emptyHydratedTableStore<StoredBrandingRegister>(),
     lifecycleEvents: emptyHydratedTableStore<HydratedLifecycleEvent>(),
     moves: emptyHydratedTableStore<StoredMove>(),
     healthEvents: emptyHydratedTableStore<HydratedHealthDose>(),
@@ -693,6 +729,12 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
         sql: ANIMALS_SQL,
         params: [farmId],
         mapRow: mapHydratedAnimal,
+      }),
+      brandingRegisters: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: BRANDING_REGISTERS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedBrandingRegister,
       }),
       lifecycleEvents: createHydratedTableStore({
         database: getLocalDatabase(),
@@ -748,6 +790,7 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
       pair.mobs.close();
       pair.tallies.close();
       pair.animals.close();
+      pair.brandingRegisters.close();
       pair.lifecycleEvents.close();
       pair.moves.close();
       pair.healthEvents.close();
@@ -819,6 +862,12 @@ export function useHydratedAnimalsSettled(): boolean {
 export function useHydratedAnimalsHydrationFailed(): boolean {
   const { animals } = useHydratedLivestock();
   return useSyncExternalStore(animals.subscribe, animals.hydrationFailed);
+}
+
+/** Registered marks sent by this or another device and replicated back down. */
+export function useHydratedBrandingRegisters(): readonly StoredBrandingRegister[] {
+  const { brandingRegisters } = useHydratedLivestock();
+  return useSyncExternalStore(brandingRegisters.subscribe, brandingRegisters.all);
 }
 
 /** Births/deaths/sales/missing reports/purchases/weanings another device sent, already replicated

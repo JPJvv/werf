@@ -3,22 +3,19 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-15 (sixth session). Continuing JP's Phase 3 punch-list closure.
-**The conflict-audit decision gate is closed (owner chose A). P2.10 is closed. P2.9 is closed**
-(schema-boundary half only — see §5 item 29). **11 of ~21 punch-list items remain.** Do not re-run
-P1/P2.5/P2.6/P2.7/P2.8/P2.9/P2.10 or the conflict-audit slice.
+**Last updated:** 2026-08-15 (eighth session). Continuing JP's Phase 3 punch-list closure.
+**P3.11/P3.12 and the conflict-audit gate are closed; P2.9's schema half is closed** (see §5).
+**About 8.5 of ~21 punch-list items remain.** Do not re-run P1/P2.5–P2.10, conflict audit, P3.11
+or P3.12.
 
 ✅ **Owner-triggered `reviewer` + `sync-auditor` + `compliance-checker`, all three, over
 `baf4b4d..428200a`: ALL CLEARED, no SEV-1/SEV-2/MED.** `reviewer` raised one LOW (STATUS.md
 mis-citing `auth.service.ts`) that was checked directly and REFUTED — the cited comment exists
 verbatim at `auth.service.ts:68-71`; no STATUS.md change was made. Full account in §3.
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, committed HEAD `ba6963c`
-(conflict audit/review) ← `bc33201` (P2.10 closure docs) ← `b88b29b` (P2.10 adversarial tenancy proof) ← `014ab80` (P2.9 closure docs) ← `428200a` (P2.9 UUIDv7 schema
-boundary) ← `a00e77f` (P2.8 closure docs) ← `a6b0c1a` (P2.8 reproducible
-API/real-stack bootstrap) ← `a402252` (compliance status closure) ← `baf4b4d` (compliance fix) ←
-`38268b5` (P2.8 two-browser e2e) ← `256d06a` (P2.7) ← `9e1b402`/`6820a21` (P2.6) ← `422e09d` (P2.5) ←
-`c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local commits only.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work HEAD
+`cd0d3c0` (P3.12 plan) ← `e8533b5` (P3.11) ← `b2c9d4f`/`ba6963c` (conflict closure).
+Older chain is in git history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -29,7 +26,7 @@ API/real-stack bootstrap) ← `a402252` (compliance status closure) ← `baf4b4d
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 10.5/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, and the conflict-audit gate are done. P3.11–P3.16 and Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 12.5/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit, P3.11 and P3.12 are done. P3.13–P3.16 and Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -95,7 +92,7 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-15, sixth session, fully uncached, after conflict-audit A) | ✅ **113 test files / 1210 tests, 12/12 typecheck tasks, 7/7 builds, 164.57 KB gz** — includes migrated real-Postgres O-6/O-7/O-8, immutable-audit mutation attempts, RLS tenancy classification, cached review UI, and the P2.10 adversarial tenancy mutants |
+| `pnpm verify` (2026-08-15, eighth session, fully uncached, after P3.12 plan) | ✅ **113 test files / 1212 tests, 12/12 typecheck tasks, 7/7 builds, 164.84 KB gz** |
 | `pnpm test:e2e` (2026-08-15, fourth session, default lane, after P2.9) | ✅ 31 passed / 5 skipped — the 3 `WERF_REAL_STACK`-gated specs P2.9 edited skip cleanly without the real stack; NOT exercised against it this session — do before calling P2.9 (or the branch) merge-ready |
 | `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
 | Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
@@ -111,8 +108,8 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 closure pass over a specific punch list, in three priority bands plus a doc/quality band, with an
 owner-decision gate partway through. **Second session: P1.1–P1.4 and P2.5 (5/~21). Third: P2.6
 and P2.7 closed, P2.8 in progress (7.5/~21). Fourth: P2.8 + P2.9 closed (8.5/~21). Fifth: P2.10
-closed (9.5/~21). Sixth: owner chose A and the conflict-audit slice closed (10.5/~21); P2.9's
-DB-default half remains a separate future slice.** ⭐ **Budget one
+closed (9.5/~21). Sixth: conflict audit closed (10.5/~21). Seventh/eighth: P3.11/P3.12 closed
+(12.5/~21); P2.9's DB-default half remains separate.** ⭐ **Budget one
 session per item, or at most a tightly related pair (e.g. P2.9+P2.10) — do not batch a whole band.**
 Each item is independently scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is
 what makes slicing safe.
@@ -152,7 +149,6 @@ what makes slicing safe.
     named `animalIds` either, despite the server checking both. Five new tests mirror the
     `mobrow:`/`animalrow:` coverage shape. `pnpm verify`: 112 files / 1195 tests, 162.34 KB gz.
     ⛔ Adds to §3's compliance-pass scope (the theft incident's send path).
-
 ✅ 28. Done 2026-08-15: **P2.8 — a TRUE two-browser O-3 scenario.** The test added in `38268b5`
 now passes: device A captures a mob and six-week-back-dated birth through the real UI while
 offline, reloads the deep route from the service-worker shell/OPFS, reconnects and flushes through
@@ -196,7 +192,6 @@ Playwright **1/1 passed**; fully uncached `pnpm verify` **112 files / 1198 tests
     convenience; a DB-level removal would break all of them. Separate, larger, mechanical
     follow-up slice: give each fixture an explicit id (any valid UUID — the DB doesn't enforce v7,
     only the Zod boundary does), then drop each table's `.default(sql\`uuid_generate_v7()\`)`.
-
 ✅ **30. Done 2026-08-15 (fifth session): P2.10 — adversarial tenancy verification, commit
     `b88b29b`.** `tenancy.spec.ts` now boots a PRIVATE real Postgres (schema mutations cannot poison
     the shared worker DB), seeds two unrelated farms, and proves the current RLS and generated farms
@@ -220,9 +215,15 @@ review closure, legitimate twins, and cached UI copy all have direct coverage.
 ✅ **32. Done 2026-08-15 (seventh session): P3.11 — recent step-up before TOTP/passkey enrolment.** Both enrolment-start routes require a full human authentication no older than 10 minutes; refresh rotation preserves the original `authenticated_at`, so a stolen long-lived session cannot mint a TOTP seed or WebAuthn registration challenge. A stale caller receives 403 `STEP_UP_REQUIRED`, and the English/Afrikaans client clears the old session and returns to full sign-in, where an existing passkey remains the preferred phishing-resistant route and TOTP/recovery remains ADR-0011's transitional fallback.
 Real-Postgres guard and browser recovery coverage: **46/46 focused; `pnpm verify` 113 files / 1212 tests, 12/12 typecheck tasks, 7/7 builds, 164.84 KB gz**.
 
-**33. P3.12 — Google-first OIDC/BFF migration phasing.** A phasing/design decision more than a code
-slice — may produce a doc (an ADR) rather than shipped code this session.
-
+✅ **33. Done 2026-08-15 (eighth session): P3.12 — Google-first OIDC/cookie-BFF migration phasing,
+commit `cd0d3c0`.** The active implementation plan derives seven additive slices from ADR-0011:
+server-only identity/OIDC state + global auth audit; explicit passkey-step-up linking; linked login
+with FR-014 intact; user-verified passkey recovery + passwordless onboarding; dual bearer/cookie
+BFF with Origin/CSRF; old-PWA overlap for ≥30 days + two releases; per-account password retirement
+and operational hardening. It forbids email-equality live-account linking, treats Google identity as
+no farm authority, preserves every offline queue through auth failure/rollback, and names real-stack,
+POPIA s72, provider-config, distributed-abuse-control and independent-test release gates.
+`pnpm verify`: **113 files / 1212 tests, 12/12 typecheck tasks, 7/7 builds, 164.84 KB gz**.
 **34. P3.13 — FR-001 business contact/address fields.** Check `functional-requirements.md` FR-001
 for the exact field list before touching schema.
 

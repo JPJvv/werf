@@ -112,92 +112,22 @@ session per item, or at most a tightly related pair (e.g. P2.9+P2.10) — do not
 Each item is independently scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is
 what makes slicing safe.
 
-✅ 21–23. Done 2026-08-14 (first session): back-dated-move fail-closed, land hydration, 3i(c),
-    3i(b) residuals, O-3's real-stack sweep — see §3. Every **phase-checklist** box is `☑`; the
-    punch list below is a stricter pass on top of that, not a reopening of it.
-✅ 24. Done 2026-08-14 (second session): **P1 — data-loss/safety blockers, all four, commit `c2cc48a`.**
-    SQLite capture durability; attachment orphan create/finalize/sweep race (revive-on-retry +
-    symmetric conditional UPDATE); effective-dated withdrawal fail-closed (missing version →
-    BLOCKED, never clear); production CSP/CORS (proven in a real browser against a real deploy).
-✅ 25. Done 2026-08-14 (second session): **P2.5 — secure attachment reads + FR-603 evidence-pack
-    photos, commit `422e09d`.** `POST /attachments/download`; the evidence pack now embeds a
-    checksum-verified photo instead of naming an `animals.photo_key` reference nothing ever wrote.
-✅ 26. Done 2026-08-14 (third session): **P2.6 — `theft_incident_animals` surrogate id + audit
-    columns (issue #10), two commits.** `6820a21`: migration 0025 adds a DB-generated `id` (the
-    one `primaryId()` NOT client-generated — this row is only ever written server-side inside
-    `LivestockService.createTheftIncident`'s already-idempotent bulk insert), drops the composite
-    PK for a partial unique index (relink-after-unlink); removed `NO_SURROGATE_ID` from BOTH
-    `derive-local-schema.ts` AND `derive-sync-streams.ts` (the latter an **undocumented second
-    copy** the design note missed — without both, no Sync Stream would ever exist). Proven
-    against real Postgres (`theft.integration.test.ts`, new). `9e1b402`: `HydratedLivestock.tsx`
-    gained a second `HydratedTableStore` for the link table (not a SQL JOIN — the fake
-    `LocalDatabase` in `@werf/sync/testing` only recognizes single-table queries), folded onto
-    incidents by the new `attachAnimalIds`. `pnpm verify`: 112 files / 1190 tests, 162.28 KB gz.
-    ⛔ Touched the stock-theft table — regulated code, adds to §3's compliance-pass scope.
-
-✅ 27. Done 2026-08-14 (third session): **P2.7 — `landrow:` dependency subjects/guards, commit
-    `256d06a`.** Went WIDER than the design note: walking every
-    `assertOwnedReferences({landUnitId})` call site in the API (not trusting the note) found its
-    list — boundary walk, mob, animal — was incomplete. Two live gaps it missed: a MOVE's
-    `toLandUnitId` (server sets `event.landUnitId` from it) and a THEFT INCIDENT's own
-    `landUnitId` (`ReportTheftScreen.tsx`'s camp picker). Both wired. Checked and EXCLUDED two
-    theoretical paths (land-unit self-nesting, per-camp rainfall) — neither field is
-    wire-reachable from any capture screen today. Also fixed an adjacent, previously fully-
-    unguarded defect in the SAME object literal: no `animalrow:` guard existed for the incident's
-    named `animalIds` either, despite the server checking both. Five new tests mirror the
-    `mobrow:`/`animalrow:` coverage shape. `pnpm verify`: 112 files / 1195 tests, 162.34 KB gz.
-    ⛔ Adds to §3's compliance-pass scope (the theft incident's send path).
-✅ 28. Done 2026-08-15: **P2.8 — a TRUE two-browser O-3 scenario.** The test added in `38268b5`
-now passes: device A captures a mob and six-week-back-dated birth through the real UI while
-offline, reloads the deep route from the service-worker shell/OPFS, reconnects and flushes through
-the real API. Postgres holds the expected `occurred_at` and `head_count`; a genuinely separate
-browser context then hydrates the same 310 through PowerSync. Root cause of the blocked run was
-reproducibility, not the limiter: the stopped API's PowerSync private key existed only in its old
-shell, and local `werf_app` login provisioning was also out-of-band. `pnpm setup:local` now creates
-ignored secrets without printing them; PowerSync receives only `PS_JWKS_N` via `!env`, apps/api
-loads the local env at boot, and `pnpm real-stack:up` converges Docker + migrations + the RLS role.
-The registration limits remain pinned at their security budgets. Evidence: targeted real-stack
-Playwright **1/1 passed**; fully uncached `pnpm verify` **112 files / 1198 tests, 7/7 builds**.
-
-✅ 29. Done 2026-08-15 (fourth session), **schema-boundary half only — P2.9: enforce UUIDv7 at the
-    canonical boundary.** New `uuidV7Schema` (`primitives.ts`, RFC 9562 §5.7 version/variant regex on
-    top of `.uuid()`) applied to the `id` field of every schema a client uses to CREATE a row: the
-    animal/mob/identifier `new*Schema`s, all 12 `record*RequestSchema`s in `livestock.ts`,
-    `newLandUnitSchema`, `recordBoundaryWalkRequestSchema`, `newTheftIncidentSchema`,
-    `newBrandingRegisterSchema`, `newAttachmentSchema`, `recordRainfallRequestSchema`. Reference
-    fields (FKs, and the two attachment schemas whose `id` POINTS AT an existing row) stay generic
-    `uuidSchema`. `entities.ts`'s business/farm/user/farmUser/enterprise `new*Schema`s deliberately
-    left alone — unused dead code; registration/`createFarm` mint those ids server-side ON PURPOSE
-    (`auth.service.ts`'s own comment: the one inherently online operation), and their real wire
-    schemas carry no `id` field to convert.
-    ⭐ **Caught a real bug while wiring it up**: three `WERF_REAL_STACK`-gated e2e specs
-    (`real-offline-matrix`, `real-sync-hydration`, `deployed-connectivity`) minted capture ids with
-    Node's `crypto.randomUUID()` (v4) instead of `@werf/core`'s `uuidv7()` — every capture screen and
-    every other test already used the right generator; only these three drifted, silently, because
-    nothing checked the version. The next real-stack run would have 400'd every POST in them. Fixed.
-    (One `livestock.integration.test.ts` comment already documented v4's OTHER failure mode —
-    non-time-ordering breaks a same-instant tie-break test roughly half the time — which is why those
-    fixtures were dated a day apart; that workaround is now redundant but harmless, left in place.)
-    Verified: `pnpm verify` **113 files / 1202 tests, 7/7 builds, 162.45 KB gz**; `pnpm test:e2e`
-    default lane **31 passed / 5 skipped** (the 3 edited specs skip without `WERF_REAL_STACK` — NOT
-    exercised against the live stack this session, do that before merge-ready).
-    ⛔ **Deliberately deferred, not folded silently into "done":** removing `primaryId()`'s
-    DB-generated default from `animals`/`mobs`/`animalIdentifiers`/`landUnits`/`events`/
-    `theftIncidents`/`attachments` (NOT `theftIncidentAnimals`, P2.6's exception). Production code
-    always passes an explicit `id` (checked every real INSERT call site), so the default never fires
-    there and removing it is safe — but **87 direct-drizzle-insert call sites across 13 test files**
-    (57 in `livestock.integration.test.ts` alone) omit `id` and lean on that default as fixture
-    convenience; a DB-level removal would break all of them. Separate, larger, mechanical
-    follow-up slice: give each fixture an explicit id (any valid UUID — the DB doesn't enforce v7,
-    only the Zod boundary does), then drop each table's `.default(sql\`uuid_generate_v7()\`)`.
-✅ **30. Done 2026-08-15 (fifth session): P2.10 — adversarial tenancy verification, commit
-    `b88b29b`.** `tenancy.spec.ts` now boots a PRIVATE real Postgres (schema mutations cannot poison
-    the shared worker DB), seeds two unrelated farms, and proves the current RLS and generated farms
-    Sync Stream each expose only farm A to user A. Three reversible mutants then prove the SAME
-    fixture fails loudly for: an extra permissive `USING (true)` policy (Postgres ORs policies), a
-    leaking `app_user_farm_ids()` body, and a loosened Sync Stream predicate. The sync predicate is
-    executed as SQL over the same fixture with RLS bypassed, isolating the replication filter.
-    `pnpm verify`: **113 files / 1206 tests, 7/7 builds, 162.45 KB gz**.
+✅ 21–30. Done 2026-08-14/15 (first–fifth sessions), condensed — full detail in git history:
+back-dated-move fail-closed + land hydration + 3i(c) attachment queue + 3i(b) residuals + O-3
+real-stack sweep (session 1, `1b429d5`/`8dcdaf5`); **P1** data-loss/safety blockers — SQLite
+durability, attachment orphan race, withdrawal fail-closed, production CSP/CORS (session 2,
+`c2cc48a`); **P2.5** secure attachment reads + FR-603 evidence-pack photos (session 2, `422e09d`);
+**P2.6** `theft_incident_animals` surrogate id + audit columns — found an undocumented SECOND
+`NO_SURROGATE_ID` copy in `derive-sync-streams.ts` the design note missed (session 3,
+`6820a21`/`9e1b402`); **P2.7** `landrow:` dependency guards, went wider than its own design note,
+which had missed a move's `toLandUnitId` and a theft incident's `landUnitId` (session 3,
+`256d06a`); **P2.8** a true two-browser O-3 scenario — the earlier blocked run's root cause was
+reproducibility (stray per-shell secrets), not the rate limiter, fixed via `pnpm setup:local` /
+`pnpm real-stack:up` (session 5, `38268b5`); **P2.9** schema-boundary UUIDv7 enforcement — caught
+three real-stack e2e specs minting v4 ids by mistake; DB-default removal deliberately deferred (87
+test call sites rely on it as fixture convenience) (session 4); **P2.10** adversarial tenancy
+verification with three reversible RLS/Sync-Stream mutants (session 5, `b88b29b`). Every
+**phase-checklist** box is `☑`; this punch list is a stricter pass on top of that, not a reopening.
 
 ✅ **31. Done 2026-08-15 (sixth session): owner chose A — conflict audit/review (O-6/O-7/O-8).**
 Migration `0026_conflict_audit` creates immutable `audit_log` plus operational

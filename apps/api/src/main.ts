@@ -1,8 +1,19 @@
 import 'reflect-metadata';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { WerfErrorFilter } from './common/werf-error.filter';
+
+// Local development has a reproducible, git-ignored root environment created by
+// `pnpm setup:local`. Load it here rather than asking every shell that starts apps/api to retain
+// six secrets forever. Node does not overwrite variables already supplied by the caller, and a
+// production process explicitly ignores this convenience file.
+const localEnvPath = resolve(__dirname, '../../../.env');
+if (process.env['NODE_ENV'] !== 'production' && existsSync(localEnvPath)) {
+  process.loadEnvFile(localEnvPath);
+}
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);

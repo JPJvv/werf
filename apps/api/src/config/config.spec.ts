@@ -25,6 +25,19 @@ describe('loadConfig — PowerSync signing key', () => {
     expect(config.powerSyncJwtPrivateKey).toBe(privateKey);
   });
 
+  it('accepts the one-line base64 form used by the local .env bootstrap', () => {
+    const env = validEnv({
+      POWERSYNC_JWT_PRIVATE_KEY: '',
+      POWERSYNC_JWT_PRIVATE_KEY_BASE64: Buffer.from(privateKey).toString('base64'),
+    });
+    expect(loadConfig(env).powerSyncJwtPrivateKey).toBe(privateKey);
+  });
+
+  it('accepts the escaped-newline form emitted by the previous dev key generator', () => {
+    const env = validEnv({ POWERSYNC_JWT_PRIVATE_KEY: privateKey.replace(/\n/g, '\\n') });
+    expect(loadConfig(env).powerSyncJwtPrivateKey).toBe(privateKey);
+  });
+
   it('refuses to boot with no signing key — a missing key must fail loudly, not sign nothing', () => {
     const env = validEnv();
     delete env.POWERSYNC_JWT_PRIVATE_KEY;

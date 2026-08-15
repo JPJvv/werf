@@ -50,6 +50,8 @@ services:
     command: ['start', '-r', 'unified']
     environment:
       POWERSYNC_CONFIG_PATH: /config/service.yaml
+      # Public key material only. `pnpm setup:local` derives it from the ignored private key.
+      PS_JWKS_N: ${PS_JWKS_N:?Run pnpm setup:local first}
     volumes:
       - ./infra/powersync/service.yaml:/config/service.yaml
       - ./infra/powersync/sync-config.yaml:/config/sync-config.yaml

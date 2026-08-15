@@ -8,11 +8,13 @@
  * device is readable — correctly, once, farm-scoped — on another that never captured it.
  *
  * Gated behind WERF_REAL_STACK because it needs infrastructure `playwright.config.ts`'s
- * `webServer` does not start: `docker compose up postgres powersync`, migrations run
- * (`pnpm --filter @werf/db migrate` against that Postgres), and `apps/api` running with env
- * matching `infra/powersync/service.yaml`'s committed public JWK (POWERSYNC_JWT_PRIVATE_KEY,
- * POWERSYNC_JWT_KID=werf-dev-1, POWERSYNC_AUDIENCE=werf-dev, POWERSYNC_URL). Run manually:
+ * `webServer` does not start. `pnpm real-stack:up` creates an ignored local environment, starts
+ * Docker, applies migrations and provisions the RLS-bound API role; then run apps/api in another
+ * shell. The bootstrap derives PowerSync's public JWK from the ignored private key, so restarting
+ * the API never depends on secrets surviving in an earlier shell. Run manually:
  *
+ *   pnpm real-stack:up
+ *   pnpm --filter @werf/api dev
  *   WERF_REAL_STACK=1 pnpm --filter @werf/web exec playwright test real-sync-hydration
  *
  * "Device A" is a direct authenticated REST call — that IS the mechanism `Outbox.tsx` uses to

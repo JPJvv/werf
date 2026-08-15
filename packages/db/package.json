@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json",
-    "migrate": "node ./scripts/migrate.mjs",
+    "migrate": "node --env-file-if-exists=../../.env ./scripts/migrate.mjs",
+    "setup:local-role": "node --env-file-if-exists=../../.env ./scripts/setup-local-role.mjs",
     "generate": "drizzle-kit generate",
     "seed": "node ./scripts/seed.mjs"
   },

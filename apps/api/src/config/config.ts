@@ -194,6 +194,24 @@ const configSchema = z.object({
 
 export type AppConfig = z.infer<typeof configSchema>;
 
+/**
+ * Local `.env` files cannot safely carry a multi-line PEM as an ordinary unquoted assignment.
+ * Production keeps using the direct PEM variable; local setup may instead store the same bytes as
+ * one base64 line. Both paths still reach `configSchema` and its real-key validation below.
+ */
+function powerSyncPrivateKey(env: NodeJS.ProcessEnv): string | undefined {
+  const direct = env.POWERSYNC_JWT_PRIVATE_KEY;
+  if (direct !== undefined && direct !== '') {
+    // Also accept the escaped-newline form emitted by older versions of the dev key generator.
+    return direct.replace(/\\n/g, '\n');
+  }
+
+  const encoded = env.POWERSYNC_JWT_PRIVATE_KEY_BASE64;
+  return encoded === undefined || encoded === ''
+    ? undefined
+    : Buffer.from(encoded, 'base64').toString('utf8');
+}
+
 /** Reads and validates configuration. Throws — at boot, where a human is watching. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = configSchema.safeParse({
@@ -202,7 +220,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseElevatedUrl: env.DATABASE_ELEVATED_URL ?? env.DATABASE_URL,
     jwtSecret: env.JWT_SECRET,
     piiEncryptionKey: env.PII_ENCRYPTION_KEY,
-    powerSyncJwtPrivateKey: env.POWERSYNC_JWT_PRIVATE_KEY,
+    powerSyncJwtPrivateKey: powerSyncPrivateKey(env),
     powerSyncJwtKid: env.POWERSYNC_JWT_KID,
     powerSyncAudience: env.POWERSYNC_AUDIENCE,
     powerSyncUrl: env.POWERSYNC_URL,

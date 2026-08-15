@@ -27,13 +27,14 @@ sync_config:
 
 client_auth:
   # No Supabase Auth in this product (ADR-0002/self-hosted af-south-1). A dev-only RS256 keypair
-  # signs the token used to exercise .connect() locally; the PRIVATE key is never committed (see
-  # scratchpad note in STATUS.md/commit message) — only the public JWK below, which discloses
-  # nothing. Production key custody is ADR-0011 / task 4 territory, not decided here.
+  # signs the token used to exercise .connect() locally; the PRIVATE key is never committed. The
+  # local bootstrap derives this public modulus into the git-ignored `.env`, and Compose injects
+  # it through PowerSync's supported `!env` scalar. Production key custody is ADR-0011 / task 4
+  # territory, not decided here.
   jwks:
     keys:
       - kty: 'RSA'
-        n: '5d5QScyge4Oq4VSnuU9M9VbQVSb_Mzal7c9a306x7Hz1NsNlvjnW7N0IdUkwqbWLEm3fTo-I02clfM8J8NPDFm6fcVRMsOXCqigNr6J0rk7cBwvzGvirHJfRXfQZPY2cfb4A0Oi7qCNWZDcLaXLhRlnWbn8Holsw49A5JiNuEl5aIz9f58mHuvOX6aPoABPcmPytLx9hqfStvS_gq2kPateqRcO7TpeeGqbLPXwaUIiu5KDLco296azyJpxnB9St2UBoJrqpJbkCep_U81kkEMVQlQqMuGTdXDMx8KU_lvbIjBu94qlhdHNUyNKh9dPdvgbdaie5mCEEbffDrpuwfQ'
+        n: !env PS_JWKS_N
         e: 'AQAB'
         alg: 'RS256'
         kid: 'werf-dev-1'

@@ -75,6 +75,41 @@ describe('loadConfig — PowerSync signing key', () => {
   });
 });
 
+describe('loadConfig — WebAuthn RP ID/origin (security.md §10.2)', () => {
+  it('defaults to localhost outside production', () => {
+    const config = loadConfig(validEnv());
+    expect(config.webauthnRpId).toBe('localhost');
+    expect(config.webauthnOrigin).toEqual(['http://localhost:5173']);
+  });
+
+  it('refuses to boot in production with neither variable set — the default is silently wrong on a real domain', () => {
+    expect(() => loadConfig(validEnv({ NODE_ENV: 'production' }))).toThrow(
+      /WEBAUTHN_RP_ID.*WEBAUTHN_ORIGIN/s,
+    );
+  });
+
+  it('refuses to boot in production with only one of the two set', () => {
+    expect(() =>
+      loadConfig(validEnv({ NODE_ENV: 'production', WEBAUTHN_RP_ID: 'werf.co.za' })),
+    ).toThrow(/WEBAUTHN_ORIGIN/);
+    expect(() =>
+      loadConfig(validEnv({ NODE_ENV: 'production', WEBAUTHN_ORIGIN: 'https://werf.co.za' })),
+    ).toThrow(/WEBAUTHN_RP_ID/);
+  });
+
+  it('boots in production once both are configured', () => {
+    const config = loadConfig(
+      validEnv({
+        NODE_ENV: 'production',
+        WEBAUTHN_RP_ID: 'werf.co.za',
+        WEBAUTHN_ORIGIN: 'https://werf.co.za',
+      }),
+    );
+    expect(config.webauthnRpId).toBe('werf.co.za');
+    expect(config.webauthnOrigin).toEqual(['https://werf.co.za']);
+  });
+});
+
 describe('loadConfig — object storage (attachments, 3i)', () => {
   it('is null when unconfigured, same as smtp — a single feature dependency, not API-wide infra', () => {
     const config = loadConfig(validEnv());

@@ -287,5 +287,34 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
+  // `webauthnRpId`/`webauthnOrigin` default to `localhost` so a developer never has to set
+  // them, but that default is invisibly wrong in production: the browser enforces the RP
+  // ID/origin match itself, so a forgotten variable does not weaken security — it fails
+  // *closed*, as "passkeys are broken" reports with no boot-time signal pointing at the
+  // cause (security.md §10.2). `JWT_SECRET`/`PII_ENCRYPTION_KEY` above have no default for
+  // the same reason; these two silently DO, because a browser default host needed one for
+  // local dev to work at all. Catching it here — explicit env values, not the parsed
+  // defaults — is what keeps a real production RP ID that happened to equal the default
+  // (implausible, but not impossible) from masking the same misconfiguration.
+  if (env.NODE_ENV === 'production') {
+    const missing = [
+      env.WEBAUTHN_RP_ID === undefined || env.WEBAUTHN_RP_ID === '' ? 'WEBAUTHN_RP_ID' : null,
+      env.WEBAUTHN_ORIGIN === undefined || env.WEBAUTHN_ORIGIN === '' ? 'WEBAUTHN_ORIGIN' : null,
+    ].filter((name): name is string => name !== null);
+
+    if (missing.length > 0) {
+      throw new Error(
+        `Invalid server configuration:\n` +
+          missing
+            .map(
+              (name) =>
+                `  ${name}: required when NODE_ENV=production — the localhost default is ` +
+                'silently wrong on a real domain',
+            )
+            .join('\n'),
+      );
+    }
+  }
+
   return parsed.data;
 }

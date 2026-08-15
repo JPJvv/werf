@@ -3,9 +3,9 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-15 (tenth session). Continuing JP's Phase 3 punch-list closure.
-**P3.11–P3.14 and the conflict-audit gate are closed; P2.9's schema half is closed** (see §5).
-**About 6.5 of ~21 punch-list items remain.** Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.14.
+**Last updated:** 2026-08-15 (eleventh session). Continuing JP's Phase 3 punch-list closure.
+**P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed** (see §5).
+**About 5.5 of ~21 punch-list items remain.** Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
 
 ✅ **Owner-triggered `reviewer` + `sync-auditor` + `compliance-checker`, all three, over
 `baf4b4d..428200a`: ALL CLEARED, no SEV-1/SEV-2/MED.** `reviewer` raised one LOW (STATUS.md
@@ -13,7 +13,7 @@ mis-citing `auth.service.ts`) that was checked directly and REFUTED — the cite
 verbatim at `auth.service.ts:68-71`; no STATUS.md change was made. Full account in §3.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`764c53e` (P3.14 implementation) ← `144e7bc` (P3.13) ← `cd0d3c0` (P3.12 plan).
+`aa2b023` (P3.15 parser) ← `764c53e` (P3.14 implementation) ← `144e7bc` (P3.13) ← `cd0d3c0` (P3.12 plan).
 Older chain is in git history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
@@ -25,7 +25,7 @@ Older chain is in git history. Not pushed — local commits only.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 14.5/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit and P3.11–P3.14 are done. P3.15–P3.16 and Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 15.5/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit and P3.11–P3.15 are done. P3.16 and Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -106,8 +106,8 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 **Origin of this list:** JP asked (2026-08-14, second session) for a large implementation-and-
 closure pass over a specific punch list, in three priority bands plus a doc/quality band, with an
 owner-decision gate partway through. **Second–sixth sessions: P1/P2 through conflict audit closed
-(10.5/~21). Seventh–tenth: P3.11–P3.14 closed (14.5/~21); P2.9's DB-default half remains
-separate.** ⭐ **Budget one
+(10.5/~21). Seventh–tenth: P3.11–P3.14 closed (14.5/~21). Eleventh: P3.15 closed (15.5/~21);
+P2.9's DB-default half remains separate.** ⭐ **Budget one
 session per item, or at most a tightly related pair (e.g. P2.9+P2.10) — do not batch a whole band.**
 Each item is independently scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is
 what makes slicing safe.
@@ -229,9 +229,17 @@ linking have real-Postgres coverage. The unmarked-past-window alert remains defe
 effective-dated prescribed-window data exists — no legal number was guessed. ⛔ Animal-ID regulated
 code: owner-triggered compliance-checker still gates merge-ready.
 
-**36. P3.15 — sale-price decimal-string-to-cents parser.** Small, self-contained — good filler if a
-session has room after a bigger item. Money is integer cents in TS (CLAUDE.md) — this closes
-wherever a decimal string currently reaches a sale capture without a validated parse.
+✅ **36. Done 2026-08-15 (eleventh session): P3.15 — sale-price decimal-string-to-cents parser,
+commit `aa2b023`.** `AddAnimalScreen.tsx`, `AdjustMobScreen.tsx` and `RecordLossScreen.tsx` each
+hand-rolled an identical, untested `toCents(rands) = Math.round(Number(rands) * 100)` — a
+hand-written duplicate of the same shape the repo has been bitten by before. Replaced with one
+`parseRandsToCents` in `@werf/core/money.ts`: string-based (not `Number(x)*100`, which crosses a
+float boundary — `0.1*100` is `10.000000000000002` in IEEE 754), and refuses a third typed decimal
+digit (e.g. `"150.999"`) as a likely typo rather than silently rounding it to R151.00. AdjustMob's
+price stays optional (a trade with no price is still a valid trade); AddAnimal/RecordLoss keep it
+required — that business-rule difference lived in each screen's own `priceIsValid` wrapper before
+and still does, only the actual parsing arithmetic was shared. `pnpm verify`: **114 test files /
+1245 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz**.
 
 **37. P3.16 — auth hardening batch.** Seven sub-items, likely still too big for one sitting alone —
 consider splitting: invitation reuse of soft-deleted identities; narrowing users-table grants; an

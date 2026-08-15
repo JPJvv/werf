@@ -3,27 +3,24 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-15. Continuing JP's Phase 3 punch-list closure. **P2.8 is closed** after
-repairing the reproducibility blocker and running its true two-browser real-stack test green.
-**14 of ~21 punch-list items remain.** Do not re-run P1/P2.5/P2.6/P2.7/P2.8.
+**Last updated:** 2026-08-15 (fourth session). Continuing JP's Phase 3 punch-list closure.
+**P2.9 is closed** (schema-boundary half only — see §5 item 29 for the DB-default sub-item
+deliberately deferred, and why) and **P2.8 is closed**. **13 of ~21 punch-list items remain.** Do
+not re-run P1/P2.5/P2.6/P2.7/P2.8/P2.9.
 
-✅ **Owner-triggered `compliance-checker` over `9b7fa2e..3a1993c`: CLEARED, no SEV-1/SEV-2.** One
-MED (FR-603 evidence pack didn't filter soft-deleted `theft_incident_animals` links) fixed
-same-session, commit `baf4b4d` — full account in §3.
-
-✅ **P2.8 CLOSED — see §5 item 28.** `pnpm real-stack:up` now creates ignored local secrets,
-injects only the public JWK into PowerSync, migrates Postgres and provisions `werf_app`; apps/api
-loads that ignored env without weakening production validation. The P2.8 real offline UI → API →
-Postgres → PowerSync → separate-browser test passed. The auth limiter remains unchanged.
+✅ **Owner-triggered `reviewer` + `sync-auditor` + `compliance-checker`, all three, over
+`baf4b4d..428200a`: ALL CLEARED, no SEV-1/SEV-2/MED.** `reviewer` raised one LOW (STATUS.md
+mis-citing `auth.service.ts`) that was checked directly and REFUTED — the cited comment exists
+verbatim at `auth.service.ts:68-71`; no STATUS.md change was made. Full account in §3.
 
 Prior session (second that day) closed: all four P1 blockers and P2.5 (secure attachment reads +
 the FR-603 evidence pack).
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, code HEAD `a6b0c1a`
-(P2.8 reproducible API/real-stack bootstrap) ← `a402252` (compliance status closure) ← `baf4b4d`
-(compliance fix) ← `38268b5` (P2.8 two-browser e2e) ← `256d06a` (P2.7) ← `9e1b402`/`6820a21`
-(P2.6) ← `422e09d` (P2.5) ← `c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local
-commits only.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, committed HEAD `428200a`
+(P2.9 UUIDv7 schema boundary) ← `a00e77f` (P2.8 closure docs) ← `a6b0c1a` (P2.8 reproducible
+API/real-stack bootstrap) ← `a402252` (compliance status closure) ← `baf4b4d` (compliance fix) ←
+`38268b5` (P2.8 two-browser e2e) ← `256d06a` (P2.7) ← `9e1b402`/`6820a21` (P2.6) ← `422e09d` (P2.5) ←
+`c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -34,7 +31,7 @@ commits only.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 8/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4 and P2.5–P2.8 done. P2.9–P2.10, an owner-decision gate, P3.11–P3.16, and Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 8/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4 and P2.5–P2.9 done. P2.10, an owner-decision gate, P3.11–P3.16, and Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -82,8 +79,13 @@ audit mechanism is scheduled now, ahead of any field that needs it. → _Answer:
 
 ✅ **Compliance-pass scope through `baf4b4d` — CLOSED 2026-08-14 (third session, top-of-file
 note).** Covered `9b7fa2e..3a1993c`: back-dated-move fail-closed, land hydration, 3i(c)'s
-`animalrow:` guard, `c2cc48a`, `422e09d`, P2.6's `6820a21`/`9e1b402`, P2.7's `256d06a`. ⛔ **New
-scope opens from `baf4b4d` forward** — P2.8+ hasn't been through a pass; P3.14/P3.16 add more.
+`animalrow:` guard, `c2cc48a`, `422e09d`, P2.6's `6820a21`/`9e1b402`, P2.7's `256d06a`.
+
+✅ **Review scope `baf4b4d..428200a` — CLOSED 2026-08-15 (fourth session, owner-triggered).**
+Covered `a6b0c1a` (P2.8 bootstrap repair) + P2.9's UUIDv7 tightening. All three agents CLEARED, no
+SEV-1/SEV-2/MED. `reviewer`'s one LOW (a claimed `auth.service.ts` citation) was checked and
+REFUTED — the comment exists verbatim at `auth.service.ts:68-71`; nothing changed. ⛔ New scope
+opens from `428200a` forward.
 
 **Condensed, full detail in git history / `phase-checklists.md` 3b–3i (2026-08-13):** three
 `compliance-checker` passes over the animals/moves/health hydration diff → APPROVABLE (`ba7f680`);
@@ -98,14 +100,11 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-15, fully uncached, after P2.8/bootstrap repair) | ✅ **112 test files / 1198 tests, 7/7 builds, 162.34 KB gz** — project check, lint, typechecks, real-Postgres suites, unit/web suites and builds all green |
-| `WERF_REAL_STACK=1` P2.8 e2e (2026-08-15) | ✅ **1/1 passed** — real offline UI capture + deep-route reload + Outbox flush; Postgres `occurred_at`/`head_count` checked before a separate browser hydrated through PowerSync |
-| `pnpm test:e2e` (2026-08-14, second session, default lane, after P1/P2.5, NOT re-run for P2.6/P2.7) | ✅ 31 passed / 4 skipped as of P2.5 — neither P2.6 nor P2.7 touches an e2e-relevant surface (no new screen; `pnpm verify`'s vitest coverage, incl. real-Postgres, proves both) so this was not re-run; re-run before calling the branch merge-ready |
-| `WERF_REAL_STACK=1` deployed-connectivity e2e (2026-08-14, P1.4) | ✅ Real deployed-headers build, real browser, real CSP, real presigned PUT against MinIO — 2/2 passed. Not re-run after P2.5/P2.6/P2.7 (none touches client/CSP code) |
-| `pnpm --filter @werf/web build` (2026-08-14, third session) | ✅ 162.34 KB gz ≤ 250 KB budget |
-| Review agents (2026-08-13, owner-triggered, "run all relevant agents") | ✅ `compliance-checker` over `13a0d46..HEAD`: APPROVABLE, zero findings. `sync-auditor` over `dd49a20..HEAD`: 2 MEDIUM + 1 LOW, fixed. `reviewer`: reproduced every claim, no contradictions. Superseded by the row below for the `9b7fa2e..HEAD` range |
-| `compliance-checker` (2026-08-14, third session, owner-triggered, over `9b7fa2e..3a1993c`) | ✅ **CLEARED — no SEV-1/SEV-2.** One MED fixed same-session, commit `baf4b4d` (see top-of-file note and §3). `sync-auditor`/`reviewer` NOT re-run this pass — only `compliance-checker` was requested |
-| Historical baselines (2026-08-08 through 2026-08-13) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
+| `pnpm verify` (2026-08-15, fourth session, fully uncached, after P2.9) | ✅ **113 test files / 1202 tests, 7/7 builds, 162.45 KB gz** — incl. the new `primitives.test.ts` (`uuidV7Schema`) and every `apps/api`/`packages/db` real-Postgres suite the P2.9 id-generator fix touched |
+| `pnpm test:e2e` (2026-08-15, fourth session, default lane, after P2.9) | ✅ 31 passed / 5 skipped — the 3 `WERF_REAL_STACK`-gated specs P2.9 edited skip cleanly without the real stack; NOT exercised against it this session — do before calling P2.9 (or the branch) merge-ready |
+| `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
+| Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
+| Historical baselines (2026-08-08 through 2026-08-14) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
 
 ## 5. Next executable steps — the punch list, sliced for separate sessions
 
@@ -116,9 +115,11 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 **Origin of this list:** JP asked (2026-08-14, second session) for a large implementation-and-
 closure pass over a specific punch list, in three priority bands plus a doc/quality band, with an
 owner-decision gate partway through. **Second session: P1.1–P1.4 and P2.5 (5/~21). Third: P2.6
-and P2.7 closed, P2.8 in progress (7.5/~21).** ⭐ **Budget one session per item, or at most a
-tightly related pair (e.g. P2.9+P2.10) — do not batch a whole band.** Each item is independently
-scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is what makes slicing safe.
+and P2.7 closed, P2.8 in progress (7.5/~21). Fourth: P2.8 closed, P2.9 closed — schema-boundary half
+only, its own DB-default sub-item deliberately split out as future work (8.5/~21).** ⭐ **Budget one
+session per item, or at most a tightly related pair (e.g. P2.9+P2.10) — do not batch a whole band.**
+Each item is independently scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is
+what makes slicing safe.
 
 ✅ 21–23. Done 2026-08-14 (first session): back-dated-move fail-closed, land hydration, 3i(c),
     3i(b) residuals, O-3's real-stack sweep — see §3. Every **phase-checklist** box is `☑`; the
@@ -168,14 +169,37 @@ loads the local env at boot, and `pnpm real-stack:up` converges Docker + migrati
 The registration limits remain pinned at their security budgets. Evidence: targeted real-stack
 Playwright **1/1 passed**; fully uncached `pnpm verify` **112 files / 1198 tests, 7/7 builds**.
 
-**29. P2.9 — enforce UUIDv7 at the canonical boundary.** Client-created entities' ids must be
-validated as UUIDv7 (not merely `uuidSchema`'s generic UUID check) at the schema/API boundary,
-while references to existing rows keep ordinary UUID validation (a reference doesn't need to assert
-the referenced row's id format, just that it's a valid UUID). Remove any remaining database-
-generated id defaults on tables where OFFLINE creation requires client identity (i.e., every
-farmer-capturable table — NOT `theft_incident_animals`, which P2.6 establishes is legitimately
-server-authored). Grep `primaryId()` usage vs. which tables' rows a client ever creates offline to
-scope this accurately before changing anything.
+✅ 29. Done 2026-08-15 (fourth session), **schema-boundary half only — P2.9: enforce UUIDv7 at the
+    canonical boundary.** New `uuidV7Schema` (`primitives.ts`, RFC 9562 §5.7 version/variant regex on
+    top of `.uuid()`) applied to the `id` field of every schema a client uses to CREATE a row: the
+    animal/mob/identifier `new*Schema`s, all 12 `record*RequestSchema`s in `livestock.ts`,
+    `newLandUnitSchema`, `recordBoundaryWalkRequestSchema`, `newTheftIncidentSchema`,
+    `newBrandingRegisterSchema`, `newAttachmentSchema`, `recordRainfallRequestSchema`. Reference
+    fields (FKs, and the two attachment schemas whose `id` POINTS AT an existing row) stay generic
+    `uuidSchema`. `entities.ts`'s business/farm/user/farmUser/enterprise `new*Schema`s deliberately
+    left alone — unused dead code; registration/`createFarm` mint those ids server-side ON PURPOSE
+    (`auth.service.ts`'s own comment: the one inherently online operation), and their real wire
+    schemas carry no `id` field to convert.
+    ⭐ **Caught a real bug while wiring it up**: three `WERF_REAL_STACK`-gated e2e specs
+    (`real-offline-matrix`, `real-sync-hydration`, `deployed-connectivity`) minted capture ids with
+    Node's `crypto.randomUUID()` (v4) instead of `@werf/core`'s `uuidv7()` — every capture screen and
+    every other test already used the right generator; only these three drifted, silently, because
+    nothing checked the version. The next real-stack run would have 400'd every POST in them. Fixed.
+    (One `livestock.integration.test.ts` comment already documented v4's OTHER failure mode —
+    non-time-ordering breaks a same-instant tie-break test roughly half the time — which is why those
+    fixtures were dated a day apart; that workaround is now redundant but harmless, left in place.)
+    Verified: `pnpm verify` **113 files / 1202 tests, 7/7 builds, 162.45 KB gz**; `pnpm test:e2e`
+    default lane **31 passed / 5 skipped** (the 3 edited specs skip without `WERF_REAL_STACK` — NOT
+    exercised against the live stack this session, do that before merge-ready).
+    ⛔ **Deliberately deferred, not folded silently into "done":** removing `primaryId()`'s
+    DB-generated default from `animals`/`mobs`/`animalIdentifiers`/`landUnits`/`events`/
+    `theftIncidents`/`attachments` (NOT `theftIncidentAnimals`, P2.6's exception). Production code
+    always passes an explicit `id` (checked every real INSERT call site), so the default never fires
+    there and removing it is safe — but **87 direct-drizzle-insert call sites across 13 test files**
+    (57 in `livestock.integration.test.ts` alone) omit `id` and lean on that default as fixture
+    convenience; a DB-level removal would break all of them. Separate, larger, mechanical
+    follow-up slice: give each fixture an explicit id (any valid UUID — the DB doesn't enforce v7,
+    only the Zod boundary does), then drop each table's `.default(sql\`uuid_generate_v7()\`)`.
 
 **30. P2.10 — adversarial tenancy verification.** `packages/sync/test/tenancy.spec.ts` currently
 proves the RLS/sync-rule *design* is correct by construction (derived from one `TENANCY` registry).

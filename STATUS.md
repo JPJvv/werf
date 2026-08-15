@@ -5,17 +5,20 @@
 
 **Last updated:** 2026-08-15 (twelfth session). Continuing JP's Phase 3 punch-list closure.
 **P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed; P3.16 is
-2/7 sub-items closed** (see §5). **About 5 of ~21 punch-list items remain.** Do not re-run
+3/7 sub-items closed** (see §5). **About 4 of ~21 punch-list items remain.** Do not re-run
 P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
 
 ✅ **Owner-triggered `compliance-checker` over `428200a..45775ea` (18 commits: P2.10, conflict
 audit, P3.11–P3.15, P3.16's first two sub-items): CLEARED, no SEV-1/SEV-2/MED/LOW.** Full account
 in §3. Earlier: `reviewer` + `sync-auditor` + `compliance-checker` over `baf4b4d..428200a`, also
-ALL CLEARED — `reviewer`'s one LOW (a STATUS.md mis-citation) was checked and REFUTED.
+ALL CLEARED — `reviewer`'s one LOW (a STATUS.md mis-citation) was checked and REFUTED. ⛔ Commit
+`c7358b0` (P3.16's third sub-item) landed AFTER that pass and is NOT yet compliance-reviewed —
+low-risk (a boot-time env-validation gate, not regulated code), but new scope for the next pass.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`e24a281` (P3.16 challenge sweep) ← `06ca3d6` (P3.16 invite fix) ← `aa2b023` (P3.15 parser) ←
-`764c53e` (P3.14 implementation). Older chain is in git history. Not pushed — local commits only.
+`c7358b0` (P3.16 production WebAuthn config) ← `e24a281` (P3.16 challenge sweep) ← `06ca3d6`
+(P3.16 invite fix) ← `aa2b023` (P3.15 parser). Older chain is in git history. Not pushed — local
+commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -26,7 +29,7 @@ ALL CLEARED — `reviewer`'s one LOW (a STATUS.md mis-citation) was checked and 
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is ~16/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit and P3.11–P3.15 are done; P3.16 is 2/7 sub-items done. 5 of P3.16's sub-items plus Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is ~17/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit and P3.11–P3.15 are done; P3.16 is 3/7 sub-items done. 4 of P3.16's sub-items plus Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -105,7 +108,7 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-15, twelfth session, fully uncached, after P3.16's first two sub-items) | ✅ **115 test files / 1247 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz** |
+| `pnpm verify` (2026-08-15, twelfth session, fully uncached, after P3.16's first three sub-items) | ✅ **115 test files / 1251 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz** |
 | `pnpm test:e2e` (2026-08-15, tenth session, default lane, after P3.14) | ✅ 31 passed / 5 skipped — light/dark capture-screen a11y includes `/animals/brands`; the 3 `WERF_REAL_STACK`-gated specs still require the final live-stack sweep |
 | `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
 | `compliance-checker` `428200a..45775ea` (2026-08-15, twelfth session) | ✅ CLEARED, no SEV-1/SEV-2/MED/LOW — full account in §3 |
@@ -186,7 +189,7 @@ required — that business-rule difference lived in each screen's own `priceIsVa
 and still does, only the actual parsing arithmetic was shared. `pnpm verify`: **114 test files /
 1245 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz**.
 
-**37. P3.16 — auth hardening batch. 2/7 sub-items done 2026-08-15 (twelfth session).** All seven
+**37. P3.16 — auth hardening batch. 3/7 sub-items done 2026-08-15 (twelfth session).** All seven
 sub-items are pre-scoped in `docs/05-operations/security.md` §10.2 — read that table before
 picking the next one; it names the exact fix for each, not just the gap.
 ✅ **Invitation reuse of soft-deleted identities, commit `06ca3d6`.** `FarmsService.invite`
@@ -202,18 +205,29 @@ or expired `webauthn_challenges` rows on the same one-minute `@Cron` cadence as 
 `MembershipExpiryService` — a hard delete, not a tombstone, since this table carries no
 `deleted_at` and is exempt from the soft-delete rule for the same reason `user_sessions` is. Fail-
 first verified (flipped the `or` predicate to `and`, confirmed the test failed, restored).
-`pnpm verify` after both: **115 test files / 1247 tests, 12/12 typecheck tasks, 7/7 builds,
+✅ **Production WebAuthn config, commit `c7358b0`.** `loadConfig` now refuses to boot when
+`NODE_ENV=production` and `WEBAUTHN_RP_ID`/`WEBAUTHN_ORIGIN` are unset, checked against the raw
+env values (not the parsed `localhost` defaults) so a coincidental match can't mask the same
+misconfiguration — mirrors `MailModule`'s existing production-only-required pattern. Not a
+security hole either way (the browser already fails closed on an RP ID/origin mismatch), purely a
+diagnosability fix. Fail-first verified (both missing-one-of-two cases). ⛔ Landed AFTER this
+session's compliance-checker pass (§3) — not yet covered by a review.
+`pnpm verify` after all three: **115 test files / 1251 tests, 12/12 typecheck tasks, 7/7 builds,
 168.09 KB gz**.
-**Remaining 5 sub-items:** narrowing users-table grants (documented at length in
+**Remaining 4 sub-items:** narrowing users-table grants (documented at length in
 `two-factor.service.ts`'s own header comment and security.md §10.2 — column-level GRANT/REVOKE
 migration, needs a full audit of every `AppDb`-connection touch on `users` columns first); an auth
 audit log (needs a new table or an extension of migration 0026's `audit_log` shape, plus write
-sites at login/logout/failure/farm-switch/invite/reuse-revocation); production WebAuthn config
-(small — require `WEBAUTHN_RP_ID`/`WEBAUTHN_ORIGIN` when `NODE_ENV=production`, mirroring
-`JWT_SECRET`'s existing boot-refusal pattern); registration-enumeration hardening (NOT a message
-tweak — security.md is explicit that the real fix is email verification, which needs delivery
-infra this repo doesn't have yet); attachment MIME/size/quota controls (touches the attachments
-pipeline P1.2/P2.5 just closed — read those commits first, do not re-litigate their design).
+sites at login/logout/failure/farm-switch/invite/reuse-revocation); registration-enumeration
+hardening (NOT a message tweak — security.md is explicit that the real fix is email verification,
+which needs delivery infra this repo doesn't have yet); attachment MIME/size/quota controls
+(touches the attachments pipeline P1.2/P2.5 just closed — read those commits first, do not
+re-litigate their design). ⛔ **Checked this one specifically for "small enough to just do" and
+declined:** the MIME whitelist half is mechanical, but the size cap has no existing number
+anywhere in the docs to anchor to — picking one (e.g. 25MB) is a real product decision about what
+a farmer's phone may upload, not an engineering default like a TTL, and quota tracking is new
+infrastructure on top of that. Worth a quick number decision from JP before the MIME/size half is
+even worth splitting out on its own.
 
 **38. Q17 — reconcile STATUS.md/roadmap/phase-checklists.md/architecture docs/testing-strategy.md
 against actual code.** By the time this runs, this file's own §5 will likely be stale again — that

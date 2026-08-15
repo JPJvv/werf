@@ -10,6 +10,7 @@ import { TwoFactorController } from './two-factor.controller';
 import { TwoFactorService } from './two-factor.service';
 import { PasskeyService } from './passkey.service';
 import { RecoveryCodeService } from './recovery-code.service';
+import { WebauthnChallengeSweepService } from './webauthn-challenge-sweep.service';
 
 @Module({
   // The secret is passed per-call from validated config rather than registered here, so
@@ -23,6 +24,7 @@ import { RecoveryCodeService } from './recovery-code.service';
     TwoFactorService,
     PasskeyService,
     RecoveryCodeService,
+    WebauthnChallengeSweepService,
     AuthGuard,
     // Registered GLOBALLY, so the default posture of any route anyone adds later is
     // "denied" and reaching the public ones takes a deliberate @Public(). Per-controller

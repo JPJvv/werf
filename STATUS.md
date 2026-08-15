@@ -3,37 +3,27 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-14 (third session that day, still going). Continuing the punch-list
-closure JP started that day (condensed P1/P2.5 record in §5). This session closed **P2.6**
-(`theft_incident_animals` surrogate id, issue #10 — migration 0025 + client hydration, two
-commits) and **P2.7** (`landrow:` dependency guard — went wider than its design note, which had
-missed a move's destination camp and a theft incident's own camp; also fixed an adjacent
-`animalrow:` gap on the same theft-incident object). Full detail in §5. **15 of ~21 punch-list
-items remain.** Do not re-run P1/P2.5/P2.6/P2.7.
+**Last updated:** 2026-08-15. Continuing JP's Phase 3 punch-list closure. **P2.8 is closed** after
+repairing the reproducibility blocker and running its true two-browser real-stack test green.
+**14 of ~21 punch-list items remain.** Do not re-run P1/P2.5/P2.6/P2.7/P2.8.
 
 ✅ **Owner-triggered `compliance-checker` over `9b7fa2e..3a1993c`: CLEARED, no SEV-1/SEV-2.** One
 MED (FR-603 evidence pack didn't filter soft-deleted `theft_incident_animals` links) fixed
 same-session, commit `baf4b4d` — full account in §3.
 
-🔶 **P2.8 IN PROGRESS, blocked on infra — see §5 item 28 for the full account.** A second,
-UI-driven real-stack e2e test was added to `real-offline-matrix.spec.ts`, commit `38268b5`. Its
-sibling test (the pre-existing REST-based occurred_at proof) re-verified PASSING against the live
-stack. The new test itself is lint/format-clean but **NOT YET RUN end-to-end** — repeated
-registration calls this session tripped `apps/api`'s in-memory rate limiter (burst 2/min, then
-sustained 5/60min → 60min block), and restarting `apps/api` to clear it failed: it needs secrets
-(`databaseUrl`, `jwtSecret`, `piiEncryptionKey`, `powerSyncJwtPrivateKey`, …) injected via shell
-env, not a committed `.env`, which this session does not have. ⛔ **`apps/api` is currently
-STOPPED** (killed mid-restart-attempt) — bring it back up with your own env before anything
-needing the live stack, including this test.
+✅ **P2.8 CLOSED — see §5 item 28.** `pnpm real-stack:up` now creates ignored local secrets,
+injects only the public JWK into PowerSync, migrates Postgres and provisions `werf_app`; apps/api
+loads that ignored env without weakening production validation. The P2.8 real offline UI → API →
+Postgres → PowerSync → separate-browser test passed. The auth limiter remains unchanged.
 
 Prior session (second that day) closed: all four P1 blockers and P2.5 (secure attachment reads +
 the FR-603 evidence pack).
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, HEAD `baf4b4d`
-(compliance-checker fix, this session) ← `3a1993c` ← `38268b5` (P2.8 e2e test, WIP — still
-unverified, see §5 item 28) ← `256d06a` (P2.7 landrow guard) ← `4524bb9` ← `9e1b402` (P2.6 client
-hydration) ← `6820a21` (P2.6 migration/schema) ← `de3ef93` ← `422e09d` (P2.5) ← `c2cc48a`
-(P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local commits only.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, code HEAD `a6b0c1a`
+(P2.8 reproducible API/real-stack bootstrap) ← `a402252` (compliance status closure) ← `baf4b4d`
+(compliance fix) ← `38268b5` (P2.8 two-browser e2e) ← `256d06a` (P2.7) ← `9e1b402`/`6820a21`
+(P2.6) ← `422e09d` (P2.5) ← `c2cc48a` (P1.1–P1.4) ← `5e1957f` (3i(b)). Not pushed — local
+commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -44,7 +34,7 @@ hydration) ← `6820a21` (P2.6 migration/schema) ← `de3ef93` ← `422e09d` (P2
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 7/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5, P2.6, P2.7 done — commits `c2cc48a`, `422e09d`, `6820a21`, `9e1b402`, `256d06a`. P2.8–P2.10, an owner-decision gate, P3.11–P3.16, and Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 8/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4 and P2.5–P2.8 done. P2.9–P2.10, an owner-decision gate, P3.11–P3.16, and Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -108,8 +98,8 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-14, third session, fully uncached, after P2.7) | ✅ **112 test files / 1195 tests, 7/7 builds, 162.34 KB gz** — incl. `theft.integration.test.ts` (real Postgres, P2.6), `HydratedLivestock.test.ts`'s `attachAnimalIds` unit tests (P2.6), and 5 new `landrow:` guard tests in `Outbox.test.tsx` (P2.7: unconditional guard, conditional guard, tri-state `toLandUnitId`, theft's dual guard, next-round recovery) |
-| `pnpm test` + `pnpm build` (2026-08-14, third session, after the compliance-fix commit `baf4b4d`) | ✅ **112 test files / 1196 tests** (the +1 is the new evidence-pack soft-delete-exclusion test, watched to fail against the pre-fix code first), 7/7 builds, 162.34 KB gz |
+| `pnpm verify` (2026-08-15, fully uncached, after P2.8/bootstrap repair) | ✅ **112 test files / 1198 tests, 7/7 builds, 162.34 KB gz** — project check, lint, typechecks, real-Postgres suites, unit/web suites and builds all green |
+| `WERF_REAL_STACK=1` P2.8 e2e (2026-08-15) | ✅ **1/1 passed** — real offline UI capture + deep-route reload + Outbox flush; Postgres `occurred_at`/`head_count` checked before a separate browser hydrated through PowerSync |
 | `pnpm test:e2e` (2026-08-14, second session, default lane, after P1/P2.5, NOT re-run for P2.6/P2.7) | ✅ 31 passed / 4 skipped as of P2.5 — neither P2.6 nor P2.7 touches an e2e-relevant surface (no new screen; `pnpm verify`'s vitest coverage, incl. real-Postgres, proves both) so this was not re-run; re-run before calling the branch merge-ready |
 | `WERF_REAL_STACK=1` deployed-connectivity e2e (2026-08-14, P1.4) | ✅ Real deployed-headers build, real browser, real CSP, real presigned PUT against MinIO — 2/2 passed. Not re-run after P2.5/P2.6/P2.7 (none touches client/CSP code) |
 | `pnpm --filter @werf/web build` (2026-08-14, third session) | ✅ 162.34 KB gz ≤ 250 KB budget |
@@ -166,31 +156,17 @@ scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is wha
     `mobrow:`/`animalrow:` coverage shape. `pnpm verify`: 112 files / 1195 tests, 162.34 KB gz.
     ⛔ Adds to §3's compliance-pass scope (the theft incident's send path).
 
-🔶 28. IN PROGRESS 2026-08-14 (third session): **P2.8 — a TRUE two-browser O-3 scenario.**
-Extended (not replaced) `real-offline-matrix.spec.ts` with a second test, same describe block:
-device A registers, then captures a mob + a BACK-DATED birth tally through the REAL capture
-screens with `context.setOffline(true)`, reloads on the deep `/animals/groups/count` route while
-still offline (real OPFS + real service-worker shell), reconnects, and the real `Outbox.tsx`
-flush sends it — then a genuinely SEPARATE `browser.newContext()` (device B) authenticates
-independently and hydrates purely through real PowerSync replication. Verified via direct
-Postgres query (mob `head_count`, tally `occurred_at`) before device B ever reads anything, same
-discipline as the existing REST-based test. Header comment updated to explain both tests now
-live there and why neither subsumes the other.
-- ✅ The PRE-EXISTING test re-ran clean against the live stack (proves the header/helper edits safe).
-- ⛔ **The NEW test has NOT been run end-to-end** — lint/prettier-clean, every selector/route
-  borrowed from a passing precedent (`offline-capture.spec.ts`, `real-sync-hydration.spec.ts`,
-  `AddMob.test.tsx`, `AdjustMob.test.tsx`), but not a green run. `apps/api`'s registration
-  throttle (`security/rate-limits.ts`: burst 2/min→5min block; sustained 5/60min→**60min
-  block**) tripped from repeated runs — each test registers once, and the two together in one
-  minute trip burst alone. Restarting `apps/api` to clear it **failed and left it stopped**:
-  `pnpm --filter @werf/api dev` needs `databaseUrl`, `databaseElevatedUrl`, `jwtSecret`,
-  `piiEncryptionKey`, `powerSyncJwtPrivateKey` (+ PowerSync JWT/audience vars, see
-  `real-sync-hydration.spec.ts`'s header) via shell env, not a committed `.env` — this session
-  didn't hold those. JP chose to skip the live run rather than share them.
-- **Next: bring `apps/api` up with its usual env**, run the new test ALONE (`-g "P2.8"`, not
-  back-to-back with the REST one — same burst window), wait out/reset the 60min block if still
-  live, then commit `real-offline-matrix.spec.ts` and close this item — the diff is written, this
-  is a verification step, not a design one.
+✅ 28. Done 2026-08-15: **P2.8 — a TRUE two-browser O-3 scenario.** The test added in `38268b5`
+now passes: device A captures a mob and six-week-back-dated birth through the real UI while
+offline, reloads the deep route from the service-worker shell/OPFS, reconnects and flushes through
+the real API. Postgres holds the expected `occurred_at` and `head_count`; a genuinely separate
+browser context then hydrates the same 310 through PowerSync. Root cause of the blocked run was
+reproducibility, not the limiter: the stopped API's PowerSync private key existed only in its old
+shell, and local `werf_app` login provisioning was also out-of-band. `pnpm setup:local` now creates
+ignored secrets without printing them; PowerSync receives only `PS_JWKS_N` via `!env`, apps/api
+loads the local env at boot, and `pnpm real-stack:up` converges Docker + migrations + the RLS role.
+The registration limits remain pinned at their security budgets. Evidence: targeted real-stack
+Playwright **1/1 passed**; fully uncached `pnpm verify` **112 files / 1198 tests, 7/7 builds**.
 
 **29. P2.9 — enforce UUIDv7 at the canonical boundary.** Client-created entities' ids must be
 validated as UUIDv7 (not merely `uuidSchema`'s generic UUID check) at the schema/API boundary,

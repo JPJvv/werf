@@ -25,6 +25,7 @@ import { Link } from 'react-router-dom';
 import {
   ANIMAL_SEXES,
   enterpriseSpecies,
+  parseRandsToCents,
   uuidv7,
   schemas,
   type AnimalSex,
@@ -42,14 +43,8 @@ import type { TranslationKey } from '../i18n/dictionaries';
 
 type Herd = schemas.SessionEnterprise;
 
-/** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
-function toCents(rands: string): number {
-  return Math.round(Number(rands) * 100);
-}
-
 function priceIsValid(rands: string): boolean {
-  const n = Number(rands);
-  return rands.trim() !== '' && Number.isFinite(n) && n >= 0;
+  return parseRandsToCents(rands) !== null;
 }
 
 /** The farm's herds that keep animals — a crop enterprise is not somewhere to file an animal. */
@@ -192,7 +187,8 @@ export function AddAnimalScreen() {
           occurredAt,
           currentStatus: 'alive',
           counterparty: seller.trim(),
-          priceCents: toCents(priceRands),
+          // `purchaseIsValid` already gated `save` on `priceIsValid(priceRands)`.
+          priceCents: parseRandsToCents(priceRands)!,
         }),
       );
     }

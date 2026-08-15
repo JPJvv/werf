@@ -41,6 +41,24 @@ export function isNegative(a: Money): boolean {
   return a < 0;
 }
 
+/**
+ * Parse a rand amount as a farmer types it (a sale/purchase price field) into Money.
+ * String-based, not `Number(x) * 100` — that crosses a float boundary on the way to cents,
+ * and a third typed decimal digit (a likely typo, e.g. "150.999") would silently round away
+ * a farmer's own figure instead of refusing it. Returns null for anything that is not a plain
+ * non-negative decimal with at most two fraction digits: blank, negative, scientific notation,
+ * `Infinity`, or extra precision.
+ */
+export function parseRandsToCents(rands: string): Money | null {
+  const trimmed = rands.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+    return null;
+  }
+  const [wholePart, fractionPart = ''] = trimmed.split('.');
+  const cents = Number(wholePart) * 100 + Number(fractionPart.padEnd(2, '0'));
+  return money(cents);
+}
+
 /** Display only. Never feed the result back into arithmetic. */
 export function formatZAR(a: Money): string {
   const sign = a < 0 ? '-' : '';

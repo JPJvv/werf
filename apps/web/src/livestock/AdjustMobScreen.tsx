@@ -22,7 +22,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { projectHeadCount } from '@werf/domain';
-import { schemas, uuidv7 } from '@werf/core';
+import { parseRandsToCents, schemas, uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
@@ -95,15 +95,9 @@ void _everyReasonIsOffered;
  */
 const INCREASES: readonly schemas.TallyReason[] = schemas.TALLY_INCREASES;
 
-/** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
-function toCents(rands: string): number {
-  return Math.round(Number(rands) * 100);
-}
-
+/** The price is optional here — a trade with no price typed is still a valid trade to record. */
 function priceIsValid(rands: string): boolean {
-  if (rands.trim() === '') return true; // the price is optional; blank is not an error
-  const n = Number(rands);
-  return Number.isFinite(n) && n >= 0;
+  return rands.trim() === '' || parseRandsToCents(rands) !== null;
 }
 
 /** The typed count as a whole number of animals, or null when it is not one yet. */
@@ -343,7 +337,8 @@ export function AdjustMobScreen() {
     // ninth pass found the fix had stopped at the screen. This scoping stays because it is what a
     // farmer meets: the server refusing a capture days later is not how anyone should learn that
     // a buyer cannot be attached to a theft. Client and boundary, always.
-    const price = trade && priceRands.trim() !== '' ? toCents(priceRands) : undefined;
+    const price =
+      trade && priceRands.trim() !== '' ? (parseRandsToCents(priceRands) ?? undefined) : undefined;
     const buyer = trade && counterparty.trim() !== '' ? counterparty.trim() : undefined;
 
     // The domain is the authority on whether this capture is legal, and `canSave` above is a

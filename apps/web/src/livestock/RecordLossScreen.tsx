@@ -20,7 +20,7 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { uuidv7 } from '@werf/core';
+import { parseRandsToCents, uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
@@ -58,14 +58,8 @@ interface SavedSummary {
   readonly outcome: Outcome;
 }
 
-/** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
-function toCents(rands: string): number {
-  return Math.round(Number(rands) * 100);
-}
-
 function priceIsValid(rands: string): boolean {
-  const n = Number(rands);
-  return rands.trim() !== '' && Number.isFinite(n) && n >= 0;
+  return parseRandsToCents(rands) !== null;
 }
 
 /** The sale weight is optional; blank is fine, but a typed weight must be a positive number. */
@@ -228,7 +222,8 @@ export function RecordLossScreen() {
       await recordSale({
         ...base,
         counterparty: counterparty.trim(),
-        priceCents: toCents(priceRands),
+        // Guarded above: this branch already returned if `!priceIsValid(priceRands)`.
+        priceCents: parseRandsToCents(priceRands)!,
         // The liveweight the deal was struck on (FR-106). Optional, because plenty of sales are
         // per head off the veld with no scale in sight — but when there IS a scale, this is the
         // number the price per kilogram is argued over, and it is unrecoverable afterwards.

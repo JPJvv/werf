@@ -7,7 +7,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { input as ZodInput } from 'zod';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
@@ -22,7 +22,7 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { NotFoundError, TenancyError, schemas } from '@werf/core';
+import { NotFoundError, TenancyError, schemas, uuidv7 } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
@@ -59,7 +59,7 @@ const rainfallBody = (
   over: Partial<ZodInput<typeof schemas.recordRainfallRequestSchema>>,
 ): schemas.RecordRainfallRequest =>
   schemas.recordRainfallRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     occurredAt: '2026-03-02T04:10:00.000Z',
     mm: 18.5,

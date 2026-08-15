@@ -22,6 +22,7 @@ import {
   speciesSchema,
   timestampSchema,
   uuidSchema,
+  uuidV7Schema,
 } from './primitives';
 
 // ── Animal ──────────────────────────────────────────────────────────────────
@@ -60,6 +61,8 @@ export type Animal = z.infer<typeof animalSchema>;
 export const newAnimalSchema = animalSchema
   .pick({ id: true, farmId: true, species: true, sex: true })
   .extend({
+    /** Client-generated UUIDv7 for the animal row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     enterpriseId: animalSchema.shape.enterpriseId.default(null),
     breed: animalSchema.shape.breed.default(null),
     dob: animalSchema.shape.dob.default(null),
@@ -122,6 +125,8 @@ export type Mob = z.infer<typeof mobSchema>;
 export const newMobSchema = mobSchema
   .pick({ id: true, farmId: true, name: true, species: true })
   .extend({
+    /** Client-generated UUIDv7 for the mob row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     enterpriseId: mobSchema.shape.enterpriseId.default(null),
     landUnitId: mobSchema.shape.landUnitId.default(null),
     headCount: mobSchema.shape.headCount.default(null),
@@ -233,6 +238,8 @@ export type AnimalIdentifier = z.infer<typeof animalIdentifierSchema>;
 export const newAnimalIdentifierSchema = animalIdentifierSchema
   .pick({ id: true, farmId: true, animalId: true, type: true, value: true })
   .extend({
+    /** Client-generated UUIDv7 for the identifier row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     isPrimary: z.boolean().default(false),
     appliedAt: animalIdentifierSchema.shape.appliedAt.default(null),
   });

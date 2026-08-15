@@ -16,6 +16,7 @@ import {
   auditTimestampsSchema,
   timestampSchema,
   uuidSchema,
+  uuidV7Schema,
 } from './primitives';
 
 /** sha256, lowercase hex — the checksum a client computes over the blob AT CAPTURE, before any
@@ -52,16 +53,21 @@ export type Attachment = z.infer<typeof attachmentSchema>;
  * `recordMob` never reads a client's `initialHeadCount` (livestock.service.ts): a value only the
  * server may set is not read from the body even when the body happens to carry one.
  */
-export const newAttachmentSchema = attachmentSchema.pick({
-  id: true,
-  farmId: true,
-  subjectType: true,
-  subjectId: true,
-  mimeType: true,
-  sizeBytes: true,
-  checksum: true,
-  occurredAt: true,
-});
+export const newAttachmentSchema = attachmentSchema
+  .pick({
+    id: true,
+    farmId: true,
+    subjectType: true,
+    subjectId: true,
+    mimeType: true,
+    sizeBytes: true,
+    checksum: true,
+    occurredAt: true,
+  })
+  .extend({
+    /** Client-generated UUIDv7 for the attachment row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
+  });
 export type NewAttachment = z.infer<typeof newAttachmentSchema>;
 
 /** The response to a create-attachment request: where to PUT the bytes, and for how long that URL

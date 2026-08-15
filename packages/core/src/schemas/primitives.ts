@@ -17,6 +17,24 @@ import { ATTACHMENT_STATUSES, ATTACHMENT_SUBJECT_TYPES } from '../attachments';
 /** IDs are client-generated UUIDv7. We validate shape here; ordering is a storage concern. */
 export const uuidSchema = z.string().uuid();
 
+/**
+ * A client-generated entity id, specifically UUIDv7 — not merely a well-formed UUID. Use this for
+ * the `id` field of a capture a client composes offline (a new animal, event, land unit, ...);
+ * keep `uuidSchema` for a FIELD THAT REFERENCES an existing row (a foreign key), which only needs
+ * to be a valid UUID, not assert the referenced row's own id format (CLAUDE.md, P2.9).
+ *
+ * The version nibble (index 14) is '7' and the variant nibble (index 19) is one of 8/9/a/b — the
+ * two bits RFC 4122 fixes for any UUID, v7 included. `uuidSchema`'s plain `.uuid()` accepts v4,
+ * which a stray `crypto.randomUUID()` in client code would otherwise pass silently.
+ */
+export const uuidV7Schema = z
+  .string()
+  .uuid()
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    'expected a UUIDv7 (client-generated ids are v7, never v4)',
+  );
+
 export const jurisdictionSchema = z.enum(SUPPORTED_JURISDICTIONS);
 
 export const enterpriseTypeSchema = z.enum(ENTERPRISE_TYPES);
@@ -85,6 +103,7 @@ export const auditTimestampsSchema = {
 } as const;
 
 export type UuidInput = z.infer<typeof uuidSchema>;
+export type UuidV7Input = z.infer<typeof uuidV7Schema>;
 export type JurisdictionInput = z.infer<typeof jurisdictionSchema>;
 export type EnterpriseTypeInput = z.infer<typeof enterpriseTypeSchema>;
 export type UserRoleInput = z.infer<typeof userRoleSchema>;

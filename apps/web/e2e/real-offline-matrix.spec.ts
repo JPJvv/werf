@@ -31,8 +31,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { uuidv7 } from '@werf/core';
 
 test.skip(
   !process.env['WERF_REAL_STACK'],
@@ -195,7 +196,7 @@ test.describe('offline matrix O-3 — six weeks offline, sync, occurred_at intac
       value: totpAt(secret, Date.now()),
     });
 
-    const mobId = randomUUID();
+    const mobId = uuidv7();
     const createMob = await page.request.post(`${API}/livestock/mobs`, {
       headers: { Authorization: `Bearer ${deviceA.accessToken}` },
       data: {
@@ -219,14 +220,14 @@ test.describe('offline matrix O-3 — six weeks offline, sync, occurred_at intac
     // corrupted occurred_at (silently replaced by "now" or by insertion order) is the only way
     // this test could fail. Two captures, not one, so a wrong total is possible to see at all —
     // a single capture landing under the wrong date is invisible to a head-count assertion alone.
-    const oldestId = randomUUID();
+    const oldestId = uuidv7();
     const oldest = await page.request.post(`${API}/livestock/mob-tallies`, {
       headers: { Authorization: `Bearer ${deviceA.accessToken}` },
       data: { id: oldestId, farmId, mobId, occurredAt: sixWeeksAgo, reason: 'birth', count: 40 },
     });
     expect(oldest.ok(), await oldest.text()).toBeTruthy();
 
-    const newerId = randomUUID();
+    const newerId = uuidv7();
     const newer = await page.request.post(`${API}/livestock/mob-tallies`, {
       headers: { Authorization: `Bearer ${deviceA.accessToken}` },
       data: { id: newerId, farmId, mobId, occurredAt: fiveWeeksAgo, reason: 'birth', count: 10 },

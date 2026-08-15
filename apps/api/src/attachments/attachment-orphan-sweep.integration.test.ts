@@ -5,7 +5,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { randomUUID, randomBytes as nodeRandomBytes } from 'node:crypto';
+import { randomBytes as nodeRandomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { and, eq, sql } from 'drizzle-orm';
@@ -21,7 +21,7 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { schemas } from '@werf/core';
+import { schemas, uuidv7 } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
@@ -165,7 +165,7 @@ describe('attachment orphan sweep (phase-checklists.md 3i(b))', () => {
     over: Partial<schemas.NewAttachment> = {},
   ): schemas.NewAttachment {
     return schemas.newAttachmentSchema.parse({
-      id: randomUUID(),
+      id: uuidv7(),
       farmId,
       subjectType: 'animal',
       subjectId,

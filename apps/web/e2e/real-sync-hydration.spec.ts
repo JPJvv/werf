@@ -28,8 +28,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { uuidv7 } from '@werf/core';
 
 test.skip(
   !process.env['WERF_REAL_STACK'],
@@ -179,7 +180,7 @@ test.describe('real down-sync hydration — tripwire 3e / issue #8, against the 
     // and the tally below would then, correctly, refuse to find "this" mob under the CURRENT
     // farm. Found empirically: a fixed id passed on the first attempt, then failed identically on
     // every rerun with "Mob not found" despite the create call itself reporting success.
-    const mobId = randomUUID();
+    const mobId = uuidv7();
     const createMob = await page.request.post(`${API}/livestock/mobs`, {
       headers: { Authorization: `Bearer ${deviceA.accessToken}` },
       data: {
@@ -195,7 +196,7 @@ test.describe('real down-sync hydration — tripwire 3e / issue #8, against the 
     });
     expect(createMob.ok(), await createMob.text()).toBeTruthy();
 
-    const birthId = randomUUID();
+    const birthId = uuidv7();
     const birth = await page.request.post(`${API}/livestock/mob-tallies`, {
       headers: { Authorization: `Bearer ${deviceA.accessToken}` },
       data: {

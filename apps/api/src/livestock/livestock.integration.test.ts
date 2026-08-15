@@ -77,7 +77,7 @@ const weightBody = (
   over: Partial<ZodInput<typeof schemas.recordWeightRequestSchema>>,
 ): schemas.RecordWeightRequest =>
   schemas.recordWeightRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     occurredAt: '2026-07-20T06:00:00.000Z',
     kg: 412.5,
@@ -90,7 +90,7 @@ const animalBody = (
   over: Partial<ZodInput<typeof schemas.recordAnimalRequestSchema>>,
 ): schemas.RecordAnimalRequest =>
   schemas.recordAnimalRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     species: 'cattle',
     sex: 'female',
@@ -102,7 +102,7 @@ const deathBody = (
   over: Partial<ZodInput<typeof schemas.recordDeathRequestSchema>>,
 ): schemas.RecordDeathRequest =>
   schemas.recordDeathRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -115,7 +115,7 @@ const saleBody = (
   over: Partial<ZodInput<typeof schemas.recordSaleRequestSchema>>,
 ): schemas.RecordSaleRequest =>
   schemas.recordSaleRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -129,7 +129,7 @@ const treatmentBody = (
   over: Partial<ZodInput<typeof schemas.recordTreatmentRequestSchema>>,
 ): schemas.RecordTreatmentRequest =>
   schemas.recordTreatmentRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -143,7 +143,7 @@ const vaccinationBody = (
   over: Partial<ZodInput<typeof schemas.recordVaccinationRequestSchema>>,
 ): schemas.RecordVaccinationRequest =>
   schemas.recordVaccinationRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -157,7 +157,7 @@ const dipBody = (
   over: Partial<ZodInput<typeof schemas.recordDipRequestSchema>>,
 ): schemas.RecordDipRequest =>
   schemas.recordDipRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -171,7 +171,7 @@ const theftIncidentBody = (
   over: Partial<ZodInput<typeof schemas.newTheftIncidentSchema>>,
 ): schemas.NewTheftIncident =>
   schemas.newTheftIncidentSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     discoveredAt: '2026-07-24T04:00:00.000Z',
     headCount: 2,
@@ -514,7 +514,7 @@ describe('weight capture (FR-140)', () => {
   describe('mob creation (FR-102)', () => {
     const mobBody = (over: Partial<schemas.NewMob> & { farmId: string }): schemas.NewMob =>
       schemas.newMobSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         name: 'Flock A',
         species: 'sheep',
         headCount: 300,
@@ -675,7 +675,7 @@ describe('weight capture (FR-140)', () => {
       // its request schema, so its serialised JSON never carried the key at all — not `undefined`,
       // genuinely absent, as `JSON.stringify` on an object that never had the field would produce.
       const oldClientJson: Record<string, unknown> = {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: undefined, // set below, once the farm exists
         name: 'Pre-0018 Flock',
         species: 'sheep',
@@ -713,7 +713,7 @@ describe('weight capture (FR-140)', () => {
       },
     ): schemas.RecordMobTallyRequest =>
       schemas.recordMobTallyRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         occurredAt: '2026-07-14T05:30:00.000Z',
         reason: 'death',
         count: 3,
@@ -943,7 +943,7 @@ describe('weight capture (FR-140)', () => {
 
       await expect(
         schemas.recordMobTallyRequestSchema.parseAsync({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-14T05:30:00.000Z',
@@ -1076,7 +1076,7 @@ describe('weight capture (FR-140)', () => {
       const calf = await anAnimal(a.farmId);
 
       const birth = await service.recordBirth(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId: dam,
         occurredAt: new Date('2026-08-14T05:30:00.000Z'),
@@ -1099,7 +1099,7 @@ describe('weight capture (FR-140)', () => {
 
       await expect(
         service.recordBirth(a.userId, {
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: new Date(),
@@ -1115,7 +1115,7 @@ describe('weight capture (FR-140)', () => {
       const animalId = await anAnimal(a.farmId);
 
       const weaning = await service.recordWeaning(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId,
         occurredAt: new Date('2026-09-01T08:00:00.000Z'),
@@ -1138,7 +1138,7 @@ describe('weight capture (FR-140)', () => {
       const animalId = await anAnimal(a.farmId);
 
       const purchase = await service.recordPurchase(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId,
         occurredAt: new Date('2026-05-04T09:00:00.000Z'),
@@ -1156,7 +1156,7 @@ describe('weight capture (FR-140)', () => {
       const lastSeen = JSON.stringify({ type: 'Point', coordinates: [26.21, -29.12] });
 
       const missing = await service.recordMissing(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId,
         occurredAt: new Date('2026-06-18T16:00:00.000Z'),
@@ -1180,7 +1180,7 @@ describe('weight capture (FR-140)', () => {
 
       await expect(
         service.recordMissing(a.userId, {
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId,
           occurredAt: new Date(),
@@ -1199,7 +1199,7 @@ describe('weight capture (FR-140)', () => {
       },
     ): schemas.RecordMoveRequest =>
       schemas.recordMoveRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         occurredAt: '2026-04-02T06:00:00.000Z',
         ...over,
       });
@@ -1426,7 +1426,7 @@ describe('weight capture (FR-140)', () => {
       over: Partial<schemas.NewAnimalIdentifier> & { farmId: string; animalId: string },
     ): schemas.NewAnimalIdentifier =>
       schemas.newAnimalIdentifierSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         type: 'visual_tag',
         value: '4021',
         ...over,
@@ -2007,7 +2007,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: member!.id,
           occurredAt: '2026-07-21T06:00:00.000Z',
@@ -2061,7 +2061,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: newcomer!.id,
           occurredAt: '2026-07-21T06:00:00.000Z',
@@ -2109,7 +2109,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: member!.id,
           occurredAt: '2026-07-20T08:00:00.000Z',
@@ -2166,7 +2166,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: member!.id,
           occurredAt: '2026-07-20T12:00:00.000Z',
@@ -2221,7 +2221,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: early!.id,
           occurredAt: '2026-07-19T14:00:00.000Z',
@@ -2281,7 +2281,7 @@ describe('weight capture (FR-140)', () => {
         service.recordDeath(
           a.userId,
           schemas.recordDeathRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             animalId,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2295,7 +2295,7 @@ describe('weight capture (FR-140)', () => {
       const died = await service.recordDeath(
         a.userId,
         schemas.recordDeathRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: other,
           occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2309,7 +2309,7 @@ describe('weight capture (FR-140)', () => {
       const slaughtered = await service.recordDeath(
         a.userId,
         schemas.recordDeathRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId,
           occurredAt: '2026-08-17T06:00:00.000Z',
@@ -2356,7 +2356,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: mob!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2370,7 +2370,7 @@ describe('weight capture (FR-140)', () => {
       const after = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: mob!.id,
           occurredAt: '2026-08-17T06:00:00.000Z',
@@ -2419,7 +2419,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: ox!.id,
           occurredAt: '2026-07-22T06:00:00.000Z',
@@ -2431,7 +2431,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: oxen!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2517,7 +2517,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: flock!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2532,7 +2532,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: flock!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2580,7 +2580,7 @@ describe('weight capture (FR-140)', () => {
       const died = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: flock!.id,
           occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2593,7 +2593,7 @@ describe('weight capture (FR-140)', () => {
       const counted = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: flock!.id,
           occurredAt: '2026-08-16T07:00:00.000Z',
@@ -2711,7 +2711,7 @@ describe('weight capture (FR-140)', () => {
     const tally = (over: Partial<ZodInput<typeof schemas.recordMobTallyRequestSchema>>) => {
       const transfer = over.reason === 'transfer_out' || over.reason === 'transfer_in';
       return schemas.recordMobTallyRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         occurredAt: '2026-07-25T06:00:00.000Z',
         count: 40,
         ...(transfer ? { batchId: randomUUID() } : {}),
@@ -2844,7 +2844,7 @@ describe('weight capture (FR-140)', () => {
       const orphan = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: destination,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -3029,7 +3029,7 @@ describe('weight capture (FR-140)', () => {
       const tally = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-08-16T06:00:00.000Z',
@@ -3240,7 +3240,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -3268,7 +3268,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-08-01T06:00:00.000Z',
@@ -3279,7 +3279,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-20T06:00:00.000Z',
@@ -3327,7 +3327,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: source,
           occurredAt: '2026-07-22T08:00:00.000Z',
@@ -3340,7 +3340,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: dest,
           occurredAt: '2026-07-22T08:00:00.000Z',
@@ -3370,7 +3370,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: dest,
             occurredAt: '2026-08-01T06:00:00.000Z',
@@ -3400,7 +3400,7 @@ describe('weight capture (FR-140)', () => {
         await service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: from,
             occurredAt: at,
@@ -3413,7 +3413,7 @@ describe('weight capture (FR-140)', () => {
         await service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: to,
             occurredAt: at,
@@ -3442,7 +3442,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: one,
             occurredAt: '2026-08-01T06:00:00.000Z',
@@ -3478,7 +3478,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: from,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -3515,7 +3515,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -3973,7 +3973,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId,
           occurredAt: '2026-07-14T06:00:00.000Z',
@@ -4107,7 +4107,7 @@ describe('weight capture (FR-140)', () => {
       const mating = await service.recordMating(
         a.userId,
         schemas.recordMatingRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-01-05T12:00:00.000Z',
@@ -4135,7 +4135,7 @@ describe('weight capture (FR-140)', () => {
       const mating = await service.recordMating(
         a.userId,
         schemas.recordMatingRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-01-05T12:00:00.000Z',
@@ -4166,7 +4166,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMating(
           a.userId,
           schemas.recordMatingRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             animalId: dam,
             occurredAt: '2026-01-05T12:00:00.000Z',
@@ -4186,7 +4186,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMating(
           a.userId,
           schemas.recordMatingRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             animalId: theirCow,
             occurredAt: '2026-01-05T12:00:00.000Z',
@@ -4209,7 +4209,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4237,7 +4237,7 @@ describe('weight capture (FR-140)', () => {
       // request schema had kept `dueDate`, hiding the very leak this exists to prevent. Parsing must
       // DROP the field outright.
       const parsed = schemas.recordPregnancyTestRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId: dam,
         occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4262,7 +4262,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4282,7 +4282,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4310,7 +4310,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: doe,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4335,7 +4335,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: doe,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4361,7 +4361,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: ewe,
           occurredAt: '2026-06-01T09:00:00.000Z',
@@ -4384,7 +4384,7 @@ describe('weight capture (FR-140)', () => {
       const a = await tenant('Alpha');
       const dam = await anAnimal(a.farmId);
       const body = schemas.recordPregnancyTestRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId: dam,
         occurredAt: '2026-03-20T09:00:00.000Z',

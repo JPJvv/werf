@@ -42,8 +42,9 @@
  * Node `fetch` cannot.
  */
 
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import { uuidv7 } from '@werf/core';
 import { startDeployedServer, type DeployedServer } from './deployed-server';
 
 test.skip(
@@ -181,7 +182,7 @@ test.describe('deployed-browser connectivity — real CSP, real PowerSync, real 
     const farmId = session.activeFarmId;
     const enterpriseId = session.farms[0]!.enterprises[0]!.id;
 
-    const animalId = randomUUID();
+    const animalId = uuidv7();
     const createAnimal = await page.request.post(`${API}/livestock/animals`, {
       headers: { Authorization: `Bearer ${session.accessToken}` },
       data: {
@@ -232,7 +233,7 @@ test.describe('deployed-browser connectivity — real CSP, real PowerSync, real 
     // origin, not this test's Node process) — this is the one call that needs the browser to
     // actually be ALLOWED to reach MinIO, both by the CSP served above and by the bucket's own
     // CORS policy (`MINIO_API_CORS_ALLOW_ORIGIN`, docker-compose.yml).
-    const attachmentId = randomUUID();
+    const attachmentId = uuidv7();
     const bytes = 'deployed-connectivity real browser proof';
     const checksumHex = await page.evaluate(async (text) => {
       const data = new TextEncoder().encode(text);

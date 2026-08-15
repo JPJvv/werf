@@ -22,6 +22,7 @@ import {
   jurisdictionSchema,
   timestampSchema,
   uuidSchema,
+  uuidV7Schema,
 } from './primitives';
 
 /** The marking method (Act 6 of 2002). Physical methods, not jurisdiction law. */
@@ -48,6 +49,8 @@ export type BrandingRegister = z.infer<typeof brandingRegisterSchema>;
 export const newBrandingRegisterSchema = brandingRegisterSchema
   .pick({ id: true, farmId: true, mark: true, markType: true, species: true })
   .extend({
+    /** Client-generated UUIDv7 for the register row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     jurisdiction: brandingRegisterSchema.shape.jurisdiction.default('ZA'),
     bodyPosition: brandingRegisterSchema.shape.bodyPosition.default(null),
     certificateReference: brandingRegisterSchema.shape.certificateReference.default(null),
@@ -156,7 +159,7 @@ export type EvidencePack = z.infer<typeof evidencePackSchema>;
  */
 export const newTheftIncidentSchema = z.object({
   /** Client-generated UUIDv7 for the incident row. */
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   /** When the loss was discovered. */
   discoveredAt: timestampSchema,

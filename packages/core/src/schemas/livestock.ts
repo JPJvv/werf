@@ -14,6 +14,7 @@
 import { z } from 'zod';
 import {
   uuidSchema,
+  uuidV7Schema,
   geoJsonStringSchema,
   dateSchema,
   moneySchema,
@@ -47,7 +48,7 @@ export {
  */
 export const recordWeightRequestSchema = z.object({
   /** Client-generated UUIDv7 for the event row. */
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   /** The individual animal weighed. Mutually exclusive with `mobId` (checked in the domain). */
   animalId: uuidSchema.nullable().default(null),
@@ -75,7 +76,7 @@ export type RecordWeightRequest = z.infer<typeof recordWeightRequestSchema>;
  * drift.
  */
 export const recordDeathRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   animalId: uuidSchema,
   /** When the animal died, on the farm. Not `created_at` (set on write). */
@@ -91,7 +92,7 @@ export type RecordDeathRequest = z.infer<typeof recordDeathRequestSchema>;
  * A sale drives status → 'sold' via the state machine in the `recordSale` domain function.
  */
 export const recordSaleRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   animalId: uuidSchema,
   /** When the animal was sold, on the farm. Not `created_at` (set on write). */
@@ -106,7 +107,7 @@ export type RecordSaleRequest = z.infer<typeof recordSaleRequestSchema>;
  * The flush sends animals before events, so the calf exists by the time this arrives.
  */
 export const recordBirthRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   /** The DAM. The event is hers; the calf is in the payload. */
   animalId: uuidSchema,
@@ -118,7 +119,7 @@ export type RecordBirthRequest = z.infer<typeof recordBirthRequestSchema>;
 
 /** Record a weaning (FR-111) — weight and, if known, age. No status change; the animal stays alive. */
 export const recordWeaningRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   animalId: uuidSchema,
   occurredAt: timestampSchema,
@@ -138,7 +139,7 @@ export type RecordWeaningRequest = z.infer<typeof recordWeaningRequestSchema>;
  */
 export const recordMatingRequestSchema = z
   .object({
-    id: uuidSchema,
+    id: uuidV7Schema,
     farmId: uuidSchema,
     /** The DAM. */
     animalId: uuidSchema,
@@ -170,7 +171,7 @@ export type RecordMatingRequest = z.infer<typeof recordMatingRequestSchema>;
  * date tells you she is in calf and genuinely does not tell you when.
  */
 export const recordPregnancyTestRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   /** The DAM. */
   animalId: uuidSchema,
@@ -195,7 +196,7 @@ export type RecordPregnancyTestRequest = z.infer<typeof recordPregnancyTestReque
  * money side of buying and selling cannot drift apart.
  */
 export const recordPurchaseRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   animalId: uuidSchema,
   occurredAt: timestampSchema,
@@ -212,7 +213,7 @@ export type RecordPurchaseRequest = z.infer<typeof recordPurchaseRequestSchema>;
  * the one record this exists to produce.
  */
 export const recordMissingRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   animalId: uuidSchema,
   /** When it was last seen, on the farm — days before this is captured, typically. */
@@ -238,7 +239,7 @@ export type RecordMissingRequest = z.infer<typeof recordMissingRequestSchema>;
  * "move it to Camp 4" into "move it to Camp 4 and take it out of its mob".
  */
 export const recordMoveRequestSchema = z.object({
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   animalId: uuidSchema,
   /** When the animal was walked, on the farm. Not `created_at` (set on write). */
@@ -265,7 +266,7 @@ export type RecordMoveRequest = z.infer<typeof recordMoveRequestSchema>;
  */
 const healthCaptureBase = {
   /** Client-generated UUIDv7 for the event row. */
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   /** Exactly one of the two is the subject (a dip/vaccination is often a whole mob) — the rule is
    *  enforced in the domain fn, not duplicated here. */
@@ -334,7 +335,7 @@ export type RecordDipRequest = z.infer<typeof recordDipRequestSchema>;
 export const recordMobTallyRequestSchema = z
   .object({
     /** Client-generated UUIDv7 for the event row. */
-    id: uuidSchema,
+    id: uuidV7Schema,
     farmId: uuidSchema,
     /** The mob whose head count is changing. Required — a tally with no mob has no subject. */
     mobId: uuidSchema,

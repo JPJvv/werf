@@ -31,7 +31,7 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { ConflictError, NotFoundError, ValidationError, schemas } from '@werf/core';
+import { ConflictError, NotFoundError, ValidationError, schemas, uuidv7 } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
@@ -174,7 +174,7 @@ describe('attachment capture (phase-checklists.md 3i)', () => {
     over: Partial<schemas.NewAttachment> = {},
   ): schemas.NewAttachment {
     return schemas.newAttachmentSchema.parse({
-      id: randomUUID(),
+      id: uuidv7(),
       farmId,
       subjectType: 'animal',
       subjectId,
@@ -277,7 +277,7 @@ describe('attachment capture (phase-checklists.md 3i)', () => {
     const { userId: userB, farmId: farmB } = await tenant('CollideB');
     const animalA = await anAnimal(farmA);
     const animalB = await anAnimal(farmB);
-    const sharedId = randomUUID();
+    const sharedId = uuidv7();
 
     await service.createAttachment(
       userA,

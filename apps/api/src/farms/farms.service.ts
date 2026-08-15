@@ -258,6 +258,19 @@ export class FarmsService {
         ? await tx.select().from(users).where(eq(users.email, input.email))
         : await tx.select().from(users).where(eq(users.phone, input.phone!));
 
+      // A soft-deleted (POPIA-erased) identity is not resurrected by an invite, matching
+      // `AuthService.register`'s precedent for the same row: a tombstoned account is not a
+      // stranger's to reclaim. Without this check the row would be pulled back into a live
+      // `farm_users` membership and reappear in the `users_self_and_comembers` co-member
+      // list — that policy is keyed off `farm_users`, not `users.deleted_at` — while the
+      // account still cannot log in (`login` filters `deleted_at`). That is a disclosure
+      // with no matching capability, not an access hole, and closing it here rather than by
+      // reusing the row also avoids the alternative: falling through to the insert below and
+      // hitting `users.email`'s UNIQUE constraint, since erasure does not free the address.
+      if (existing[0]?.deletedAt) {
+        throw new ConflictError('That person cannot be invited');
+      }
+
       // Someone may already have an account from another farm — the same person managing
       // two neighbours' farms is normal. Reuse the identity; the ROLE is what is per-farm.
       const invitee =

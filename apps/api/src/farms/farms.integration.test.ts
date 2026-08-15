@@ -516,6 +516,30 @@ describe('farm management', () => {
       expect(await service.listForUser(sipho)).toHaveLength(1);
     });
 
+    it('does not resurrect a soft-deleted (erased) identity into a live membership', async () => {
+      const a = await tenant('Alpha');
+
+      // Simulates a POPIA erasure: the row exists, tombstoned, with no way back through
+      // login (which filters `deleted_at`) — the same shape `AuthService.register` already
+      // refuses to reuse.
+      const [erased] = await elevated.db
+        .insert(users)
+        .values({ email: SIPHO.email, fullName: 'Erased Person', deletedAt: new Date() })
+        .returning();
+
+      await expect(service.invite(a.userId, a.farmId, SIPHO)).rejects.toThrow(ConflictError);
+
+      // Nothing was created pointing at the erased row, and it was not revived either —
+      // the identity stays exactly as invisible as it was before the invite was attempted.
+      const memberships = await elevated.db
+        .select()
+        .from(farmUsers)
+        .where(eq(farmUsers.userId, erased!.id));
+      expect(memberships).toHaveLength(0);
+      const [row] = await elevated.db.select().from(users).where(eq(users.id, erased!.id));
+      expect(row!.deletedAt).not.toBeNull();
+    });
+
     it('refuses an invitation to a farm the caller is not on', async () => {
       const a = await tenant('Alpha');
       const b = await tenant('Bravo');

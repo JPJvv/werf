@@ -13,6 +13,7 @@ import { ReferenceModule } from './reference/reference.module';
 import { MailModule } from './mail/mail.module';
 import { SyncModule } from './sync/sync.module';
 import { HealthController } from './health/health.controller';
+import { ConflictsModule } from './conflicts/conflicts.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { HealthController } from './health/health.controller';
     FarmsModule,
     LandModule,
     LivestockModule,
+    ConflictsModule,
     RainfallModule,
     ReferenceModule,
     SyncModule,

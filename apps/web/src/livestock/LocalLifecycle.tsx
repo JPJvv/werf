@@ -99,6 +99,7 @@ export interface StoredBirth extends StoredEventBase {
   readonly calfId: string;
   readonly easeScore: 1 | 2 | 3 | 4 | 5;
   readonly multiples: number;
+  readonly batchId?: string;
   readonly birthWeightKg?: number;
 }
 
@@ -150,6 +151,7 @@ export interface BirthCapture extends CaptureBase {
   readonly calfId: string;
   readonly easeScore: 1 | 2 | 3 | 4 | 5;
   readonly multiples: number;
+  readonly batchId?: string;
   readonly birthWeightKg?: number;
 }
 
@@ -344,6 +346,7 @@ export function useRecordBirth(): (capture: BirthCapture) => Promise<void> {
       const weight = c.birthWeightKg === undefined ? {} : { birthWeightKg: c.birthWeightKg };
       recordBirth({
         ...domainBase(c),
+        ...(c.batchId === undefined ? {} : { batchId: c.batchId }),
         calfId: c.calfId,
         easeScore: c.easeScore,
         multiples: c.multiples,
@@ -356,6 +359,7 @@ export function useRecordBirth(): (capture: BirthCapture) => Promise<void> {
         calfId: c.calfId,
         easeScore: c.easeScore,
         multiples: c.multiples,
+        ...(c.batchId === undefined ? {} : { batchId: c.batchId }),
         ...weight,
       });
     },

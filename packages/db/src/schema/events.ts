@@ -53,6 +53,8 @@ export const events = pgTable(
     employeeId: uuid('employee_id'),
     /** Groups one action (a dosing run, a weigh session) across many animals (FR-112). */
     batchId: uuid('batch_id'),
+    /** Server-authored device/session provenance. Never synced to farm devices. */
+    sourceSessionId: uuid('source_session_id'),
     payload: jsonb('payload').notNull(),
     /** Canonical location. Not read through drizzle; spatial work is raw SQL. */
     location: geometry('location', { type: 'Point', srid: 4326 }),

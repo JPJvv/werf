@@ -20,3 +20,4 @@ export * from './livestock';
 export * from './rainfall';
 export * from './sync';
 export * from './attachments';
+export * from './conflicts';

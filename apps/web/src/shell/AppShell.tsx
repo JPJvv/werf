@@ -24,6 +24,7 @@ import { LocalSpeciesGestationProvider } from '../livestock/LocalSpeciesGestatio
 import { LocalTheftProvider } from '../livestock/LocalTheft';
 import { LocalRainfallProvider } from '../rainfall/LocalRainfall';
 import { LocalAttachmentsProvider } from '../attachments/LocalAttachments';
+import { LocalConflictReviewsProvider } from '../livestock/LocalConflictReviews';
 
 /**
  * The persistent frame around every screen. A slim top bar with the product mark and a way
@@ -63,6 +64,7 @@ const CAPTURE_STORES = [
   // than around the one screen that reads it because the home link carries its count, and a count
   // that only appears once you have opened the screen is a count nobody sees.
   LocalResidueRegisterProvider,
+  LocalConflictReviewsProvider,
   LocalBreedingProvider,
   LocalSpeciesGestationProvider,
   LocalTheftProvider,

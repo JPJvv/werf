@@ -181,6 +181,7 @@ export const livestockApi = {
         farmId: birth.farmId,
         animalId: birth.animalId,
         occurredAt: birth.occurredAt,
+        ...(birth.batchId === undefined ? {} : { batchId: birth.batchId }),
         calfId: birth.calfId,
         easeScore: birth.easeScore,
         multiples: birth.multiples,

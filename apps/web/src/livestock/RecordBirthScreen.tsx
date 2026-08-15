@@ -114,6 +114,7 @@ export function RecordBirthScreen() {
     // two births of the same litter that disagree about the day would be worse than a shared one.
     const occurredAt = new Date();
     const dob = farmDay(occurredAt);
+    const batchId = uuidv7();
 
     const writes: Promise<void>[] = [];
     for (const calf of calves) {
@@ -152,6 +153,7 @@ export function RecordBirthScreen() {
           animalId: dam.id,
           occurredAt,
           currentStatus: 'alive',
+          batchId,
           calfId,
           easeScore,
           multiples,

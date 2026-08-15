@@ -17,7 +17,9 @@ import {
   animalIdentifiers,
   animals,
   attachments,
+  auditLog,
   brandingRegisters,
+  conflictReviews,
   createAppDb,
   createElevatedDb,
   enterprises,
@@ -51,6 +53,7 @@ import { TwoFactorService } from '../auth/two-factor.service';
 import { PasskeyService } from '../auth/passkey.service';
 import { RecoveryCodeService } from '../auth/recovery-code.service';
 import { LivestockService } from './livestock.service';
+import { ConflictsService } from '../conflicts/conflicts.service';
 
 const BOOT_TIMEOUT_MS = 180_000;
 
@@ -184,6 +187,7 @@ describe('weight capture (FR-140)', () => {
   let elevated: ElevatedDb;
   let auth: AuthService;
   let service: LivestockService;
+  let conflicts: ConflictsService;
 
   beforeAll(async () => {
     pg = await startWerfTestDatabase();
@@ -200,6 +204,7 @@ describe('weight capture (FR-140)', () => {
         PasskeyService,
         RecoveryCodeService,
         LivestockService,
+        ConflictsService,
         {
           provide: APP_CONFIG,
           useValue: {
@@ -217,6 +222,7 @@ describe('weight capture (FR-140)', () => {
 
     auth = moduleRef.get(AuthService);
     service = moduleRef.get(LivestockService);
+    conflicts = moduleRef.get(ConflictsService);
   }, BOOT_TIMEOUT_MS);
 
   afterEach(async () => {
@@ -4400,6 +4406,177 @@ describe('weight capture (FR-140)', () => {
         tx.select().from(events).where(eq(events.id, body.id)),
       );
       expect(seen).toHaveLength(1);
+    });
+  });
+
+  describe('offline conflict audit and review (US-040)', () => {
+    it('O-6 keeps both cross-device moves and uses the later farm time for the current camp', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const [campA, campB] = await elevated.db
+        .insert(landUnits)
+        .values([
+          { farmId: a.farmId, code: 'NORTH', name: 'North', kind: 'camp' },
+          { farmId: a.farmId, code: 'SOUTH', name: 'South', kind: 'camp' },
+        ])
+        .returning();
+      const laterId = uuidv7();
+      const earlierId = uuidv7();
+
+      // Later event arrives first; arrival order must not be mistaken for farm time.
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: laterId,
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-08-10T11:00:00.000Z',
+          toLandUnitId: campB!.id,
+        }),
+        randomUUID(),
+      );
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: earlierId,
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-08-10T10:00:00.000Z',
+          toLandUnitId: campA!.id,
+        }),
+        randomUUID(),
+      );
+
+      const [animal] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      const moves = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.animalId, animalId)),
+      );
+      const reviews = await conflicts.listOpen(a.userId, a.farmId);
+      const audits = await app.asUser(a.userId, (tx) => tx.select().from(auditLog));
+
+      expect(animal!.landUnitId).toBe(campB!.id);
+      expect(moves.map((row) => row.id).sort()).toEqual([earlierId, laterId].sort());
+      expect(reviews).toEqual([
+        expect.objectContaining({
+          kind: 'field_lww',
+          field: 'toLandUnitId',
+          winnerEventId: laterId,
+        }),
+      ]);
+      expect(audits[0]).toMatchObject({ action: 'field_lww', recordId: animalId });
+      expect(audits[0]!.facts).toHaveLength(2);
+      expect(audits[0]!.winner).toMatchObject({ eventId: laterId, value: campB!.id });
+    });
+
+    it('O-7 keeps possible duplicate births while a legitimate twin batch stays unflagged', async () => {
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+      const calfA = await anAnimal(a.farmId);
+      const calfB = await anAnimal(a.farmId);
+      const firstId = uuidv7();
+      const secondId = uuidv7();
+      const body = (id: string, calfId: string, batchId: string) =>
+        schemas.recordBirthRequestSchema.parse({
+          id,
+          farmId: a.farmId,
+          animalId: dam,
+          batchId,
+          calfId,
+          occurredAt: '2026-08-10T06:00:00.000Z',
+          easeScore: 1,
+          multiples: 1,
+        });
+
+      await service.recordBirth(a.userId, body(firstId, calfA, uuidv7()), randomUUID());
+      await service.recordBirth(a.userId, body(secondId, calfB, uuidv7()), randomUUID());
+
+      const births = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.animalId, dam)),
+      );
+      expect(births).toHaveLength(2);
+      expect(births.every((row) => row.deletedAt === null)).toBe(true);
+      expect(await conflicts.listOpen(a.userId, a.farmId)).toEqual([
+        expect.objectContaining({ kind: 'possible_duplicate_birth', winnerEventId: null }),
+      ]);
+
+      await pg.reset();
+      const twinFarm = await tenant('Twin');
+      const twinDam = await anAnimal(twinFarm.farmId);
+      const twinA = await anAnimal(twinFarm.farmId);
+      const twinB = await anAnimal(twinFarm.farmId);
+      const batchId = uuidv7();
+      for (const calfId of [twinA, twinB]) {
+        await service.recordBirth(
+          twinFarm.userId,
+          schemas.recordBirthRequestSchema.parse({
+            id: uuidv7(),
+            farmId: twinFarm.farmId,
+            animalId: twinDam,
+            batchId,
+            calfId,
+            occurredAt: '2026-08-10T06:00:00.000Z',
+            easeScore: 1,
+            multiples: 2,
+          }),
+          randomUUID(),
+        );
+      }
+      expect(await conflicts.listOpen(twinFarm.userId, twinFarm.farmId)).toEqual([]);
+    });
+
+    it('O-8 keeps sale and death, projects dead, audits precedence, and preserves immutable evidence', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const death = await service.recordDeath(
+        a.userId,
+        deathBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-10T10:00:00.000Z' }),
+        randomUUID(),
+      );
+      const sale = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-10T14:00:00.000Z' }),
+        randomUUID(),
+      );
+
+      const [animal] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      const facts = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.animalId, animalId)),
+      );
+      const queue = await conflicts.listOpen(a.userId, a.farmId);
+      const audits = await app.asUser(a.userId, (tx) => tx.select().from(auditLog));
+
+      expect(animal).toMatchObject({ status: 'dead', statusAt: death.occurredAt });
+      expect(facts.map((row) => row.id).sort()).toEqual([death.id, sale.id].sort());
+      expect(queue).toEqual([
+        expect.objectContaining({ kind: 'status_contradiction', winnerEventId: death.id }),
+      ]);
+      expect(audits[0]).toMatchObject({
+        action: 'status_contradiction',
+        winner: expect.objectContaining({ eventId: death.id, value: 'dead' }),
+      });
+
+      await expect(
+        app.asUser(a.userId, (tx) =>
+          tx.update(auditLog).set({ rule: 'rewritten' }).where(eq(auditLog.id, audits[0]!.id)),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        app.asUser(a.userId, (tx) => tx.delete(auditLog).where(eq(auditLog.id, audits[0]!.id))),
+      ).rejects.toThrow();
+
+      await conflicts.markReviewed(a.userId, queue[0]!.id, { farmId: a.farmId });
+      expect(await conflicts.listOpen(a.userId, a.farmId)).toEqual([]);
+      const [review] = await app.asUser(a.userId, (tx) => tx.select().from(conflictReviews));
+      expect(review).toMatchObject({ status: 'reviewed', reviewedBy: a.userId });
+      const afterReview = await app.asUser(a.userId, (tx) => tx.select().from(auditLog));
+      expect(afterReview.map((row) => row.action).sort()).toEqual([
+        'conflict_reviewed',
+        'status_contradiction',
+      ]);
     });
   });
 });

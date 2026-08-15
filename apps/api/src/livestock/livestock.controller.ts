@@ -128,7 +128,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordMoveRequestSchema))
     body: schemas.RecordMoveRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordMove(auth.userId, body);
+    return this.livestock.recordMove(auth.userId, body, auth.sessionId);
   }
 
   /**
@@ -142,7 +142,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordBirthRequestSchema))
     body: schemas.RecordBirthRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordBirth(auth.userId, body);
+    return this.livestock.recordBirth(auth.userId, body, auth.sessionId);
   }
 
   /** Record a weaning (FR-111): the weight at weaning and, if known, the age. No status change. */
@@ -226,7 +226,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordDeathRequestSchema))
     body: schemas.RecordDeathRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordDeath(auth.userId, body);
+    return this.livestock.recordDeath(auth.userId, body, auth.sessionId);
   }
 
   /**
@@ -240,7 +240,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordSaleRequestSchema))
     body: schemas.RecordSaleRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordSale(auth.userId, body);
+    return this.livestock.recordSale(auth.userId, body, auth.sessionId);
   }
 
   /**

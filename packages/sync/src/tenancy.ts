@@ -151,8 +151,12 @@ export const TENANCY = {
   events: {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
-    neverSyncColumns: ['location'],
+    neverSyncColumns: ['location', 'source_session_id'],
   },
+  // Conflict evidence contains actor/session provenance and is read through a scoped API only.
+  // Neither the immutable explanation nor the operational review queue is replicated to a phone.
+  audit_log: { classification: 'server-only' },
+  conflict_reviews: { classification: 'server-only' },
   // Regulated reference data: the rate/withdrawal/PHI tables the client must read offline.
   // Read-only, filtered by the FARM's jurisdiction — never the user's or the browser's.
   regulatory_rates: {

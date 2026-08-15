@@ -71,6 +71,13 @@ import {
   type CapturedEvent,
 } from '../common/event-capture';
 import { farmLocalDay } from '../common/farm-time';
+import {
+  detectMoveConflicts,
+  detectPossibleDuplicateBirth,
+  detectStatusContradiction,
+  hasDeathFact,
+  rederiveAnimalStatus,
+} from '../common/conflict-review';
 
 /** The `theft_incidents` columns returned to the caller — every column EXCEPT the PostGIS
  *  `last_seen_location`, which is geometry (neverSyncColumns) and never goes on the wire. */
@@ -504,7 +511,7 @@ export class LivestockService {
    * already knows where it is, and letting the client restate it only creates a way for the stored
    * history to disagree with reality.
    */
-  async recordMove(userId: string, input: schemas.RecordMoveRequest) {
+  async recordMove(userId: string, input: schemas.RecordMoveRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
 
@@ -573,7 +580,7 @@ export class LivestockService {
         createdBy: userId,
       });
 
-      const stored = await insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
 
       // The denormalised position follows the history, not the other way round — and "the history"
       // means the LATEST move in the log, not the last one to arrive. A back-dated move that lands
@@ -591,6 +598,8 @@ export class LivestockService {
           .where(and(eq(animals.id, input.animalId), eq(animals.farmId, input.farmId)));
       }
 
+      await detectMoveConflicts(tx, stored, userId, sourceSessionId);
+
       return stored;
     });
   }
@@ -598,11 +607,10 @@ export class LivestockService {
   /**
    * Records a death (FR-105) as an append-only `events` row. The animal's current status is
    * read (RLS-scoped) so the domain state machine can guard the transition to 'dead'; a death
-   * of an animal this farm cannot see is a 404. The event is the durable fact — materialising
-   * the animal row's status from the event log is a Phase 3 read-model concern, exactly as the
-   * client projects status rather than editing the append-only herd row.
+   * of an animal this farm cannot see is a 404. The event is the durable fact; after appending,
+   * the animal row's status is re-derived from the whole lifecycle log as a disposable projection.
    */
-  async recordDeath(userId: string, input: schemas.RecordDeathRequest) {
+  async recordDeath(userId: string, input: schemas.RecordDeathRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
       const { status: currentStatus, enterpriseId } = await animalFacts(
@@ -655,7 +663,10 @@ export class LivestockService {
         input.disposal === undefined ? base : { ...base, disposal: input.disposal },
       );
 
-      return insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
+      await detectStatusContradiction(tx, stored, userId, sourceSessionId);
+      await rederiveAnimalStatus(tx, input.farmId, input.animalId, userId);
+      return stored;
     });
   }
 
@@ -665,7 +676,7 @@ export class LivestockService {
    * events, so it is already here); this event ties the two together and carries the calving facts.
    * The calf is checked to be on this farm for the same reason every reference is.
    */
-  async recordBirth(userId: string, input: schemas.RecordBirthRequest) {
+  async recordBirth(userId: string, input: schemas.RecordBirthRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
       await assertOwnedReferences(tx, input.farmId, {
@@ -685,6 +696,7 @@ export class LivestockService {
         occurredAt: input.occurredAt,
         currentStatus,
         enterpriseId,
+        ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
         calfId: input.calfId,
         easeScore: input.easeScore,
         multiples: input.multiples,
@@ -696,7 +708,9 @@ export class LivestockService {
         ...(input.birthWeightKg === undefined ? {} : { birthWeightKg: input.birthWeightKg }),
       });
 
-      return insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
+      await detectPossibleDuplicateBirth(tx, stored, userId, sourceSessionId);
+      return stored;
     });
   }
 
@@ -893,10 +907,12 @@ export class LivestockService {
 
   /**
    * Records a sale (FR-106) as an append-only `events` row. As with a death, the animal's
-   * current status is read so the state machine can guard the transition to 'sold'. `priceCents`
-   * is Money — integer cents, validated by the domain, never a float.
+   * current status is read so the state machine can guard the transition to 'sold'. An already
+   * stored death is the one exception: a sale arriving later from an offline phone is retained as
+   * contradictory evidence, then the log projection applies dead > sold. `priceCents` is Money —
+   * integer cents, validated by the domain, never a float.
    */
-  async recordSale(userId: string, input: schemas.RecordSaleRequest) {
+  async recordSale(userId: string, input: schemas.RecordSaleRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
       const { status: currentStatus, enterpriseId } = await animalFacts(
@@ -909,12 +925,18 @@ export class LivestockService {
       // reads the rule that applied then, not today's registration.
       await assertClearOfMeatWithdrawal(tx, input.farmId, input.animalId, input.occurredAt);
 
+      // A death already stored can race a sale captured offline on another device. That sale is a
+      // real fact and US-040 explicitly forbids dropping it; precedence is applied after append.
+      const transitionStatus =
+        currentStatus === 'dead' && (await hasDeathFact(tx, input.farmId, input.animalId))
+          ? ('alive' as const)
+          : currentStatus;
       const base = {
         id: input.id,
         farmId: input.farmId,
         animalId: input.animalId,
         occurredAt: input.occurredAt,
-        currentStatus,
+        currentStatus: transitionStatus,
         enterpriseId,
         counterparty: input.counterparty,
         priceCents: input.priceCents,
@@ -924,7 +946,10 @@ export class LivestockService {
         input.weightKg === undefined ? base : { ...base, weightKg: input.weightKg },
       );
 
-      return insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
+      await detectStatusContradiction(tx, stored, userId, sourceSessionId);
+      await rederiveAnimalStatus(tx, input.farmId, input.animalId, userId);
+      return stored;
     });
   }
 

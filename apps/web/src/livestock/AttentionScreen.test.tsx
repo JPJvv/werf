@@ -199,3 +199,35 @@ describe('the register (FR-131) sees a withholding known only by HYDRATION', () 
     expect(screen.queryByText(/nothing needs your attention/i)).toBeNull();
   });
 });
+
+describe('the conflict review queue (US-040)', () => {
+  it('shows a cached sale/death contradiction without removing either source fact', async () => {
+    cachedSession();
+    const REVIEW_ID = '0190f3a0-0000-7000-8000-00000000d001';
+    const ANIMAL_ID = '0190f3a0-0000-7000-8000-00000000a020';
+    window.localStorage.setItem(
+      `werf-conflict-reviews:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: REVIEW_ID,
+          farmId: FARM_ID,
+          kind: 'status_contradiction',
+          subjectId: ANIMAL_ID,
+          field: 'status',
+          factAEventId: '0190f3a0-0000-7000-8000-00000000e020',
+          factBEventId: '0190f3a0-0000-7000-8000-00000000e021',
+          winnerEventId: '0190f3a0-0000-7000-8000-00000000e020',
+          rule: 'dead wins',
+          createdAt: '2026-08-10T15:00:00.000Z',
+        },
+      ] satisfies schemas.ConflictReviewJson[]),
+    );
+
+    window.history.pushState({}, '', '/attention');
+    render(<App />);
+
+    expect(await screen.findByText(/both sold and dead/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /mark as reviewed/i })).toBeTruthy();
+    expect(screen.queryByText(/nothing needs your attention/i)).toBeNull();
+  });
+});

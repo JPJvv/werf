@@ -9,4 +9,5 @@ export * from './veterinary';
 export * from './breeding';
 export * from './theft';
 export * from './attachments';
+export * from './conflicts';
 export * from './tables';

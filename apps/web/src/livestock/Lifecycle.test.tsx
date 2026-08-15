@@ -228,6 +228,8 @@ describe('recording a birth (FR-104)', () => {
     const births = (await storedEvents()).filter((e) => e['type'] === 'birth');
     expect(births).toHaveLength(2);
     expect(births.every((b) => b['animalId'] === ewe && b['multiples'] === 2)).toBe(true);
+    expect(new Set(births.map((b) => b['batchId'])).size).toBe(1);
+    expect(typeof births[0]?.['batchId']).toBe('string');
     expect(births.map((b) => b['calfId']).sort()).toEqual(lambs.map((l) => l['id']).sort());
     expect(births.map((b) => b['birthWeightKg']).sort()).toEqual([3.8, 4.1]);
   });

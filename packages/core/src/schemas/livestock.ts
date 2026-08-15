@@ -109,6 +109,8 @@ export type RecordSaleRequest = z.infer<typeof recordSaleRequestSchema>;
 export const recordBirthRequestSchema = z.object({
   id: uuidV7Schema,
   farmId: uuidSchema,
+  /** Shared by every calf from one calving; optional for older offline clients. */
+  batchId: uuidV7Schema.optional(),
   /** The DAM. The event is hers; the calf is in the payload. */
   animalId: uuidSchema,
   /** When she calved, on the farm. Not `created_at` (set on write). */

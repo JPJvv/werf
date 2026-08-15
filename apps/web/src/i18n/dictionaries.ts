@@ -809,6 +809,23 @@ const en = {
   // the farmer already did, and most of it they could not have known at the time.
   'residue.link': 'Needs your attention',
   'residue.title': 'Needs your attention',
+  'attention.intro':
+    'Records from different phones that need a quick check, plus any withdrawal records that need follow-up.',
+  'conflict.title': 'Records to check',
+  'conflict.intro':
+    'Both records have been kept. Werf applied the stated rule and left this item here for a person to check.',
+  'conflict.move':
+    'Different locations were recorded for the same animal. The later farm time is being used.',
+  'conflict.birth':
+    'This may be the same birth recorded twice. No calf or birth record was removed.',
+  'conflict.status':
+    'This animal was recorded as both sold and dead. Dead is being used as its current status.',
+  'conflict.subject': 'Animal:',
+  'conflict.animal': 'Unnamed animal',
+  'conflict.reviewed': 'Mark as reviewed',
+  'conflict.manager': 'An owner or manager can mark this as reviewed.',
+  'conflict.error': 'That review could not be saved. Try again when you have signal.',
+  'residue.sectionTitle': 'Withdrawal records',
   'residue.intro':
     'Head that left the herd while it was still inside a meat withdrawal. Nothing here is a refusal — it is the record, so you can answer for it if you are ever asked.',
   'residue.empty': 'Nothing needs your attention. No head has left inside a withdrawal.',
@@ -1504,6 +1521,23 @@ const af: Record<TranslationKey, string> = {
   'rain.back': 'Terug na tuis',
   'residue.link': 'Kort jou aandag',
   'residue.title': 'Kort jou aandag',
+  'attention.intro':
+    'Rekords van verskillende fone wat vinnig nagegaan moet word, plus onttrekkingsrekords wat opvolg nodig het.',
+  'conflict.title': 'Rekords om na te gaan',
+  'conflict.intro':
+    'Albei rekords is behou. Werf het die vermelde reël toegepas en hierdie item vir ’n persoon gelos om na te gaan.',
+  'conflict.move':
+    'Verskillende liggings is vir dieselfde dier aangeteken. Die latere plaastyd word gebruik.',
+  'conflict.birth':
+    'Dit kan dieselfde geboorte wees wat twee keer aangeteken is. Geen kalf- of geboorterekord is verwyder nie.',
+  'conflict.status':
+    'Hierdie dier is as verkoop én gevrek aangeteken. Gevrek word as die huidige status gebruik.',
+  'conflict.subject': 'Dier:',
+  'conflict.animal': 'Naamlose dier',
+  'conflict.reviewed': 'Merk as nagegaan',
+  'conflict.manager': '’n Eienaar of bestuurder kan dit as nagegaan merk.',
+  'conflict.error': 'Die nasien kon nie gestoor word nie. Probeer weer wanneer jy sein het.',
+  'residue.sectionTitle': 'Onttrekkingsrekords',
   'residue.intro':
     'Diere wat die kudde verlaat het terwyl hulle nog binne ’n vleisonttrekkingstydperk was. Niks hier is ’n weiering nie — dit is die rekord, sodat jy kan antwoord as daar ooit gevra word.',
   'residue.empty': 'Niks kort jou aandag nie. Geen diere het binne ’n onttrekking uitgegaan nie.',

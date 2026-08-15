@@ -49,7 +49,18 @@ import { TOTP_PERIOD_SECONDS, deriveTotp } from './totp';
 const BOOT_TIMEOUT_MS = 180_000;
 
 const REGISTRATION: schemas.RegisterRequest = {
-  business: { name: 'Rietfontein Boerdery', registrationNumber: null },
+  business: {
+    name: 'Rietfontein Boerdery',
+    registrationNumber: null,
+    contact: { email: 'kantoor@rietfontein.test', phone: null },
+    physicalAddress: {
+      line1: 'Plaas Rietfontein',
+      line2: null,
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: 'Rietfontein',
     province: 'Free State',

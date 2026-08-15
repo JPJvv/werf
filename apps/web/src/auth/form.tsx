@@ -19,7 +19,7 @@ export interface FieldProps {
   name: string;
   value: string;
   onChange(value: string): void;
-  type?: 'text' | 'email' | 'password';
+  type?: 'text' | 'email' | 'password' | 'tel';
   autoComplete?: string;
   required?: boolean;
   className?: string;

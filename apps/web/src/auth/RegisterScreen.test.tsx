@@ -102,6 +102,10 @@ afterAll(() => vi.resetConfig());
 
 async function fillRegistration(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/business name/i), 'Rietfontein Boerdery');
+  await user.type(screen.getByLabelText(/business contact email/i), 'kantoor@rietfontein.test');
+  await user.type(screen.getByLabelText(/physical address/i), 'Plaas Rietfontein');
+  await user.type(screen.getByLabelText(/town or district/i), 'Bothaville');
+  await user.type(screen.getByLabelText(/postal code/i), '9660');
   await user.type(screen.getByLabelText(/farm name/i), 'Rietfontein');
   await user.click(screen.getByRole('checkbox', { name: /beef cattle/i }));
   await user.click(screen.getByRole('checkbox', { name: /row crops/i }));
@@ -123,6 +127,13 @@ describe('onboarding in Afrikaans (FR-008)', () => {
 
     // The form itself is now Afrikaans — proven by filling it in with Afrikaans labels.
     await user.type(screen.getByLabelText('Besigheidsnaam'), 'Rietfontein Boerdery');
+    await user.type(
+      screen.getByLabelText('Besigheid se kontak-e-pos (opsioneel)'),
+      'kantoor@rietfontein.test',
+    );
+    await user.type(screen.getByLabelText('Fisiese adres'), 'Plaas Rietfontein');
+    await user.type(screen.getByLabelText('Dorp of distrik'), 'Bothaville');
+    await user.type(screen.getByLabelText('Poskode'), '9660');
     await user.type(screen.getByLabelText('Plaasnaam'), 'Rietfontein');
     await user.click(screen.getByRole('checkbox', { name: /beef cattle/i }));
     await user.type(screen.getByLabelText('Jou volle naam'), 'Thabo Mokoena');
@@ -179,8 +190,37 @@ describe('registering a farm business', () => {
 
     // The enterprise choice really was sent, not just rendered locally.
     expect(calls[0]!.body).toMatchObject({
+      business: {
+        contact: { email: 'kantoor@rietfontein.test', phone: null },
+        physicalAddress: {
+          line1: 'Plaas Rietfontein',
+          line2: null,
+          locality: 'Bothaville',
+          province: 'Free State',
+          postalCode: '9660',
+        },
+      },
       farm: { enterpriseTypes: ['beef_cattle', 'row_crops'] },
     });
+  });
+
+  it('keeps an incomplete FR-001 registration local and explains what is missing', async () => {
+    const calls = stubApi();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/business name/i), 'Rietfontein Boerdery');
+    await user.type(screen.getByLabelText(/farm name/i), 'Rietfontein');
+    await user.click(screen.getByRole('checkbox', { name: /beef cattle/i }));
+    await user.type(screen.getByLabelText(/your full name/i), 'Thabo Mokoena');
+    await user.type(screen.getByLabelText(/email address/i), 'thabo@rietfontein.test');
+    await user.type(screen.getByLabelText(/password/i), 'correct horse battery staple');
+    await user.click(screen.getByRole('button', { name: /create my farm/i }));
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /email address or phone number/i,
+    );
+    expect(calls).toHaveLength(0);
   });
 
   it('will not submit without an enterprise type, and says why', async () => {

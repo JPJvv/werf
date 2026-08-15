@@ -105,6 +105,15 @@ POST   /v1/auth/recovery-codes             → 200 { codes: [10] }   # shown ONC
 POST   /v1/auth/2fa/reset-request          → 202 { availableAt }   # 48h delay
 ```
 
+`POST /v1/auth/register` creates the business, first farm, owner membership and session in one
+transaction. Its `business` member carries `name`, nullable `registrationNumber`, a `contact`
+object with nullable `email` and `phone` (at least one required), and a `physicalAddress` object
+with required `line1`, `locality`, `province` and `postalCode` plus nullable `line2` (FR-001).
+The database columns remain nullable only so tenants created before migration 0027 survive the
+additive rollout; the current wire contract does not accept an incomplete new business. These
+details are not in the PowerSync projection: no current offline screen needs contact/address data,
+so sending a sole proprietor's details to every accepted farm member would violate data minimisation.
+
 **Token policy:**
 - Access during BFF migration: 15 min, returned to the SPA and held in memory only. Contains
   `sub`, farm context and `exp`; server/RLS authorization remains authoritative.

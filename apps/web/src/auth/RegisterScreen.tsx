@@ -34,6 +34,13 @@ export function RegisterScreen() {
 
   const [businessName, setBusinessName] = useState('');
   const [registrationNumber, setRegistrationNumber] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [addressLocality, setAddressLocality] = useState('');
+  const [addressProvince, setAddressProvince] = useState(PROVINCES[1]!);
+  const [addressPostalCode, setAddressPostalCode] = useState('');
   const [farmName, setFarmName] = useState('');
   const [province, setProvince] = useState(PROVINCES[1]!);
   const [district, setDistrict] = useState('');
@@ -59,12 +66,32 @@ export function RegisterScreen() {
     // not because the client is trusted — the same Zod schema rejects both.
     if (enterpriseTypes.length === 0) return setError('onboarding.needEnterprise');
     if (password.length < MINIMUM_PASSWORD_LENGTH) return setError('onboarding.passwordTooShort');
+    if (!contactEmail.trim() && !contactPhone.trim()) {
+      return setError('onboarding.needBusinessContact');
+    }
+    if (!addressLine1.trim() || !addressLocality.trim() || !addressPostalCode.trim()) {
+      return setError('onboarding.needBusinessAddress');
+    }
 
     setError(null);
     setBusy(true);
     try {
       await register({
-        business: { name: businessName, registrationNumber: registrationNumber || null },
+        business: {
+          name: businessName,
+          registrationNumber: registrationNumber || null,
+          contact: {
+            email: contactEmail || null,
+            phone: contactPhone || null,
+          },
+          physicalAddress: {
+            line1: addressLine1,
+            line2: addressLine2 || null,
+            locality: addressLocality,
+            province: addressProvince,
+            postalCode: addressPostalCode,
+          },
+        },
         farm: {
           name: farmName,
           province,
@@ -103,6 +130,78 @@ export function RegisterScreen() {
             name="registrationNumber"
             value={registrationNumber}
             onChange={setRegistrationNumber}
+            className="font-data tabular-nums"
+          />
+          <Field
+            label={t('onboarding.business.contactEmail')}
+            name="businessContactEmail"
+            type="email"
+            value={contactEmail}
+            onChange={setContactEmail}
+            autoComplete="email"
+          />
+          <Field
+            label={t('onboarding.business.contactPhone')}
+            name="businessContactPhone"
+            type="tel"
+            value={contactPhone}
+            onChange={setContactPhone}
+            autoComplete="tel"
+            className="font-data tabular-nums"
+            hint={t('onboarding.business.contactHint')}
+          />
+          <Field
+            label={t('onboarding.business.addressLine1')}
+            name="businessAddressLine1"
+            value={addressLine1}
+            onChange={setAddressLine1}
+            autoComplete="address-line1"
+            required
+          />
+          <Field
+            label={t('onboarding.business.addressLine2')}
+            name="businessAddressLine2"
+            value={addressLine2}
+            onChange={setAddressLine2}
+            autoComplete="address-line2"
+          />
+          <Field
+            label={t('onboarding.business.addressLocality')}
+            name="businessAddressLocality"
+            value={addressLocality}
+            onChange={setAddressLocality}
+            autoComplete="address-level2"
+            required
+          />
+          <div className="mb-4 flex flex-col">
+            <label
+              htmlFor="businessAddressProvince"
+              className="mb-1 text-label uppercase text-soil-700"
+            >
+              {t('onboarding.business.addressProvince')}
+            </label>
+            <select
+              id="businessAddressProvince"
+              name="businessAddressProvince"
+              value={addressProvince}
+              autoComplete="address-level1"
+              onChange={(event) => setAddressProvince(event.target.value)}
+              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+            >
+              {PROVINCES.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Field
+            label={t('onboarding.business.addressPostalCode')}
+            name="businessAddressPostalCode"
+            value={addressPostalCode}
+            onChange={setAddressPostalCode}
+            autoComplete="postal-code"
+            required
             className="font-data tabular-nums"
           />
         </FieldSet>

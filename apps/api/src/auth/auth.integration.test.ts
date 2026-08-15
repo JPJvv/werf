@@ -48,7 +48,18 @@ const BOOT_TIMEOUT_MS = 180_000;
 
 /** A complete, valid registration. Individual tests override just the field under test. */
 const REGISTRATION: schemas.RegisterRequest = {
-  business: { name: 'Rietfontein Boerdery', registrationNumber: null },
+  business: {
+    name: 'Rietfontein Boerdery',
+    registrationNumber: null,
+    contact: { email: 'kantoor@rietfontein.test', phone: '+27 51 555 0100' },
+    physicalAddress: {
+      line1: 'Plaas Rietfontein',
+      line2: 'S305 distrikspad',
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: 'Rietfontein',
     province: 'Free State',
@@ -131,6 +142,25 @@ describe('auth', () => {
       expect(session.activeFarmId).toBe(session.farms[0]!.id);
       expect(session.accessToken).toBeTruthy();
       expect(session.expiresIn).toBe(ACCESS_TOKEN_TTL_SECONDS);
+    });
+
+    it('retains the business contact and physical address supplied at registration', async () => {
+      await auth.register(REGISTRATION);
+
+      const [business] = await elevated.db
+        .select()
+        .from(businesses)
+        .where(eq(businesses.name, REGISTRATION.business.name));
+
+      expect(business).toMatchObject({
+        contactEmail: 'kantoor@rietfontein.test',
+        contactPhone: '+27 51 555 0100',
+        physicalAddressLine1: 'Plaas Rietfontein',
+        physicalAddressLine2: 'S305 distrikspad',
+        physicalAddressLocality: 'Bothaville',
+        physicalAddressProvince: 'Free State',
+        physicalAddressPostalCode: '9660',
+      });
     });
 
     it('gives each chosen enterprise type something to attribute costs to (ADR-0004)', async () => {
@@ -217,7 +247,7 @@ describe('auth', () => {
       await expect(
         auth.register({
           ...REGISTRATION,
-          business: { name: 'Orphan Boerdery', registrationNumber: null },
+          business: { ...REGISTRATION.business, name: 'Orphan Boerdery' },
         }),
       ).rejects.toThrow(ConflictError);
 

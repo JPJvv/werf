@@ -41,6 +41,17 @@ CREATE TABLE businesses (
   name          text NOT NULL,
   registration_number text,
   vat_number    text,
+  -- Nullable only for tenants created before the additive FR-001 migration. The current
+  -- registration contract requires at least one contact method and a complete address. These
+  -- fields remain server-side: no current offline feature needs a sole proprietor's contact/home
+  -- address, so the PowerSync classifier explicitly strips them from the businesses projection.
+  contact_email text,
+  contact_phone text,
+  physical_address_line_1 text,
+  physical_address_line_2 text,
+  physical_address_locality text,
+  physical_address_province text,
+  physical_address_postal_code text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz

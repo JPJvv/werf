@@ -104,7 +104,18 @@ async function registerAndEnrol(
 ): Promise<VerifiedSession> {
   const reg = await request.post(`${API}/auth/register`, {
     data: {
-      business: { name: 'E2E Deployed Boerdery', registrationNumber: null },
+      business: {
+        name: 'E2E Deployed Boerdery',
+        registrationNumber: null,
+        contact: { email: 'e2e-deployed@example.test', phone: null },
+        physicalAddress: {
+          line1: 'E2E Deployed Plaas',
+          line2: null,
+          locality: 'Bothaville',
+          province: 'Free State',
+          postalCode: '9660',
+        },
+      },
       farm: {
         name: 'E2E Deployed Farm',
         province: 'Free State',

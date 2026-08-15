@@ -96,6 +96,13 @@ export class AuthService {
         .values({
           name: input.business.name,
           registrationNumber: input.business.registrationNumber,
+          contactEmail: input.business.contact.email,
+          contactPhone: input.business.contact.phone,
+          physicalAddressLine1: input.business.physicalAddress.line1,
+          physicalAddressLine2: input.business.physicalAddress.line2,
+          physicalAddressLocality: input.business.physicalAddress.locality,
+          physicalAddressProvince: input.business.physicalAddress.province,
+          physicalAddressPostalCode: input.business.physicalAddress.postalCode,
         })
         .returning();
 

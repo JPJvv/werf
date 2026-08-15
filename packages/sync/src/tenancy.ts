@@ -62,6 +62,19 @@ export const TENANCY = {
   businesses: {
     classification: 'farm-scoped',
     scope: { kind: 'via-business', column: 'id' },
+    // A farm business can be a sole proprietor's home. Registration needs these details, but no
+    // current offline screen does: synchronising them would put the owner's address/contact on
+    // every accepted member's device for no product purpose. Keep them on the tenant-scoped API
+    // row until a role-scoped offline use case exists and is designed explicitly.
+    neverSyncColumns: [
+      'contact_email',
+      'contact_phone',
+      'physical_address_line_1',
+      'physical_address_line_2',
+      'physical_address_locality',
+      'physical_address_province',
+      'physical_address_postal_code',
+    ],
   },
   farms: {
     classification: 'farm-scoped',

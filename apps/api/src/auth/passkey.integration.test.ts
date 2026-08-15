@@ -44,7 +44,18 @@ const RP_ID = 'localhost';
 const ORIGIN = 'http://localhost:5173';
 
 const REGISTRATION: schemas.RegisterRequest = {
-  business: { name: 'Rietfontein Boerdery', registrationNumber: null },
+  business: {
+    name: 'Rietfontein Boerdery',
+    registrationNumber: null,
+    contact: { email: 'kantoor@rietfontein.test', phone: null },
+    physicalAddress: {
+      line1: 'Plaas Rietfontein',
+      line2: null,
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: 'Rietfontein',
     province: 'Free State',
@@ -376,7 +387,7 @@ describe('passkeys (ADR-0007)', () => {
 
       const other = await auth.register({
         ...REGISTRATION,
-        business: { name: 'Other Boerdery', registrationNumber: null },
+        business: { ...REGISTRATION.business, name: 'Other Boerdery' },
         owner: { ...REGISTRATION.owner, email: 'other@example.test' },
       });
 
@@ -497,7 +508,7 @@ describe('passkeys (ADR-0007)', () => {
 
       const attacker = await auth.register({
         ...REGISTRATION,
-        business: { name: 'Other Boerdery', registrationNumber: null },
+        business: { ...REGISTRATION.business, name: 'Other Boerdery' },
         owner: { ...REGISTRATION.owner, email: 'attacker@example.test' },
       });
       const attackerDevice = new TestAuthenticator();

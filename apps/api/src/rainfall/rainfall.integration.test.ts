@@ -35,7 +35,18 @@ import { RainfallService } from './rainfall.service';
 const BOOT_TIMEOUT_MS = 180_000;
 
 const registration = (label: string): schemas.RegisterRequest => ({
-  business: { name: `${label} Boerdery`, registrationNumber: null },
+  business: {
+    name: `${label} Boerdery`,
+    registrationNumber: null,
+    contact: { email: `${label.toLowerCase()}@example.test`, phone: null },
+    physicalAddress: {
+      line1: `${label} Plaas`,
+      line2: null,
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: `${label} Plaas`,
     province: 'Free State',

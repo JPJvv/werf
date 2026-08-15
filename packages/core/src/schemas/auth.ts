@@ -9,7 +9,13 @@
 
 import { z } from 'zod';
 import { enterpriseTypeSchema, uuidSchema } from './primitives';
-import { localeSchema, themeSchema, userSchema } from './entities';
+import {
+  businessContactSchema,
+  localeSchema,
+  physicalAddressSchema,
+  themeSchema,
+  userSchema,
+} from './entities';
 
 /**
  * Passwords. A length floor and nothing else: composition rules ("one uppercase, one
@@ -40,6 +46,8 @@ export const registerRequestSchema = z.object({
   business: z.object({
     name: z.string().min(1),
     registrationNumber: z.string().min(1).nullable().default(null),
+    contact: businessContactSchema,
+    physicalAddress: physicalAddressSchema,
   }),
   farm: z.object({
     name: z.string().min(1),

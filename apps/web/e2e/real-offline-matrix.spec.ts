@@ -139,7 +139,18 @@ test.describe('offline matrix O-3 — six weeks offline, sync, occurred_at intac
 
     const reg = await page.request.post(`${API}/auth/register`, {
       data: {
-        business: { name: 'E2E O-3 Boerdery', registrationNumber: null },
+        business: {
+          name: 'E2E O-3 Boerdery',
+          registrationNumber: null,
+          contact: { email: 'e2e-o3@example.test', phone: null },
+          physicalAddress: {
+            line1: 'E2E O-3 Plaas',
+            line2: null,
+            locality: 'Bothaville',
+            province: 'Free State',
+            postalCode: '9660',
+          },
+        },
         farm: {
           name: 'E2E O-3 Farm',
           province: 'Free State',
@@ -285,7 +296,18 @@ test.describe('offline matrix O-3 — six weeks offline, sync, occurred_at intac
 
     const reg = await page.request.post(`${API}/auth/register`, {
       data: {
-        business: { name: 'E2E O-3b Boerdery', registrationNumber: null },
+        business: {
+          name: 'E2E O-3b Boerdery',
+          registrationNumber: null,
+          contact: { email: 'e2e-o3b@example.test', phone: null },
+          physicalAddress: {
+            line1: 'E2E O-3b Plaas',
+            line2: null,
+            locality: 'Bothaville',
+            province: 'Free State',
+            postalCode: '9660',
+          },
+        },
         farm: {
           name: 'E2E O-3b Farm',
           province: 'Free State',

@@ -134,6 +134,20 @@ describe('sync tenancy — no server-only leak', () => {
     );
   });
 
+  it('keeps business contact and address details off general member devices', () => {
+    expect(TENANCY.businesses.neverSyncColumns).toEqual(
+      expect.arrayContaining([
+        'contact_email',
+        'contact_phone',
+        'physical_address_line_1',
+        'physical_address_line_2',
+        'physical_address_locality',
+        'physical_address_province',
+        'physical_address_postal_code',
+      ]),
+    );
+  });
+
   it('strips the PostGIS geometry from land_units — SQLite has no PostGIS', () => {
     // land_units syncs (the farmer edits camps offline) but the canonical `boundary`
     // geometry never reaches the device; the client reads `boundary_geojson` instead.

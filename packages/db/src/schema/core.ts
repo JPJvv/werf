@@ -33,6 +33,13 @@ export const businesses = pgTable('businesses', {
   name: text('name').notNull(),
   registrationNumber: text('registration_number'),
   vatNumber: text('vat_number'),
+  contactEmail: text('contact_email'),
+  contactPhone: text('contact_phone'),
+  physicalAddressLine1: text('physical_address_line_1'),
+  physicalAddressLine2: text('physical_address_line_2'),
+  physicalAddressLocality: text('physical_address_locality'),
+  physicalAddressProvince: text('physical_address_province'),
+  physicalAddressPostalCode: text('physical_address_postal_code'),
   ...auditColumns,
 });
 

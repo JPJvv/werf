@@ -111,7 +111,18 @@ test.describe('real down-sync hydration — tripwire 3e / issue #8, against the 
     // this applies equally whether the call goes straight to :3000 or through the :4173 proxy.
     const reg = await page.request.post(`${API}/auth/register`, {
       data: {
-        business: { name: 'E2E 3e Boerdery', registrationNumber: null },
+        business: {
+          name: 'E2E 3e Boerdery',
+          registrationNumber: null,
+          contact: { email: 'e2e-3e@example.test', phone: null },
+          physicalAddress: {
+            line1: 'E2E 3e Plaas',
+            line2: null,
+            locality: 'Bothaville',
+            province: 'Free State',
+            postalCode: '9660',
+          },
+        },
         farm: {
           name: 'E2E 3e Farm',
           province: 'Free State',

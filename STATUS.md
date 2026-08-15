@@ -3,9 +3,10 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-15 (eleventh session). Continuing JP's Phase 3 punch-list closure.
-**P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed** (see §5).
-**About 5.5 of ~21 punch-list items remain.** Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
+**Last updated:** 2026-08-15 (twelfth session). Continuing JP's Phase 3 punch-list closure.
+**P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed; P3.16 is
+2/7 sub-items closed** (see §5). **About 5 of ~21 punch-list items remain.** Do not re-run
+P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
 
 ✅ **Owner-triggered `reviewer` + `sync-auditor` + `compliance-checker`, all three, over
 `baf4b4d..428200a`: ALL CLEARED, no SEV-1/SEV-2/MED.** `reviewer` raised one LOW (STATUS.md
@@ -13,8 +14,8 @@ mis-citing `auth.service.ts`) that was checked directly and REFUTED — the cite
 verbatim at `auth.service.ts:68-71`; no STATUS.md change was made. Full account in §3.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`aa2b023` (P3.15 parser) ← `764c53e` (P3.14 implementation) ← `144e7bc` (P3.13) ← `cd0d3c0` (P3.12 plan).
-Older chain is in git history. Not pushed — local commits only.
+`e24a281` (P3.16 challenge sweep) ← `06ca3d6` (P3.16 invite fix) ← `aa2b023` (P3.15 parser) ←
+`764c53e` (P3.14 implementation). Older chain is in git history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -25,7 +26,7 @@ Older chain is in git history. Not pushed — local commits only.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 15.5/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit and P3.11–P3.15 are done. P3.16 and Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is ~16/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit and P3.11–P3.15 are done; P3.16 is 2/7 sub-items done. 5 of P3.16's sub-items plus Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -91,7 +92,7 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-15, tenth session, fully uncached, after P3.14) | ✅ **114 test files / 1228 tests, 12/12 typecheck tasks, 7/7 builds, 168.08 KB gz** |
+| `pnpm verify` (2026-08-15, twelfth session, fully uncached, after P3.16's first two sub-items) | ✅ **115 test files / 1247 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz** |
 | `pnpm test:e2e` (2026-08-15, tenth session, default lane, after P3.14) | ✅ 31 passed / 5 skipped — light/dark capture-screen a11y includes `/animals/brands`; the 3 `WERF_REAL_STACK`-gated specs still require the final live-stack sweep |
 | `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
 | Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
@@ -171,11 +172,34 @@ required — that business-rule difference lived in each screen's own `priceIsVa
 and still does, only the actual parsing arithmetic was shared. `pnpm verify`: **114 test files /
 1245 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz**.
 
-**37. P3.16 — auth hardening batch.** Seven sub-items, likely still too big for one sitting alone —
-consider splitting: invitation reuse of soft-deleted identities; narrowing users-table grants; an
-auth audit; challenge cleanup; production WebAuthn config; registration-enumeration hardening;
-attachment MIME/size/quota controls (the last one touches the attachments pipeline P1.2/P2.5 just
-closed — read those commits first, do not re-litigate their design).
+**37. P3.16 — auth hardening batch. 2/7 sub-items done 2026-08-15 (twelfth session).** All seven
+sub-items are pre-scoped in `docs/05-operations/security.md` §10.2 — read that table before
+picking the next one; it names the exact fix for each, not just the gap.
+✅ **Invitation reuse of soft-deleted identities, commit `06ca3d6`.** `FarmsService.invite`
+looked up an existing `users` row with no `deleted_at` filter, so a POPIA-erased identity was
+pulled back into a live `farm_users` membership and back into the `users_self_and_comembers`
+co-member RLS policy's visibility (that policy is keyed off `farm_users`, not `users.deleted_at`).
+Now refuses the invite outright, mirroring `AuthService.register`'s existing precedent for the
+same row shape — also sidesteps falling through to an insert that would hit `users.email`'s
+UNIQUE constraint, since erasure does not free the address. Fail-first verified (reverted just the
+service change, confirmed the new test failed, restored).
+✅ **Challenge cleanup, commit `e24a281`.** `WebauthnChallengeSweepService` hard-deletes consumed
+or expired `webauthn_challenges` rows on the same one-minute `@Cron` cadence as the existing
+`MembershipExpiryService` — a hard delete, not a tombstone, since this table carries no
+`deleted_at` and is exempt from the soft-delete rule for the same reason `user_sessions` is. Fail-
+first verified (flipped the `or` predicate to `and`, confirmed the test failed, restored).
+`pnpm verify` after both: **115 test files / 1247 tests, 12/12 typecheck tasks, 7/7 builds,
+168.09 KB gz**.
+**Remaining 5 sub-items:** narrowing users-table grants (documented at length in
+`two-factor.service.ts`'s own header comment and security.md §10.2 — column-level GRANT/REVOKE
+migration, needs a full audit of every `AppDb`-connection touch on `users` columns first); an auth
+audit log (needs a new table or an extension of migration 0026's `audit_log` shape, plus write
+sites at login/logout/failure/farm-switch/invite/reuse-revocation); production WebAuthn config
+(small — require `WEBAUTHN_RP_ID`/`WEBAUTHN_ORIGIN` when `NODE_ENV=production`, mirroring
+`JWT_SECRET`'s existing boot-refusal pattern); registration-enumeration hardening (NOT a message
+tweak — security.md is explicit that the real fix is email verification, which needs delivery
+infra this repo doesn't have yet); attachment MIME/size/quota controls (touches the attachments
+pipeline P1.2/P2.5 just closed — read those commits first, do not re-litigate their design).
 
 **38. Q17 — reconcile STATUS.md/roadmap/phase-checklists.md/architecture docs/testing-strategy.md
 against actual code.** By the time this runs, this file's own §5 will likely be stale again — that

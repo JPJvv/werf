@@ -3,17 +3,18 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-15 (fifth session). Continuing JP's Phase 3 punch-list closure.
-**P2.10 is closed. P2.9 is closed** (schema-boundary half only — see §5 item 29). **12 of ~21
-punch-list items remain.** Do not re-run P1/P2.5/P2.6/P2.7/P2.8/P2.9/P2.10.
+**Last updated:** 2026-08-15 (sixth session). Continuing JP's Phase 3 punch-list closure.
+**The conflict-audit decision gate is closed (owner chose A). P2.10 is closed. P2.9 is closed**
+(schema-boundary half only — see §5 item 29). **11 of ~21 punch-list items remain.** Do not re-run
+P1/P2.5/P2.6/P2.7/P2.8/P2.9/P2.10 or the conflict-audit slice.
 
 ✅ **Owner-triggered `reviewer` + `sync-auditor` + `compliance-checker`, all three, over
 `baf4b4d..428200a`: ALL CLEARED, no SEV-1/SEV-2/MED.** `reviewer` raised one LOW (STATUS.md
 mis-citing `auth.service.ts`) that was checked directly and REFUTED — the cited comment exists
 verbatim at `auth.service.ts:68-71`; no STATUS.md change was made. Full account in §3.
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, committed HEAD `b88b29b`
-(P2.10 adversarial tenancy proof) ← `014ab80` (P2.9 closure docs) ← `428200a` (P2.9 UUIDv7 schema
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`, committed HEAD `ba6963c`
+(conflict audit/review) ← `bc33201` (P2.10 closure docs) ← `b88b29b` (P2.10 adversarial tenancy proof) ← `014ab80` (P2.9 closure docs) ← `428200a` (P2.9 UUIDv7 schema
 boundary) ← `a00e77f` (P2.8 closure docs) ← `a6b0c1a` (P2.8 reproducible
 API/real-stack bootstrap) ← `a402252` (compliance status closure) ← `baf4b4d` (compliance fix) ←
 `38268b5` (P2.8 two-browser e2e) ← `256d06a` (P2.7) ← `9e1b402`/`6820a21` (P2.6) ← `422e09d` (P2.5) ←
@@ -28,7 +29,7 @@ API/real-stack bootstrap) ← `a402252` (compliance status closure) ← `baf4b4d
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 9.5/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4 and P2.5–P2.10 done. The owner-decision gate, P3.11–P3.16, and Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is 10.5/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, and the conflict-audit gate are done. P3.11–P3.16 and Q17–Q19 remain — full sliced list in §5 |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -43,15 +44,12 @@ missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d4
 
 ## 3. Owner decisions
 
-⛔ **Open — found 2026-08-14 and now the next-slice gate after P2.10, flagged not fixed:**
-`db.md`'s "every conflict resolution writes an audit row" has no implementation, and — by design —
-no field-LWW-editable data for it to fire on. Every aggregate here (herd status, position, head
-count, boundary) is append-only-log-and-re-derive rather than last-write-wins on a mutable field —
-deliberately, so two offline devices cannot silently clobber one another. No `audit_log` table or
-write path exists. This is why `testing-strategy.md`'s O-8 offline-matrix row ("sale vs death,
-audit row") has nothing to test against today. Two ways to close: (a) `db.md` is describing a
-FUTURE mechanism for whenever a genuinely LWW-editable field is added, and should say so; or (b) an
-audit mechanism is scheduled now, ahead of any field that needs it. → _Answer:_
+✅ **CLOSED 2026-08-15 — owner chose A: implement conflict audit/review now.** Migration 0026 adds
+immutable server-only `audit_log` evidence plus a separate review queue; both facts, rule, winner,
+actor/session and timestamps are retained, and events are never rewritten. Movement uses
+`(occurred_at,id)` LWW; death outranks sale; separate similar birth batches are flagged while one
+shared batch protects legitimate multiples. RLS-scoped API/cache/UI and owner/manager review are
+built. O-6/O-7/O-8/NFR-211 have real-Postgres coverage; full detail is in §5 item 31.
 
 ✅ **CLOSED 2026-08-14 (first session), condensed — full detail in git history:**
 - Back-dated local move, fail-closed (JP's choice): `withdrawal.ts`'s `mobMembership` refuses
@@ -97,7 +95,7 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-15, fifth session, fully uncached, after P2.10) | ✅ **113 test files / 1206 tests, 7/7 builds, 162.45 KB gz** — includes the private-real-Postgres two-farm baseline and all three adversarial tenancy mutants |
+| `pnpm verify` (2026-08-15, sixth session, fully uncached, after conflict-audit A) | ✅ **113 test files / 1210 tests, 12/12 typecheck tasks, 7/7 builds, 164.57 KB gz** — includes migrated real-Postgres O-6/O-7/O-8, immutable-audit mutation attempts, RLS tenancy classification, cached review UI, and the P2.10 adversarial tenancy mutants |
 | `pnpm test:e2e` (2026-08-15, fourth session, default lane, after P2.9) | ✅ 31 passed / 5 skipped — the 3 `WERF_REAL_STACK`-gated specs P2.9 edited skip cleanly without the real stack; NOT exercised against it this session — do before calling P2.9 (or the branch) merge-ready |
 | `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
 | Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
@@ -113,7 +111,8 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 closure pass over a specific punch list, in three priority bands plus a doc/quality band, with an
 owner-decision gate partway through. **Second session: P1.1–P1.4 and P2.5 (5/~21). Third: P2.6
 and P2.7 closed, P2.8 in progress (7.5/~21). Fourth: P2.8 + P2.9 closed (8.5/~21). Fifth: P2.10
-closed (9.5/~21); P2.9's DB-default half remains a separate future slice.** ⭐ **Budget one
+closed (9.5/~21). Sixth: owner chose A and the conflict-audit slice closed (10.5/~21); P2.9's
+DB-default half remains a separate future slice.** ⭐ **Budget one
 session per item, or at most a tightly related pair (e.g. P2.9+P2.10) — do not batch a whole band.**
 Each item is independently scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is
 what makes slicing safe.
@@ -207,15 +206,17 @@ Playwright **1/1 passed**; fully uncached `pnpm verify` **112 files / 1198 tests
     executed as SQL over the same fixture with RLS bypassed, isolating the replication filter.
     `pnpm verify`: **113 files / 1206 tests, 7/7 builds, 162.45 KB gz**.
 
-**31. Owner decision gate — conflict audit mechanism (O-6/O-7/O-8).** Must come AFTER 26–30, not
-before. Show JP the current live position/status/sale-vs-death conflict paths (this is the same gap
-already flagged open in §3: `db.md`'s "every conflict resolution writes an audit row" has no
-implementation and, by design, no LWW-editable field to fire on) and ask him to confirm: (a)
-implement a server-only audit/review mechanism now, or (b) explicitly amend `db.md`. **Do not
-silently choose either, and do not merely relabel §3's existing open item as closed.** If (a): add
-an immutable server-only audit/review table, record both facts/rule/winner/actor/device/timestamps,
-flag contradictory sale/death and possible duplicate births without deleting facts, add O-6/O-7/O-8
-tests and a review surface.
+✅ **31. Done 2026-08-15 (sixth session): owner chose A — conflict audit/review (O-6/O-7/O-8).**
+Migration `0026_conflict_audit` creates immutable `audit_log` plus operational
+`conflict_reviews`; both are `server-only` in sync, tenant-scoped by RLS, and events keep
+`source_session_id` as a never-synced provenance column. Deterministic conflict keys make retries
+idempotent. Cross-device movement disagreement audits both values and applies `(occurred_at,id)`
+LWW; sale/death retains both events while projecting dead; possible duplicate calvings retain every
+calf/birth for human review, while all calves from one legitimate multiple birth share one batch id.
+`GET /conflicts` and `POST /conflicts/:id/review` expose the scoped queue; the cached offline review
+surface is integrated into “Needs your attention” and its home count. Verification: **113 files /
+1210 tests, 12/12 typecheck tasks, 7/7 builds, 164.57 KB gz**. O-6/O-7/O-8, audit immutability,
+review closure, legitimate twins, and cached UI copy all have direct coverage.
 
 **32. P3.11 — step-up auth before TOTP/passkey enrolment** (ADR-0011 — read it first, it may already
 answer most of the design).

@@ -376,6 +376,8 @@ attendance:{ startAt, endAt, breakMin, pin, gps? }
 
 The wire carries the CORNERS and never the ring: the server rebuilds the polygon from the fixes with the same `@werf/domain` function the device ran, so a shape and its own evidence cannot disagree (the same discipline as a projected due date never crossing the wire). `land_units.hectares` is untouched by a walk — it is the farmer's declared figure, often off a title deed, and a walk that clipped a corner must never silently replace it.
 
+**Attachments (migration 0022, Phase 3 slice 3i) — one shared table for photos today, discriminated by `subject_type` (only `animal` so far) for later crop/grievance documents.** The binary itself never lives in Postgres: `attachments` is metadata only (`farm_id`, `subject_type`/`subject_id`, `mime_type`, `size_bytes`, `checksum`, a server-derived `object_key`, `status` — `pending`|`finalised`, `occurred_at`), written the moment the client commits the blob to OPFS; the object lives in MinIO (dev/test) or S3 `af-south-1` (production). RLS-scoped and farm-forced like every other domain table; `werf_app` holds `SELECT, INSERT, UPDATE`, no hard `DELETE`. A 25 MB per-attachment cap and a five-type photo whitelist (JPEG/PNG/WebP/HEIC/HEIF, with MIME-alias normalisation for `image/jpg`) are enforced in the shared `@werf/core` Zod schema, so the picker refuses an oversized or unsupported file before it ever reaches OPFS or the queue. **Per-farm quota (migration 0030, P3.16, owner decision 2026-08-16):** `farms.attachment_bytes_used bigint NOT NULL DEFAULT 0` is a running total of finalised bytes, charged atomically (a single conditional `UPDATE ... WHERE attachment_bytes_used + n <= 5_368_709_120 RETURNING id` inside the same transaction as the row insert/revival) the moment `createAttachment` decides a row will occupy real storage, and released by `AttachmentOrphanSweepService` when it reclaims an abandoned upload. No request body ever accepts a value for this column — despite `farms` syncing whole-row, there is no client-writable path to it.
+
 ---
 
 ## 6. Labour 🇿🇦
@@ -668,6 +670,23 @@ the explicit elevated authentication paths. RLS is enabled and forced with zero 
 second lock. Migration 0028 and its integration tests pin all three properties (immutability,
 ordinary-role denial and server-only classification) for NFR-211.
 
+`conflict_reviews` (migration 0026, closed 2026-08-15) is `audit_log`'s companion: a mutable,
+RLS-scoped review queue (owner/manager-visible) for conflicts that need a human look — a duplicate
+birth batch, for instance — as distinct from `audit_log`'s immutable record of what was decided and
+why. Deterministic conflict keys make retries idempotent; movement conflicts resolve by
+`(occurred_at,id)` LWW; status conflicts resolve sale-outranks-death-outranks-sale; a genuinely
+separate second litter is distinguished from a duplicate capture of the same birth
+(`apps/api/src/conflicts/conflicts.service.ts`).
+
+`users` grants were narrowed to column-level in migration 0029 (P3.16, closed 2026-08-16):
+`werf_app` previously held table-wide `SELECT, INSERT, UPDATE` on `users` from migration 0001, which
+combined with the row-scoped `users_self_and_comembers` RLS policy meant the scoped connection could
+read a co-member's encrypted TOTP seed or password hash. The grant now names only the non-credential
+columns (id, email, phone, full_name, locale, theme, last_seen_at, timestamps); every credential
+column (`password_hash`, `totp_secret_encrypted`, `totp_enrolled_at`, `totp_last_used_step`,
+`recovery_codes_hashed`) is reachable only from the elevated connection, where every current
+read/write of them already lived.
+
 ---
 
 ## 9. RLS
@@ -717,10 +736,10 @@ Every table is one of these. This table is the input to both the sync rules and 
 
 | Class | Tables | Rule |
 |---|---|---|
-| **Full sync** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers` | Farm-scoped, bidirectional |
+| **Full sync** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers`, `attachments`, `farms` (incl. `attachment_bytes_used`) | Farm-scoped, bidirectional |
 | **Reference sync** | `chemical_products`, `veterinary_products`, `regulatory_rates`, `notifiable_diseases`, `public_holidays` | **Filtered by the farm's `jurisdiction`**, read-only. Required for offline PHI/withdrawal checks. A ZA device never downloads Namibian withdrawal periods. |
 | **Filtered sync** | `employees` (minus encrypted columns), `attendance` events | Role-gated |
-| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `auth_audit_log`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
+| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `auth_audit_log`, `conflict_reviews`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
 
 The "server only" row is a security decision as much as an architectural one. A stolen phone should not contain 40 workers' payslips.
 

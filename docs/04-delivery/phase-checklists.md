@@ -1334,10 +1334,33 @@ add the one shared local-first attachment path approved on 2026-08-08.
   that captured nothing itself hydrates through real PowerSync and folds both tallies into the
   correct head count regardless of arrival order. O-1/O-2 (local-only, real browser) and O-11
   (real-Postgres migration test, 3g) were already covered. O-9/O-10 are covered at the
-  unit/integration tier, not the real-stack tier. O-6/O-7/O-8 are NOT built — they assume an
-  audit-row mechanism this codebase deliberately does not have yet (STATUS.md §3, open owner
-  decision). O-4/O-5 are partially covered. O-12/O-15 belong to phases 4/5, not started.
-☐ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed
+  unit/integration tier, not the real-stack tier. **O-6/O-7/O-8 CLOSED 2026-08-15** — migration
+  0026 built the immutable `audit_log` + `conflict_reviews` mechanism these rows assume
+  (deterministic conflict keys, `(occurred_at,id)` LWW, sale-outranks-death-outranks-sale
+  projection, legitimate-twin-batch handling, RLS-scoped review UI); see STATUS.md §5 item 31.
+  O-4/O-5 are partially covered. O-12/O-15 belong to phases 4/5, not started.
+☑ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed — latest:
+  116 files / 1278 tests, 168.78 KB gz (STATUS.md §4, 2026-08-16); sync-auditor last ran clean in
+  the `baf4b4d..428200a` pass (STATUS.md §3)
+
+**P3.11–P3.16 — punch-list closure work added on top of 3a–3i, done 2026-08-15/16. Terse index
+only; full detail is in STATUS.md §5 items 32–37, not duplicated here.**
+☑ P3.11 Recent step-up (≤10 min) required before starting TOTP/passkey enrolment; a stale caller
+  gets 403 `STEP_UP_REQUIRED` and a full re-login.
+☑ P3.12 Google-first OIDC/cookie-BFF migration phased across seven additive slices (`cd0d3c0`); no
+  email-equality identity linking, no farm-authority change.
+☑ P3.13 FR-001 business contact/address fields (migration 0027, `144e7bc`); all seven new columns
+  excluded from every Sync Stream.
+☑ P3.14 Branding-register create/list/link (FR-601/602, `764c53e`); real-Postgres tenancy/
+  authorship/idempotency/species-safe-linking coverage.
+☑ P3.15 One shared `parseRandsToCents` in `@werf/core/money.ts` (`aa2b023`) replacing three
+  hand-rolled, float-crossing conversions.
+☑ P3.16 Auth hardening batch (7 sub-items, `docs/05-operations/security.md` §10.2): invite
+  soft-deleted-identity refusal, WebAuthn challenge sweep, production WebAuthn config gate,
+  immutable `auth_audit_log` (migration 0028), `users`-table column grants (migration 0029),
+  attachment MIME/size/per-farm-quota (migration 0030). Registration-enumeration hardening (the
+  7th sub-item) is deferred to Phase 7 by owner decision, not open work — see `security.md`'s
+  register-oracle row.
 ```
 
 **Exit gate:** six weeks of offline captures reach another device with every `occurred_at` intact;

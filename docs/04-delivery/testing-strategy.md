@@ -196,9 +196,9 @@ Playwright with `context.setOffline(true)`. **This suite is the product's insura
 | O-3 | Offline 6 weeks → sync | All applied, **`occurred_at` preserved**, reports use `occurred_at` | US-010 | ✅ `real-offline-matrix.spec.ts`, real Postgres + real PowerSync (`WERF_REAL_STACK`) — a back-dated capture's `occurred_at` verified byte-exact in Postgres, then a second device's fold reads the same date, not arrival order |
 | O-4 | Kill connection mid-upload | Resumes from checkpoint, no dup, no loss | UC-050 A3.1 | ◐ Covered for attachments specifically (3i(c)'s interruption test: PUT succeeds, finalize fails, app restarts, retry completes) — not a general mid-upload-of-any-capture-kind test |
 | O-5 | Two devices, different fields | Both survive, no audit row | US-040 | ◐ Partially — `real-sync-hydration.spec.ts` proves one two-device shape (a hydrated birth funding a decrease); the fake-driven 3e conflict-matrix suites cover more shapes, not against the real stack |
-| O-6 | Two devices, same field | Later `occurred_at` wins + audit row | US-040 | ⛔ No audit-row mechanism exists (STATUS.md §3, open owner decision) — this row's premise assumes field-LWW-editable data, which this codebase deliberately has none of yet |
-| O-7 | Two devices, same birth | Two rows + review item, nothing deleted | US-040 | ⛔ Not built — no "review item" surface exists for a duplicate birth today |
-| O-8 | Sale vs death | `dead`, sale flagged, audit row | US-040 | ⛔ Same audit-row gap as O-6 |
+| O-6 | Two devices, same field | Later `occurred_at` wins + audit row | US-040 | ✅ **CLOSED 2026-08-15.** Migration 0026's immutable `audit_log`; `(occurred_at,id)` LWW resolves movement conflicts, proven against real Postgres in `livestock.integration.test.ts` |
+| O-7 | Two devices, same birth | Two rows + review item, nothing deleted | US-040 | ✅ **CLOSED 2026-08-15.** `conflict_reviews` queue + `AttentionScreen.tsx`/`LocalConflictReviews.tsx`; legitimate-twin-batch handling distinguishes a real second litter from a duplicate capture |
+| O-8 | Sale vs death | `dead`, sale flagged, audit row | US-040 | ✅ **CLOSED 2026-08-15.** Same mechanism as O-6; sale-outranks-death-outranks-sale projection in `apps/api/src/conflicts/conflicts.service.ts` |
 | O-9 | **Refresh token expires with 47 queued writes** | **Queue HELD, uploaded after login** | UC-050 A2.1 | ✅ `Outbox.test.tsx`'s invariant-5 test (fake-driven, pins the behaviour precisely); no real-stack variant built |
 | O-10 | Storage quota exceeded | Read set degrades, **queue intact** | UC-050 E7.1 | ✅ Unit/integration level (3f's durability coordinator); no real-browser-quota-exhaustion e2e |
 | O-11 | Old client → new schema | Applied or quarantined, **never lost** | offline-sync §6 | ✅ `livestock.integration.test.ts`'s additive-migration test, against real Postgres (3g) |
@@ -210,7 +210,7 @@ Playwright with `context.setOffline(true)`. **This suite is the product's insura
 | O-17 | **Passkey auth offline** | Platform authenticator works locally; only *registration* needs network | ADR-0007 | ✅ Phase 1 |
 | O-18 | Reference data offline, jurisdiction-filtered | ZA device holds ZA withdrawal periods, nothing else | ADR-0006 | ✅ Phase 2/3, the reference-cache read path |
 
-**Reading the coverage column**: ✅ = a real test exists and was verified this session (or in an earlier one, re-confirmed here); ◐ = partial — the mechanism is proven, but not every angle the row implies; ⛔ = not built, either because the row's own premise doesn't hold yet in this codebase (O-6/O-8's audit row) or because it belongs to a phase that hasn't started (O-12/O-15). This replaces an unannotated table that read as a claim of blanket coverage it never had — `docs-contradict-the-code`'s own recurring failure mode in this repo.
+**Reading the coverage column**: ✅ = a real test exists and was verified this session (or in an earlier one, re-confirmed here); ◐ = partial — the mechanism is proven, but not every angle the row implies; ⛔ = not built, either because the row's own premise doesn't hold yet in this codebase or because it belongs to a phase that hasn't started (O-12/O-15). This replaces an unannotated table that read as a claim of blanket coverage it never had — `docs-contradict-the-code`'s own recurring failure mode in this repo.
 
 ```ts
 // apps/web/e2e/offline/durability.spec.ts

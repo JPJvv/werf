@@ -18,9 +18,15 @@
  * this as "which requirements nobody has even claimed to cover", which is a real and useful
  * question, and not as evidence of coverage.
  *
+ * ⭐ Phase-aware (STATUS.md §5 Q18, 2026-08-16): `--strict` only counts a gap in a priority band
+ * whose earliest phase has actually started, read live from STATUS.md §1. A Phase 4/5/6 FR with
+ * no test is the roadmap, not a defect, and no longer fails the build. As of this writing the
+ * repo is mid-Phase-3, so only P1 (phases 1–3) is eligible — P2/P3 are reported for visibility
+ * but never block. Re-run this after any phase transition; the eligibility recomputes itself.
+ *
  * Usage:
  *   node scripts/test-trace.mjs            # report, always exits 0
- *   node scripts/test-trace.mjs --strict   # exit 1 if any P1/P2 FR is uncovered
+ *   node scripts/test-trace.mjs --strict   # exit 1 if a started-phase FR has no test naming it
  *   node scripts/test-trace.mjs --all      # list covered FRs too
  */
 
@@ -30,6 +36,44 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CATALOGUE = join(ROOT, 'docs', '01-requirements', 'functional-requirements.md');
+const STATUS = join(ROOT, 'STATUS.md');
+
+/**
+ * Phase-awareness (STATUS.md §5 Q18): the catalogue tracks a priority (1/2/3), not a phase
+ * number, but the console labels already group priorities by the phase band they belong to —
+ * "P1 (MVP, phases 1–3)", "P2 (launch, phases 4–5)". A priority band whose EARLIEST phase has
+ * not started yet cannot have a real gap: there is no code for those FRs to trace to, because
+ * the phase that would write it hasn't begun. Counting that as a gap conflates "not built
+ * because nobody has reached it" with "built and untested" — the roadmap, not a defect.
+ *
+ * This is band-level, not per-FR: if Phase 4 starts while Phase 5 hasn't, P2 (phases 4–5)
+ * becomes eligible in full, and Phase-5 FRs will show as noisy false gaps until the catalogue
+ * gains a real per-FR phase column. Accepted for now — it only needs to be right at the
+ * boundaries this repo actually crosses, and the current one (P1 active, P2/P3 not) is exact.
+ */
+const PRIORITY_MIN_PHASE = { 1: 1, 2: 4, 3: 6 };
+
+/** Reads STATUS.md §1's delivery-position table; a phase is "started" unless its State column
+ * begins with "Not started". Falls back to phase 0 (nothing started) if the table can't be
+ * found or parsed, which only makes --strict MORE conservative, never less. */
+function readActivePhase() {
+  let text;
+  try {
+    text = readFileSync(STATUS, 'utf8');
+  } catch {
+    return 0;
+  }
+  const ROW = /^\|\s*(\d+)\s*—[^|]*\|\s*([^|]+?)\s*\|/;
+  let highestStarted = -1;
+  for (const line of text.split('\n')) {
+    const m = ROW.exec(line);
+    if (!m) continue;
+    const phase = Number(m[1]);
+    const started = !/^Not started/i.test(m[2].trim());
+    if (started && phase > highestStarted) highestStarted = phase;
+  }
+  return highestStarted;
+}
 
 /** Sub-IDs are real and load-bearing: FR-014a (recovery codes) is not FR-014 (2FA). */
 const FR_ID = /FR-\d{3}[a-z]?/g;
@@ -101,8 +145,11 @@ if (catalogue.length === 0) {
 const { covered, files } = readCoverage();
 const uncovered = catalogue.filter((fr) => !covered.has(fr.id));
 const byPriority = (p) => uncovered.filter((fr) => fr.priority === p);
+const activePhase = readActivePhase();
+const bandStarted = (p) => PRIORITY_MIN_PHASE[p] <= activePhase;
 
-console.log(`FR traceability — ${catalogue.length} requirements, ${files} test files scanned\n`);
+console.log(`FR traceability — ${catalogue.length} requirements, ${files} test files scanned`);
+console.log(`Active phase (STATUS.md §1): ${activePhase}\n`);
 
 for (const p of [1, 2, 3]) {
   const total = catalogue.filter((fr) => fr.priority === p).length;
@@ -110,8 +157,9 @@ for (const p of [1, 2, 3]) {
   const label = { 1: 'P1 (MVP, phases 1–3)', 2: 'P2 (launch, phases 4–5)', 3: 'P3 (post-launch)' }[
     p
   ];
+  const eligibility = bandStarted(p) ? '' : '  ⛔ not started — never counts as a gap';
   console.log(
-    `  ${label.padEnd(26)} ${String(total - missing).padStart(3)}/${String(total).padEnd(3)} named by a test`,
+    `  ${label.padEnd(26)} ${String(total - missing).padStart(3)}/${String(total).padEnd(3)} named by a test${eligibility}`,
   );
 }
 
@@ -123,7 +171,10 @@ console.log(
 for (const p of [1, 2, 3]) {
   const missing = byPriority(p);
   if (missing.length === 0) continue;
-  console.log(`P${p} with no test naming them (${missing.length}):`);
+  const suffix = bandStarted(p)
+    ? ''
+    : ' — phase not started, not a gap, listed for visibility only';
+  console.log(`P${p} with no test naming them (${missing.length})${suffix}:`);
   for (const fr of missing) {
     // The requirement text is truncated hard: this is a to-do list, not a second copy of the
     // catalogue. Go and read the real one.
@@ -153,15 +204,17 @@ if (orphans.length > 0) {
   console.log('');
 }
 
-const blocking = byPriority(1).length + byPriority(2).length;
+const blocking = [1, 2, 3].filter(bandStarted).reduce((n, p) => n + byPriority(p).length, 0);
 if (strict && blocking > 0) {
-  console.error(`test:trace --strict: ${blocking} P1/P2 requirements have no test naming them.`);
+  console.error(
+    `test:trace --strict: ${blocking} requirement(s) in a started phase have no test naming them.`,
+  );
   process.exit(1);
 }
 
 console.log(
   strict
-    ? 'test:trace --strict: every P1/P2 requirement is named by a test.'
+    ? 'test:trace --strict: every requirement in a started phase is named by a test.'
     : 'Report only — this does not fail the build. Pass --strict to make it exit 1.\n' +
         'Before turning --strict on in CI, update the claim in: docs/01-requirements/functional-requirements.md,\n' +
         'docs/01-requirements/SRS.md, docs/04-delivery/testing-strategy.md and docs/04-delivery/ci-cd.md.',

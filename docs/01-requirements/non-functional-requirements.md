@@ -2,6 +2,15 @@
 
 Every NFR here has a **number** and a **way to measure it**. An NFR without a threshold is an opinion; an NFR without a test is a wish. Each is enforced in CI where the technology permits.
 
+⚠️ **"Measured by" is aspirational for several rows below (Q18 audit, 2026-08-16 — see STATUS.md
+§5 item 39).** Marked rows are checked against the actual repo, not assumed from this doc's own
+prose: **✅ real** means the mechanism named exists and genuinely fails CI/the build today; **❌ not
+wired** means nothing in the repo enforces it yet, however the threshold reads. Two are genuinely
+real and previously undocumented as such (bundle size, dependency audit); the rest — Lighthouse,
+coverage thresholds, the regulated-constant lint rule, per-chunk lazy budgets, file/function-length
+limits — are unimplemented. This is the same failure mode Q17 found in the delivery docs: a claimed
+gate that doesn't exist is worse than an absent one, because a reader stops looking for the real one.
+
 ---
 
 ## NFR-0xx · Performance
@@ -10,16 +19,16 @@ The reference device is a **Samsung Galaxy A15** (or equivalent: 4GB RAM, Snapdr
 
 | ID | Requirement | Threshold | Measured by |
 |---|---|---|---|
-| NFR-001 | First Contentful Paint, cold, 3G | ≤ 1.8s | Lighthouse CI, every PR |
-| NFR-002 | Largest Contentful Paint, cold, 3G | ≤ 2.5s | Lighthouse CI |
-| NFR-003 | Time to Interactive, cold, 3G | ≤ 3.5s | Lighthouse CI |
+| NFR-001 | First Contentful Paint, cold, 3G | ≤ 1.8s | ❌ Not wired — no Lighthouse config exists in the repo |
+| NFR-002 | Largest Contentful Paint, cold, 3G | ≤ 2.5s | ❌ Not wired — same gap as NFR-001 |
+| NFR-003 | Time to Interactive, cold, 3G | ≤ 3.5s | ❌ Not wired — same gap as NFR-001 |
 | NFR-004 | **Warm start (already installed, offline)** | ≤ 1.0s to interactive | Playwright, offline context |
-| NFR-005 | Interaction to Next Paint | ≤ 200ms p75 | Lighthouse CI + RUM |
-| NFR-006 | Cumulative Layout Shift | ≤ 0.1 | Lighthouse CI |
+| NFR-005 | Interaction to Next Paint | ≤ 200ms p75 | ❌ Not wired — needs Lighthouse CI (not built) + production RUM (not built) |
+| NFR-006 | Cumulative Layout Shift | ≤ 0.1 | ❌ Not wired — same gap as NFR-001 |
 | NFR-007 | **Local write commit** (tap "save" → durably in SQLite) | ≤ 50ms p95 | Instrumented perf test |
 | NFR-008 | Local query, 5,000-animal herd list | ≤ 100ms p95 | Instrumented perf test |
-| NFR-009 | Initial JS bundle, gzipped | ≤ 250KB | `size-limit` in CI, **fails the build** |
-| NFR-010 | Per-route lazy chunk, gzipped | ≤ 100KB | `size-limit` |
+| NFR-009 | Initial JS bundle, gzipped | ≤ 250KB | ✅ Real. `apps/web/scripts/check-bundle-size.mjs`, wired into `pnpm build` → `pnpm verify` → CI, **fails the build**. A hand-written gzip-and-sum script, not the `size-limit` npm package this row used to name — the mechanism is real, the tool name was wrong |
+| NFR-010 | Per-route lazy chunk, gzipped | ≤ 100KB | ❌ Not wired — `check-bundle-size.mjs` sums ALL app-code chunks against the 250KB total; it does not check any individual chunk against 100KB |
 | NFR-011 | Full initial sync, 5,000 animals + 3y history | ≤ 3 min on 3G | Load test |
 | NFR-012 | Incremental sync, typical day's changes | ≤ 5s, ≤ 100KB transferred | Load test |
 | NFR-013 | API p95 latency (server-side) | ≤ 200ms | APM |
@@ -65,7 +74,7 @@ Full threat model and controls: [security.md](../05-operations/security.md).
 | NFR-205 | Rotating session credential is server-managed and delivered only in a host-only HttpOnly Secure SameSite cookie; durable browser storage contains no bearer/session token. Interim 15-minute access JWT is memory-only until the BFF migration completes | Contract, browser-storage and cookie tests |
 | NFR-206 | **Tenancy enforced in three independent layers**: PowerSync sync rules, Postgres RLS, API guards | Automated tenancy test suite; **must include a test that proves a permissive sync rule cannot leak across farms even if RLS is correct** |
 | NFR-207 | No secrets in source. Ever. | `gitleaks` in CI, pre-commit hook |
-| NFR-208 | Dependencies scanned; no known critical CVE in production | `pnpm audit` + Dependabot; blocks release |
+| NFR-208 | Dependencies scanned; no known critical CVE in production | `pnpm audit --audit-level=critical --prod` in CI (`dependency-audit` job), blocks the PR merge. Dependabot not yet configured. **A devDependency-only critical (vitest <3.2.6, GHSA-5xrq-8626-4rwp, reachable only via a local dev-server tool never run in production) is a known, tracked, non-blocking finding as of 2026-08-16** — out of scope for this gate as written, but a real upgrade worth scheduling |
 | NFR-209 | OWASP Top 10 addressed and documented | Security review per phase |
 | NFR-210 | Layered rate limiting: global API budget plus tighter auth/ceremony budgets; production counters shared across replicas; account-aware delay and edge/WAF controls | Unit + distributed integration/load test |
 | NFR-211 | Audit log immutable — no UPDATE/DELETE grant at the database level | Migration assertion + test |
@@ -121,13 +130,13 @@ Scaling posture: at 10,000 farms the database is the constraint, not the app tie
 
 | ID | Requirement | Threshold | Measured by |
 |---|---|---|---|
-| NFR-501 | Test coverage, domain logic (payroll, compliance, sync) | ≥ 90% | `vitest --coverage`, fails CI |
-| NFR-502 | Test coverage, overall | ≥ 75% | fails CI |
-| NFR-503 | TypeScript strict; no `any` outside typed boundaries | `tsc` + eslint, fails CI |
-| NFR-504 | No function > 50 lines, no file > 400 lines | eslint, warns |
+| NFR-501 | Test coverage, domain logic (payroll, compliance, sync) | ≥ 90% | ❌ Not wired — `pnpm test` runs `vitest run` with no `--coverage` flag; no coverage number is even measured, let alone gated |
+| NFR-502 | Test coverage, overall | ≥ 75% | ❌ Not wired — same gap as NFR-501 |
+| NFR-503 | TypeScript strict; no `any` outside typed boundaries | `tsc` (typecheck) + eslint (`typescript-eslint` recommended config), fails CI — real |
+| NFR-504 | No function > 50 lines, no file > 400 lines | ❌ Not wired — no `max-lines`/`max-lines-per-function` rule in `eslint.config.mjs` |
 | NFR-505 | Public API documented (OpenAPI, generated from code) | CI check |
 | NFR-506 | ADR for every load-bearing decision | Review |
-| NFR-507 | Every regulated value in `regulatory_rates`, none in code | **Custom lint rule + code review** |
+| NFR-507 | Every regulated value in `regulatory_rates`, none in code | ❌ Custom lint rule not built — enforced today by code review and the owner-triggered `compliance-checker` agent only |
 | NFR-508 | Migrations reversible or explicitly documented as not | Review |
 | NFR-509 | `pnpm verify` from clean clone in ≤ 10 min | CI timing |
 
@@ -170,17 +179,23 @@ Scaling posture: at 10,000 farms the database is the constraint, not the app tie
 
 ## Budget summary — the numbers that fail a build
 
-| Gate | Threshold |
-|---|---|
-| Initial JS bundle | 250KB gz |
-| Domain test coverage | 90% |
-| Overall test coverage | 75% |
-| Lighthouse Performance | ≥ 90 |
-| Lighthouse Accessibility | 100 |
-| `axe-core` violations | 0 |
-| Critical CVEs | 0 |
-| Secrets detected | 0 |
-| Type errors | 0 |
-| Uncovered P1/P2 FR | 0 |
+**⚠️ Not every row here is actually wired (Q18, 2026-08-16) — see the per-NFR ✅/❌ marks above for
+the real state of each. This table is the target; `pnpm verify` + CI is the two gates that are
+real today.**
 
-These are wired into `pnpm verify` and the CI pipeline. See [ci-cd.md](../04-delivery/ci-cd.md).
+| Gate | Threshold | Real? |
+|---|---|---|
+| Initial JS bundle | 250KB gz | ✅ |
+| Domain test coverage | 90% | ❌ not measured |
+| Overall test coverage | 75% | ❌ not measured |
+| Lighthouse Performance | ≥ 90 | ❌ not wired |
+| Lighthouse Accessibility | 100 | ❌ not wired (distinct from `axe-core`, which is real — see below) |
+| `axe-core` violations | 0 | ✅ `pnpm test:e2e`, both themes, CI `e2e` job |
+| Critical CVEs (production) | 0 | ✅ `pnpm audit --audit-level=critical --prod`, CI `dependency-audit` job |
+| Secrets detected | 0 | ✅ `gitleaks`, CI `verify` job |
+| Type errors | 0 | ✅ `tsc`, CI `verify` job |
+| Uncovered P1/P2 FR | 0 | ❌ not enforced — `pnpm test:trace` is report-only, phase-aware as of this session (STATUS.md §5 item 39), never run with `--strict` in CI |
+
+Real gates are wired into `pnpm verify` and the CI pipeline. See [ci-cd.md](../04-delivery/ci-cd.md)
+— its own top-of-file note carries the fuller "target vs. actual" caveat for the whole PR pipeline
+design, not just this table.

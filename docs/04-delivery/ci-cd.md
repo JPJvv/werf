@@ -3,16 +3,21 @@
 **CI is where `pnpm verify` becomes non-negotiable.** Everything in the [Claude Code playbook](claude-code-playbook.md) depends on the gate being real — a check that can be skipped is not a gate, it is a suggestion, and Claude Code will eventually find the skip.
 
 > **⚠️ The workflows below are the TARGET design, not what `.github/workflows/ci.yml` contains today.**
-> As at the end of Phase 2 CI has **two** lanes — `pnpm verify` and `pnpm test:e2e`. Both have run
-> many times and both are green; draft PR #3 opened 2026-07-26 and CI has run on every push since
-> (STATUS.md §4 A4, G5 — G5 is CLOSED). The underlying fact that G5 recorded still holds and is worth
-> keeping: **CI does not run on a feature branch with no PR**, so "green locally" stays unproven
-> until one exists — open the draft PR early in a phase, not at the end.
-> In particular the `tenancy` and `trace` jobs below do not exist as separate lanes
-> (`pnpm test:tenancy` is not a script at all; the check itself runs inside `pnpm test` as
-> `packages/sync/test/tenancy.spec.ts`), and `pnpm test:trace` is **report-only** and
-> exits 0 regardless; see [testing-strategy.md](testing-strategy.md). Treat every job here as a plan
-> until it is in the YAML, and when you add one, delete the corresponding part of this warning.
+> As of 2026-08-16 (Q18, STATUS.md §5 item 39) CI has **three** real lanes: `verify` (lint,
+> typecheck, test, build — build now includes the real `check-bundle-size.mjs` gate, NFR-009),
+> `e2e` (axe-core, both themes, NFR-401), and `dependency-audit` (`pnpm audit --audit-level=critical
+> --prod`, NFR-208). All have run green locally; draft PR #3 opened 2026-07-26 and CI ran on every
+> push through Phase 2 (STATUS.md §4 A4, G5 — G5 is CLOSED). The underlying fact that G5 recorded
+> still holds and is worth keeping: **CI does not run on a feature branch with no PR**, so "green
+> locally" stays unproven until one exists — open the draft PR early in a phase, not at the end.
+> Everything else in this file below — Lighthouse, size-limit-the-package (the real gate is a
+> hand-written script), coverage thresholds, the `tenancy`/`trace`/`budgets` jobs as separate
+> lanes — is still the TARGET, not the YAML (`pnpm test:tenancy` is not a script; the check runs
+> inside `pnpm test` as `packages/sync/test/tenancy.spec.ts`; `pnpm test:trace` is **report-only**,
+> phase-aware as of this session, and exits 0 regardless — see
+> [non-functional-requirements.md](../01-requirements/non-functional-requirements.md) for the
+> full real-vs-target accounting). Treat every other job here as a plan until it is in the YAML,
+> and when you add one, delete the corresponding part of this warning.
 
 ---
 

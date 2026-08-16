@@ -151,47 +151,24 @@ test call sites rely on it as fixture convenience) (session 4); **P2.10** advers
 verification with three reversible RLS/Sync-Stream mutants (session 5, `b88b29b`). Every
 **phase-checklist** box is `☑`; this punch list is a stricter pass on top of that, not a reopening.
 
-✅ **31. Done 2026-08-15 (sixth session): owner chose A — conflict audit/review (O-6/O-7/O-8).**
-Migration `0026_conflict_audit` creates immutable `audit_log` plus operational
-`conflict_reviews`; both are `server-only` in sync, tenant-scoped by RLS, and events keep
-`source_session_id` as a never-synced provenance column. Deterministic conflict keys make retries
-idempotent. Cross-device movement disagreement audits both values and applies `(occurred_at,id)`
-LWW; sale/death retains both events while projecting dead; possible duplicate calvings retain every
-calf/birth for human review, while all calves from one legitimate multiple birth share one batch id.
-`GET /conflicts` and `POST /conflicts/:id/review` expose the scoped queue; the cached offline review
-surface is integrated into “Needs your attention” and its home count. Verification: **113 files /
-1210 tests, 12/12 typecheck tasks, 7/7 builds, 164.57 KB gz**. O-6/O-7/O-8, audit immutability,
-review closure, legitimate twins, and cached UI copy all have direct coverage.
-✅ **32. Done 2026-08-15 (seventh session): P3.11 — recent step-up before TOTP/passkey enrolment.** Both enrolment-start routes require a full human authentication no older than 10 minutes; refresh rotation preserves the original `authenticated_at`, so a stolen long-lived session cannot mint a TOTP seed or WebAuthn registration challenge. A stale caller receives 403 `STEP_UP_REQUIRED`, and the English/Afrikaans client clears the old session and returns to full sign-in, where an existing passkey remains the preferred phishing-resistant route and TOTP/recovery remains ADR-0011's transitional fallback.
-Real-Postgres guard and browser recovery coverage: **46/46 focused; `pnpm verify` 113 files / 1212 tests, 12/12 typecheck tasks, 7/7 builds, 164.84 KB gz**.
-
-✅ **33. Done 2026-08-15 (eighth session): P3.12 — Google-first OIDC/cookie-BFF migration phasing,
-commit `cd0d3c0`.** Seven additive slices cover identity/audit, explicit linking, FR-014-preserving
-login, passkey recovery/onboarding, dual bearer/cookie migration, old-PWA overlap and password
-retirement. No email-equality linking or farm authority; offline queues survive every rollback.
-`pnpm verify`: **113 files / 1212 tests, 12/12 typecheck tasks, 7/7 builds, 164.84 KB gz**.
-
-✅ **34. Done 2026-08-15 (ninth session): P3.13 — FR-001 business contact/address fields, `144e7bc`.** Shared contract + bilingual onboarding require one contact and a complete address; migration 0027 stores them atomically while keeping old rows valid. Real Postgres proves persistence; incomplete UI input stays local; all seven personal-data fields are excluded from PowerSync/member devices.
-`pnpm verify`: **113 files / 1217 tests, 12/12 typechecks, 7/7 builds, 165.88 KB gz**.
-⛔ Not merge-ready until JP requests the owner-triggered compliance pass over this POPIA-adjacent scope.
-
-✅ **35. Done 2026-08-15 (tenth session): P3.14 — branding-register create/list/link path
-(FR-601/602), `764c53e`.** Bilingual offline create/list captures the registered mark, certificate, method, covered species, body position and registration date; PowerSync hydration merges it across devices. The outbox sends a mark before its linked animal and holds the animal on a permanent mark refusal. API tenancy/authorship/jurisdiction, idempotency, DB-rule translation and species-safe
-linking have real-Postgres coverage. The unmarked-past-window alert remains deferred until verified,
-effective-dated prescribed-window data exists — no legal number was guessed. ⛔ Animal-ID regulated
-code: owner-triggered compliance-checker still gates merge-ready.
-
-✅ **36. Done 2026-08-15 (eleventh session): P3.15 — sale-price decimal-string-to-cents parser,
-commit `aa2b023`.** `AddAnimalScreen.tsx`, `AdjustMobScreen.tsx` and `RecordLossScreen.tsx` each
-hand-rolled an identical, untested `toCents(rands) = Math.round(Number(rands) * 100)` — a
-hand-written duplicate of the same shape the repo has been bitten by before. Replaced with one
-`parseRandsToCents` in `@werf/core/money.ts`: string-based (not `Number(x)*100`, which crosses a
-float boundary — `0.1*100` is `10.000000000000002` in IEEE 754), and refuses a third typed decimal
-digit (e.g. `"150.999"`) as a likely typo rather than silently rounding it to R151.00. AdjustMob's
-price stays optional (a trade with no price is still a valid trade); AddAnimal/RecordLoss keep it
-required — that business-rule difference lived in each screen's own `priceIsValid` wrapper before
-and still does, only the actual parsing arithmetic was shared. `pnpm verify`: **114 test files /
-1245 tests, 12/12 typecheck tasks, 7/7 builds, 168.09 KB gz**.
+✅ **31–36. Done 2026-08-15 (sixth–eleventh sessions), condensed — full detail in git history:**
+**31** conflict audit/review (O-6/O-7/O-8) — migration `0026_conflict_audit`'s immutable `audit_log`
++ `conflict_reviews`, deterministic idempotent conflict keys, `(occurred_at,id)` LWW for movement,
+sale-outranks-death-outranks-sale-etc. projection, legitimate-twin-batch handling, `GET/POST
+/conflicts` and cached offline review UI (`b88b29b`-adjacent, 113 files/1210 tests). **32** P3.11 —
+recent step-up (≤10 min) before starting TOTP/passkey enrolment; a stale caller gets 403
+`STEP_UP_REQUIRED` and a full re-login. **33** P3.12, `cd0d3c0` — Google-first OIDC/cookie-BFF
+migration phasing across seven additive slices; no email-equality linking or farm authority. **34**
+P3.13, `144e7bc` — FR-001 business contact/address fields (migration 0027); all seven fields
+excluded from every Sync Stream. ⛔ Was POPIA-adjacent-unreviewed until the twelfth-session
+compliance pass cleared it (§3). **35** P3.14, `764c53e` — branding-register create/list/link
+(FR-601/602); real-Postgres tenancy/authorship/idempotency/species-safe-linking coverage; the
+unmarked-past-window alert stays deferred (no verified prescribed-window data to compute it from).
+**36** P3.15, `aa2b023` — one shared `parseRandsToCents` in `@werf/core/money.ts` replacing three
+hand-rolled, float-crossing `Math.round(Number(rands)*100)` duplicates in AddAnimal/AdjustMob/
+RecordLoss; refuses a third decimal digit as a likely typo. Verification baselines climbed from 113
+files/1210 tests through 114 files/1245 tests across these six items — each had its own green
+`pnpm verify` at the time; see §4 for the current number.
 
 **37. P3.16 — auth hardening batch. 4/7 sub-items done 2026-08-15 (thirteenth session).** All seven
 sub-items are pre-scoped in `docs/05-operations/security.md` §10.2 — read that table before

@@ -3,22 +3,25 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-15 (thirteenth session). Continuing JP's Phase 3 punch-list closure.
+**Last updated:** 2026-08-16 (fourteenth session). Continuing JP's Phase 3 punch-list closure.
 **P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed; P3.16 is
-4/7 sub-items closed** (see §5). **About 4 of ~21 punch-list items remain.** Do not re-run
-P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
+5/7 sub-items closed** (see §5). **About 3 of ~21 punch-list items remain, and both are
+genuinely blocked** — not sliceable further without input this session didn't have (see §5's
+P3.16 remainder). Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
 
 ✅ **Owner-triggered `compliance-checker` over `428200a..45775ea` (18 commits: P2.10, conflict
 audit, P3.11–P3.15, P3.16's first two sub-items): CLEARED, no SEV-1/SEV-2/MED/LOW.** Full account
 in §3. Earlier: `reviewer` + `sync-auditor` + `compliance-checker` over `baf4b4d..428200a`, also
-ALL CLEARED — `reviewer`'s one LOW (a STATUS.md mis-citation) was checked and REFUTED. ⛔ Commit
-`c7358b0` and `016fb5d` (P3.16's third/fourth sub-items) landed AFTER that pass and are NOT yet
-compliance-reviewed; the latter is POPIA-adjacent auth evidence and needs the owner's next pass.
+ALL CLEARED — `reviewer`'s one LOW (a STATUS.md mis-citation) was checked and REFUTED. ⛔ Commits
+`c7358b0`, `016fb5d` and `fc5759d` (P3.16's third/fourth/fifth sub-items) landed AFTER that pass and
+are NOT yet compliance-reviewed; `016fb5d` is POPIA-adjacent auth evidence and needs the owner's
+next pass — `fc5759d` is a DB-grant-only change (no application code touched) and lower risk, but
+still in the unreviewed range.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`016fb5d` (P3.16 immutable auth audit) ← `c7358b0` (P3.16 production WebAuthn config) ← `e24a281`
-(P3.16 challenge sweep) ← `06ca3d6` (P3.16 invite fix). Older chain is in git history. Not pushed
-— local commits only.
+`fc5759d` (P3.16 users column grants) ← `016fb5d` (P3.16 immutable auth audit) ← `c7358b0` (P3.16
+production WebAuthn config) ← `e24a281` (P3.16 challenge sweep) ← `06ca3d6` (P3.16 invite fix).
+Older chain is in git history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -108,7 +111,8 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-15, thirteenth session, fully uncached, after P3.16 auth audit) | ✅ **115 test files / 1252 tests, 12/12 typecheck tasks, 7/7 builds, 168.10 KB gz** |
+| `pnpm verify` (2026-08-16, fourteenth session, fully uncached, after P3.16 users-column grants) | ✅ **115 test files / 1254 tests, 7/7 builds, 168.10 KB gz** |
+| `pnpm verify` (2026-08-15, thirteenth session, fully uncached, after P3.16 auth audit) | ✅ 115 test files / 1252 tests, 12/12 typecheck tasks, 7/7 builds, 168.10 KB gz |
 | `pnpm test:e2e` (2026-08-15, tenth session, default lane, after P3.14) | ✅ 31 passed / 5 skipped — light/dark capture-screen a11y includes `/animals/brands`; the 3 `WERF_REAL_STACK`-gated specs still require the final live-stack sweep |
 | `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
 | `compliance-checker` `428200a..45775ea` (2026-08-15, twelfth session) | ✅ CLEARED, no SEV-1/SEV-2/MED/LOW — full account in §3 |
@@ -222,19 +226,32 @@ ordinary-role denial, idempotent logout/reuse evidence, and invitation/farm-swit
 ⛔ POPIA-adjacent; landed after the owner-triggered compliance pass and is not merge-ready until the
 owner requests the next pass. `pnpm verify`: **115 files / 1252 tests, 12/12 typechecks, 7/7 builds,
 168.10 KB gz**.
-**Remaining 3 sub-items:** narrowing users-table grants (documented at length in
-`two-factor.service.ts`'s own header comment and security.md §10.2 — column-level GRANT/REVOKE
-migration, needs a full audit of every `AppDb`-connection touch on `users` columns first);
-registration-enumeration hardening (NOT a message tweak — security.md is explicit that the real fix
-is email verification, which needs delivery infra this repo doesn't have yet); attachment
-MIME/size/quota controls
-(touches the attachments pipeline P1.2/P2.5 just closed — read those commits first, do not
-re-litigate their design). ⛔ **Checked this one specifically for "small enough to just do" and
-declined:** the MIME whitelist half is mechanical, but the size cap has no existing number
-anywhere in the docs to anchor to — picking one (e.g. 25MB) is a real product decision about what
-a farmer's phone may upload, not an engineering default like a TTL, and quota tracking is new
-infrastructure on top of that. Worth a quick number decision from JP before the MIME/size half is
-even worth splitting out on its own.
+✅ **Users-table column grants, commit `fc5759d` (2026-08-16, fourteenth session).** Migration 0029
+revokes `werf_app`'s table-wide `SELECT/INSERT/UPDATE` on `users` (granted by 0001 with no column
+list) and re-grants only the profile-shaped columns — id/email/phone/full_name/locale/theme/
+last_seen_at/created_at/updated_at/deleted_at. `password_hash`, `totp_secret_encrypted`,
+`totp_enrolled_at`, `totp_last_used_step` and `recovery_codes_hashed` are now reachable only from
+`ElevatedDb`. An audit of every `AppDb`-scoped touch of `users` (grep across `apps/api/src`) found
+**zero production paths** querying `users` via `werf_app` at all — every credential-shaped path
+already ran elevated, exactly as `two-factor.service.ts`'s own header comment described — so
+nothing needed to change in application code, only the grant. Two existing RLS tests did
+`select().from(users)` (all columns) through the scoped connection and needed narrowing to the
+columns they actually use (`client.integration.test.ts`, `farms.integration.test.ts`). Fail-first
+verified against a real Postgres: reverting the migration lets `werf_app` read a TOTP secret and
+rewrite `totp_last_used_step`; with it applied both are rejected while ordinary profile columns
+stay read/writable in the same transaction shape. `pnpm verify`: **115 files / 1254 tests, 7/7
+builds, 168.10 KB gz** (bundle unchanged — this is a pure DB-privilege change).
+
+**Remaining 2 sub-items, both genuinely blocked, not just unsliced:** registration-enumeration
+hardening (NOT a message tweak — security.md is explicit that the real fix is email verification,
+which needs delivery infra this repo doesn't have yet — a provider/SES decision, not an engineering
+default); attachment MIME/size/quota controls (touches the attachments pipeline P1.2/P2.5 just
+closed — read those commits first, do not re-litigate their design). ⛔ **Checked the latter
+specifically for "small enough to just do" and declined:** the MIME whitelist half is mechanical,
+but the size cap has no existing number anywhere in the docs to anchor to — picking one (e.g. 25MB)
+is a real product decision about what a farmer's phone may upload, not an engineering default like
+a TTL, and quota tracking is new infrastructure on top of that. Worth a quick number decision from
+JP before the MIME/size half is even worth splitting out on its own.
 
 **38. Q17 — reconcile STATUS.md/roadmap/phase-checklists.md/architecture docs/testing-strategy.md
 against actual code.** By the time this runs, this file's own §5 will likely be stale again — that

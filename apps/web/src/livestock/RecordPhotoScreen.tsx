@@ -38,7 +38,11 @@ const PHOTO_FILE_ERROR_KEY: Record<PhotoFileError, TranslationKey> = {
 
 function validatePhotoFile(file: File): PhotoFileError | null {
   if (file.size > schemas.MAX_ATTACHMENT_SIZE_BYTES) return 'tooLarge';
-  if (!(schemas.ALLOWED_ATTACHMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+  // Normalized THE SAME WAY the server-side schema will (schemas.normalizeAttachmentMimeType) —
+  // some Android WebViews report `image/jpg` for a camera-captured JPEG, and without this the
+  // picker would refuse a photo the API would go on to accept (compliance-checker, 2026-08-16).
+  const mimeType = schemas.normalizeAttachmentMimeType(file.type);
+  if (!(schemas.ALLOWED_ATTACHMENT_MIME_TYPES as readonly string[]).includes(mimeType)) {
     return 'unsupportedType';
   }
   return null;

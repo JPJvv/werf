@@ -3,6 +3,7 @@ import {
   ALLOWED_ATTACHMENT_MIME_TYPES,
   MAX_ATTACHMENT_SIZE_BYTES,
   newAttachmentSchema,
+  normalizeAttachmentMimeType,
 } from './attachments';
 
 const ID = '018f8e2a-7b3c-7c4d-8e5f-0a1b2c3d4e5f';
@@ -52,5 +53,21 @@ describe('newAttachmentSchema — P3.16 size and MIME limits', () => {
 
   it('refuses an SVG — an XSS vector this list deliberately excludes', () => {
     expect(() => newAttachmentSchema.parse(body({ mimeType: 'image/svg+xml' }))).toThrow();
+  });
+
+  // compliance-checker, 2026-08-16 (LOW): some Android WebViews report `image/jpg` — not a
+  // registered IANA type — for a camera-captured JPEG. Unnormalised, this would refuse a genuine
+  // evidence photo from a real low-end phone for a MIME-string quirk, not its content.
+  it('accepts `image/jpg`, a real non-standard alias for `image/jpeg`, and normalizes it', () => {
+    const parsed = newAttachmentSchema.parse(body({ mimeType: 'image/jpg' }));
+    expect(parsed.mimeType).toBe('image/jpeg');
+  });
+
+  it('normalizeAttachmentMimeType passes an already-canonical type through unchanged', () => {
+    expect(normalizeAttachmentMimeType('image/jpeg')).toBe('image/jpeg');
+  });
+
+  it('normalizeAttachmentMimeType leaves an unrecognised type unchanged — for isAllowed to refuse', () => {
+    expect(normalizeAttachmentMimeType('application/pdf')).toBe('application/pdf');
   });
 });

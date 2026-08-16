@@ -48,6 +48,26 @@ export const ALLOWED_ATTACHMENT_MIME_TYPES = [
   'image/heif',
 ] as const;
 
+/** Real-world aliases for a canonical entry in `ALLOWED_ATTACHMENT_MIME_TYPES`, keyed by what a
+ *  device actually reports. `image/jpg` is not a registered IANA type (RFC 2046 only recognises
+ *  `image/jpeg`), but some Android WebViews and older browsers report it anyway for a
+ *  camera-captured JPEG — compliance-checker flagged (2026-08-16) that an unnormalised exact-match
+ *  check would refuse a genuine FR-131-adjacent evidence photo from a real low-end phone for a
+ *  MIME-string quirk, not its actual content. */
+const ATTACHMENT_MIME_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  'image/jpg': 'image/jpeg',
+};
+
+/** Maps a device-reported MIME type onto its canonical form before anything checks it against
+ *  `ALLOWED_ATTACHMENT_MIME_TYPES` — one function, used identically by the Zod schema below (the
+ *  server boundary, authoritative for every current and future client) and by
+ *  `RecordPhotoScreen.tsx`'s own pre-check (so the client never refuses, at the picker, a file the
+ *  server would go on to accept). Passes an already-canonical or unrecognised value through
+ *  unchanged; only `isAllowedAttachmentMimeType` decides whether the result is acceptable. */
+export function normalizeAttachmentMimeType(mimeType: string): string {
+  return ATTACHMENT_MIME_TYPE_ALIASES[mimeType] ?? mimeType;
+}
+
 function isAllowedAttachmentMimeType(value: string): boolean {
   return (ALLOWED_ATTACHMENT_MIME_TYPES as readonly string[]).includes(value);
 }
@@ -59,10 +79,14 @@ export const attachmentSchema = z.object({
   subjectId: uuidSchema,
   // `.refine`, not `z.enum`: this keeps the inferred TS type `string` rather than a literal
   // union, so a browser-supplied `File.type` (always a plain `string`) still assigns cleanly at
-  // every call site that isn't the one place this rule needs to be enforced.
+  // every call site that isn't the one place this rule needs to be enforced. `.transform` runs
+  // BEFORE `.refine` — normalizing here means the value this schema's OUTPUT carries (what a
+  // server-side caller reads from `input.mimeType`, and what gets stored) is always the canonical
+  // form, not whatever alias a particular device happened to report.
   mimeType: z
     .string()
     .min(1)
+    .transform(normalizeAttachmentMimeType)
     .refine(isAllowedAttachmentMimeType, {
       message: `Unsupported attachment type — allowed: ${ALLOWED_ATTACHMENT_MIME_TYPES.join(', ')}`,
     }),

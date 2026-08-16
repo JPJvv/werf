@@ -191,6 +191,25 @@ describe('adding a photo (phase-checklists.md 3i(c))', () => {
     expect(await storedCaptures(ATTACHMENTS_KEY)).toHaveLength(0);
   });
 
+  it('P3.16: accepts `image/jpg` — a real non-standard alias some Android WebViews report for a camera JPEG', async () => {
+    // compliance-checker, 2026-08-16 (LOW): an unnormalised exact-match check would refuse this
+    // exact file — a genuine evidence photo, not a malformed one — at the picker.
+    cachedSession();
+    seedHerd(animal('a1'));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/photo');
+    render(<App />);
+
+    expect(await screen.findByText('1 of 1')).toBeTruthy();
+    const file = new File(['fake-jpeg-bytes'], 'cow.jpg', { type: 'image/jpg' });
+    await user.upload(screen.getByLabelText(/photo/i), file);
+
+    expect(screen.queryByText(/file type can't be sent/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /save & next/i }).hasAttribute('disabled')).toBe(
+      false,
+    );
+  });
+
   it('P3.16: choosing a good photo after a refused one clears the error and allows Save', async () => {
     cachedSession();
     seedHerd(animal('a1'));

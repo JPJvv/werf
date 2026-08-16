@@ -47,6 +47,13 @@ missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d4
 
 ## 3. Owner decisions
 
+✅ **CLOSED 2026-08-16 (fourteenth session) — three P3.16 decisions JP made when asked directly:**
+attachment size cap is **25 MB** per attachment; per-farm **quota tracking is IN SCOPE** for the
+MIME/size/quota sub-item (JP chose to build it now rather than defer, despite it being new
+infrastructure); registration-enumeration hardening (email verification on `/auth/register`) is
+**DEFERRED to Phase 7 hardening** — rate limiting narrows the gap meanwhile. Unblocks the
+attachment MIME/size/quota sub-item; leaves P3.16 at 6/7 once that lands.
+
 ✅ **Compliance-pass scope `428200a..45775ea` — CLOSED 2026-08-15 (twelfth session,
 owner-triggered).** 18 commits: P2.10 adversarial tenancy verification, the conflict audit/review
 feature (migration 0026), P3.11–P3.15, and P3.16's first two sub-items (invite soft-deleted-

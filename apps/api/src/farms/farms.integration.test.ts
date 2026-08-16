@@ -422,8 +422,11 @@ describe('farm management', () => {
       });
 
       // Alpha named an address belonging to someone in another tenant. Until that person
-      // accepts, Alpha must not be able to read anything about them (POPIA).
-      const visibleUsers = await app.asUser(a.userId, (tx) => tx.select().from(users));
+      // accepts, Alpha must not be able to read anything about them (POPIA). `id` only:
+      // `werf_app` holds column-level grants on `users` (0029), not `SELECT *`.
+      const visibleUsers = await app.asUser(a.userId, (tx) =>
+        tx.select({ id: users.id }).from(users),
+      );
 
       expect(visibleUsers.map((u) => u.id)).toEqual([a.userId]);
       expect(visibleUsers.map((u) => u.id)).not.toContain(b.userId);

@@ -204,6 +204,13 @@
       "when": 1786815883265,
       "tag": "0028_auth_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786864291715,
+      "tag": "0029_users_column_grants",
+      "breakpoints": true
     }
   ]
 }

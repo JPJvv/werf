@@ -75,9 +75,56 @@ describe('RLS tenancy boundary', () => {
   });
 
   it('does not let a user read a stranger they share no farm with', async () => {
-    const visible = await app.asUser(fx.userAId, (tx) => tx.select().from(users));
+    // `id` alone, not `select()`: `werf_app` holds column-level grants on `users` (0029),
+    // not table-wide `SELECT *` — this test is about ROW visibility, and asking for a
+    // column the role does not have would fail on the grant before RLS is even reached.
+    const visible = await app.asUser(fx.userAId, (tx) => tx.select({ id: users.id }).from(users));
 
     expect(visible.map((u) => u.id)).toEqual([fx.userAId]);
+  });
+
+  it('refuses to read credential columns on `users` even for your own row (0029)', async () => {
+    // The RLS policy correctly scopes this row to its owner; the column grant is a SEPARATE
+    // boundary underneath it. Without 0029's column-level REVOKE, `werf_app` could read a
+    // co-member's encrypted TOTP seed or password hash through this exact query shape — the
+    // row-visibility check above would have passed either way, which is why it needs its own
+    // assertion rather than being inferred from the row test.
+    await expect(
+      app.asUser(fx.userAId, (tx) =>
+        tx.select({ totpSecretEncrypted: users.totpSecretEncrypted }).from(users),
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    await expect(
+      app.asUser(fx.userAId, (tx) => tx.select({ passwordHash: users.passwordHash }).from(users)),
+    ).rejects.toThrow(/permission denied/i);
+
+    // The revoke is COLUMN-level, not a blanket lockout of the table: an ordinary
+    // profile-shaped column stays readable in the very same transaction shape.
+    const [row] = await app.asUser(fx.userAId, (tx) =>
+      tx.select({ fullName: users.fullName }).from(users).where(eq(users.id, fx.userAId)),
+    );
+    expect(row?.fullName).toBeTruthy();
+  });
+
+  it('refuses to write `totp_last_used_step` through the scoped connection (0029)', async () => {
+    // Mirrors the SELECT check above for UPDATE: this is the exact replay-guard column
+    // security.md §10.2 named as reachable from `werf_app` before this migration.
+    await expect(
+      app.asUser(fx.userAId, (tx) =>
+        tx.update(users).set({ totpLastUsedStep: 1 }).where(eq(users.id, fx.userAId)),
+      ),
+    ).rejects.toThrow(/permission denied/i);
+
+    // Again, column-level: an ordinary profile field is still writable through `werf_app`.
+    await app.asUser(fx.userAId, (tx) =>
+      tx.update(users).set({ locale: 'af-ZA' }).where(eq(users.id, fx.userAId)),
+    );
+    const [row] = await elevated.db
+      .select({ locale: users.locale })
+      .from(users)
+      .where(eq(users.id, fx.userAId));
+    expect(row?.locale).toBe('af-ZA');
   });
 
   it('scopes each call independently, so a pooled connection never inherits an identity', async () => {

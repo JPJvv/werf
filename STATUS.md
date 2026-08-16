@@ -3,11 +3,19 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-16 (fourteenth session). Continuing JP's Phase 3 punch-list closure.
+**Last updated:** 2026-08-16 (fifteenth session). Continuing JP's Phase 3 punch-list closure.
 **P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed; P3.16 is
-6/7 sub-items closed** (see §5). **~1 of ~21 punch-list items remains, and it is deferred to
-Phase 7 by owner decision, not open work.** Do not re-run P1/P2.5–P2.10, conflict audit or
-P3.11–P3.15.
+6/7 sub-items closed; Q17 (doc reconciliation) is closed** (see §5). **Q18 and Q19 plus the final
+sweep remain.** Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
+
+✅ **Q17 (doc reconciliation) — CLOSED 2026-08-16 (fifteenth session), `f875dcc`.** Fixed five
+contradictions: `phase-checklists.md`+`testing-strategy.md` both still claimed the O-6/O-7/O-8
+conflict audit/review mechanism (migration 0026) was NOT built though it closed 2026-08-15 — worst
+finding, a capability asserted missing two months after it shipped; `phase-checklists.md` had zero
+trace of P3.11–P3.16 (added a terse index); `security.md`'s users-grant row lacked closure
+treatment, its registration row didn't reflect JP's Phase 7 deferral; `database-schema.md` had no
+`attachments` table/`attachment_bytes_used`/migration-0029 grant note — all added. `architecture.md`
+/`roadmap.md`/Phase 4–7 sections checked, consistent. `pnpm project:check` green.
 
 ✅ **Owner-triggered `compliance-checker` over `45775ea..ec8336e` (fourteenth session,
 2026-08-16): CLEARED, one LOW.** Covered `c7358b0`/`016fb5d`/`fc5759d`/`49677b4` (P3.16's
@@ -20,9 +28,8 @@ sub-items) and `reviewer`+`sync-auditor`+`compliance-checker` over `baf4b4d..428
 CLEARED. ⛔ New scope opens from `ec8336e` forward — nothing outstanding right now.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`c12fbfc` (P3.16 image/jpg alias fix) ← `49677b4` (P3.16 attachment MIME/size/quota) ← `fc5759d`
-(P3.16 users column grants) ← `016fb5d` (P3.16 immutable auth audit). Older chain is in git
-history. Not pushed — local commits only.
+`f875dcc` (Q17 doc reconciliation) ← `c12fbfc` (P3.16 image/jpg alias fix) ← `49677b4` (P3.16
+attachment MIME/size/quota). Older chain is in git history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -236,10 +243,7 @@ deferred it to Phase 7 hardening (2026-08-16): rate limiting narrows the gap mea
 "needs delivery infra" framing in security.md was stale (the `Mailer`/SMTP port already exists,
 built for invitations) — this is a scheduling choice, not a blocker.
 
-**38. Q17 — reconcile STATUS.md/roadmap/phase-checklists.md/architecture docs/testing-strategy.md
-against actual code.** By the time this runs, this file's own §5 will likely be stale again — that
-is expected; this item is specifically about the OTHER docs, this file is kept current by its own
-"update at session end" discipline.
+✅ **38. Q17 — CLOSED, `f875dcc`** — full account in the top-of-file note.
 
 **39. Q18 — implement or honestly label NFR gates** (coverage, Lighthouse, dependency-audit,
 regulated-constant, traceability, performance, maintainability). Make traceability phase-aware

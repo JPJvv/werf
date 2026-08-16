@@ -9,17 +9,19 @@
 Phase 7 by owner decision, not open work.** Do not re-run P1/P2.5–P2.10, conflict audit or
 P3.11–P3.15.
 
-✅ **Owner-triggered `compliance-checker` over `428200a..45775ea` (18 commits: P2.10, conflict
-audit, P3.11–P3.15, P3.16's first two sub-items): CLEARED, no SEV-1/SEV-2/MED/LOW.** Full account
-in §3. Earlier: `reviewer` + `sync-auditor` + `compliance-checker` over `baf4b4d..428200a`, also
-ALL CLEARED — `reviewer`'s one LOW (a STATUS.md mis-citation) was checked and REFUTED. ⛔ Commits
-`c7358b0`, `016fb5d`, `fc5759d` and `49677b4` (P3.16's third–sixth sub-items) landed AFTER that pass
-and are NOT yet compliance-reviewed; `016fb5d` is POPIA-adjacent auth evidence and `49677b4` touches
-the attachments write path (P1.2/P2.5's own scope) — both need the owner's next pass.
+✅ **Owner-triggered `compliance-checker` over `45775ea..ec8336e` (fourteenth session,
+2026-08-16): CLEARED, one LOW.** Covered `c7358b0`/`016fb5d`/`fc5759d`/`49677b4` (P3.16's
+third–sixth sub-items). No SEV-1/SEV-2/MED. The one LOW — `image/jpg`, a real non-standard MIME
+alias some Android WebViews report for a camera JPEG, would have been falsely refused by the
+exact-match whitelist check — was fixed under §6 clause 3 (mechanical, confined to the files
+named, fail-first tested) as `c12fbfc`, no second pass needed. Full account in §3. Earlier:
+`compliance-checker` over `428200a..45775ea` (18 commits, P2.10 through P3.16's first two
+sub-items) and `reviewer`+`sync-auditor`+`compliance-checker` over `baf4b4d..428200a`, also ALL
+CLEARED. ⛔ New scope opens from `ec8336e` forward — nothing outstanding right now.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`49677b4` (P3.16 attachment MIME/size/quota) ← `fc5759d` (P3.16 users column grants) ← `016fb5d`
-(P3.16 immutable auth audit) ← `c7358b0` (P3.16 production WebAuthn config). Older chain is in git
+`c12fbfc` (P3.16 image/jpg alias fix) ← `49677b4` (P3.16 attachment MIME/size/quota) ← `fc5759d`
+(P3.16 users column grants) ← `016fb5d` (P3.16 immutable auth audit). Older chain is in git
 history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
@@ -45,6 +47,24 @@ noisy accessibility fixture, human-gated regulated verification, a false uncache
 missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+✅ **Compliance-pass scope `45775ea..ec8336e` — CLOSED 2026-08-16 (fourteenth session,
+owner-triggered).** 4 code commits: production WebAuthn config (`c7358b0`), immutable auth audit
+log (`016fb5d`), users-table column grants (`fc5759d`), attachment MIME/size/quota (`49677b4`).
+**CLEARED, no SEV-1/SEV-2/MED — one LOW, fixed same session (`c12fbfc`), no second pass needed.**
+Specifically traced: `auth_audit_log`'s immutability trigger and zero `werf_app` grant are proven
+by a test that attempts the forbidden UPDATE/DELETE and asserts both reject, not just documented;
+every write site runs on the elevated connection, none on the scoped one; no secret ever enters a
+logged row (checked every `metadata:` object, all controlled enums/ids). The 0029 column-grant SQL
+was cross-checked against the real 15-column `users` table — the SELECT list names exactly the 10
+non-credential columns, no omission, no accidental credential inclusion. The 0030 quota charge was
+re-derived from the code (not the commit message): a single conditional `UPDATE ... WHERE
+attachment_bytes_used + n <= CAP RETURNING id` inside the same transaction as the row
+insert/revival, the same TOCTOU-closing idiom `finalizeAttachment` already uses elsewhere in this
+file — genuinely race-safe, not merely asserted to be. Sync/RLS agreement for the new
+`farms.attachment_bytes_used` column was verified against the actual `TENANCY` registry and a grep
+for any client-writable path to it (none), not taken on trust. ⛔ New scope opens from `ec8336e`
+forward.
 
 ✅ **CLOSED 2026-08-16 (fourteenth session) — three P3.16 decisions JP made when asked directly:**
 attachment size cap is **25 MB** per attachment; per-farm **quota tracking is IN SCOPE** for the
@@ -117,10 +137,11 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-16, fourteenth session, fully uncached, after P3.16 attachment quota) | ✅ **116 test files / 1274 tests, 7/7 builds, 168.73 KB gz** |
-| Earlier same-session/prior baselines (users-column grants, auth audit) | Condensed — see item 37 |
+| `pnpm verify` (2026-08-16, fourteenth session, fully uncached, after the `image/jpg` alias fix) | ✅ **116 test files / 1278 tests, 7/7 builds, 168.78 KB gz** |
+| Earlier same-session/prior baselines (attachment quota, users-column grants, auth audit) | Condensed — see item 37 |
 | `pnpm test:e2e` (2026-08-15, tenth session, default lane, after P3.14) | ✅ 31 passed / 5 skipped — light/dark capture-screen a11y includes `/animals/brands`; the 3 `WERF_REAL_STACK`-gated specs still require the final live-stack sweep |
 | `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
+| `compliance-checker` `45775ea..ec8336e` (2026-08-16, fourteenth session) | ✅ CLEARED, one LOW fixed same session — full account in §3 |
 | `compliance-checker` `428200a..45775ea` (2026-08-15, twelfth session) | ✅ CLEARED, no SEV-1/SEV-2/MED/LOW — full account in §3 |
 | Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
 | Historical baselines (2026-08-08 through 2026-08-14) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
@@ -188,7 +209,7 @@ membership and the co-member RLS policy's visibility. ✅ WebAuthn challenge cle
 unset, checked against raw env values so a coincidental `localhost` default can't mask the gap.
 ✅ Immutable auth audit (`016fb5d`) — migration 0028's account-global, append-only
 `auth_audit_log`; zero `werf_app` grants, forced zero-policy RLS, a rejecting UPDATE/DELETE
-trigger. ⛔ POPIA-adjacent, unreviewed. ✅ Users-table column grants (`fc5759d`) — migration 0029
+trigger. ✅ Users-table column grants (`fc5759d`) — migration 0029
 narrows `werf_app`'s table-wide grant on `users` to non-credential columns only; an audit found
 **zero production paths** touching `users` via the scoped connection at all, so only the grant
 changed, no application code. Fail-first proven against real Postgres both ways. All four fixes
@@ -204,9 +225,11 @@ released by `AttachmentOrphanSweepService` when it reclaims an abandoned upload 
 `QuotaExceededError`/`QUOTA_EXCEEDED` code keeps the refusal distinct from `CONFLICT` in
 `NotSentScreen.tsx`. Fail-first verified against real Postgres and in `RecordPhoto.test.tsx`.
 Regenerated both derived-artifact freshness gates (local SQLite schema, PowerSync
-`sync-config.yaml`) for the new `farms` column. `pnpm verify`: **116 files / 1274 tests, 7/7
-builds, 168.73 KB gz**. ⛔ Touches the attachments write path (P1.2/P2.5's own scope) —
-unreviewed.
+`sync-config.yaml`) for the new `farms` column. ✅ **Compliance-checked `45775ea..ec8336e`
+(fourteenth session): CLEARED, one LOW — `image/jpg` (a real Android MIME alias) was refused by
+the exact-match whitelist; fixed as `c12fbfc` via a shared `normalizeAttachmentMimeType`, merged
+under §6 clause 3, no second pass.** `pnpm verify`: **116 files / 1278 tests, 7/7 builds, 168.78
+KB gz**.
 
 **Remaining: registration-enumeration hardening — CLOSED as a decision, not open work.** JP
 deferred it to Phase 7 hardening (2026-08-16): rate limiting narrows the gap meanwhile, and the

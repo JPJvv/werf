@@ -5,17 +5,20 @@
 
 **Last updated:** 2026-08-16 (fifteenth session). Continuing JP's Phase 3 punch-list closure.
 **P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed; P3.16 is
-6/7 sub-items closed; Q17 (doc reconciliation) is closed** (see §5). **Q18 and Q19 plus the final
-sweep remain.** Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
+6/7 sub-items closed; Q17 and Q18 are closed** (see §5). **Q19 plus the final sweep remain.**
+Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
 
-✅ **Q17 (doc reconciliation) — CLOSED 2026-08-16 (fifteenth session), `f875dcc`.** Fixed five
-contradictions: `phase-checklists.md`+`testing-strategy.md` both still claimed the O-6/O-7/O-8
-conflict audit/review mechanism (migration 0026) was NOT built though it closed 2026-08-15 — worst
-finding, a capability asserted missing two months after it shipped; `phase-checklists.md` had zero
-trace of P3.11–P3.16 (added a terse index); `security.md`'s users-grant row lacked closure
-treatment, its registration row didn't reflect JP's Phase 7 deferral; `database-schema.md` had no
-`attachments` table/`attachment_bytes_used`/migration-0029 grant note — all added. `architecture.md`
-/`roadmap.md`/Phase 4–7 sections checked, consistent. `pnpm project:check` green.
+✅ **Q17 (doc reconciliation) — CLOSED, `f875dcc`.** Fixed five contradictions, worst being
+`phase-checklists.md`+`testing-strategy.md` both still claiming the O-6/O-7/O-8 conflict
+audit/review mechanism (migration 0026) was NOT built though it closed 2026-08-15.
+
+✅ **Q18 (NFR gates: implement or honestly label) — CLOSED, `1b036bf`.** Audited every gate
+`non-functional-requirements.md` claims. Two made real: NFR-208 dependency audit (new CI job,
+`pnpm audit --audit-level=critical --prod`) and NFR-009 bundle size, already real under the wrong
+tool name. Traceability (`test:trace`) is now phase-aware — `--strict` never counts a gap in a
+phase that hasn't started. Everything still unimplemented (Lighthouse, coverage thresholds,
+regulated-constant lint, per-chunk budgets, file-length limits) is now marked ❌, not falsely
+claimed.
 
 ✅ **Owner-triggered `compliance-checker` over `45775ea..ec8336e` (fourteenth session,
 2026-08-16): CLEARED, one LOW.** Covered `c7358b0`/`016fb5d`/`fc5759d`/`49677b4` (P3.16's
@@ -28,8 +31,8 @@ sub-items) and `reviewer`+`sync-auditor`+`compliance-checker` over `baf4b4d..428
 CLEARED. ⛔ New scope opens from `ec8336e` forward — nothing outstanding right now.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`f875dcc` (Q17 doc reconciliation) ← `c12fbfc` (P3.16 image/jpg alias fix) ← `49677b4` (P3.16
-attachment MIME/size/quota). Older chain is in git history. Not pushed — local commits only.
+`1b036bf` (Q18 NFR gates) ← `f875dcc` (Q17 doc reconciliation) ← `c12fbfc` (P3.16 image/jpg alias
+fix). Older chain is in git history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -245,10 +248,7 @@ built for invitations) — this is a scheduling choice, not a blocker.
 
 ✅ **38. Q17 — CLOSED, `f875dcc`** — full account in the top-of-file note.
 
-**39. Q18 — implement or honestly label NFR gates** (coverage, Lighthouse, dependency-audit,
-regulated-constant, traceability, performance, maintainability). Make traceability phase-aware
-before strict mode (a Phase 4/5/6 requirement ID cannot trace to code that doesn't exist yet — that
-is not a gap, it is the roadmap).
+✅ **39. Q18 — CLOSED, `1b036bf`** — full account in the top-of-file note.
 
 **40. Q19 — record required real-device/field evidence needs.** What this product needs proven on
 an actual farmer's actual phone that no CI run can substitute for — write it down so it isn't

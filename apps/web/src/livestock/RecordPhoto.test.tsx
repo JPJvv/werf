@@ -150,6 +150,66 @@ describe('adding a photo (phase-checklists.md 3i(c))', () => {
     expect(await storedCaptures(ATTACHMENTS_KEY)).toHaveLength(2);
   });
 
+  it('P3.16: refuses an over-size photo at the file picker — nothing queued, Save stays disabled', async () => {
+    cachedSession();
+    seedHerd(animal('a1'));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/photo');
+    render(<App />);
+
+    expect(await screen.findByText('1 of 1')).toBeTruthy();
+    // One byte over the 25MB ceiling — the exact boundary `@werf/core/schemas` enforces.
+    const oversize = new File([new Uint8Array(25 * 1024 * 1024 + 1)], 'huge.jpg', {
+      type: 'image/jpeg',
+    });
+    await user.upload(screen.getByLabelText(/photo/i), oversize);
+
+    expect(await screen.findByText(/too big to send/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /save & next/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(await storedCaptures(ATTACHMENTS_KEY)).toHaveLength(0);
+  });
+
+  it('P3.16: refuses an image type outside the allow-list, even though it passes the picker’s own image/* filter', async () => {
+    cachedSession();
+    seedHerd(animal('a1'));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/photo');
+    render(<App />);
+
+    expect(await screen.findByText('1 of 1')).toBeTruthy();
+    // A real browser file picker filtering by `accept="image/*"` would offer this file — the
+    // whitelist is narrower than the browser's own filter (jpeg/png/webp/heic/heif only).
+    const unsupported = new File(['gif bytes'], 'cow.gif', { type: 'image/gif' });
+    await user.upload(screen.getByLabelText(/photo/i), unsupported);
+
+    expect(await screen.findByText(/file type can't be sent/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /save & next/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(await storedCaptures(ATTACHMENTS_KEY)).toHaveLength(0);
+  });
+
+  it('P3.16: choosing a good photo after a refused one clears the error and allows Save', async () => {
+    cachedSession();
+    seedHerd(animal('a1'));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/photo');
+    render(<App />);
+
+    const input = await screen.findByLabelText(/photo/i);
+    await user.upload(input, new File(['gif bytes'], 'cow.gif', { type: 'image/gif' }));
+    expect(await screen.findByText(/file type can't be sent/i)).toBeTruthy();
+
+    await user.upload(input, new File(['a'], 'a.jpg', { type: 'image/jpeg' }));
+
+    expect(screen.queryByText(/file type can't be sent/i)).toBeNull();
+    expect(screen.getByRole('button', { name: /save & next/i }).hasAttribute('disabled')).toBe(
+      false,
+    );
+  });
+
   it('skips an animal without capturing anything', async () => {
     cachedSession();
     seedHerd(animal('a1'), animal('a2', { sex: 'male' }));

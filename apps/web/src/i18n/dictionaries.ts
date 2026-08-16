@@ -132,6 +132,8 @@ const en = {
     'This one points at something the farm does not have — a camp or an animal that was never recorded, or was recorded on another phone. Once that exists, this goes up on its own.',
   'notSent.why.tenancy':
     'This one points at something on a different farm. It cannot go up as it stands. Please tell us about it.',
+  'notSent.why.quotaExceeded':
+    "This farm has reached its photo storage limit. It is safe on this phone until there is room — please tell us and we'll sort out more space.",
   'notSent.why.unknown':
     'The server would not take this one and did not say why in a way we can explain. It is safe on this phone. Please tell us about it.',
   // PWA install. Offered after the browser signals the app is install-worthy (never on
@@ -803,6 +805,12 @@ const en = {
   'photo.title': 'Add a photo',
   'photo.of': 'of',
   'photo.field': 'Photo',
+  // P3.16: refused at the file picker, before this ever touches OPFS or the queue — answers
+  // "what now" plainly rather than letting a doomed capture surface as a refusal days later.
+  'photo.error.tooLarge':
+    'This photo is too big to send. Take it again at a lower quality, or choose a smaller file — the limit is 25MB.',
+  'photo.error.unsupportedType':
+    "This file type can't be sent. Take a photo with the camera, or choose a JPEG, PNG or HEIC file.",
   'photo.save': 'Save & next',
   'photo.saving': 'Saving…',
   'photo.skip': 'Skip this one',
@@ -991,6 +999,8 @@ const af: Record<TranslationKey, string> = {
     'Hierdie een wys na iets wat die plaas nie het nie — ’n kamp of ’n dier wat nooit aangeteken is nie, of op ’n ander foon aangeteken is. Sodra dit bestaan, gaan hierdie een vanself op.',
   'notSent.why.tenancy':
     'Hierdie een wys na iets op ’n ander plaas. Dit kan nie so opgaan nie. Laat weet ons asseblief daarvan.',
+  'notSent.why.quotaExceeded':
+    'Hierdie plaas het sy foto-bergingsperk bereik. Dit is veilig op hierdie foon totdat daar plek is — laat weet ons asseblief en ons sal meer spasie reël.',
   'notSent.why.unknown':
     'Die bediener wou hierdie een nie vat nie en het nie op ’n manier gesê hoekom wat ons kan verduidelik nie. Dit is veilig op hierdie foon. Laat weet ons asseblief daarvan.',
   'install.title': 'Installeer Werf op hierdie foon',
@@ -1565,6 +1575,10 @@ const af: Record<TranslationKey, string> = {
   'photo.title': 'Voeg ’n foto by',
   'photo.of': 'van',
   'photo.field': 'Foto',
+  'photo.error.tooLarge':
+    'Hierdie foto is te groot om te stuur. Neem dit weer teen laer gehalte, of kies ’n kleiner lêer — die perk is 25MB.',
+  'photo.error.unsupportedType':
+    'Hierdie lêertipe kan nie gestuur word nie. Neem ’n foto met die kamera, of kies ’n JPEG-, PNG- of HEIC-lêer.',
   'photo.save': 'Stoor & volgende',
   'photo.saving': 'Stoor tans…',
   'photo.skip': 'Slaan hierdie een oor',

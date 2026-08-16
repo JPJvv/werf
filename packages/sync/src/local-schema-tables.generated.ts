@@ -151,6 +151,7 @@ export const LOCAL_SCHEMA_TABLES: readonly LocalTableDef[] = [
   {
     name: 'farms',
     columns: [
+      { name: 'attachment_bytes_used', type: 'INTEGER' },
       { name: 'business_id', type: 'TEXT' },
       { name: 'created_at', type: 'TEXT' },
       { name: 'deleted_at', type: 'TEXT' },

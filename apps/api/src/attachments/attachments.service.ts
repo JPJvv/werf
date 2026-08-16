@@ -14,11 +14,23 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { animals, attachments, type AppDb } from '@werf/db';
-import { ConflictError, NotFoundError, ValidationError, type schemas } from '@werf/core';
+import { animals, attachments, farms, type AppDb } from '@werf/db';
+import {
+  ConflictError,
+  NotFoundError,
+  QuotaExceededError,
+  ValidationError,
+  type schemas,
+} from '@werf/core';
 import { APP_DB } from '../db/db.module';
 import { assertCanCapture, type CaptureTx } from '../common/event-capture';
 import { OBJECT_STORAGE, attachmentObjectKey, type ObjectStorage } from './object-storage';
+
+/** 5 GB (P3.16, owner decision 2026-08-16). Not a regulated number (CLAUDE.md) — a storage-cost
+ *  ceiling of ours, not a legal one. Charged against `farms.attachment_bytes_used`, a running
+ *  total this service alone maintains (`AttachmentOrphanSweepService` is the only other writer,
+ *  releasing a reservation an abandoned upload never used). */
+export const ATTACHMENT_FARM_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
 
 /** The subject an attachment may point at, checked to exist ON THIS FARM before the row is
  *  created — the same hole `assertOwnedReferences` closes for events (event-capture.ts): a
@@ -107,8 +119,16 @@ export class AttachmentsService {
         .onConflictDoNothing({ target: attachments.id })
         .returning(attachmentProjection);
 
+      // Whether THIS call is the moment a row transitions from "not counted" to "will occupy
+      // real storage" — a fresh insert, or reviving one the orphan sweep reclaimed before its
+      // upload ever completed (P1.2's proof-of-life path just above). An idempotent retry that
+      // finds the SAME live or already-finalised row changes neither: it was already charged.
+      let chargesQuota = false;
+
       let stored = row;
-      if (!stored) {
+      if (stored) {
+        chargesQuota = true;
+      } else {
         const [existing] = await tx
           .select(attachmentProjection)
           .from(attachments)
@@ -149,6 +169,36 @@ export class AttachmentsService {
             .where(and(eq(attachments.id, stored.id), eq(attachments.farmId, input.farmId)))
             .returning(attachmentProjection);
           stored = revived!;
+          chargesQuota = true;
+        }
+      }
+
+      // P3.16: the atomic quota check-and-charge. One conditional UPDATE, not a SELECT-then-
+      // compare-then-INSERT — two concurrent creates on the same farm must not both read "under
+      // quota" and both proceed, the same TOCTOU this file's other conditional UPDATEs already
+      // close (see finalizeAttachment's own note). Runs on THIS transaction's RLS-scoped
+      // connection, not elevated: `assertCanCapture` above already proved membership, and
+      // `farms_tenant`'s policy accepts a write to a farm the caller belongs to.
+      if (chargesQuota) {
+        const [charged] = await tx
+          .update(farms)
+          .set({ attachmentBytesUsed: sql`${farms.attachmentBytesUsed} + ${stored.sizeBytes}` })
+          .where(
+            and(
+              eq(farms.id, input.farmId),
+              sql`${farms.attachmentBytesUsed} + ${stored.sizeBytes} <= ${ATTACHMENT_FARM_QUOTA_BYTES}`,
+            ),
+          )
+          .returning({ id: farms.id });
+
+        // Throwing here rolls back the WHOLE transaction — the insert/revival above included —
+        // via `tx`'s own rollback, so a refused charge never leaves a "will occupy storage" row
+        // uncounted. The farmer's blob stays in local OPFS regardless (3i(c)'s own guarantee);
+        // this only refuses to reserve server storage for it until quota frees up.
+        if (!charged) {
+          throw new QuotaExceededError(
+            `This farm has reached its ${ATTACHMENT_FARM_QUOTA_BYTES} byte attachment storage quota`,
+          );
         }
       }
 

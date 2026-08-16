@@ -27,13 +27,53 @@ export const checksumSchema = z
   .string()
   .regex(/^[0-9a-f]{64}$/, 'expected a lowercase sha256 hex digest');
 
+/** 25 MB (P3.16, owner decision 2026-08-16). Not a regulated number (CLAUDE.md) — a product
+ *  ceiling on what a farmer's phone may upload from the field. Enforced HERE, not only at the
+ *  API, so a doomed capture is refused at the file picker rather than accepted offline and
+ *  refused days later when it finally reaches signal (the "guard checkable at capture" rule —
+ *  CLAUDE.md's promoted lessons, and `.claude/rules/frontend.md`'s "offline is the default
+ *  state, not the error state" cuts the other way here: an over-limit file was never going to
+ *  send, so telling the farmer immediately is the offline-first behaviour, not an exception to it). */
+export const MAX_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024;
+
+/** Images only, today — `RecordPhotoScreen.tsx` is the one capture UI and it captures animal
+ *  photos (FR-131-adjacent evidence, not arbitrary documents). HEIC/HEIF cover the iPhone
+ *  camera default. Extend this list — never widen it to `image/*` or drop it — when a second
+ *  capture UI needs a format this one doesn't produce. */
+export const ALLOWED_ATTACHMENT_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+] as const;
+
+function isAllowedAttachmentMimeType(value: string): boolean {
+  return (ALLOWED_ATTACHMENT_MIME_TYPES as readonly string[]).includes(value);
+}
+
 export const attachmentSchema = z.object({
   id: uuidSchema,
   farmId: uuidSchema,
   subjectType: attachmentSubjectTypeSchema,
   subjectId: uuidSchema,
-  mimeType: z.string().min(1),
-  sizeBytes: z.number().int().positive(),
+  // `.refine`, not `z.enum`: this keeps the inferred TS type `string` rather than a literal
+  // union, so a browser-supplied `File.type` (always a plain `string`) still assigns cleanly at
+  // every call site that isn't the one place this rule needs to be enforced.
+  mimeType: z
+    .string()
+    .min(1)
+    .refine(isAllowedAttachmentMimeType, {
+      message: `Unsupported attachment type — allowed: ${ALLOWED_ATTACHMENT_MIME_TYPES.join(', ')}`,
+    }),
+  sizeBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(
+      MAX_ATTACHMENT_SIZE_BYTES,
+      `Attachment exceeds the ${MAX_ATTACHMENT_SIZE_BYTES} byte limit`,
+    ),
   checksum: checksumSchema,
   /** Server-derived object key. Null until the API has issued a presigned upload for this row. */
   objectKey: z.string().min(1).nullable(),

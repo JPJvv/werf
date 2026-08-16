@@ -16,12 +16,33 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { schemas } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
+import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveAnimals } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { useRecordAttachment } from '../attachments/LocalAttachments';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
+
+/** Refused BEFORE this ever reaches OPFS or the queue (P3.16) — the same "guard checkable at
+ *  capture" discipline as every other offline rule here, and `@werf/core/schemas`' own limits
+ *  (`MAX_ATTACHMENT_SIZE_BYTES`, `ALLOWED_ATTACHMENT_MIME_TYPES`), not a copy of them, so this
+ *  screen and the API can never quietly drift apart on what "too big" or "unsupported" means. */
+type PhotoFileError = 'tooLarge' | 'unsupportedType';
+
+const PHOTO_FILE_ERROR_KEY: Record<PhotoFileError, TranslationKey> = {
+  tooLarge: 'photo.error.tooLarge',
+  unsupportedType: 'photo.error.unsupportedType',
+};
+
+function validatePhotoFile(file: File): PhotoFileError | null {
+  if (file.size > schemas.MAX_ATTACHMENT_SIZE_BYTES) return 'tooLarge';
+  if (!(schemas.ALLOWED_ATTACHMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return 'unsupportedType';
+  }
+  return null;
+}
 
 export function RecordPhotoScreen() {
   const { t } = useTranslation();
@@ -33,6 +54,7 @@ export function RecordPhotoScreen() {
 
   const [index, setIndex] = useState(0);
   const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<PhotoFileError | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
 
@@ -40,10 +62,24 @@ export function RecordPhotoScreen() {
 
   if (!activeFarm) return null;
 
-  const canSave = file !== null && !saving;
+  const canSave = file !== null && fileError === null && !saving;
+
+  const selectFile = (selected: File | null) => {
+    if (selected === null) {
+      setFile(null);
+      setFileError(null);
+      return;
+    }
+    const problem = validatePhotoFile(selected);
+    // The BAD file is not kept: a farmer who takes another photo must get a clean retry, not a
+    // Save button still disabled by the one they already discarded from the camera roll.
+    setFile(problem === null ? selected : null);
+    setFileError(problem);
+  };
 
   const advance = () => {
     setFile(null);
+    setFileError(null);
     setIndex((i) => i + 1);
   };
 
@@ -106,9 +142,16 @@ export function RecordPhotoScreen() {
               type="file"
               accept="image/*"
               capture="environment"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => selectFile(e.target.files?.[0] ?? null)}
               className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 py-2 text-body text-soil-900"
             />
+            {/* Warning FORM — tinted panel, left rule, never the ochre action shape (NFR-411) —
+                same as NotSentScreen.tsx's refusal cards. Meaning is in the words. */}
+            {fileError !== null && (
+              <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                {t(PHOTO_FILE_ERROR_KEY[fileError])}
+              </p>
+            )}
           </div>
 
           <button

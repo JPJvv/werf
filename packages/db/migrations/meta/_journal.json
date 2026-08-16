@@ -211,6 +211,13 @@
       "when": 1786864291715,
       "tag": "0029_users_column_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786866642719,
+      "tag": "0030_farm_attachment_quota",
+      "breakpoints": true
     }
   ]
 }

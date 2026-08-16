@@ -74,6 +74,8 @@ function reasonKey(capture: RefusedCapture): TranslationKey {
       return 'notSent.why.notFound';
     case 'TENANCY':
       return 'notSent.why.tenancy';
+    case 'QUOTA_EXCEEDED':
+      return 'notSent.why.quotaExceeded';
     default:
       // An unrecognised code says so rather than guessing. A wrong specific explanation sends a
       // farmer to fix something that was never wrong.

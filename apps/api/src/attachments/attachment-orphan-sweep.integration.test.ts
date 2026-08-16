@@ -16,6 +16,7 @@ import {
   attachments,
   createAppDb,
   createElevatedDb,
+  farms,
   users,
   type AppDb,
   type ElevatedDb,
@@ -394,5 +395,45 @@ describe('attachment orphan sweep (phase-checklists.md 3i(b))', () => {
 
     await expect(sweep.sweepOrphanedUploads()).resolves.toBe(1);
     await expect(sweep.sweepOrphanedUploads()).resolves.toBe(0);
+  });
+
+  /** The farm's current `attachment_bytes_used` — P3.16. */
+  async function usage(farmId: string): Promise<number> {
+    const [row] = await elevated.db
+      .select({ attachmentBytesUsed: farms.attachmentBytesUsed })
+      .from(farms)
+      .where(eq(farms.id, farmId));
+    return row!.attachmentBytesUsed;
+  }
+
+  it('⭐ P3.16: releases the quota reservation for a row it reclaims — an abandoned upload must not permanently eat into a farm’s quota', async () => {
+    const { userId, farmId } = await tenant('QuotaReleaseOnSweep');
+    const animalId = await anAnimal(farmId);
+    const body = attachmentBody(farmId, animalId, Buffer.from('reserved, then abandoned'), {
+      sizeBytes: 4_096,
+    });
+    await service.createAttachment(userId, body);
+    expect(await usage(farmId)).toBe(4_096);
+    await backdate(body.id);
+
+    await expect(sweep.sweepOrphanedUploads()).resolves.toBe(1);
+
+    expect(await usage(farmId)).toBe(0);
+  });
+
+  it('P3.16: a late retry after the sweep re-charges the SAME quota it released, not double', async () => {
+    const { userId, farmId } = await tenant('QuotaRechargeOnRevive');
+    const animalId = await anAnimal(farmId);
+    const body = attachmentBody(farmId, animalId, Buffer.from('reserved, swept, then retried'), {
+      sizeBytes: 2_048,
+    });
+    await service.createAttachment(userId, body);
+    await backdate(body.id);
+    await sweep.sweepOrphanedUploads();
+    expect(await usage(farmId)).toBe(0);
+
+    await service.createAttachment(userId, body); // the device's own retry — revives the row
+
+    expect(await usage(farmId)).toBe(2_048);
   });
 });

@@ -68,11 +68,19 @@ export const farms = pgTable(
     timezone: text('timezone').notNull().default('Africa/Johannesburg'),
     /** Number of UTC calendar-month event buckets retained on each device (offline-sync.md §3). */
     eventRetentionMonths: integer('event_retention_months').notNull().default(24),
+    /** Running total of FINALISED attachment bytes this farm has stored (P3.16, migration 0030).
+     *  Server-maintained only — `AttachmentsService` increments it atomically against the quota
+     *  when a `createAttachment` transitions a row to "will be uploaded" (a fresh insert or a
+     *  revival of an abandoned one), and `AttachmentOrphanSweepService` decrements it when it
+     *  reclaims a row before that upload ever completed. No API accepts this column in a request
+     *  body, so there is no client-writable path to it despite `farms` syncing whole-row. */
+    attachmentBytesUsed: bigint('attachment_bytes_used', { mode: 'number' }).notNull().default(0),
     ...auditColumns,
   },
   (t) => [
     check('farms_jurisdiction_v1', sql`${t.jurisdiction} = 'ZA'`),
     check('farms_event_retention_months_positive', sql`${t.eventRetentionMonths} > 0`),
+    check('farms_attachment_bytes_used_nonnegative', sql`${t.attachmentBytesUsed} >= 0`),
   ],
 );
 

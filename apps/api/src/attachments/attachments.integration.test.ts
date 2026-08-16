@@ -24,14 +24,23 @@ import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainer
 import { CreateBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import {
   animals,
+  attachments,
   createAppDb,
   createElevatedDb,
+  farms,
   users,
   type AppDb,
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { ConflictError, NotFoundError, ValidationError, schemas, uuidv7 } from '@werf/core';
+import {
+  ConflictError,
+  NotFoundError,
+  QuotaExceededError,
+  ValidationError,
+  schemas,
+  uuidv7,
+} from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
@@ -39,7 +48,7 @@ import { TokenService } from '../auth/token.service';
 import { TwoFactorService } from '../auth/two-factor.service';
 import { PasskeyService } from '../auth/passkey.service';
 import { RecoveryCodeService } from '../auth/recovery-code.service';
-import { AttachmentsService } from './attachments.service';
+import { ATTACHMENT_FARM_QUOTA_BYTES, AttachmentsService } from './attachments.service';
 import { OBJECT_STORAGE, S3ObjectStorage, attachmentObjectKey, sha256Hex } from './object-storage';
 
 const BOOT_TIMEOUT_MS = 180_000;
@@ -461,6 +470,89 @@ describe('attachment capture (phase-checklists.md 3i)', () => {
       await expect(service.getDownloadUrl(userId, { id: randomUUID(), farmId })).rejects.toThrow(
         NotFoundError,
       );
+    });
+  });
+
+  describe('attachment storage quota (P3.16, owner decision 2026-08-16)', () => {
+    /** Sets a farm's running usage directly, so this test proves the quota GATE without
+     *  uploading real gigabytes to get there — `createAttachment` only ever reads/writes the
+     *  declared `sizeBytes`, never real bytes (`finalizeAttachment` is the one that re-derives
+     *  from the object actually stored), so a declared size far from the real `Buffer` used is a
+     *  faithful simulation of "this farm is almost at its quota", not a shortcut around it. */
+    async function setUsage(farmId: string, bytesUsed: number): Promise<void> {
+      await elevated.db
+        .update(farms)
+        .set({ attachmentBytesUsed: bytesUsed })
+        .where(eq(farms.id, farmId));
+    }
+
+    async function usage(farmId: string): Promise<number> {
+      const [row] = await elevated.db
+        .select({ attachmentBytesUsed: farms.attachmentBytesUsed })
+        .from(farms)
+        .where(eq(farms.id, farmId));
+      return row!.attachmentBytesUsed;
+    }
+
+    it('charges a fresh attachment against the farm total', async () => {
+      const { userId, farmId } = await tenant('QuotaCharge');
+      const animalId = await anAnimal(farmId);
+      const body = attachmentBody(farmId, animalId, Buffer.from('x'), { sizeBytes: 12_345 });
+
+      await service.createAttachment(userId, body);
+
+      expect(await usage(farmId)).toBe(12_345);
+    });
+
+    it('refuses a create that would push the farm over quota, and charges nothing', async () => {
+      const { userId, farmId } = await tenant('QuotaRefuse');
+      const animalId = await anAnimal(farmId);
+      await setUsage(farmId, ATTACHMENT_FARM_QUOTA_BYTES - 100);
+      const body = attachmentBody(farmId, animalId, Buffer.from('x'), { sizeBytes: 200 });
+
+      await expect(service.createAttachment(userId, body)).rejects.toThrow(QuotaExceededError);
+
+      // The whole transaction rolled back: the usage counter is untouched AND no orphaned row
+      // was left behind for a would-be upload that was refused before it started.
+      expect(await usage(farmId)).toBe(ATTACHMENT_FARM_QUOTA_BYTES - 100);
+      const rows = await elevated.db.select().from(attachments).where(eq(attachments.id, body.id));
+      expect(rows).toHaveLength(0);
+    });
+
+    it('allows a create that lands exactly on the quota boundary', async () => {
+      const { userId, farmId } = await tenant('QuotaBoundary');
+      const animalId = await anAnimal(farmId);
+      await setUsage(farmId, ATTACHMENT_FARM_QUOTA_BYTES - 100);
+      const body = attachmentBody(farmId, animalId, Buffer.from('x'), { sizeBytes: 100 });
+
+      await expect(service.createAttachment(userId, body)).resolves.toBeDefined();
+
+      expect(await usage(farmId)).toBe(ATTACHMENT_FARM_QUOTA_BYTES);
+    });
+
+    it('does not double-charge an idempotent retry of the same still-pending attachment', async () => {
+      const { userId, farmId } = await tenant('QuotaIdempotent');
+      const animalId = await anAnimal(farmId);
+      const body = attachmentBody(farmId, animalId, Buffer.from('x'), { sizeBytes: 500 });
+
+      await service.createAttachment(userId, body);
+      await service.createAttachment(userId, body); // same id, same content — a re-flushed create
+
+      expect(await usage(farmId)).toBe(500);
+    });
+
+    it('does not charge quota twice for one farm’s two DIFFERENT attachments beyond their own sizes', async () => {
+      // Guards against a broken predicate accidentally scoping the UPDATE to ALL farms instead of
+      // this one — a second, unrelated tenant's usage must never move.
+      const { userId, farmId } = await tenant('QuotaScopedA');
+      const other = await tenant('QuotaScopedB');
+      const animalId = await anAnimal(farmId);
+      const body = attachmentBody(farmId, animalId, Buffer.from('x'), { sizeBytes: 1_000 });
+
+      await service.createAttachment(userId, body);
+
+      expect(await usage(farmId)).toBe(1_000);
+      expect(await usage(other.farmId)).toBe(0);
     });
   });
 });

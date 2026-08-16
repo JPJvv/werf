@@ -15,7 +15,8 @@ export type WerfErrorCode =
   | 'SESSION_INVALID'
   | 'SECOND_FACTOR_ENROLMENT_REQUIRED'
   | 'STEP_UP_REQUIRED'
-  | 'CONFLICT';
+  | 'CONFLICT'
+  | 'QUOTA_EXCEEDED';
 
 export abstract class WerfError extends Error {
   abstract readonly code: WerfErrorCode;
@@ -126,6 +127,17 @@ export class StepUpRequiredError extends WerfError {
 /** A uniqueness rule was violated — an email already registered, a farm name taken. */
 export class ConflictError extends WerfError {
   readonly code = 'CONFLICT';
+}
+
+/**
+ * A farm's attachment storage quota (P3.16, owner decision 2026-08-16) would be exceeded by
+ * this write. Distinct from `ConflictError` — `ConflictError` on an attachment already covers
+ * several unrelated shapes (an id reused with different content, a row the orphan sweep just
+ * reclaimed), and a farmer told "already exists" for a quota refusal would be sent to fix
+ * nothing that was ever wrong. This code gives the client an accurate, specific reason.
+ */
+export class QuotaExceededError extends WerfError {
+  readonly code = 'QUOTA_EXCEEDED';
 }
 
 export class InvalidMoneyError extends WerfError {

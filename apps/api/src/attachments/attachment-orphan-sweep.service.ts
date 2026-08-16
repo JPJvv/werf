@@ -35,7 +35,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
-import { attachments, type ElevatedDb } from '@werf/db';
+import { attachments, farms, type ElevatedDb } from '@werf/db';
 import { ELEVATED_DB } from '../db/db.module';
 import { OBJECT_STORAGE, type ObjectStorage } from './object-storage';
 
@@ -75,7 +75,12 @@ export class AttachmentOrphanSweepService {
           ),
         ),
       )
-      .returning({ id: attachments.id, objectKey: attachments.objectKey });
+      .returning({
+        id: attachments.id,
+        farmId: attachments.farmId,
+        objectKey: attachments.objectKey,
+        sizeBytes: attachments.sizeBytes,
+      });
 
     // The object release happens AFTER the claim commits, deliberately: a row is already
     // tombstoned (and so cannot be finalised — the gate above is the correctness boundary) the
@@ -90,6 +95,30 @@ export class AttachmentOrphanSweepService {
       } catch (error) {
         this.logger.warn(
           `Failed to release object for swept attachment ${row.id}: ${String(error)}`,
+        );
+      }
+    }
+
+    // P3.16: release each reclaimed row's QUOTA RESERVATION, not just its object. `createAttachment`
+    // charges a row's bytes against `farms.attachment_bytes_used` the moment it decides an upload
+    // WILL happen (a fresh insert or a revival) — a `pending` row this sweep claims never finished
+    // that upload, so its reservation must come back or an abandoned capture would permanently eat
+    // into a farm's quota. `GREATEST(...,0)` is a defensive floor, matching `finalizeAttachment`'s
+    // own clock-skew guard shape: correct accounting never needs it, but it is cheap insurance
+    // against the nonnegative CHECK constraint rather than a 500 from a bug this sweep can't see.
+    // Best-effort per row, same as the object release above: one farm's decrement failing must not
+    // stop the rest of the batch from being reclaimed.
+    for (const row of claimed) {
+      try {
+        await this.elevated.db
+          .update(farms)
+          .set({
+            attachmentBytesUsed: sql`GREATEST(${farms.attachmentBytesUsed} - ${row.sizeBytes}, 0)`,
+          })
+          .where(eq(farms.id, row.farmId));
+      } catch (error) {
+        this.logger.warn(
+          `Failed to release quota for swept attachment ${row.id}: ${String(error)}`,
         );
       }
     }

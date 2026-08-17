@@ -22,6 +22,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
+import { useCurrentPlanting } from '../crops/LocalPlantings';
 import { useCurrentBoundary, useEffectiveLandUnits } from './LocalLand';
 import { landKey } from './AddLandUnitScreen';
 
@@ -93,6 +94,9 @@ export function LandScreen() {
                   term={term}
                   hasTypedBoundary={unit.boundaryGeojson !== null}
                 />
+                {/* A camp is never planted (FR-203) — gated on the unit's own `kind`, not the farm's
+                    vocabulary, so a mixed farm's camps still show only the boundary row above. */}
+                {unit.kind === 'block' && <PlantingRow landUnitId={unit.id} />}
               </li>
             );
           })}
@@ -153,6 +157,39 @@ function BoundaryRow({
         className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
       >
         {t(landKey(term, 'walkFrom'))}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * What's currently in the ground on this block (FR-203), and the way in to recording a planting.
+ *
+ * Same "two absences are two facts" shape `BoundaryRow` already draws: "never planted" and "planted
+ * last season, still standing" are different sentences, and `useCurrentPlanting` is the same
+ * `(occurredAt, id)`-ordered projection over the append-only log that boundary uses for a walk (see
+ * `@werf/domain/crops/planting.ts`'s module note).
+ */
+function PlantingRow({ landUnitId }: { landUnitId: string }) {
+  const { t } = useTranslation();
+  const current = useCurrentPlanting(landUnitId);
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-body text-soil-700">
+        {current === undefined ? (
+          t('crops.notPlanted')
+        ) : (
+          <>
+            <span className="text-soil-900">{current.crop}</span> {t('crops.planted')}
+          </>
+        )}
+      </span>
+      <Link
+        to={`/crops/plant?block=${landUnitId}`}
+        className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
+      >
+        {t('crops.recordPlanting')}
       </Link>
     </div>
   );

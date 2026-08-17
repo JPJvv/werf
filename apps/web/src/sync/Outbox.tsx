@@ -54,6 +54,12 @@ import {
 import { landApi } from '../land/landApi';
 import { useHydratedLandUnits } from '../land/HydratedLand';
 import {
+  usePlantings,
+  usePlantingsHydrationFailed,
+  usePlantingsSettled,
+} from '../crops/LocalPlantings';
+import { cropsApi } from '../crops/plantingApi';
+import {
   useAttachments,
   useAttachmentsHydrationFailed,
   useAttachmentsSettled,
@@ -225,6 +231,7 @@ function replaceSetIfChanged(
 export type CaptureKind =
   | 'landUnit'
   | 'boundaryWalk'
+  | 'planting'
   | 'mob'
   | 'tally'
   | 'branding'
@@ -446,6 +453,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
   const boundaryWalks = useBoundaryWalks();
+  const plantings = usePlantings();
   // ⭐ The down-sync half of land (phase-checklists.md 3e, land hydration — closed 2026-08-14) — a
   // camp another device created, already replicated to this one. Read ONLY for `landUnitCodes`
   // below (display), never for the send-queue loops above: those stay on the raw local `landUnits`
@@ -508,6 +516,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // outright (the Rules of Hooks), not just this feature.
   const landUnitsSettled = useLandUnitsSettled();
   const boundaryWalksSettled = useBoundaryWalksSettled();
+  const plantingsSettled = usePlantingsSettled();
   const mobsSettled = useMobsSettled();
   const talliesSettled = useTalliesSettled();
   // Same "not yet trustworthy" gate as every local store above, for the down-sync sources —
@@ -531,6 +540,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const allSettled =
     landUnitsSettled &&
     boundaryWalksSettled &&
+    plantingsSettled &&
     mobsSettled &&
     talliesSettled &&
     hydratedMobsSettled &&
@@ -561,6 +571,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // reason.
   const landUnitsHydrationFailed = useLandUnitsHydrationFailed();
   const boundaryWalksHydrationFailed = useBoundaryWalksHydrationFailed();
+  const plantingsHydrationFailed = usePlantingsHydrationFailed();
   const mobsHydrationFailed = useMobsHydrationFailed();
   const talliesHydrationFailed = useTalliesHydrationFailed();
   const hydratedMobsHydrationFailed = useHydratedMobsHydrationFailed();
@@ -581,6 +592,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const anyHydrationFailed =
     landUnitsHydrationFailed ||
     boundaryWalksHydrationFailed ||
+    plantingsHydrationFailed ||
     mobsHydrationFailed ||
     talliesHydrationFailed ||
     hydratedMobsHydrationFailed ||
@@ -712,6 +724,21 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           detail: landUnitCodes.get(walk.landUnitId) ?? null,
           send: (token) => landApi.recordBoundaryWalk(walk, token),
           guardedBy: [`landrow:${walk.landUnitId}`],
+        });
+      }
+    }
+    // A planting references the block it was sown in — same FK-only shape as a boundary walk, and
+    // for the identical reason: nothing here creates evidence a server-side guard reads (there is
+    // no compliance gate on FR-203), so `guardedBy` alone, no safety ordering. `landUnitId` is never
+    // null on a planting — a planting with no ground under it is not a planting (P2.7 shape).
+    for (const planting of plantings) {
+      if (!sent.has(planting.id)) {
+        items.push({
+          id: planting.id,
+          kind: 'planting',
+          detail: landUnitCodes.get(planting.landUnitId) ?? null,
+          send: (token) => cropsApi.recordPlanting(planting, token),
+          guardedBy: [`landrow:${planting.landUnitId}`],
         });
       }
     }
@@ -1128,6 +1155,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     landUnits,
     landUnitCodes,
     boundaryWalks,
+    plantings,
     mobs,
     brandingRegisters,
     tallies,

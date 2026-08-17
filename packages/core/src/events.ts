@@ -93,6 +93,12 @@ export const FARM_SCOPED_EVENT_TYPES = [
   // than assumed. The walk names its `land_unit_id`; what it does not name is a herd, because it
   // does not concern one.
   'boundary_walk',
+  // A block carries maize this season and lucerne the next (FR-203) — the identical reasoning as
+  // `boundary_walk`, one line up, applied to what's IN the ground rather than its shape. A separate
+  // `LAND_SCOPED_EVENT_TYPES` list was considered and rejected: it would buy a second branch in
+  // `assertHerdScoped` with behaviour identical to this one, for a distinction (shape of the ground
+  // vs. what's on it) that FR-113's guard has no reason to care about.
+  'planting',
 ] as const satisfies readonly EventType[];
 export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
 

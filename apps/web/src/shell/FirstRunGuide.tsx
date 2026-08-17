@@ -84,7 +84,10 @@ export function firstRunSteps(enterpriseTypes: EnterpriseType[]): FirstRunStep[]
   if (hasAnimals) {
     steps.push({ labelKey: 'firstRun.stock.animals', to: '/animals' });
   } else if (hasCrops) {
-    steps.push({ labelKey: 'firstRun.stock.crops', to: '/harvest' });
+    // 'Record your first planting' now has somewhere real to point (FR-203, Phase 4) — until this
+    // slice, `/harvest` was the honest placeholder the module header describes, and a farmer
+    // arriving from a promise to "record a planting" would have landed on the wrong room.
+    steps.push({ labelKey: 'firstRun.stock.crops', to: '/crops/plant' });
   }
 
   // Every farm has people, whatever it farms.

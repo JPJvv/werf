@@ -1455,11 +1455,31 @@ Land — blocks & plantings
   for a child block MUST walk `parent_id` for spray events dated before the split's own
   `occurred_at`, not just query the child's own `land_unit_id`. Undecided until 4d, but the
   guard's query shape has to know this on day one or splitting silently launders a PHI.
-□ 4a·3 FR-203 Record a planting: crop, cultivar, planted date, density, seed source, expected
+☑ 4a·3 FR-203 Record a planting: crop, cultivar, planted date, density, seed source, expected
   harvest — new `planting` event payload (Zod, @werf/core), capture screen `/crops/plant`,
   server write through the shared `insertEvent`/`assertHerdScoped`-equivalent path (crop events
   are land-scoped, not herd-scoped — `FARM_SCOPED_EVENT_TYPES`-style exception or a new
-  `LAND_SCOPED_EVENT_TYPES` list; decide which, name it in the domain layer).
+  `LAND_SCOPED_EVENT_TYPES` list; decide which, name it in the domain layer). **Done (19th
+  session).** DECIDED: `planting` was added to the EXISTING `FARM_SCOPED_EVENT_TYPES` list rather
+  than a new parallel one — `boundary_walk` already sits there despite carrying `land_unit_id`,
+  for the identical reasoning ("ground, not a herd"), and a second list would buy a second branch
+  in `assertHerdScoped` with behaviour identical to the first. New `apps/api/src/crops/` module
+  (`CropsController`/`CropsService`, `POST /crops/plantings`) — separate from `LandService`, the
+  same split `RainfallService` already draws from it: a fact ABOUT a block (FR-150/201/202) and a
+  fact about what's grown IN it (FR-203) are different domains sharing a foreign key. New
+  `packages/domain/src/crops/` (first module under Phase 4's own domain area, mirroring
+  `land/`/`livestock/`). Client: `apps/web/src/crops/` — `LocalPlantings.tsx` (capture store),
+  `HydratedCrops.tsx` (down-sync half, mirroring `HydratedLand.tsx`'s boundary-walk hydration —
+  the sync-hydration-blind-spot lesson (STATUS.md) means BOTH halves had to be built, not just the
+  local one), `RecordPlantingScreen.tsx` (`?block=` picker with the same live-reconciliation-
+  against-farm-switching fix `WalkBoundaryScreen` already carries). Outbox: guarded by
+  `landrow:${landUnitId}` exactly like a boundary walk (FK-only, no safety ordering — FR-203 has
+  no compliance gate), with BOTH `plantingsSettled`/`plantingsHydrationFailed` wired into the two
+  flush-gating aggregates. `LandScreen.tsx` gained a `PlantingRow` per block (gated on the unit's
+  own `kind === 'block'`, not the farm-wide vocabulary term, so a mixed farm's camps show only the
+  boundary row). Found and fixed in the same commit: `FirstRunGuide.tsx`'s crop step ("Record your
+  first planting") pointed at `/harvest`, an honest placeholder from before this slice existed —
+  now points at `/crops/plant`, the room the sentence actually promises.
   ⭐ DESIGN DECISION — the "current planting" READ PROJECTION: latest `planting` event per
   `land_unit_id`, ordered `(occurred_at, id)`, no status machine, no closing event. An annual
   crop gets a fresh `planting` event every season; a vineyard gets ONE that persists for years
@@ -1468,7 +1488,12 @@ Land — blocks & plantings
   planted"), NOT a safety dependency: the PHI guard (4d) reads the block's SPRAY HISTORY
   directly and never needs to know what's currently planted, so getting this wrong is a wrong
   label on a screen, not a compliance defect. Revisit if a real crop-rotation case breaks it
-  (FR-210, deferred, would need this same log).
+  (FR-210, deferred, would need this same log). Implemented as `latestPlantingFor`/`isLater` in
+  `apps/web/src/crops/LocalPlantings.tsx`, mirroring `LocalLand.tsx`'s `latestWalkFor` exactly —
+  NOT in `@werf/domain`, matching that precedent (the fold lives beside the store that reads it).
+  ⛔ NAMED, NOT SOLVED: whether a split block (4a·2) inherits its parent's most recent planting —
+  the projection has no opinion yet, and 4a·2 needs to decide it the same way 4d·4 decided the
+  ancestor-spray question for PHI.
 
 Reference data & spray capture
 □ 4c·1 FR-508 `chemical_products` migration + RLS (world-readable, `reference-sync`, filtered by

@@ -17,6 +17,7 @@ export * from './animals';
 export * from './branding';
 export * from './events';
 export * from './livestock';
+export * from './planting';
 export * from './rainfall';
 export * from './sync';
 export * from './attachments';

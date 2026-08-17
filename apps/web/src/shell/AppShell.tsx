@@ -8,6 +8,8 @@ import { InstallPrompt } from '../pwa/InstallPrompt';
 import { FarmSwitcher } from './FarmSwitcher';
 import { LocalLandProvider } from '../land/LocalLand';
 import { HydratedLandProvider } from '../land/HydratedLand';
+import { LocalPlantingsProvider } from '../crops/LocalPlantings';
+import { HydratedCropsProvider } from '../crops/HydratedCrops';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
 import { LocalTalliesProvider } from '../livestock/LocalTallies';
@@ -52,6 +54,11 @@ const CAPTURE_STORES = [
   // closed 2026-08-14). `LocalLand.tsx`'s `useEffectiveLandUnits`/`useEffectiveBoundaryWalks` and
   // `Outbox.tsx` both read it, so it has to sit above both, same as `HydratedLivestockProvider` below.
   HydratedLandProvider,
+  LocalPlantingsProvider,
+  // Also not a capture store — the DOWN-SYNC half of crops (FR-203). `LocalPlantings.tsx`'s
+  // `useEffectivePlantings` reads it, so it has to sit above `LocalPlantingsProvider`, same as
+  // `HydratedLandProvider` above.
+  HydratedCropsProvider,
   LocalMobsProvider,
   LocalTalliesProvider,
   LocalBrandingProvider,

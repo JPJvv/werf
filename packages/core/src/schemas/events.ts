@@ -499,6 +499,33 @@ export const boundaryWalkPayloadSchema = z.object({
 });
 export type BoundaryWalkPayload = z.infer<typeof boundaryWalkPayloadSchema>;
 
+/**
+ * A crop planted in a block (FR-203): what, from what seed, and how thick. `landUnitId` is not part
+ * of this payload — like every event, it is a field on the envelope (`eventObjectSchema`), never
+ * duplicated into the type-specific shape.
+ *
+ * Every field but `crop` is optional: a farmer noting "planted maize in B12 today" while walking the
+ * row knows what and where before they know the cultivar or the seed source, and refusing the
+ * capture until all five are typed would cost the record, not just the extra detail.
+ */
+export const plantingPayloadSchema = z.object({
+  crop: z.string().min(1),
+  cultivar: z.string().min(1).optional(),
+  /** Units vary too widely across crops (plants/ha for an orchard, kg/ha for a broadcast seed rate)
+   *  for a closed set — the same reasoning FR-201 applied to `soilType`. */
+  density: z
+    .object({
+      value: z.number().positive().finite(),
+      unit: z.string().min(1),
+    })
+    .optional(),
+  seedSource: z.string().min(1).optional(),
+  /** A farming estimate, not a computed one — no regulated figure resolves it (ADR-0005 does not
+   *  apply here). */
+  expectedHarvestDate: dateSchema.optional(),
+});
+export type PlantingPayload = z.infer<typeof plantingPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -518,6 +545,7 @@ const CONCRETE_PAYLOADS = {
   rainfall: rainfallPayloadSchema,
   tally: tallyPayloadSchema,
   boundary_walk: boundaryWalkPayloadSchema,
+  planting: plantingPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

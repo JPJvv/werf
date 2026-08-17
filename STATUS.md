@@ -3,7 +3,7 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-17 (eighteenth session). ✅ **Phase 3 MERGED to `main` as `6823858`
+**Last updated:** 2026-08-17 (nineteenth session). ✅ **Phase 3 MERGED to `main` as `6823858`
 (PR #11, merge commit, all 3 CI lanes green at merge).** `phase-4/crops-fields` branched off the
 updated `main` same session — Phase 4 (crops & fields) is now open. Do not re-run P1/P2.5–P2.10,
 conflict audit, P3.11–P3.15 or P3.16.
@@ -26,7 +26,20 @@ it first, do not re-derive. Fixed a wrong FR bucketing shared by that file and `
 "two incompatible phase maps" defect class, already paid for once).
 
 ✅ **4a·1 (FR-201, define a block) done, 18th session.** Full account in `phase-checklists.md`'s
-Phase 4 section next to the box. Next up: 4a·2 (split) or 4a·3 (record a planting).
+Phase 4 section next to the box.
+
+✅ **4a·3 (FR-203, record a planting) done, 19th session.** New `apps/api/src/crops/` and
+`packages/domain/src/crops/` modules (Phase 4's own domain area); client `apps/web/src/crops/`
+(`LocalPlantings`/`HydratedCrops`/`RecordPlantingScreen`); `planting` added to
+`FARM_SCOPED_EVENT_TYPES` (reused, not a new parallel list — see the checklist box for why); the
+"current planting" projection (`latestPlantingFor`, latest-by-`(occurred_at,id)`) lives beside the
+store the same way `LocalLand.tsx`'s `latestWalkFor` does, not in `@werf/domain`. Outbox wired with
+BOTH settled/hydrationFailed flags, guarded by `landrow:` (FK-only, no compliance gate). Fixed a
+pre-existing `FirstRunGuide.tsx` mismatch found along the way: the crop step's own label ("Record
+your first planting") pointed at `/harvest`, an honest placeholder from before this slice existed
+— now points at `/crops/plant`. Full account in `phase-checklists.md`'s Phase 4 section next to
+the box. ⛔ Left NAMED, not solved: whether a split block (4a·2) inherits its parent's most recent
+planting — 4a·2 has to decide this. Next up: 4a·2 (split a block).
 
 **Active branch:** `phase-4/crops-fields`, off `main` @ `6823858` (Phase 3 merge commit).
 
@@ -41,7 +54,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a·1 ☑), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev |
+| 4 — Crops & fields | 🔶 **In progress** (4a·1 ☑, 4a·3 ☑), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -111,10 +124,9 @@ worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-17, eighteenth session, after 4a·1 — full run, not `FULL TURBO` cache) | ✅ **117 test files / 1287 tests, 7/7 builds, 169.36 KB gz** |
-| `pnpm verify` (2026-08-17, sixteenth session, fully uncached, AFTER the Phase 3 SEV-2/LOW fixes) | ✅ 117 test files / 1283 tests, 7/7 builds, 168.80 KB gz |
-| Earlier same-session/prior baselines (attachment quota, users-column grants, auth audit) | Condensed — see item 37 |
-| `pnpm test:e2e` default lane (2026-08-17, sixteenth session, after the SEV-2 fix — real OPFS `put()` still works) | ✅ 31 passed / 5 skipped |
+| `pnpm verify` (2026-08-17, nineteenth session, after 4a·3 — full run, not `FULL TURBO` cache) | ✅ **122 test files / 1317 tests, 7/7 builds, 171.43 KB gz** |
+| `pnpm test:e2e` default lane (2026-08-17, nineteenth session, after 4a·3) | ✅ 31 passed / 5 skipped |
+| Earlier Phase 4/Phase 3 baselines (4a·1, the Phase 3 SEV-2/LOW fixes, sixteenth session onward) | Condensed — see item 37 |
 | `WERF_REAL_STACK=1`, all 5 gated tests, each run isolated (2026-08-17, sixteenth session) | ✅ All pass — two real test-tooling defects found and fixed as `dd1fac8`; full account in §5 item 41 |
 | Whole-branch review-agent pass + narrow follow-up (2026-08-17, sixteenth session) | ✅ APPROVABLE — full account in §3 |
 | `compliance-checker` `45775ea..ec8336e` (2026-08-16, fourteenth session) | ✅ CLEARED, one LOW fixed same session — full account in §3 |

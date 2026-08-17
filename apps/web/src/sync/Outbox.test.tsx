@@ -2300,6 +2300,7 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
   const WALK_ID = '0190f3a0-0000-7000-8000-0000000000fa';
   const MOVE2_ID = '0190f3a0-0000-7000-8000-0000000000fb';
   const THEFT_ID = '0190f3a0-0000-7000-8000-0000000000fc';
+  const PLANTING_ID = '0190f3a0-0000-7000-8000-0000000000fd';
 
   function seedLandUnit(): void {
     window.localStorage.setItem(
@@ -2369,6 +2370,34 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(paths.some((p) => p.endsWith('/land-units/boundary-walks'))).toBe(false);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(WALK_ID);
+  });
+
+  it('⭐ holds a planting behind a refused block — the same FK-only guard as a boundary walk', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-plantings:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: PLANTING_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-14T04:00:00.000Z',
+          crop: 'Maize',
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/land-units'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/plantings'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(PLANTING_ID);
   });
 
   it('⭐ holds a mob created in a refused camp — the conditional guard on an optional field', async () => {

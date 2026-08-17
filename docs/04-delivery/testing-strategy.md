@@ -322,12 +322,32 @@ These are gates. They are in the roadmap because they cannot be in CI.
 | **The crush test** — a real handler, a real crush, timed | 2 | If a weight takes >4s, the tests all pass and the product is dead |
 | **The reboot test** — real Android, real aeroplane mode, real reboot | 1 | Emulator OPFS ≠ device OPFS |
 | **The sunlight test** — real phone, midday, gloves | 1, 2 | `axe-core` measures contrast ratios, not glare |
-| **The bookkeeper test** — a real payslip, a 20-year bookkeeper | 3 | They will spot in 5 seconds what the test suite cannot express |
-| **The auditor test** — a real GlobalGAP auditor, a real pack | 4 | They know what is missing. We do not. |
-| **The SAPS test** — a real Stock Theft Unit officer | 4 | Same |
-| **The legal review** — a qualified labour-law practitioner | 3 | **The tests encode our understanding. If our understanding is wrong, the tests are confidently wrong too.** |
+| **The bookkeeper test** — a real payslip, a 20-year bookkeeper | 5 | They will spot in 5 seconds what the test suite cannot express |
+| **The auditor test** — a real GlobalGAP auditor, a real pack | 6 | They know what is missing. We do not. |
+| **The SAPS test** — a real Stock Theft Unit officer | 6 | Same |
+| **The legal review** — a qualified labour-law practitioner | 5 | **The tests encode our understanding. If our understanding is wrong, the tests are confidently wrong too.** |
 
 The last one is the important one. Everywhere else in this codebase, a passing test means the code is right. In payroll, a passing test means the code matches what we *believed* the law says. Those are not the same claim, and no amount of coverage closes the gap. Only a lawyer does.
+
+⚠️ The Phase column above was wrong for three rows until 2026-08-17 (Q19): bookkeeper/legal-review
+said `3`, auditor/SAPS said `4`. Payroll is Phase 5 and evidence packs are Phase 6 — see
+`roadmap.md`. Fixed here rather than left for the next reconciliation pass.
+
+### 7a. Phase 3 field evidence — recorded 2026-08-17 (Q19), not yet run
+
+Phase 7 (`roadmap.md` 7e) pilots three farms for a month, but that gate is generic — it does not
+name what Phase 3's sync engine specifically needs proven. These are the offline-sync claims this
+codebase makes that no CI run, testcontainer or Playwright `context.setOffline()` can substitute
+for. None of these have been run yet; they are recorded so Phase 7 doesn't have to rediscover them
+under pilot pressure.
+
+| Check | Why a human, on real hardware |
+|---|---|
+| **The dead-zone test** — a real device, genuinely out of signal (not airplane mode) for multiple days on an actual farm | `page.setOffline()`/`WERF_REAL_STACK`'s network toggle is a clean binary switch. Real rural connectivity degrades — partial signal, DNS timeouts, a carrier that silently drops a long-idle socket — in ways the sync client's retry/backoff has never been exercised against |
+| **The low-end-device storage test** — OPFS quota and eviction-under-pressure on the cheap Android hardware SA farm workers actually carry, filled with weeks of queued writes and photos | CI's OPFS has effectively unlimited disk. A real device fills up, and browser eviction behaviour under storage pressure is device- and Android-version-specific — untested anywhere in this repo |
+| **The two-workers-one-farm test** — two real people on two real phones, capturing concurrently over days, then reading the conflict-review queue themselves | The two-browser Playwright specs prove the *projection* is correct. They cannot prove a real farm manager reads `conflict_reviews` and picks the right winner under time pressure — that is a legibility claim, not a correctness claim |
+| **The big-attachment-on-bad-signal test** — a real ≤25MB photo queued and flushed to S3 af-south-1 over actual rural mobile data | The presigned-PUT retry path is proven against `minio/minio:latest` on localhost. Real EDGE/3G-class latency and timeout behaviour against the production bucket is unverified |
+| **The real-authenticator test** — TOTP/passkey enrolment and step-up on the phone or hardware key a farm owner actually owns, including a genuine "I lost my phone" recovery | WebAuthn tests use a virtual authenticator. A real biometric prompt, a real hardware key, and the actual recovery-code UX have never been exercised by anyone but the person who wrote the code |
 
 ---
 

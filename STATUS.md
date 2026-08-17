@@ -250,9 +250,14 @@ built for invitations) — this is a scheduling choice, not a blocker.
 
 ✅ **39. Q18 — CLOSED, `1b036bf`** — full account in the top-of-file note.
 
-**40. Q19 — record required real-device/field evidence needs.** What this product needs proven on
-an actual farmer's actual phone that no CI run can substitute for — write it down so it isn't
-discovered at pilot.
+✅ **40. Q19 — CLOSED.** Added `testing-strategy.md` §7a: five Phase-3-specific field-evidence rows
+(dead-zone reconnect behaviour, low-end-device OPFS storage pressure, two-real-workers conflict-
+queue legibility, big-attachment-over-bad-signal upload, real-authenticator WebAuthn/passkey
+recovery) that Phase 7's generic three-farm pilot does not name on its own — recorded so they aren't
+discovered under pilot pressure. None have been run; this is a record, not a clearance. Also fixed
+three stale Phase numbers in §7's original table found while editing it (bookkeeper/legal-review
+said `3`, should be `5`; auditor/SAPS said `4`, should be `6` — same renumbering `roadmap.md`
+already reflects).
 
 **41. Final — definition-of-done sweep.** `pnpm verify` fully uncached; `pnpm test:e2e` full lane
 including `WERF_REAL_STACK=1`; confirm no SEV-1/SEV-2 outstanding from any authorized pass; MED/LOW

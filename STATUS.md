@@ -5,7 +5,8 @@
 
 **Last updated:** 2026-08-17 (seventeenth session). **Phase 3 is APPROVABLE for merge — re-confirmed
 this session** (`pnpm verify` fully uncached, exit 0, reproduces 117 files/1283 tests/168.80 KB gz
-exactly). **Still not pushed — JP has not yet said push.** Punch list fully closed; whole-branch
+exactly). **Pushed and PR #11 opened this session (JP said push).** CI running at push time; check
+before merging. Punch list fully closed; whole-branch
 `reviewer`+`sync-auditor`+`compliance-checker` pass found one SEV-2 and two LOW, both fixed and
 re-verified — see below and §3. Do not re-run P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
 
@@ -36,11 +37,11 @@ clause 1), confirmed the fix closes the exact path traced end-to-end and found n
 ✅ **Owner-triggered `compliance-checker`, three passes through `ec8336e` (sessions 4/12/14): all
 CLEARED, no SEV-1/SEV-2, one LOW fixed same-session (`c12fbfc`).** Full account in §3.
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`47c0ffe` (grant-narrowing fix) ← `c45cd01` (SEV-2 fix) ← `dd1fac8` (final-sweep e2e fixes). Older
-chain is in git history. Not pushed — local commits only. **Ready to push and open the PR.**
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; head `93ff171` (Phase 4
+planning docs). Pushed; **PR #11 open** — merge when CI is green and JP is ready.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
+Phase 3's PR #11 CI was still running at push time (2026-08-17) — check before merging.
 
 ## 1. Delivery position
 
@@ -49,7 +50,7 @@ chain is in git history. Not pushed — local commits only. **Ready to push and 
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | ✅ **APPROVABLE for merge** — every phase-checklist box `☑`, the punch list fully closed, whole-branch review-agent pass cleared after one fix round | §5 has the full item list; §3 has the review-agent account. Not yet pushed — ask JP before pushing/opening the PR |
+| 3 — Offline sync | ✅ **APPROVABLE for merge, PR #11 open** — every phase-checklist box `☑`, the punch list fully closed, whole-branch review-agent pass cleared after one fix round | §5 has the full item list; §3 has the review-agent account. Check CI on PR #11 before merging |
 | 4 — Crops & fields | Not started — planned in detail | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan; no code written yet |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -144,9 +145,8 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 `docs/phase-3-6-scope` still needs rebasing onto `main` before any Phase 3–6 scope-doc work.
 
 **Origin of this list, condensed — now fully closed:** JP asked (2026-08-14, second session) for a
-large implementation-and-closure pass over a specific punch list, in three priority bands plus a
-doc/quality band, sliced one item (or a tightly related pair) per session. Ran second through
-sixteenth sessions; every item below closed.
+large implementation-and-closure pass, three priority bands plus a doc/quality band, one item (or a
+tightly related pair) per session. Ran second through sixteenth sessions; every item below closed.
 
 ✅ 21–30. Done 2026-08-14/15 (first–fifth sessions), condensed — full detail in git history:
 back-dated-move fail-closed + land hydration + 3i(c) attachment queue + 3i(b) residuals + O-3

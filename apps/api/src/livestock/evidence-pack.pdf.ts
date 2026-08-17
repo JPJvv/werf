@@ -23,8 +23,19 @@ function formatInstant(value: Date | null): string {
   }).format(value);
 }
 
-/** Builds the evidence-pack PDF and resolves the complete file as a Buffer. */
-export function renderEvidencePackPdf(pack: schemas.EvidencePack): Promise<Buffer> {
+/**
+ * Builds the evidence-pack PDF and resolves the complete file as a Buffer.
+ *
+ * `photosByAnimal` carries only bytes the CALLER has already fetched from object storage and
+ * checksum-verified against `animal.photoChecksumSha256Hex` (P2.5 — `LivestockController`, the
+ * same "verify before trust" discipline `AttachmentsService.finalizeAttachment` applies server-
+ * side). This function does no I/O and no verification of its own: an animal whose id is absent
+ * from the map is rendered as a reference-only line, never as a claim this function cannot back.
+ */
+export function renderEvidencePackPdf(
+  pack: schemas.EvidencePack,
+  photosByAnimal: ReadonlyMap<string, Buffer> = new Map(),
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
     const chunks: Buffer[] = [];
@@ -99,17 +110,30 @@ export function renderEvidencePackPdf(pack: schemas.EvidencePack): Promise<Buffe
       line('Brand certificate', animal.certificateReference ?? '—');
       line('Acquired', animal.acquiredAt ?? '—');
       line('Source (ownership chain)', animal.source ?? '—');
-      // ⭐ The REFERENCE and its state, never a bare "Yes". This document is handed to the SAPS
-      // Stock Theft Unit, and "Yes" is an assertion the product cannot currently back: `photo_key`
-      // is client-writable and there is no object storage behind it yet (STATUS §4 B2), so a pack
-      // could claim a photograph nobody can be shown. A line that names the reference and says
-      // plainly that the image is not attached is a fact; "Yes" was a claim.
-      line(
-        'Photograph',
-        animal.photoKey === null
-          ? 'None on file'
-          : `Reference ${animal.photoKey} — image not attached to this pack`,
-      );
+      // ⭐ P2.5: the photo is EMBEDDED, not merely referenced, once the caller has fetched and
+      // checksum-verified it (`LivestockController.buildPhotoMap`) — the pipeline `animal.photoKey`
+      // never had behind it. Three distinct facts, each printed as what it is: no reference at all;
+      // a reference this pack could not verify or fetch (fact-only, same discipline the old comment
+      // named — see git history); or a verified image, actually shown.
+      const photo = photosByAnimal.get(animal.animalId);
+      if (animal.photoObjectKey === null) {
+        line('Photograph', 'None on file');
+      } else if (photo === undefined) {
+        line('Photograph', `Reference ${animal.photoObjectKey} — image not attached to this pack`);
+      } else {
+        doc.font('Helvetica-Bold').fontSize(10).text('Photograph:');
+        try {
+          doc.moveDown(0.2).image(photo, { fit: [200, 200] });
+          doc.moveDown(0.2);
+        } catch {
+          // pdfkit could not decode these bytes (e.g. an unsupported image format that still
+          // passed checksum verification) — fall back to the honest reference-only line rather
+          // than crashing the whole pack over one animal's photo.
+          doc
+            .font('Helvetica')
+            .text(`Reference ${animal.photoObjectKey} — image not attached to this pack`);
+        }
+      }
 
       // ⭐ The possession trail. Under the Stock Theft Act's reverse onus this is the DEFENCE:
       // identification says the animal is yours, this says it was HERE, being kept and treated,

@@ -118,6 +118,8 @@ const en = {
   'notSent.kind.theft': 'A stock-theft report',
   'notSent.kind.rainfall': 'A rainfall reading',
   'notSent.kind.tally': 'A count change for',
+  'notSent.kind.branding': 'Registered mark',
+  'notSent.kind.attachment': 'A photo for',
   // Each answers the next question before it is asked. The tag case is separated out because it is
   // far and away the commonest refusal and it has an answer the generic line cannot give.
   'notSent.why.tagTaken':
@@ -130,6 +132,8 @@ const en = {
     'This one points at something the farm does not have — a camp or an animal that was never recorded, or was recorded on another phone. Once that exists, this goes up on its own.',
   'notSent.why.tenancy':
     'This one points at something on a different farm. It cannot go up as it stands. Please tell us about it.',
+  'notSent.why.quotaExceeded':
+    "This farm has reached its photo storage limit. It is safe on this phone until there is room — please tell us and we'll sort out more space.",
   'notSent.why.unknown':
     'The server would not take this one and did not say why in a way we can explain. It is safe on this phone. Please tell us about it.',
   // PWA install. Offered after the browser signals the app is install-worthy (never on
@@ -171,6 +175,14 @@ const en = {
   'onboarding.business.legend': 'Your business',
   'onboarding.business.name': 'Business name',
   'onboarding.business.registration': 'Registration number (optional)',
+  'onboarding.business.contactEmail': 'Business contact email (optional)',
+  'onboarding.business.contactPhone': 'Business contact phone (optional)',
+  'onboarding.business.contactHint': 'Provide an email address, a phone number, or both.',
+  'onboarding.business.addressLine1': 'Physical address',
+  'onboarding.business.addressLine2': 'Address line 2 (optional)',
+  'onboarding.business.addressLocality': 'Town or district',
+  'onboarding.business.addressProvince': 'Address province',
+  'onboarding.business.addressPostalCode': 'Postal code',
   'onboarding.farm.legend': 'Your first farm',
   'onboarding.farm.name': 'Farm name',
   'onboarding.farm.province': 'Province',
@@ -185,7 +197,9 @@ const en = {
   'onboarding.haveAccount': 'Already registered?',
   'onboarding.emailTaken': 'That email address already has an account. Sign in instead.',
   'onboarding.needEnterprise': 'Choose at least one — the app adapts to what you farm.',
-  'onboarding.passwordTooShort': 'Use at least 12 characters. Length matters more than symbols.',
+  'onboarding.needBusinessContact': 'Add an email address or phone number for the business.',
+  'onboarding.needBusinessAddress': 'Complete the business’s physical address.',
+  'onboarding.passwordTooShort': 'Use at least 15 characters. Length matters more than symbols.',
   // Mandatory second-factor enrolment (FR-014).
   'security.enrol.title': 'Protect this account',
   'security.enrol.body':
@@ -196,6 +210,9 @@ const en = {
   'security.enrol.secret': 'Or type this in by hand',
   'security.enrol.confirm': 'Confirm',
   'security.enrol.failed': 'Could not set this up just now. Try again.',
+  'security.enrol.stepUp':
+    'For your security, sign in again before adding a new way to open this account.',
+  'security.enrol.stepUpAction': 'Sign in again',
   'security.recovery.title': 'Write these down',
   'security.recovery.body':
     'Ten codes, each usable once, for the day the phone is gone. Print them and put them in the safe.',
@@ -344,6 +361,7 @@ const en = {
   'animals.herdFilter': 'Show herd',
   'animals.empty': 'No animals recorded yet. Record your first one — it saves with no signal.',
   'animals.add': 'Record an animal',
+  'animals.branding': 'Branding register',
   'animals.new.title': 'Record an animal',
   // FR-113: an animal (and every event on it) is filed under the herd it belongs to.
   'animals.new.herd': 'Herd',
@@ -359,6 +377,11 @@ const en = {
   'animals.new.woolClass': 'Wool class (optional)',
   'animals.new.woolClassHint':
     'A wool class is the classer’s code — letters and digits, in capitals.',
+  'animals.new.brand': 'Registered mark (optional)',
+  'animals.new.noBrand': 'No mark recorded',
+  'animals.new.brandApplied': 'Mark applied on',
+  'animals.new.noRegisteredBrand': 'No registered mark for this species is on this phone yet.',
+  'animals.new.registerBrand': 'Record one',
   'animals.horn.horned': 'Horned',
   'animals.horn.polled': 'Polled — born without horns',
   'animals.horn.dehorned': 'Dehorned',
@@ -369,6 +392,7 @@ const en = {
   'animals.new.done': 'Done',
   'animals.weigh': 'Weigh session',
   'animals.loss': 'Record a loss',
+  'animals.photo': 'Add a photo',
   'animals.theft': 'Stock theft',
   'animals.tag': 'Tag animals',
   'animals.untagged': 'without a number',
@@ -420,6 +444,27 @@ const en = {
   'animals.new.seller': 'Bought from',
   'animals.new.acquiredOn': 'Bought on',
   'animals.new.paid': 'Price paid (R)',
+  // Registered animal-identification marks (FR-601/602). Saved locally; the mark becomes an FK
+  // root an animal may point at, so it is captured before the animal is sent.
+  'branding.title': 'Branding register',
+  'branding.intro': 'Your registered identification marks and certificate details.',
+  'branding.list': 'Registered marks',
+  'branding.empty': 'No registered marks recorded yet.',
+  'branding.add': 'Record a registered mark',
+  'branding.mark': 'Registered mark',
+  'branding.markHint': 'Copy the mark exactly as it appears on the registration certificate.',
+  'branding.type': 'Marking method',
+  'branding.chooseType': 'Choose a method',
+  'branding.type.tattoo': 'Tattoo',
+  'branding.type.freeze_brand': 'Freeze brand',
+  'branding.type.hot_brand': 'Hot-iron brand',
+  'branding.species': 'Species on the certificate',
+  'branding.bodyPosition': 'Body position (optional)',
+  'branding.certificate': 'Certificate reference (optional)',
+  'branding.registeredAt': 'Registration date (optional)',
+  'branding.save': 'Save registered mark',
+  'branding.saved': 'Saved — your work is saved',
+  'branding.back': 'Back to animals',
   // Birth (FR-104). Two records from one action: the calf's herd row and the calving, filed
   // against the dam — "which cows calved, and how hard" is the question asked in September.
   'birth.title': 'Record a birth',
@@ -506,6 +551,9 @@ const en = {
   'wean.saved': 'Weaned',
   'wean.done.count': 'weaned',
   'wean.empty': 'Nothing to wean — no animals with a recorded mother are still unweaned.',
+  // Shown only in the moment before this device has finished reading its own local herd back —
+  // never confused with wean.empty, which claims something true only once that read is done.
+  'wean.loading': 'Reading the herd…',
   'animals.move': 'Move animals',
   // Moving (FR-103) and the first real batch action (FR-112). A farmer opens a gate and a camp
   // empties — selection is the primary interaction, and a single-animal move is a group of one.
@@ -611,6 +659,9 @@ const en = {
   'tag.skip': 'Skip this one',
   'tag.back': 'Back to animals',
   'tag.empty': 'Every animal already has a number.',
+  // Shown only in the moment before this device has finished reading its own local herd back —
+  // never confused with tag.empty, which claims something true only once that read is done.
+  'tag.loading': 'Reading the herd…',
   'tag.done.count': 'tagged',
   'tag.done.link': 'Done',
   // Caught before it is saved: in a crush the cause is nearly always a misread digit, so the
@@ -750,6 +801,24 @@ const en = {
   'weigh.emptyAction': 'Record an animal',
   'weigh.done.count': 'weighed',
   'weigh.done.link': 'Done',
+  // Attaching a photo (phase-checklists.md 3i(c)). Same crush rhythm as the weigh session.
+  'photo.title': 'Add a photo',
+  'photo.of': 'of',
+  'photo.field': 'Photo',
+  // P3.16: refused at the file picker, before this ever touches OPFS or the queue — answers
+  // "what now" plainly rather than letting a doomed capture surface as a refusal days later.
+  'photo.error.tooLarge':
+    'This photo is too big to send. Take it again at a lower quality, or choose a smaller file — the limit is 25MB.',
+  'photo.error.unsupportedType':
+    "This file type can't be sent. Take a photo with the camera, or choose a JPEG, PNG or HEIC file.",
+  'photo.save': 'Save & next',
+  'photo.saving': 'Saving…',
+  'photo.skip': 'Skip this one',
+  'photo.back': 'Back to animals',
+  'photo.empty': 'No animals to photograph yet. Record one first — it saves with no signal.',
+  'photo.emptyAction': 'Record an animal',
+  'photo.done.count': 'photographed',
+  'photo.done.link': 'Done',
   // Species and sex, in the farmer's words rather than the enum's.
   // Age/sex classes (FR-705). Tokens, not words, all the way from the domain — so Afrikaans can
   // say "koeie" without the English "cow" being baked into the rule that decides the class.
@@ -789,6 +858,23 @@ const en = {
   // the farmer already did, and most of it they could not have known at the time.
   'residue.link': 'Needs your attention',
   'residue.title': 'Needs your attention',
+  'attention.intro':
+    'Records from different phones that need a quick check, plus any withdrawal records that need follow-up.',
+  'conflict.title': 'Records to check',
+  'conflict.intro':
+    'Both records have been kept. Werf applied the stated rule and left this item here for a person to check.',
+  'conflict.move':
+    'Different locations were recorded for the same animal. The later farm time is being used.',
+  'conflict.birth':
+    'This may be the same birth recorded twice. No calf or birth record was removed.',
+  'conflict.status':
+    'This animal was recorded as both sold and dead. Dead is being used as its current status.',
+  'conflict.subject': 'Animal:',
+  'conflict.animal': 'Unnamed animal',
+  'conflict.reviewed': 'Mark as reviewed',
+  'conflict.manager': 'An owner or manager can mark this as reviewed.',
+  'conflict.error': 'That review could not be saved. Try again when you have signal.',
+  'residue.sectionTitle': 'Withdrawal records',
   'residue.intro':
     'Head that left the herd while it was still inside a meat withdrawal. Nothing here is a refusal — it is the record, so you can answer for it if you are ever asked.',
   'residue.empty': 'Nothing needs your attention. No head has left inside a withdrawal.',
@@ -901,6 +987,8 @@ const af: Record<TranslationKey, string> = {
   'notSent.kind.theft': '’n Veediefstalverslag',
   'notSent.kind.rainfall': '’n Reënvallesing',
   'notSent.kind.tally': '’n Getalverandering vir',
+  'notSent.kind.branding': 'Geregistreerde merk',
+  'notSent.kind.attachment': '’n Foto vir',
   'notSent.why.tagTaken':
     'Daardie nommer is reeds op ’n ander dier. Lees dit weer van die dier af en teken dit met die regte nommer aan — hierdie een bly hier tot jy dit doen.',
   'notSent.why.conflict':
@@ -911,6 +999,8 @@ const af: Record<TranslationKey, string> = {
     'Hierdie een wys na iets wat die plaas nie het nie — ’n kamp of ’n dier wat nooit aangeteken is nie, of op ’n ander foon aangeteken is. Sodra dit bestaan, gaan hierdie een vanself op.',
   'notSent.why.tenancy':
     'Hierdie een wys na iets op ’n ander plaas. Dit kan nie so opgaan nie. Laat weet ons asseblief daarvan.',
+  'notSent.why.quotaExceeded':
+    'Hierdie plaas het sy foto-bergingsperk bereik. Dit is veilig op hierdie foon totdat daar plek is — laat weet ons asseblief en ons sal meer spasie reël.',
   'notSent.why.unknown':
     'Die bediener wou hierdie een nie vat nie en het nie op ’n manier gesê hoekom wat ons kan verduidelik nie. Dit is veilig op hierdie foon. Laat weet ons asseblief daarvan.',
   'install.title': 'Installeer Werf op hierdie foon',
@@ -947,6 +1037,14 @@ const af: Record<TranslationKey, string> = {
   'onboarding.business.legend': 'Jou besigheid',
   'onboarding.business.name': 'Besigheidsnaam',
   'onboarding.business.registration': 'Registrasienommer (opsioneel)',
+  'onboarding.business.contactEmail': 'Besigheid se kontak-e-pos (opsioneel)',
+  'onboarding.business.contactPhone': 'Besigheid se kontaknommer (opsioneel)',
+  'onboarding.business.contactHint': 'Verskaf ’n e-posadres, ’n telefoonnommer, of albei.',
+  'onboarding.business.addressLine1': 'Fisiese adres',
+  'onboarding.business.addressLine2': 'Adresreël 2 (opsioneel)',
+  'onboarding.business.addressLocality': 'Dorp of distrik',
+  'onboarding.business.addressProvince': 'Adresprovinsie',
+  'onboarding.business.addressPostalCode': 'Poskode',
   'onboarding.farm.legend': 'Jou eerste plaas',
   'onboarding.farm.name': 'Plaasnaam',
   'onboarding.farm.province': 'Provinsie',
@@ -961,7 +1059,9 @@ const af: Record<TranslationKey, string> = {
   'onboarding.haveAccount': 'Reeds geregistreer?',
   'onboarding.emailTaken': 'Daardie e-posadres het reeds ’n rekening. Meld eerder aan.',
   'onboarding.needEnterprise': 'Kies ten minste een — die app pas aan by wat jy boer.',
-  'onboarding.passwordTooShort': 'Gebruik ten minste 12 karakters. Lengte tel meer as simbole.',
+  'onboarding.needBusinessContact': 'Voeg ’n e-posadres of telefoonnommer vir die besigheid by.',
+  'onboarding.needBusinessAddress': 'Voltooi die besigheid se fisiese adres.',
+  'onboarding.passwordTooShort': 'Gebruik ten minste 15 karakters. Lengte tel meer as simbole.',
   'security.enrol.title': 'Beskerm hierdie rekening',
   'security.enrol.body':
     'Jy besit hierdie besigheid, so hierdie rekening het ’n tweede stap by aanmelding nodig. Dit werk sonder sein.',
@@ -971,6 +1071,9 @@ const af: Record<TranslationKey, string> = {
   'security.enrol.secret': 'Of tik dit met die hand in',
   'security.enrol.confirm': 'Bevestig',
   'security.enrol.failed': 'Kon dit nie nou opstel nie. Probeer weer.',
+  'security.enrol.stepUp':
+    'Vir jou veiligheid, meld weer aan voordat jy ’n nuwe manier byvoeg om hierdie rekening oop te maak.',
+  'security.enrol.stepUpAction': 'Meld weer aan',
   'security.recovery.title': 'Skryf hierdie neer',
   'security.recovery.body':
     'Tien kodes, elkeen een keer bruikbaar, vir die dag wanneer die foon weg is. Druk hulle en sit hulle in die kluis.',
@@ -1092,6 +1195,7 @@ const af: Record<TranslationKey, string> = {
   'animals.empty':
     'Nog geen diere aangeteken nie. Teken jou eerste een aan — dit stoor sonder sein.',
   'animals.add': 'Teken ’n dier aan',
+  'animals.branding': 'Brandmerkregister',
   'animals.new.title': 'Teken ’n dier aan',
   'animals.new.herd': 'Trop',
   'animals.new.species': 'Spesie',
@@ -1104,6 +1208,12 @@ const af: Record<TranslationKey, string> = {
   'animals.new.woolClass': 'Wolklas (opsioneel)',
   'animals.new.woolClassHint':
     '’n Wolklas is die klasseerder se kode — letters en syfers, in hoofletters.',
+  'animals.new.brand': 'Geregistreerde merk (opsioneel)',
+  'animals.new.noBrand': 'Geen merk aangeteken nie',
+  'animals.new.brandApplied': 'Merk aangebring op',
+  'animals.new.noRegisteredBrand':
+    'Geen geregistreerde merk vir hierdie spesie is nog op dié foon nie.',
+  'animals.new.registerBrand': 'Teken een aan',
   'animals.horn.horned': 'Gehoring',
   'animals.horn.polled': 'Poenskop — sonder horings gebore',
   'animals.horn.dehorned': 'Onthoring',
@@ -1114,6 +1224,7 @@ const af: Record<TranslationKey, string> = {
   'animals.new.done': 'Klaar',
   'animals.weigh': 'Weegsessie',
   'animals.loss': 'Teken ’n verlies aan',
+  'animals.photo': 'Voeg ’n foto by',
   'animals.theft': 'Veediefstal',
   'animals.tag': 'Merk diere',
   'animals.untagged': 'sonder ’n nommer',
@@ -1162,6 +1273,25 @@ const af: Record<TranslationKey, string> = {
   'animals.new.seller': 'Gekoop van',
   'animals.new.acquiredOn': 'Gekoop op',
   'animals.new.paid': 'Prys betaal (R)',
+  'branding.title': 'Brandmerkregister',
+  'branding.intro': 'Jou geregistreerde identifikasiemerke en sertifikaatbesonderhede.',
+  'branding.list': 'Geregistreerde merke',
+  'branding.empty': 'Nog geen geregistreerde merke aangeteken nie.',
+  'branding.add': 'Teken ’n geregistreerde merk aan',
+  'branding.mark': 'Geregistreerde merk',
+  'branding.markHint': 'Skryf die merk presies soos dit op die registrasiesertifikaat verskyn.',
+  'branding.type': 'Merkmetode',
+  'branding.chooseType': 'Kies ’n metode',
+  'branding.type.tattoo': 'Tatoeëermerk',
+  'branding.type.freeze_brand': 'Vriesbrandmerk',
+  'branding.type.hot_brand': 'Warmysterbrandmerk',
+  'branding.species': 'Spesies op die sertifikaat',
+  'branding.bodyPosition': 'Posisie op die lyf (opsioneel)',
+  'branding.certificate': 'Sertifikaatverwysing (opsioneel)',
+  'branding.registeredAt': 'Registrasiedatum (opsioneel)',
+  'branding.save': 'Stoor geregistreerde merk',
+  'branding.saved': 'Gestoor — jou werk is gestoor',
+  'branding.back': 'Terug na diere',
   'birth.title': 'Teken ’n geboorte aan',
   'birth.dam': 'Watter koei het gekalf?',
   'birth.chooseDam': 'Kies een',
@@ -1237,6 +1367,7 @@ const af: Record<TranslationKey, string> = {
   'wean.done.count': 'gespeen',
   'wean.empty':
     'Niks om te speen nie — geen diere met ’n aangetekende moeder is nog ongespeen nie.',
+  'wean.loading': 'Lees die kudde…',
   'animals.move': 'Skuif diere',
   'move.title.camp': 'Skuif diere',
   'move.title.block': 'Skuif diere',
@@ -1323,6 +1454,7 @@ const af: Record<TranslationKey, string> = {
   'tag.skip': 'Slaan hierdie een oor',
   'tag.back': 'Terug na diere',
   'tag.empty': 'Elke dier het reeds ’n nommer.',
+  'tag.loading': 'Lees die kudde…',
   'tag.done.count': 'gemerk',
   'tag.done.link': 'Klaar',
   'tag.taken': 'Daardie nommer is reeds op ’n ander dier. Lees dit weer, of gebruik ’n ander een.',
@@ -1440,6 +1572,22 @@ const af: Record<TranslationKey, string> = {
   'weigh.emptyAction': 'Teken ’n dier aan',
   'weigh.done.count': 'geweeg',
   'weigh.done.link': 'Klaar',
+  'photo.title': 'Voeg ’n foto by',
+  'photo.of': 'van',
+  'photo.field': 'Foto',
+  'photo.error.tooLarge':
+    'Hierdie foto is te groot om te stuur. Neem dit weer teen laer gehalte, of kies ’n kleiner lêer — die perk is 25MB.',
+  'photo.error.unsupportedType':
+    'Hierdie lêertipe kan nie gestuur word nie. Neem ’n foto met die kamera, of kies ’n JPEG-, PNG- of HEIC-lêer.',
+  'photo.save': 'Stoor & volgende',
+  'photo.saving': 'Stoor tans…',
+  'photo.skip': 'Slaan hierdie een oor',
+  'photo.back': 'Terug na diere',
+  'photo.empty':
+    'Nog geen diere om te fotografeer nie. Teken eers een aan — dit stoor sonder sein.',
+  'photo.emptyAction': 'Teken ’n dier aan',
+  'photo.done.count': 'gefotografeer',
+  'photo.done.link': 'Klaar',
   'class.female': 'koeie/ooie',
   'class.male': 'bulle/ramme',
   'class.castrate': 'osse/hamels',
@@ -1468,6 +1616,23 @@ const af: Record<TranslationKey, string> = {
   'rain.back': 'Terug na tuis',
   'residue.link': 'Kort jou aandag',
   'residue.title': 'Kort jou aandag',
+  'attention.intro':
+    'Rekords van verskillende fone wat vinnig nagegaan moet word, plus onttrekkingsrekords wat opvolg nodig het.',
+  'conflict.title': 'Rekords om na te gaan',
+  'conflict.intro':
+    'Albei rekords is behou. Werf het die vermelde reël toegepas en hierdie item vir ’n persoon gelos om na te gaan.',
+  'conflict.move':
+    'Verskillende liggings is vir dieselfde dier aangeteken. Die latere plaastyd word gebruik.',
+  'conflict.birth':
+    'Dit kan dieselfde geboorte wees wat twee keer aangeteken is. Geen kalf- of geboorterekord is verwyder nie.',
+  'conflict.status':
+    'Hierdie dier is as verkoop én gevrek aangeteken. Gevrek word as die huidige status gebruik.',
+  'conflict.subject': 'Dier:',
+  'conflict.animal': 'Naamlose dier',
+  'conflict.reviewed': 'Merk as nagegaan',
+  'conflict.manager': '’n Eienaar of bestuurder kan dit as nagegaan merk.',
+  'conflict.error': 'Die nasien kon nie gestoor word nie. Probeer weer wanneer jy sein het.',
+  'residue.sectionTitle': 'Onttrekkingsrekords',
   'residue.intro':
     'Diere wat die kudde verlaat het terwyl hulle nog binne ’n vleisonttrekkingstydperk was. Niks hier is ’n weiering nie — dit is die rekord, sodat jy kan antwoord as daar ooit gevra word.',
   'residue.empty': 'Niks kort jou aandag nie. Geen diere het binne ’n onttrekking uitgegaan nie.',

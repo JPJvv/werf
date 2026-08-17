@@ -1,8 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { uuidv7 } from '@werf/core';
 // Dev-only dependency, and only for the checks that compare the registry against the REAL
 // schema — the table list and the credential columns below. A hand-copied list would defeat
 // the point of both.
-import { SCHEMA_TABLE_NAMES, users } from '@werf/db';
+import {
+  businesses,
+  createAppDb,
+  createElevatedDb,
+  farms,
+  farmUsers,
+  SCHEMA_TABLE_NAMES,
+  users,
+  type AppDb,
+  type ElevatedDb,
+} from '@werf/db';
+import { bootWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
+import { deriveSyncStreams } from '../scripts/derive-sync-streams';
 import {
   SERVER_ONLY_TABLES,
   SYNC_CLASSIFICATIONS,
@@ -12,7 +26,7 @@ import {
   type FarmGraph,
   type SyncClassification,
   type SyncedTable,
-} from '../src/index';
+} from '../src/tenancy';
 
 /**
  * The tenancy invariant: sync must not put a row on a device that its owner's RLS would
@@ -56,7 +70,18 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   veterinary_products: { id: 'vet-za', jurisdiction: 'ZA' },
   species_gestation: { id: 'gest-cattle', species: 'cattle', gestation_days: 283 },
   theft_incidents: { id: 'theft-b', farm_id: FARM_B },
-  theft_incident_animals: { incident_id: 'theft-b', animal_id: 'animal-b', farm_id: FARM_B },
+  theft_incident_animals: {
+    id: 'link-b',
+    incident_id: 'theft-b',
+    animal_id: 'animal-b',
+    farm_id: FARM_B,
+  },
+  attachments: {
+    id: 'attach-b',
+    farm_id: FARM_B,
+    subject_type: 'animal',
+    subject_id: 'animal-b',
+  },
 };
 
 const userAFarms = [FARM_A];
@@ -106,6 +131,20 @@ describe('sync tenancy — no server-only leak', () => {
     // The user row syncs (identity) but its credentials never do.
     expect(TENANCY.users.neverSyncColumns).toEqual(
       expect.arrayContaining(['password_hash', 'totp_secret_encrypted', 'recovery_codes_hashed']),
+    );
+  });
+
+  it('keeps business contact and address details off general member devices', () => {
+    expect(TENANCY.businesses.neverSyncColumns).toEqual(
+      expect.arrayContaining([
+        'contact_email',
+        'contact_phone',
+        'physical_address_line_1',
+        'physical_address_line_2',
+        'physical_address_locality',
+        'physical_address_province',
+        'physical_address_postal_code',
+      ]),
     );
   });
 
@@ -229,3 +268,197 @@ describe('sync tenancy — global reference data', () => {
     expect(owningFarmIds('species_gestation', { species: 'cattle' }, graph)).toEqual([]);
   });
 });
+
+/** Container start + image pull + migrations. Generous, because a cold CI machine pulls. */
+const BOOT_TIMEOUT_MS = 180_000;
+const PERMISSIVE_POLICY = 'p2_10_permissive_farms';
+
+interface RealFixture {
+  readonly farmAId: string;
+  readonly farmBId: string;
+  readonly userAId: string;
+}
+
+/**
+ * P2.10's mutation proof uses a private database because it deliberately changes live RLS DDL.
+ * The shared test database is safe for data resets, not schema mutations that another suite could
+ * inherit after this file finishes.
+ */
+describe('sync tenancy — adversarial mutation proof', () => {
+  let pg: WerfTestDatabase;
+  let app: AppDb;
+  let elevated: ElevatedDb;
+  let fx: RealFixture;
+  let originalFarmIdsFunction = '';
+
+  beforeAll(async () => {
+    pg = await bootWerfTestDatabase();
+    app = createAppDb({ url: pg.appUrl });
+    elevated = createElevatedDb({ url: pg.elevatedUrl });
+    fx = await seedRealTwoFarmFixture(elevated);
+
+    const definition = await elevated.db.execute(
+      sql`SELECT pg_get_functiondef('app_user_farm_ids()'::regprocedure) AS definition`,
+    );
+    originalFarmIdsFunction = (definition.rows[0] as { definition: string }).definition;
+  }, BOOT_TIMEOUT_MS);
+
+  afterEach(async () => {
+    // Defensive cleanup also runs when an assertion fails. Leaving either mutation installed would
+    // make the next test's baseline meaningless and could conceal which control actually failed.
+    await elevated.db.execute(sql.raw(`DROP POLICY IF EXISTS ${PERMISSIVE_POLICY} ON farms`));
+    await elevated.db.execute(sql.raw(originalFarmIdsFunction));
+  });
+
+  afterAll(async () => {
+    await app?.close();
+    await elevated?.close();
+    await pg?.stop();
+  });
+
+  it('the real two-farm fixture is isolated through both current enforcement paths', async () => {
+    await assertOnlyFarmA(() => visibleFarmIdsViaRls(app, fx.userAId), fx, 'RLS');
+
+    const farmStream = deriveSyncStreams().find((stream) => stream.table === 'farms');
+    expect(farmStream, 'the farms sync stream disappeared').toBeDefined();
+    await assertOnlyFarmA(
+      () => visibleFarmIdsViaSyncPredicate(elevated, fx.userAId, farmStream!.whereSql),
+      fx,
+      'sync stream',
+    );
+  });
+
+  it('fails the fixture when an extra permissive RLS policy is added', async () => {
+    // Postgres ORs permissive policies. The legitimate farms_tenant policy still exists, so this
+    // catches the realistic regression where somebody adds a second policy and assumes both apply.
+    await elevated.db.execute(
+      sql.raw(`CREATE POLICY ${PERMISSIVE_POLICY} ON farms FOR SELECT USING (true)`),
+    );
+
+    await expect(
+      assertOnlyFarmA(() => visibleFarmIdsViaRls(app, fx.userAId), fx, 'RLS policy mutant'),
+    ).rejects.toThrow(/farm B leaked/);
+  });
+
+  it('fails the fixture when the shared RLS helper leaks every farm', async () => {
+    await elevated.db.execute(
+      sql.raw(`
+      CREATE OR REPLACE FUNCTION app_user_farm_ids() RETURNS SETOF uuid
+        LANGUAGE sql STABLE SECURITY DEFINER
+        SET search_path = public, pg_temp
+        AS $$ SELECT id FROM farms $$
+    `),
+    );
+
+    await expect(
+      assertOnlyFarmA(() => visibleFarmIdsViaRls(app, fx.userAId), fx, 'RLS helper mutant'),
+    ).rejects.toThrow(/farm B leaked/);
+  });
+
+  it('fails the fixture when the farms sync filter is loosened', async () => {
+    const farmStream = deriveSyncStreams().find((stream) => stream.table === 'farms');
+    expect(farmStream, 'the farms sync stream disappeared').toBeDefined();
+
+    const loosenedWhere = 'true';
+    expect(loosenedWhere).not.toBe(farmStream!.whereSql);
+    await expect(
+      assertOnlyFarmA(
+        () => visibleFarmIdsViaSyncPredicate(elevated, fx.userAId, loosenedWhere),
+        fx,
+        'sync stream mutant',
+      ),
+    ).rejects.toThrow(/farm B leaked/);
+  });
+});
+
+async function seedRealTwoFarmFixture(elevated: ElevatedDb): Promise<RealFixture> {
+  const businessAId = uuidv7();
+  const businessBId = uuidv7();
+  const farmAId = uuidv7();
+  const farmBId = uuidv7();
+  const userAId = uuidv7();
+  const userBId = uuidv7();
+
+  await elevated.db.insert(businesses).values([
+    { id: businessAId, name: 'Adversarial Farm A' },
+    { id: businessBId, name: 'Adversarial Farm B' },
+  ]);
+  await elevated.db.insert(farms).values([
+    {
+      id: farmAId,
+      businessId: businessAId,
+      name: 'Adversarial Farm A',
+      province: 'Free State',
+      enterpriseTypes: ['beef_cattle'],
+    },
+    {
+      id: farmBId,
+      businessId: businessBId,
+      name: 'Adversarial Farm B',
+      province: 'Western Cape',
+      enterpriseTypes: ['beef_cattle'],
+    },
+  ]);
+  await elevated.db.insert(users).values([
+    { id: userAId, email: 'adversarial-a@werf.test', fullName: 'Adversarial A' },
+    { id: userBId, email: 'adversarial-b@werf.test', fullName: 'Adversarial B' },
+  ]);
+  await elevated.db.insert(farmUsers).values([
+    {
+      id: uuidv7(),
+      farmId: farmAId,
+      userId: userAId,
+      role: 'owner',
+      acceptedAt: new Date(),
+    },
+    {
+      id: uuidv7(),
+      farmId: farmBId,
+      userId: userBId,
+      role: 'owner',
+      acceptedAt: new Date(),
+    },
+  ]);
+
+  return { farmAId, farmBId, userAId };
+}
+
+async function visibleFarmIdsViaRls(app: AppDb, userId: string): Promise<readonly string[]> {
+  const visible = await app.asUser(userId, (tx) => tx.select({ id: farms.id }).from(farms));
+  return visible.map(({ id }) => id);
+}
+
+async function visibleFarmIdsViaSyncPredicate(
+  elevated: ElevatedDb,
+  userId: string,
+  whereSql: string,
+): Promise<readonly string[]> {
+  // PowerSync's auth.user_id() is the only dialect-specific expression in the farms stream.
+  // Replacing it with the database's request-identity helper lets the exact generated predicate
+  // run over the same real fixture; the elevated connection deliberately bypasses RLS so this
+  // result measures the sync filter alone.
+  const postgresWhere = whereSql.replaceAll('auth.user_id()', 'app_current_user_id()');
+  if (/\bauth\.|\bsubscription\./.test(postgresWhere)) {
+    throw new Error(`farms stream contains an unsupported fixture expression: ${postgresWhere}`);
+  }
+
+  return elevated.db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.user_id', ${userId}, true)`);
+    const result = await tx.execute(sql.raw(`SELECT id FROM farms WHERE ${postgresWhere}`));
+    return result.rows.map((row) => (row as { id: string }).id);
+  });
+}
+
+async function assertOnlyFarmA(
+  readVisibleFarmIds: () => Promise<readonly string[]>,
+  fx: RealFixture,
+  surface: string,
+): Promise<void> {
+  const visibleIds = await readVisibleFarmIds();
+  if (visibleIds.includes(fx.farmBId)) {
+    throw new Error(`${surface}: farm B leaked to farm A's user`);
+  }
+  if (visibleIds.length !== 1 || visibleIds[0] !== fx.farmAId) {
+    throw new Error(`${surface}: farm A's user saw ${JSON.stringify(visibleIds)}`);
+  }
+}

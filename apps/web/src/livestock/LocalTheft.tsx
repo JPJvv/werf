@@ -26,9 +26,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /**
  * An incident as held locally. Every timestamp is an ISO string; every optional fact is `null`
@@ -76,7 +78,11 @@ export type TheftStore = CaptureStore<StoredTheftIncident>;
 export type TheftStoreFactory = (key: string) => TheftStore;
 
 const defaultFactory: TheftStoreFactory = (key) =>
-  createCaptureStore<StoredTheftIncident>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredTheftIncident>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const TheftStoreContext = createContext<TheftStore | null>(null);
 
@@ -92,6 +98,7 @@ export function LocalTheftProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-theft:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <TheftStoreContext.Provider value={store}>{children}</TheftStoreContext.Provider>;
 }
@@ -108,6 +115,21 @@ export function useTheftIncidents(): readonly StoredTheftIncident[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useTheftIncidents()` until this is true. */
+export function useTheftIncidentsSettled(): boolean {
+  const store = useTheftStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useTheftIncidents()` as confirmed empty, when this is true. */
+export function useTheftIncidentsHydrationFailed(): boolean {
+  const store = useTheftStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * File a stock-theft incident locally. Synchronous; never awaits the network (NFR-007).
  *
@@ -117,7 +139,7 @@ export function useTheftIncidents(): readonly StoredTheftIncident[] {
  * evidence and can fix it, rather than days later in a flush nobody is watching. It is also what
  * structurally enforces the no-suspect contract on the way in.
  */
-export function useReportTheft(): (capture: TheftIncidentCapture) => void {
+export function useReportTheft(): (capture: TheftIncidentCapture) => Promise<void> {
   const store = useTheftStore();
   return useCallback(
     (capture) => {
@@ -138,7 +160,7 @@ export function useReportTheft(): (capture: TheftIncidentCapture) => void {
       // value is deliberately discarded: it carries Dates where the log needs ISO strings, and
       // `record` is already the JSON-safe projection of exactly the fields that passed.
       schemas.newTheftIncidentSchema.parse(record);
-      store.append(record);
+      return store.append(record);
     },
     [store],
   );

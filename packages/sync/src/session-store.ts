@@ -53,15 +53,28 @@ export interface SessionStorageLike {
   removeItem(key: string): void;
 }
 
-export interface SessionStoreOptions {
+export interface SessionStoreOptions<TPayload = unknown> {
   readonly storage: SessionStorageLike;
   readonly windowDays?: number;
   /** Injected so window expiry is testable without waiting a month. */
   readonly now?: () => Date;
+  /**
+   * One-way migration applied to the durable payload before it is returned. The original payload
+   * is returned to the current tab once, so a short-lived legacy credential can move into memory,
+   * while storage is rewritten immediately without extending `confirmedAt`.
+   */
+  readonly sanitizePersisted?: (payload: unknown) => TPayload;
 }
 
-export function createSessionStore<TPayload>(options: SessionStoreOptions): SessionStore<TPayload> {
-  const { storage, windowDays = DEFAULT_SESSION_WINDOW_DAYS, now = () => new Date() } = options;
+export function createSessionStore<TPayload>(
+  options: SessionStoreOptions<TPayload>,
+): SessionStore<TPayload> {
+  const {
+    storage,
+    windowDays = DEFAULT_SESSION_WINDOW_DAYS,
+    now = () => new Date(),
+    sanitizePersisted,
+  } = options;
 
   return {
     read(): CachedSession<TPayload> | null {
@@ -78,6 +91,20 @@ export function createSessionStore<TPayload>(options: SessionStoreOptions): Sess
       }
 
       if (!parsed?.payload || typeof parsed.confirmedAt !== 'string') return null;
+      if (sanitizePersisted) {
+        try {
+          const sanitized = sanitizePersisted(parsed.payload);
+          storage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ payload: sanitized, confirmedAt: parsed.confirmedAt }),
+          );
+        } catch {
+          // An unrecognisable identity cache is not authority and must not crash boot. Removing it
+          // cannot remove captures: those live in separate stores by invariant.
+          storage.removeItem(STORAGE_KEY);
+          return null;
+        }
+      }
       if (!isWithinWindow(parsed.confirmedAt, windowDays, now())) return null;
 
       return parsed;

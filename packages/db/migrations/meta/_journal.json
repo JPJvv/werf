@@ -148,6 +148,83 @@
       "when": 1785422371489,
       "tag": "0020_boundary_walk_event",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786602501572,
+      "tag": "0021_retire_farm_partitioning",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786605796833,
+      "tag": "0022_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786632804791,
+      "tag": "0023_reconcile_snapshot_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786633108298,
+      "tag": "0024_event_retention_window",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786731502459,
+      "tag": "0025_theft_incident_animals_surrogate",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786784436487,
+      "tag": "0026_conflict_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786794484560,
+      "tag": "0027_business_contact_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786815883265,
+      "tag": "0028_auth_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786864291715,
+      "tag": "0029_users_column_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786866642719,
+      "tag": "0030_farm_attachment_quota",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786946378142,
+      "tag": "0031_conflict_reviews_attachments_column_grants",
+      "breakpoints": true
     }
   ]
 }

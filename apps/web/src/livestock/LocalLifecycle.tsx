@@ -28,7 +28,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import {
   recordBirth,
   recordDeath,
@@ -39,6 +39,8 @@ import {
 } from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** Fields every stored lifecycle event carries. `occurredAt` is an ISO string (JSON-safe). */
 interface StoredEventBase {
@@ -97,6 +99,7 @@ export interface StoredBirth extends StoredEventBase {
   readonly calfId: string;
   readonly easeScore: 1 | 2 | 3 | 4 | 5;
   readonly multiples: number;
+  readonly batchId?: string;
   readonly birthWeightKg?: number;
 }
 
@@ -148,6 +151,7 @@ export interface BirthCapture extends CaptureBase {
   readonly calfId: string;
   readonly easeScore: 1 | 2 | 3 | 4 | 5;
   readonly multiples: number;
+  readonly batchId?: string;
   readonly birthWeightKg?: number;
 }
 
@@ -162,7 +166,11 @@ export type LifecycleStore = CaptureStore<StoredLifecycleEvent>;
 export type LifecycleStoreFactory = (key: string) => LifecycleStore;
 
 const defaultFactory: LifecycleStoreFactory = (key) =>
-  createCaptureStore<StoredLifecycleEvent>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredLifecycleEvent>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const LifecycleStoreContext = createContext<LifecycleStore | null>(null);
 
@@ -178,6 +186,7 @@ export function LocalLifecycleProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-events:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <LifecycleStoreContext.Provider value={store}>{children}</LifecycleStoreContext.Provider>;
 }
@@ -192,6 +201,21 @@ function useLifecycleStore(): LifecycleStore {
 export function useLifecycleEvents(): readonly StoredLifecycleEvent[] {
   const store = useLifecycleStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useLifecycleEvents()` until this is true. */
+export function useLifecycleEventsSettled(): boolean {
+  const store = useLifecycleStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useLifecycleEvents()` as confirmed empty, when this is true. */
+export function useLifecycleEventsHydrationFailed(): boolean {
+  const store = useLifecycleStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
 }
 
 /** The shared shape every recorder below hands the domain. */
@@ -227,13 +251,13 @@ function storedBase(capture: CaptureBase) {
  */
 
 /** Record a death (FR-105) → 'dead', out of the live herd. */
-export function useRecordDeath(): (capture: DeathCapture) => void {
+export function useRecordDeath(): (capture: DeathCapture) => Promise<void> {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
       const slaughtered = c.slaughtered === true ? { slaughtered: true as const } : {};
       recordDeath({ ...domainBase(c), cause: c.cause, ...slaughtered });
-      store.append({
+      return store.append({
         ...storedBase(c),
         type: 'death',
         status: 'dead',
@@ -246,7 +270,7 @@ export function useRecordDeath(): (capture: DeathCapture) => void {
 }
 
 /** Record a sale (FR-106) → 'sold', out of the live herd. `priceCents` is Money — integer cents. */
-export function useRecordSale(): (capture: SaleCapture) => void {
+export function useRecordSale(): (capture: SaleCapture) => Promise<void> {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
@@ -257,7 +281,7 @@ export function useRecordSale(): (capture: SaleCapture) => void {
         priceCents: c.priceCents,
         ...weight,
       });
-      store.append({
+      return store.append({
         ...storedBase(c),
         type: 'sale',
         status: 'sold',
@@ -271,13 +295,13 @@ export function useRecordSale(): (capture: SaleCapture) => void {
 }
 
 /** Mark an animal missing (FR-605) → 'missing'. The last-seen point is required, not optional. */
-export function useRecordMissing(): (capture: MissingCapture) => void {
+export function useRecordMissing(): (capture: MissingCapture) => Promise<void> {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
       const cause = c.cause === undefined ? {} : { cause: c.cause };
       recordMissing({ ...domainBase(c), lastSeenGeojson: c.lastSeenGeojson, ...cause });
-      store.append({
+      return store.append({
         ...storedBase(c),
         type: 'missing',
         status: 'missing',
@@ -290,7 +314,7 @@ export function useRecordMissing(): (capture: MissingCapture) => void {
 }
 
 /** Record a purchase (FR-106) — money in, no status change. */
-export function useRecordPurchase(): (capture: PurchaseCapture) => void {
+export function useRecordPurchase(): (capture: PurchaseCapture) => Promise<void> {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
@@ -301,7 +325,7 @@ export function useRecordPurchase(): (capture: PurchaseCapture) => void {
         priceCents: c.priceCents,
         ...weight,
       });
-      store.append({
+      return store.append({
         ...storedBase(c),
         type: 'purchase',
         status: null,
@@ -315,25 +339,27 @@ export function useRecordPurchase(): (capture: PurchaseCapture) => void {
 }
 
 /** Record a birth (FR-104) against the dam. The calf's herd row is written separately. */
-export function useRecordBirth(): (capture: BirthCapture) => void {
+export function useRecordBirth(): (capture: BirthCapture) => Promise<void> {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
       const weight = c.birthWeightKg === undefined ? {} : { birthWeightKg: c.birthWeightKg };
       recordBirth({
         ...domainBase(c),
+        ...(c.batchId === undefined ? {} : { batchId: c.batchId }),
         calfId: c.calfId,
         easeScore: c.easeScore,
         multiples: c.multiples,
         ...weight,
       });
-      store.append({
+      return store.append({
         ...storedBase(c),
         type: 'birth',
         status: null,
         calfId: c.calfId,
         easeScore: c.easeScore,
         multiples: c.multiples,
+        ...(c.batchId === undefined ? {} : { batchId: c.batchId }),
         ...weight,
       });
     },
@@ -342,13 +368,13 @@ export function useRecordBirth(): (capture: BirthCapture) => void {
 }
 
 /** Record a weaning (FR-111) — a weight and, if known, an age. No status change. */
-export function useRecordWeaning(): (capture: WeaningCapture) => void {
+export function useRecordWeaning(): (capture: WeaningCapture) => Promise<void> {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
       const age = c.ageDays === undefined ? {} : { ageDays: c.ageDays };
       recordWeaning({ ...domainBase(c), weightKg: c.weightKg, ...age });
-      store.append({
+      return store.append({
         ...storedBase(c),
         type: 'weaning',
         status: null,

@@ -184,6 +184,7 @@ const CAPTURE_SCREENS = [
   { path: '/land/walk', heading: /walk a block’s edge/i },
   { path: '/animals', heading: /animals/i },
   { path: '/animals/new', heading: /record an animal/i },
+  { path: '/animals/brands', heading: /branding register/i },
   { path: '/animals/loss', heading: /record a loss/i },
   { path: '/animals/tag', heading: /tag animals/i },
   { path: '/animals/groups/new', heading: /record a group/i },

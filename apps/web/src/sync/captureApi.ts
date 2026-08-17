@@ -5,8 +5,9 @@
  * This is emphatically NOT the capture path: a farmer's Save writes to a local store with no
  * network in it. This runs LATER, in the background, from the outbox flush — a best-effort catch-up
  * that sends what the device already holds. Nothing a farmer does ever awaits it. It is the
- * stand-in for the Phase 3 PowerSync uploader, so every endpoint it posts to is idempotent on the
- * client-generated id: the flush is at-least-once, and a re-send must be a server-side no-op.
+ * PERMANENT transport for `Outbox.tsx` (ADR-0012) — PowerSync carries no upload role in this
+ * product — so every endpoint it posts to is idempotent on the client-generated id: the flush is
+ * at-least-once, and a re-send must be a server-side no-op.
  *
  * Errors reuse the auth client's taxonomy so the flush can tell the three cases apart: a transport
  * failure (NetworkUnavailableError → still offline, leave it pending), a 401 (access token expired
@@ -41,6 +42,43 @@ export async function postCapture(path: string, body: unknown, accessToken: stri
   const payload: unknown = await response.json().catch(() => ({}));
   const { code, message } = payload as { code?: string; message?: string };
   throw new AuthApiError(code ?? 'UNKNOWN', message ?? 'Capture was not accepted', response.status);
+}
+
+/**
+ * `postCapture`, but the endpoint's response body is the point rather than discardable — an
+ * attachment's `createAttachment` leg needs the presigned `uploadUrl` back, and every OTHER
+ * capture endpoint this app posts to is a bare 201 with nothing worth reading. Same three-way
+ * error taxonomy as `postCapture`; the only difference is what happens on `response.ok`.
+ */
+export async function postCaptureAndRead<T>(
+  path: string,
+  body: unknown,
+  accessToken: string,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new NetworkUnavailableError();
+  }
+
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => ({}));
+    const { code, message } = payload as { code?: string; message?: string };
+    throw new AuthApiError(
+      code ?? 'UNKNOWN',
+      message ?? 'Capture was not accepted',
+      response.status,
+    );
+  }
+  return (await response.json()) as T;
 }
 
 /**

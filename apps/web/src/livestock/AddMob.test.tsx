@@ -9,11 +9,12 @@
  * was not built for them.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -58,10 +59,8 @@ function cachedSession(): void {
   );
 }
 
-function storedMobs(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(MOBS_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedMobs(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(MOBS_KEY);
 }
 
 beforeEach(() => {
@@ -87,8 +86,12 @@ describe('recording a group (FR-102)', () => {
     await user.type(screen.getByLabelText(/how many head/i), '300');
     await user.click(screen.getByRole('button', { name: /save group/i }));
 
-    const saved = storedMobs();
-    expect(saved).toHaveLength(1);
+    // append() commits to the in-memory snapshot synchronously (NFR-007), but persistence to the
+    // SQLite-backed store is fire-and-forget — wait for it to land before reading it back.
+    await waitFor(async () => {
+      expect(await storedMobs()).toHaveLength(1);
+    });
+    const saved = await storedMobs();
     expect(saved[0]).toMatchObject({
       farmId: FARM_ID,
       name: 'Flock A',
@@ -99,10 +102,13 @@ describe('recording a group (FR-102)', () => {
     });
 
     // The home tile counts them. This is the whole point: 300 head, zero animal rows.
+    // findByText rather than getByText: a fresh render's capture store starts empty and
+    // hydrates asynchronously (phase-checklists.md 3c) — even against the same in-memory fake
+    // database as the first render, the read-back is a real await, not a synchronous replay.
     unmount();
     window.history.pushState({}, '', '/');
     render(<App />);
-    expect(screen.getByText('300')).toBeTruthy();
+    expect(await screen.findByText('300')).toBeTruthy();
   });
 
   it('does not tell a farm running one flock that it has recorded nothing', async () => {
@@ -119,8 +125,11 @@ describe('recording a group (FR-102)', () => {
     window.history.pushState({}, '', '/animals');
     render(<App />);
 
+    // findByText waits out the fresh render's async hydration (phase-checklists.md 3c) before
+    // this positive assertion; the negative one only makes sense once that same wait has
+    // happened, so it comes after.
+    expect(await screen.findByText('Flock A')).toBeTruthy();
     expect(screen.queryByText(/no animals recorded yet/i)).toBeNull();
-    expect(screen.getByText('Flock A')).toBeTruthy();
   });
 
   it('will not save a group with no name or a head count that is not a whole number', async () => {
@@ -136,6 +145,6 @@ describe('recording a group (FR-102)', () => {
     // Half a sheep is not a head count.
     expect(screen.getByRole('button', { name: /save group/i }).hasAttribute('disabled')).toBe(true);
 
-    expect(storedMobs()).toHaveLength(0);
+    expect(await storedMobs()).toHaveLength(0);
   });
 });

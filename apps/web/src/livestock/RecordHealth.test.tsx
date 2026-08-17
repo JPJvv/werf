@@ -19,12 +19,13 @@
  * is right about.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
 import { farmDay } from '../farmTime';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -79,12 +80,15 @@ function seedProducts(meatWithdrawalDays: number | null): void {
     JSON.stringify([
       {
         id: PRODUCT_ID,
+        jurisdiction: 'ZA',
         name: 'Terramycin LA',
         registrationNumber: 'G1234 Act 36/1947',
         species: ['cattle'],
         meatWithdrawalDays,
         milkWithdrawalHours: 96,
         route: 'intramuscular',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
       },
     ]),
   );
@@ -141,10 +145,8 @@ function seedFlock(): void {
   );
 }
 
-function storedHealth(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(HEALTH_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedHealth(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(HEALTH_KEY);
 }
 
 beforeEach(() => {
@@ -165,7 +167,7 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+    await user.selectOptions(await screen.findByLabelText(/which product/i), PRODUCT_ID);
 
     // 28 days from today, computed through the same pure domain function the server uses.
     const clear = farmDay(new Date(Date.now() + 28 * 86_400_000));
@@ -186,7 +188,7 @@ describe('recording a treatment (FR-130/131)', () => {
     render(<App />);
 
     const threeDaysBack = farmDay(new Date(Date.now() - 3 * 86_400_000));
-    const dayField = screen.getByLabelText(/when was it given/i);
+    const dayField = await screen.findByLabelText(/when was it given/i);
     await user.clear(dayField);
     await user.type(dayField, threeDaysBack);
     await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
@@ -197,10 +199,13 @@ describe('recording a treatment (FR-130/131)', () => {
       .slice(0, 10);
     expect(screen.getByText(clear)).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
     await user.click(screen.getByRole('button', { name: /record it/i }));
 
-    const [saved] = storedHealth();
+    await waitFor(async () => {
+      expect(await storedHealth()).toHaveLength(1);
+    });
+    const [saved] = await storedHealth();
     expect(saved!.administeredOn).toBe(threeDaysBack);
     // And the two clocks stay distinct: `occurredAt` is the treatment, not the capture.
     expect(String(saved!.occurredAt).slice(0, 10)).toBe(threeDaysBack);
@@ -216,7 +221,7 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
+    await user.selectOptions(await screen.findByLabelText(/which product/i), PRODUCT_ID);
     expect(screen.getByText(/no meat withholding period/i)).toBeTruthy();
   });
 
@@ -228,13 +233,15 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
     await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
     await user.type(screen.getByLabelText(/who gave it/i), 'Thabo');
     await user.click(screen.getByRole('button', { name: /record it/i }));
 
-    const saved = storedHealth();
-    expect(saved).toHaveLength(3);
+    await waitFor(async () => {
+      expect(await storedHealth()).toHaveLength(3);
+    });
+    const saved = await storedHealth();
     // One action: one batch id, three events.
     expect(new Set(saved.map((e) => e['batchId'])).size).toBe(1);
     expect(new Set(saved.map((e) => e['id'])).size).toBe(3);
@@ -261,14 +268,17 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
     await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
     await user.type(screen.getByLabelText(/^dose/i), '20');
     await user.type(screen.getByLabelText(/^unit/i), 'ml');
     await user.selectOptions(screen.getByLabelText(/how it was given/i), 'injection_im');
     await user.click(screen.getByRole('button', { name: /record it/i }));
 
-    expect(storedHealth()[0]).toMatchObject({
+    await waitFor(async () => {
+      expect(await storedHealth()).toHaveLength(1);
+    });
+    expect((await storedHealth())[0]).toMatchObject({
       kind: 'treatment',
       doseValue: 20,
       doseUnit: 'ml',
@@ -284,12 +294,12 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /select all shown/i }));
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
     await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
     await user.type(screen.getByLabelText(/^dose/i), 'two');
 
     expect(screen.getByRole('button', { name: /record it/i }).hasAttribute('disabled')).toBe(true);
-    expect(storedHealth()).toHaveLength(0);
+    expect(await storedHealth()).toHaveLength(0);
   });
 
   it('records how a dip was applied (FR-133), and offers only methods the register accepts', async () => {
@@ -302,7 +312,7 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /^dip$/i }));
+    await user.click(await screen.findByRole('button', { name: /^dip$/i }));
     await user.click(screen.getByRole('button', { name: /select all shown/i }));
     await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
 
@@ -320,7 +330,10 @@ describe('recording a treatment (FR-130/131)', () => {
     await user.selectOptions(methods, 'plunge');
     await user.click(screen.getByRole('button', { name: /record it/i }));
 
-    expect(storedHealth()[0]).toMatchObject({ kind: 'dip', method: 'plunge' });
+    await waitFor(async () => {
+      expect(await storedHealth()).toHaveLength(1);
+    });
+    expect((await storedHealth())[0]).toMatchObject({ kind: 'dip', method: 'plunge' });
   });
 
   it('does not ask for a dose on a vaccination or a dip, whose payloads carry none', async () => {
@@ -331,7 +344,7 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /^vaccination$/i }));
+    await user.click(await screen.findByRole('button', { name: /^vaccination$/i }));
     expect(screen.queryByLabelText(/^dose/i)).toBeNull();
     expect(screen.queryByLabelText(/how it was given/i)).toBeNull();
   });
@@ -344,15 +357,17 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    expect(screen.getByRole('button', { name: /record it/i }).hasAttribute('disabled')).toBe(true);
+    expect(
+      (await screen.findByRole('button', { name: /record it/i })).hasAttribute('disabled'),
+    ).toBe(true);
 
     await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
     // A product but no animals selected is still not a dosing run.
     expect(screen.getByRole('button', { name: /record it/i }).hasAttribute('disabled')).toBe(true);
-    expect(storedHealth()).toHaveLength(0);
+    expect(await storedHealth()).toHaveLength(0);
   });
 
-  it('says what to do when the register has not reached this phone yet', () => {
+  it('says what to do when the register has not reached this phone yet', async () => {
     // Not the farmer's fault and not an error — an empty picker with no explanation is what makes
     // someone give up on the app in a crush.
     cachedSession();
@@ -360,7 +375,7 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    expect(screen.getByText(/has not reached this phone yet/i)).toBeTruthy();
+    expect(await screen.findByText(/has not reached this phone yet/i)).toBeTruthy();
   });
 });
 
@@ -396,7 +411,7 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
 
     // It says no AND says when: a refusal with no way forward is what makes someone stop
@@ -422,7 +437,7 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
 
     expect(screen.queryByText(/cannot be sold for slaughter yet/i)).toBeNull();
@@ -444,7 +459,7 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
     window.history.pushState({}, '', '/animals/loss');
     render(<App />);
 
-    await user.click(screen.getAllByRole('button', { name: /cattle/i })[0]!);
+    await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^died$/i }));
     await user.type(screen.getByLabelText(/cause/i), 'Snakebite');
 
@@ -466,13 +481,15 @@ describe('dipping a whole flock (FR-133)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^dip$/i }));
     await user.selectOptions(screen.getByLabelText(/product/i), PRODUCT_ID);
     await user.click(screen.getByRole('button', { name: /record/i }));
 
-    const stored = storedHealth();
-    expect(stored).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedHealth()).toHaveLength(1);
+    });
+    const stored = await storedHealth();
     expect(stored[0]).toMatchObject({ kind: 'dip', mobId: MOB_ID, animalId: null });
   });
 
@@ -487,7 +504,7 @@ describe('dipping a whole flock (FR-133)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /cattle/i }));
 
     expect(screen.getByRole('button', { name: /flock a/i }).getAttribute('aria-pressed')).toBe(
@@ -497,6 +514,9 @@ describe('dipping a whole flock (FR-133)', () => {
     await user.selectOptions(screen.getByLabelText(/product/i), PRODUCT_ID);
     await user.click(screen.getByRole('button', { name: /record/i }));
 
-    expect(storedHealth()[0]).toMatchObject({ animalId: animals[0], mobId: null });
+    await waitFor(async () => {
+      expect(await storedHealth()).toHaveLength(1);
+    });
+    expect((await storedHealth())[0]).toMatchObject({ animalId: animals[0], mobId: null });
   });
 });

@@ -26,7 +26,8 @@ const base: EvidencePackInput = {
       ],
       mark: 'FR',
       certificateReference: 'AIS-FS-0042',
-      photoKey: 'photos/a1.jpg',
+      photoObjectKey: 'farm/01900000-0000-7000-8000-000000000011/attachments/a1.jpg',
+      photoChecksumSha256Hex: 'a'.repeat(64),
       acquiredAt: '2024-03-01',
       source: 'Bought at Senekal auction',
       movements: [
@@ -87,6 +88,23 @@ describe('assembleEvidencePack (FR-603)', () => {
     expect(pack.animals[0]!.treatments).toEqual([
       { occurredAt: new Date('2026-06-18T06:00:00.000Z'), kind: 'dip', product: 'Tickaway' },
     ]);
+  });
+
+  it('[P2.5] carries the finalised attachment reference and checksum, never animals.photo_key', () => {
+    const pack = assembleEvidencePack(base);
+    expect(pack.animals[0]).toMatchObject({
+      photoObjectKey: 'farm/01900000-0000-7000-8000-000000000011/attachments/a1.jpg',
+      photoChecksumSha256Hex: 'a'.repeat(64),
+    });
+  });
+
+  it('[P2.5] carries a null photo reference honestly when no photo was ever captured', () => {
+    const pack = assembleEvidencePack({
+      ...base,
+      animals: [{ ...base.animals[0]!, photoObjectKey: null, photoChecksumSha256Hex: null }],
+    });
+    expect(pack.animals[0]!.photoObjectKey).toBeNull();
+    expect(pack.animals[0]!.photoChecksumSha256Hex).toBeNull();
   });
 
   it('⭐ names ONE incident certificate only when every mark agrees, never a winner', () => {

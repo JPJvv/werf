@@ -16,9 +16,11 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { AuthContext } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { OBJECT_STORAGE, type ObjectStorage } from '../attachments/object-storage';
 import {
   LivestockService,
   type CapturedAnimal,
+  type CapturedBrandingRegister,
   type CapturedEvent,
   type CapturedIdentifier,
   type CapturedMob,
@@ -32,7 +34,21 @@ const residueRegisterQuerySchema = z.object({ farmId: schemas.uuidSchema });
 // No @UseGuards: AuthGuard is registered globally, so every route here is guarded by default.
 @Controller('livestock')
 export class LivestockController {
-  constructor(@Inject(LivestockService) private readonly livestock: LivestockService) {}
+  constructor(
+    @Inject(LivestockService) private readonly livestock: LivestockService,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+  ) {}
+
+  /** Create a registered identification mark offline-first (FR-601), idempotent on its UUIDv7. */
+  @Post('branding-registers')
+  @HttpCode(HttpStatus.CREATED)
+  async createBrandingRegister(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.newBrandingRegisterSchema))
+    body: schemas.NewBrandingRegister,
+  ): Promise<CapturedBrandingRegister> {
+    return this.livestock.createBrandingRegister(auth.userId, body);
+  }
 
   /**
    * Create an animal (FR-101). The FK root of the capture graph, so the client flush sends
@@ -124,7 +140,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordMoveRequestSchema))
     body: schemas.RecordMoveRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordMove(auth.userId, body);
+    return this.livestock.recordMove(auth.userId, body, auth.sessionId);
   }
 
   /**
@@ -138,7 +154,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordBirthRequestSchema))
     body: schemas.RecordBirthRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordBirth(auth.userId, body);
+    return this.livestock.recordBirth(auth.userId, body, auth.sessionId);
   }
 
   /** Record a weaning (FR-111): the weight at weaning and, if known, the age. No status change. */
@@ -222,7 +238,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordDeathRequestSchema))
     body: schemas.RecordDeathRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordDeath(auth.userId, body);
+    return this.livestock.recordDeath(auth.userId, body, auth.sessionId);
   }
 
   /**
@@ -236,7 +252,7 @@ export class LivestockController {
     @Body(new ZodValidationPipe(schemas.recordSaleRequestSchema))
     body: schemas.RecordSaleRequest,
   ): Promise<CapturedEvent> {
-    return this.livestock.recordSale(auth.userId, body);
+    return this.livestock.recordSale(auth.userId, body, auth.sessionId);
   }
 
   /**
@@ -323,10 +339,37 @@ export class LivestockController {
     @Param('id', ParseUUIDPipe) incidentId: string,
   ): Promise<StreamableFile> {
     const pack = await this.livestock.buildEvidencePack(auth.userId, incidentId);
-    const pdf = await renderEvidencePackPdf(pack);
+    const photosByAnimal = await this.buildPhotoMap(pack);
+    const pdf = await renderEvidencePackPdf(pack, photosByAnimal);
     return new StreamableFile(pdf, {
       type: 'application/pdf',
       disposition: 'attachment; filename="evidence-pack.pdf"',
     });
+  }
+
+  /**
+   * Fetches and checksum-verifies each linked animal's finalised photo (P2.5), server-side, so
+   * `renderEvidencePackPdf` never has to trust a byte it did not itself verify. `pack.farmId` is
+   * already the authorised farm — `buildEvidencePack` only reaches this point via `assertCanCapture`
+   * — and every `photoObjectKey` on the pack was itself read from `attachments` scoped to that same
+   * farm (`LivestockService.buildEvidencePack`), so no further tenancy check is needed here: the
+   * key was never reachable unless it was already this farm's.
+   *
+   * An animal is simply ABSENT from the returned map — never present with wrong bytes — when the
+   * object is missing or its stored checksum no longer matches what the pack recorded at capture.
+   * `renderEvidencePackPdf` treats an absent entry as "print the reference, not the image."
+   */
+  private async buildPhotoMap(pack: schemas.EvidencePack): Promise<Map<string, Buffer>> {
+    const photosByAnimal = new Map<string, Buffer>();
+    await Promise.all(
+      pack.animals.map(async (animal) => {
+        if (animal.photoObjectKey === null) return;
+        const object = await this.storage.getObject(animal.photoObjectKey);
+        if (object !== null && object.checksumSha256Hex === animal.photoChecksumSha256Hex) {
+          photosByAnimal.set(animal.animalId, object.bytes);
+        }
+      }),
+    );
+    return photosByAnimal;
   }
 }

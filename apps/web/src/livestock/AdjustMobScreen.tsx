@@ -22,7 +22,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { projectHeadCount } from '@werf/domain';
-import { schemas, uuidv7 } from '@werf/core';
+import { parseRandsToCents, schemas, uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
@@ -30,11 +30,20 @@ import { farmToday } from '../farmTime';
 import { useEffectiveMobs } from './herd';
 import { useRecordTallies, useTallies } from './LocalTallies';
 import { useMobs } from './LocalMobs';
+import {
+  useHydratedMobs,
+  useHydratedTallies,
+  useHydratedAnimals,
+  useHydratedMoves,
+  useHydratedHealthEvents,
+  mergeById,
+  mergeByIdPreferHydrated,
+} from './HydratedLivestock';
 import { useHealthEvents } from './LocalHealth';
 import { useAnimals } from './LocalHerd';
 import { useMoves } from './LocalMoves';
 import { useVetProducts } from './LocalVetProducts';
-import { meatWithdrawalForMob } from './withdrawal';
+import { meatWithdrawalForMob, type WithholdDose } from './withdrawal';
 
 /**
  * The reasons, in the order a farmer meets them rather than alphabetically or grouped by sign.
@@ -86,15 +95,9 @@ void _everyReasonIsOffered;
  */
 const INCREASES: readonly schemas.TallyReason[] = schemas.TALLY_INCREASES;
 
-/** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
-function toCents(rands: string): number {
-  return Math.round(Number(rands) * 100);
-}
-
+/** The price is optional here — a trade with no price typed is still a valid trade to record. */
 function priceIsValid(rands: string): boolean {
-  if (rands.trim() === '') return true; // the price is optional; blank is not an error
-  const n = Number(rands);
-  return Number.isFinite(n) && n >= 0;
+  return rands.trim() === '' || parseRandsToCents(rands) !== null;
 }
 
 /** The typed count as a whole number of animals, or null when it is not one yet. */
@@ -115,13 +118,55 @@ export function AdjustMobScreen() {
   // The RAW mobs: the fold below needs the mob's BASELINE, and a projected mob's `headCount` has
   // already had the whole log applied to it. Folding over that would count every tally twice.
   const storedMobs = useMobs();
+  // Hydrated mobs/tallies (phase-checklists.md 3e) — a mob or a tally another device sent, already
+  // replicated to this one. `headAsAt` merges these in so a decrease against a mob this device has
+  // never itself touched (only knows via down-sync) validates against the SAME baseline the server
+  // would judge it by, rather than falling through to "this group is managed as individual
+  // animals" — the wrong refusal for a mob this device simply has not captured anything about yet.
+  const hydratedMobs = useHydratedMobs();
+  const hydratedTallies = useHydratedTallies();
+  // ⭐ sync-auditor Finding 1 (2026-08-10): hoisted out of `headAsAt` so the withholding guard below
+  // reads the SAME merged log the head-count fold does. It previously read raw local `tallies`,
+  // which is blind to a withholding that arrived only via down-sync (a `transfer_in` this device
+  // never captured) — the guard previewed CLEAR while the server, which sees the real transfer,
+  // would refuse the same capture days later.
+  const foldTallies = useMemo(
+    () => mergeById(tallies, hydratedTallies),
+    [tallies, hydratedTallies],
+  );
   const healthEvents = useHealthEvents();
+  const hydratedHealthEvents = useHydratedHealthEvents();
   const products = useVetProducts();
   // A counted mob can ALSO hold individually-registered animals, and a treatment given to one of
   // them stores `mob_id = NULL`. The raw herd and the move log are what let the guard see it — the
   // tally takes head out without naming which head.
+  //
+  // ⭐ Merged with hydrated animals/moves/health (phase-checklists.md 3e), same reasoning as
+  // `foldTallies` above: an individually-registered member this device has only heard about via
+  // down-sync, or a dose/walk another device recorded for it, was invisible to this guard before —
+  // the mob-membership reconstruction (`withdrawal.ts`'s `mobMembership`) silently missed exactly
+  // the animal a co-worker's phone knows about.
   const herd = useAnimals();
+  const hydratedHerd = useHydratedAnimals();
   const moves = useMoves();
+  const hydratedMoves = useHydratedMoves();
+  const foldHerd = useMemo(() => mergeById(herd, hydratedHerd), [herd, hydratedHerd]);
+  // The raw hydrated-animal id set (STATUS.md §3, fail-closed) — see `withdrawal.ts`'s
+  // `mobMembership` "OWNER DECISION" note.
+  const hydratedAnimalIds = useMemo(() => new Set(hydratedHerd.map((a) => a.id)), [hydratedHerd]);
+  // `mergeByIdPreferHydrated` for moves/health: their hydrated echoes carry server-derived
+  // enrichment (`fromMobId`/`fromLandUnitId`, `meatWithholdUntil`) a local capture never can —
+  // local-wins would shadow it once this device's own capture round-trips back with the same id
+  // (compliance-checker finding, phase-checklists.md 3e). See `HydratedLivestock.tsx`'s
+  // `mergeByIdPreferHydrated` docstring.
+  const foldMoves = useMemo(
+    () => mergeByIdPreferHydrated(moves, hydratedMoves),
+    [moves, hydratedMoves],
+  );
+  const foldHealth = useMemo(
+    () => mergeByIdPreferHydrated<WithholdDose>(healthEvents, hydratedHealthEvents),
+    [healthEvents, hydratedHealthEvents],
+  );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reason, setReason] = useState<schemas.TallyReason | null>(null);
@@ -139,6 +184,7 @@ export function AdjustMobScreen() {
   const [declaredUntil, setDeclaredUntil] = useState('');
   const [lastSaved, setLastSaved] = useState<{ name: string; head: number } | null>(null);
   const [refused, setRefused] = useState<{ detail: string | null } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -176,9 +222,10 @@ export function AdjustMobScreen() {
   // this fold is how the two halves of one move come to disagree about a number.
   const headAsAt = useMemo(() => {
     const at = `${day}T12:00:00.000Z`;
+    const foldMobs = mergeById(storedMobs, hydratedMobs);
     return (mobId: string): number | null => {
-      const before = tallies.filter((t) => t.mobId === mobId && t.occurredAt <= at);
-      const stored = storedMobs.find((m) => m.id === mobId);
+      const before = foldTallies.filter((t) => t.mobId === mobId && t.occurredAt <= at);
+      const stored = foldMobs.find((m) => m.id === mobId);
       const baseline =
         stored === undefined
           ? null
@@ -187,7 +234,7 @@ export function AdjustMobScreen() {
             : stored.initialHeadCount;
       return projectHeadCount(baseline, before);
     };
-  }, [storedMobs, tallies, day]);
+  }, [storedMobs, hydratedMobs, foldTallies, day]);
   const currentHead = selected === null ? null : headAsAt(selected.id);
   const isRecount = reason === 'recount';
   const trade = reason === 'sale' || reason === 'purchase';
@@ -223,7 +270,16 @@ export function AdjustMobScreen() {
   const withdrawal =
     selected === null
       ? null
-      : meatWithdrawalForMob(selected.id, day, healthEvents, products, herd, moves, tallies);
+      : meatWithdrawalForMob(
+          selected.id,
+          day,
+          foldHealth,
+          products,
+          foldHerd,
+          foldMoves,
+          foldTallies,
+          hydratedAnimalIds,
+        );
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
   // The reasons that are recorded rather than refused still say so — same rule as the death path.
   const noteWithdrawal =
@@ -260,8 +316,9 @@ export function AdjustMobScreen() {
     setDay(farmToday());
   };
 
-  const save = () => {
-    if (!selected || reason === null || typed === null || !canSave) return;
+  const save = async () => {
+    if (!selected || reason === null || typed === null || !canSave || saving) return;
+    setSaving(true);
     // ⭐ Minted HERE, at save time, not memoised across renders. A memo keyed on `[selectedId, day]`
     // survived `reset()` — which clears neither and re-sets `day` to the value it already held — so
     // a second tally on the same mob on the same day reused the first id, the flush skipped it as a
@@ -280,7 +337,8 @@ export function AdjustMobScreen() {
     // ninth pass found the fix had stopped at the screen. This scoping stays because it is what a
     // farmer meets: the server refusing a capture days later is not how anyone should learn that
     // a buyer cannot be attached to a theft. Client and boundary, always.
-    const price = trade && priceRands.trim() !== '' ? toCents(priceRands) : undefined;
+    const price =
+      trade && priceRands.trim() !== '' ? (parseRandsToCents(priceRands) ?? undefined) : undefined;
     const buyer = trade && counterparty.trim() !== '' ? counterparty.trim() : undefined;
 
     // The domain is the authority on whether this capture is legal, and `canSave` above is a
@@ -327,7 +385,10 @@ export function AdjustMobScreen() {
     // the source and into nothing, which is what `canSave` claims to prevent. Raised by all three
     // review agents.
     try {
-      recordTallies([
+      // Not "saved" until every capture in the act is durably persisted (P1.1) — awaited, never
+      // fire-and-forget, so a browser killed right after this call has genuinely committed both
+      // halves of a transfer or neither.
+      await recordTallies([
         {
           id,
           farmId: activeFarm.id,
@@ -377,11 +438,13 @@ export function AdjustMobScreen() {
       ]);
     } catch (error) {
       setRefused({ detail: error instanceof Error ? error.message : null });
+      setSaving(false);
       return;
     }
 
     setRefused(null);
     setLastSaved({ name: selected.name, head: projected ?? 0 });
+    setSaving(false);
     reset();
   };
 
@@ -483,7 +546,7 @@ export function AdjustMobScreen() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                save();
+                void save();
               }}
             >
               <fieldset className="mb-4 border-0 p-0">
@@ -690,7 +753,7 @@ export function AdjustMobScreen() {
                   <button
                     type="submit"
                     className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
-                    disabled={!canSave}
+                    disabled={!canSave || saving}
                   >
                     {t('tally.save')}
                   </button>

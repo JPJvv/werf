@@ -16,9 +16,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** What the register holds: mobs composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredMob = schemas.NewMob;
@@ -28,7 +30,11 @@ export type MobStore = CaptureStore<StoredMob>;
 export type MobStoreFactory = (key: string) => MobStore;
 
 const defaultFactory: MobStoreFactory = (key) =>
-  createCaptureStore<StoredMob>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredMob>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const MobStoreContext = createContext<MobStore | null>(null);
 
@@ -41,6 +47,7 @@ export function LocalMobsProvider({ children, factory = defaultFactory }: LocalM
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-mobs:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <MobStoreContext.Provider value={store}>{children}</MobStoreContext.Provider>;
 }
@@ -57,8 +64,24 @@ export function useMobs(): readonly StoredMob[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
-/** Commit a mob to the local register. Synchronous; never awaits the network (NFR-007). */
-export function useRecordMob(): (mob: StoredMob) => void {
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useMobs()` until this is true. */
+export function useMobsSettled(): boolean {
+  const store = useMobStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useMobs()` as
+ *  confirmed empty, when this is true. */
+export function useMobsHydrationFailed(): boolean {
+  const store = useMobStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
+/** Commit a mob to the local register. Never awaits the network (NFR-007); the returned promise
+ *  resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordMob(): (mob: StoredMob) => Promise<void> {
   const store = useMobStore();
   return useCallback((mob) => store.append(mob), [store]);
 }

@@ -7,11 +7,12 @@
  * nothing about durability offline.
  */
 
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { getCurrentFakeLocalDatabase } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -91,7 +92,7 @@ describe('the weigh session', () => {
     const { unmount } = render(<App />);
 
     // First animal of two, no reading yet.
-    expect(screen.getByText('1 of 2')).toBeTruthy();
+    expect(await screen.findByText('1 of 2')).toBeTruthy();
 
     await user.type(screen.getByLabelText(/weight/i), '305');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
@@ -105,7 +106,7 @@ describe('the weigh session', () => {
     render(<App />);
 
     // Back at the first animal, its saved weight is shown as context.
-    expect(screen.getByText(/last weight/i)).toBeTruthy();
+    expect(await screen.findByText(/last weight/i)).toBeTruthy();
     expect(screen.getByText('305')).toBeTruthy();
   });
 
@@ -116,7 +117,7 @@ describe('the weigh session', () => {
     window.history.pushState({}, '', '/weigh');
     render(<App />);
 
-    await user.type(screen.getByLabelText(/weight/i), '300');
+    await user.type(await screen.findByLabelText(/weight/i), '300');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
 
     await user.type(screen.getByLabelText(/weight/i), '310');
@@ -150,13 +151,45 @@ describe('the weigh session', () => {
     render(<App />);
 
     // The prior reading is shown as crush context before the new one is taken.
-    expect(screen.getByText('300')).toBeTruthy();
+    expect(await screen.findByText('300')).toBeTruthy();
 
     await user.type(screen.getByLabelText(/weight/i), '314');
     await user.click(screen.getByRole('button', { name: /save & next/i }));
 
     const status = screen.getByText(/kg\/day/i);
     expect(status).toBeTruthy();
+    expect(screen.getByText('+2.00')).toBeTruthy();
+  });
+
+  it('⭐ shows the growth since a reading taken on ANOTHER DEVICE, known only via hydration (phase-checklists.md 3e)', async () => {
+    // The gap this closes: `useAnimalWeights` read only `LocalWeights` — a reading a co-worker took
+    // and the server has replicated down was invisible here, so the "prior weight" crush context
+    // and the ADG shown after save both silently ignored the animal's most recent real weigh.
+    cachedSession();
+    seedHerd(animal('a1'));
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/weigh');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    act(() => {
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000w099',
+        farm_id: FARM_ID,
+        animal_id: 'a1',
+        type: 'weight',
+        occurred_at: weekAgo,
+        payload: JSON.stringify({ kg: 300, method: 'scale' }),
+      });
+    });
+
+    expect(await screen.findByText('300')).toBeTruthy();
+
+    await user.type(screen.getByLabelText(/weight/i), '314');
+    await user.click(screen.getByRole('button', { name: /save & next/i }));
+
+    expect(screen.getByText(/kg\/day/i)).toBeTruthy();
     expect(screen.getByText('+2.00')).toBeTruthy();
   });
 });

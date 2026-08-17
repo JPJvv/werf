@@ -1,0 +1,8 @@
+-- No-op migration: establishes a current drizzle-kit schema snapshot after migrations 0016-0022
+-- were hand-authored without metadata snapshots. The generated SQL was intentionally discarded:
+-- every change it described was already applied by those earlier migrations. Keeping the new
+-- 0023_snapshot.json makes the next `drizzle-kit generate` diff from the current schema instead
+-- of trying to recreate types, tables and columns that already exist.
+--
+-- This migration remains in the journal so drizzle-kit and drizzle-orm agree on one forward-only
+-- history. Do not backfill or edit the missing historical snapshots: 0023 is the explicit baseline.

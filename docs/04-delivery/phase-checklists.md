@@ -783,46 +783,601 @@ accepted in ADR-0003, without changing the domain-facing store contracts or losi
 add the one shared local-first attachment path approved on 2026-08-08.
 
 ```
-☐ 3a PowerSync web SDK is owned by `@werf/sync`; components never import it directly
-☐ 3a Local SQLite/OPFS schema represents every Phase 2 syncable table and reference cache
-☐ 3b PowerSync sync rules and Postgres RLS agree for every farm-scoped table; the cross-farm
+☑ 3a PowerSync web SDK is owned by `@werf/sync`; components never import it directly.
+  `local-database.ts` is the only file allowed to import `@powersync/web`, enforced by an
+  eslint `no-restricted-imports` rule (not just convention) scoped to everywhere outside
+  `packages/sync`. `createLocalDatabase`/`LocalDatabase` are deliberately NOT re-exported from
+  the package's main barrel yet: building it in showed the SDK's WASM engine (1–2.5MB) gets
+  bundled into apps/web's initial chunk even unused, blowing NFR-009's 250KB budget and
+  breaking the PWA precache manifest outright. It is reachable via `@werf/sync/local-database`
+  for the slice that actually opens a connection (behind a dynamic import, code-split) —
+  nothing calls it yet, which is correct: 3a is schema + factory, not a wired-up connection.
+  `apps/web/vite.config.ts` also needed `worker: { format: 'es' }` — Rollup's default iife
+  worker format cannot code-split and fails the build the moment anything imports the SDK.
+☑ 3a Local SQLite/OPFS schema represents every Phase 2 syncable table and reference cache.
+  DERIVED, not hand-written: `packages/sync/scripts/derive-local-schema.ts` reads the real
+  Postgres schema (`@werf/db`) and the `TENANCY` registry (`packages/sync/src/tenancy.ts`,
+  the same registry sync rules/RLS are derived from) and
+  `pnpm --filter @werf/sync generate:schema` writes `local-schema-tables.generated.ts`;
+  `test/local-schema-freshness.spec.ts` fails CI if the checked-in file drifts. The derivation
+  module lives under `scripts/`, never `src/`, because it imports `@werf/db` → `pg`, which
+  cannot resolve in a browser bundle and apps/web consumes `@werf/sync` as source with no
+  pre-build step — confirmed by testing that `pg`-in-the-bundle failure directly during this
+  slice. `test/local-schema.spec.ts` proves every non-`server-only` `TENANCY` table gets a
+  local table, every `neverSyncColumns` entry (secrets, PostGIS geometry) is excluded, and the
+  result builds a real `@powersync/common` `Schema` that passes `.validate()`.
+  ⛔ **Known gap, not an oversight:** `theft_incident_animals` has a composite primary key
+  (`incident_id`, `animal_id`) and no surrogate `id` column — the one table in this schema that
+  already breaks db.md's "UUIDv7 primary key on every table" rule, independent of PowerSync.
+  PowerSync requires one TEXT `id` per synced row, so this table cannot be represented locally
+  yet; it is excluded from the generated schema with a test that fails loudly if the exclusion
+  goes stale or a new table hits the same gap silently. Tracked as issue #10 (additive migration
+  adding the surrogate id). Constructing the real `PowerSyncDatabase` (`local-database.ts`) was
+  also confirmed, empirically, to hang forever under plain Node — it opens real OPFS/Worker/WASM
+  machinery that only exists in a browser — which is why that file is typechecked but never
+  unit-tested; a real open belongs in Playwright, once a later slice gives it a call site.
+☑ 3b PowerSync sync rules and Postgres RLS agree for every farm-scoped table; the cross-farm
   tenancy test fails when either side is deliberately made permissive
-☐ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
-  at every step leaves either the old readable store or the complete new one, never half of each
-☐ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months
-☐ 3d Queue is durable across browser kill, reboot and quota pressure; read data may be evicted,
-  queued writes may not
-☐ 3d 4xx records are retained and set aside while the round continues; 5xx/unrecognised failures
-  abort the round; an expired refresh token holds rather than clears the queue
-☐ 3d Every changing-state capture checks idempotency before validation on the server
-☐ 3e Two-device conflict matrix is implemented: append-only events coexist; field conflicts are
-  audited; aggregate projections use the immutable baseline and `(occurred_at, id)` total order
-☐ 3e Recount resets rather than adds, and arrival order cannot change the derived result
-⛔ 3e HYDRATION TRIPWIRE, LEFT BY THE TENTH PASS — do this BEFORE any down-sync ships.
-  `needsHead` in `apps/web/src/sync/Outbox.tsx` asks `landed()` whether the server holds a tally,
-  and `landed()` is `sentLog.has(id)` — "did THIS DEVICE send it". That is exact only while the
-  device holds the whole log, which is true in Phase 2 because nothing hydrates. The moment mobs
-  and tallies come down from the server, a tally another phone landed is invisible to `landed()`,
-  `projectHeadCount` under-counts, and the decrease is HELD EVERY ROUND FOR EVER with no refusal
-  above it — `/not-sent` then shows it under "Waiting to go up" and it never goes. That is the
-  ninth pass's SEV-2 shape (a hold that cannot clear) reached through the new mechanism.
-  Fix with hydration: `landed()` must become `sentLog.has(id) || hydratedFromServer.has(id)`.
-  Found independently by `reviewer` and `sync-auditor`; NOT a Phase 2 defect — it cannot fire in
-  the shipped configuration — which is exactly why it is written here rather than left in a comment
-☐ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives
-☐ 3g Additive-migration tests send an old-client payload after the new schema is deployed
-☐ 3h Sync health reports queue depth/failure per farm without PII
-☐ 3i Attachment metadata is farm-scoped, client-UUIDv7, soft-deleted and synced through SQLite;
-  the binary stays in OPFS until its checksum-confirmed server acknowledgement is durable
-☐ 3i Animal photos and later crop/grievance documents use one deferred queue: capture commits
-  locally with no signal, browser kill/reload loses neither metadata nor blob, and retry is idempotent
-☐ 3i The API authorises the farm before issuing a short-lived presigned upload; object keys are
-  server-derived, never arbitrary client paths, and another farm can neither upload nor read them
-☐ 3i One S3-compatible adapter uses MinIO in development/integration tests and S3 in `af-south-1`
-  in production; tests cover checksum/size refusal, quota pressure, retry and orphan cleanup
-☐ 3i Existing Phase 2 `photo_key` rows migrate without inventing an attachment; null remains none
-☐ Offline matrix in testing-strategy.md runs against real Postgres and the real adapter
-☐ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed
+  2026-08-09: first attempt targeted classic `bucket_definitions` Sync Rules and hit a real
+  ceiling — that format forbids JOINs/subqueries in both Parameter and Data Queries, which blocks
+  `businesses`/`regulatory_rates`/`veterinary_products` (no bucket at all) and `users` (only the
+  connected user's own row, not a co-member's) outright. Re-targeted to PowerSync Sync Streams
+  (`edition: 3`), which supports `IN (SELECT ...)` subqueries. `packages/sync/scripts/
+  derive-sync-streams.ts` generates `infra/powersync/sync-config.yaml` from `TENANCY`
+  (`pnpm --filter @werf/sync generate:sync-rules`), drift-checked by
+  `test/sync-streams-freshness.spec.ts`. `test/sync-streams-rls-agreement.spec.ts` reads the real
+  RLS migrations off disk and proves tenant-scoped tables are built on `app_user_farm_ids()` and
+  reference tables are `FOR SELECT USING (true)`, matching each stream. Empirically confirmed a
+  hand-tampered permissive config fails the freshness test.
+  ⭐ VALIDATED AGAINST A REAL SERVICE, not just config-parsed: `journeyapps/powersync-service:
+  1.23.3` (`infra/powersync/`, Postgres storage backend, self-hosted via docker-compose) booted,
+  accepted the generated config with zero errors, and REPLICATED REAL ROWS from all 15 synced
+  tables — confirmed by reading the container's own replication log. Two things learned only by
+  running it, not from docs: `EXISTS` does not validate under Streams either ("Unknown
+  function") — every predicate uses `IN (SELECT ...)` instead, which does the same job — and a
+  single invalid stream fails the ENTIRE sync config, no partial-success mode.
+  ☑ **Expiry ceiling closed with a bounded bridge:** the rule cannot evaluate
+  `farm_users.expires_at` — `now()` is rejected under classic Rules AND Streams — and RLS does
+  not protect the replication connection. `MembershipExpiryService` now runs every minute and
+  soft-deletes elapsed grants using database `now()`, making `deleted_at` the revocation signal
+  RLS and every stream share. A real-Postgres integration test proves only elapsed live rows are
+  tombstoned and a cross-artifact test proves every stream consumes that tombstone.
+☑ 3b `PowerSyncBackendConnector` implemented (`packages/sync/src/connector.ts`) and `.connect()`
+  EMPIRICALLY PROVEN end-to-end against the real self-hosted service, not just unit-tested:
+  `fetchCredentials` calls a new `GET /api/sync/token` (`apps/api/src/sync/`), which mints a
+  short-lived RS256 JWT (`TokenService.signPowerSyncToken`) from the caller's own session —
+  deliberately minimal claims (`sub` only, no farm list), because farm membership is resolved by
+  the sync stream's own `farm_users` lookup at replication time, not baked into the token; a
+  revoked membership stops syncing on the next replicated write rather than waiting out the
+  token's 15-minute TTL.
+  ⛔ **Found empirically, 2026-08-09: config validating and rows replicating into the service's
+  own storage is NOT the same claim as a connected client receiving them.** A real `.connect()` +
+  `waitForFirstSync()` completed with no error and `operations_synced: 0` — every stream in
+  `sync-config.yaml` needed `auto_subscribe: true`, which nothing had set, because Sync Streams
+  are an opt-in subscription model and nothing in this repo ever subscribed. Fixed in the
+  generator (`sync-streams.ts`'s `renderStream`), regenerated, and re-verified against the live
+  service: a fresh test farm registered via the real `/api/auth/register` reached the client's
+  local `farms` table with exactly its own row (`buckets: 16`, `operations_synced: 6` in the
+  service log) — the per-user delivery rung this repo's own validation ladder needed (config
+  accepted → rows replicated → parameters indexed → **rows delivered per user**, only the last of
+  which this proves). This is now the standing posture: every stream auto-subscribes, matching
+  offline-first's premise that a device holds its whole farm by default.
+  `uploadData` deliberately THROWS on any queued write rather than draining it silently — db.md's
+  "the write queue is never discarded by the system" — because no per-table upload route exists,
+  permanently (ADR-0012, closed Phase 3 slice 3d). Proven directly: `connector.spec.ts`'s
+  throw-on-nonempty-queue test asserts `complete()` is never called for an unroutable write.
+  ⭐ UPDATE (3e): the real application read path now exists —
+  `apps/web/src/sync/SyncConnection.tsx` mounts the ONE `.connect()` call inside `AppShell`, live
+  as long as an authenticated session is, and the `landed()` hydration fix below landed in the SAME
+  slice that wired it, exactly as this box demanded. The diagnostics-only `mode=connect` entry
+  remains, unchanged, for the narrower OPFS-open proof it was built for.
+☑ 3c Existing localStorage captures migrate transactionally into SQLite on upgrade; interruption
+  at every step leaves either the old readable store or the complete new one, never half of each.
+  All 12 `Local*.tsx` capture stores now back onto `createSqliteCaptureStore`
+  (`packages/sync/src/sqlite-capture-store.ts`), one generic `localOnly` `capture_records` table
+  plus a `capture_migrations` marker (`capture-schema.ts`) — `localOnly` keeps every row out of
+  the CRUD upload queue, so the existing `Outbox.tsx` stays the sole uploader this slice. Migration
+  is per-`store_key`, inside one `writeTransaction`, with the marker re-checked INSIDE the
+  transaction (closing a `StrictMode`-driven TOCTOU race outside it would miss) — proven atomic
+  under a real interruption in `sqlite-capture-store.spec.ts` and end-to-end against the real
+  engine in `apps/web/e2e/capture-migration.spec.ts`. localStorage is read-only throughout, never
+  cleared. ⭐ Found and closed in the same slice, not anticipated by the plan: the Outbox could
+  flush against a partially-hydrated world (each store hydrates independently and
+  asynchronously), producing a real wire-order violation — a tally posting before the dose it must
+  be guarded by. Fixed by widening `CaptureStore<T>` with `settled()` and gating the flush AND the
+  `'synced'` status on every store settling. A second, related bug (`TagSessionScreen`/
+  `WeaningSessionScreen` freezing their work queue on a mount-time snapshot of pre-hydration data)
+  was found by the same investigation and closed the same way. Full account:
+  `docs/04-delivery/phase-3-capture-migration-2026-08-09.md`.
+☑ 3c Rollback/support-window behaviour is documented for a client that stays offline 12 months —
+  same doc: a device that never completes an SW install for this build never runs the migration at
+  all (Workbox only activates once its full precache list, including the now-precached PowerSync
+  engine, has downloaded), and localStorage is never deleted, so manual recovery remains possible
+  indefinitely. NFR-009's bundle gate now excludes the precached engine from the interactive-path
+  JS sum (owner-confirmed decision, 2026-08-09) — `apps/web/scripts/check-bundle-size.mjs`,
+  `apps/web/vite.config.ts`.
+☑ 3d Queue is durable across browser kill and reboot; read data may be evicted, queued writes may
+  not. **Quota-pressure eviction is unimplemented** — no retention/eviction code exists yet, so
+  the claim is vacuously true today rather than stress-proven; that proof is 3f's job (a
+  dedicated box below), not re-claimed here. Kill/reboot itself is proven against the real
+  engine, in a real browser, on the built PWA: `apps/web/e2e/offline-capture.spec.ts` captures
+  with the network off, `page.reload()`s (a full document + worker + WASM reboot, on the capture
+  ROUTE so the service-worker navigation fallback is exercised too) still offline, and asserts
+  the record and the "Offline — your work is saved" status both survive — then lets the signal
+  return and proves the queue drains and does not re-send. `apps/web/e2e/capture-migration.spec.ts`
+  proves the same reboot shape for the 3c SQLite/OPFS store itself.
+☑ 3d 4xx records are retained and set aside while the round continues; 5xx/unrecognised failures
+  abort the round; an expired refresh token holds rather than clears the queue. Not new work —
+  this was built and proven during 3c's own follow-up (STATUS.md §5 item 12: sync-auditor Finding
+  2, the bounded 90s throttle retry) and by `Outbox.test.tsx`'s pre-existing invariant-5 test
+  ("keeps every capture when the session cannot be refreshed"), which asserts the capture store is
+  byte-identical, nothing joined the sent-log, and the session was not cleared. Audited during 3d
+  and found already correct and already covered; no code changed.
+☑ 3d Every changing-state capture checks idempotency before validation on the server. Audited
+  every mutation in `livestock.service.ts`, `land.service.ts`, `rainfall.service.ts` against
+  `event-capture.ts`'s `findEvent` rule: the two captures that overwrite state their own
+  validation reads — `recordMobTally` (head count) and `recordMove` (animal position) — both
+  check `findEvent` BEFORE validating, proven by
+  `livestock.integration.test.ts`'s "does not take the same animals off twice when the flush
+  retries" and "is idempotent on the client id even though the first move changed what it
+  validates". Every other capture is a pure append to `events` (or, for `recordBoundaryWalk`, a
+  re-derivation that is a projection rather than a validation — see that function's own comment)
+  and is idempotent via `onConflictDoNothing` alone, with no self-referential state to race.
+  Audited during 3d, no gap found, no code changed.
+
+⛔ **Not this slice — read before assuming `PowerSyncBackendConnector.uploadData` is an open
+  TODO.** `connector.ts`'s header now states the decided architecture: every capture table is
+  `Table.createLocalOnly` (`capture-schema.ts`), so PowerSync's own CRUD upload queue is empty by
+  construction and `Outbox.tsx` stays the permanent uploader, not a stand-in awaiting a 3d
+  migration. This was checked against the installed SDK, not assumed:
+  `CrudBatch`/`CrudTransaction.complete()` (`@powersync/common`) acknowledge a batch as a whole —
+  there is no per-entry completion — so "a 4xx record is retained and set aside while the round
+  continues" cannot be expressed on top of the native CRUD queue without either discarding the
+  refused entry (forbidden) or blocking every entry behind it forever (the `Outbox.tsx`
+  strand-the-queue shape already fixed once). `uploadData` throwing on a non-empty batch is now
+  documented as a tripwire for that invariant, not a stopgap for missing routing. Owner question
+  raised in STATUS.md §3: this reading conflicts with how earlier STATUS/doc entries phrased
+  `uploadData` as "not yet wired — 3d"; flagged rather than silently resolved.
+☑ 3e Two-device conflict matrix — CLOSED for mobs/tallies, for animals/moves/health/
+  identifiers/theft/weights/breeding, AND for land (camps/blocks + boundary walks — closed
+  2026-08-14). `apps/web/src/land/HydratedLand.tsx` mirrors `HydratedLivestock.tsx`'s pattern: two
+  `createHydratedTableStore`s (`land_units`, and `events` narrowed to `type = 'boundary_walk'`),
+  merged with the local register via `LocalLand.tsx`'s new `useEffectiveLandUnits`/
+  `useEffectiveBoundaryWalks` (`mergeById`, local-wins — traced against source, not assumed by
+  analogy: nothing in the client trusts a land unit's own `boundaryGeojson`/`hectares` fields for
+  the CURRENT boundary, `useCurrentBoundary` always re-derives it from the walk log, so a stale
+  local copy is harmless; a hydrated walk's payload carries exactly the three fields a local one
+  already does, no `fromMobId`-style enrichment asymmetry, so `mergeByIdPreferHydrated` would buy
+  nothing). Consumers switched: `LandScreen.tsx`, `AddLandUnitScreen.tsx`'s duplicate-code check
+  (now catches a code another device already claimed, not just this device's own), and
+  `WalkBoundaryScreen.tsx`/`MoveAnimalsScreen.tsx`'s camp pickers. `Outbox.tsx`'s send-queue stays
+  local-only by design (a hydrated land unit must never be re-POSTed); only its display-only
+  `landUnitCodes` map reads the merge. The shared test fake (`packages/sync/src/testing.ts`) was
+  widened to recognise `land_units` as a canonical table (boundary walks needed no change — they
+  already flow through the generic `events`/`eventTypesFor` path). 5 new tests
+  (`HydratedLand.test.tsx`), 4 of 5 watched to FAIL first via `git stash`; the 5th (a local walk's
+  own hydrated echo landing later) is a backward-compat regression guard that necessarily passes
+  either side, same shape as this file's other mixed fail-first sets. Append-only events coexist;
+  aggregate projections fold from the immutable
+  `initialHeadCount` baseline over the `(occurred_at, id)` total order — same rule the server
+  applies, same result either side. `HydratedLivestock.tsx` grew eight new hydrated stores
+  (`useHydratedAnimals`, `useHydratedLifecycleEvents`, `useHydratedMoves`, `useHydratedHealthEvents`,
+  `useHydratedIdentifiers`, `useHydratedTheftIncidents`, `useHydratedWeights`,
+  `useHydratedBreedingEvents`), each a `createHydratedTableStore` over a canonical table/type-set the
+  local device already down-syncs — no new PowerSync subscription config was needed. `herd.ts`'s
+  `useEffectiveAnimals`/`useWithholdingCount` merge them via `mergeById`, settled by re-verifying
+  against source (not assumed by analogy to mobs) that `mergeById`'s local-wins is safe here too:
+  `animals.status`/`landUnitId`/`mobId` are never trusted directly by the fold, only re-derived from
+  the (also merged) lifecycle-event/move logs, so a stale local baseline is corrected by the fold
+  rather than by which copy of the row wins — verified against `livestock.service.ts`'s
+  `recordMove`/`recordDeath` (status is a client+server read-model projection, never a column;
+  `landUnitId`/`mobId` are updated server-side only via `recordMove`'s "latest move" write, which the
+  client's own `positionByAnimal` fold reconstructs independently from the merged move log).
+  `identifiers`/`theft_incidents` have no production update path post-creation either — grepped, only
+  test fixtures touch them. `theft_incident_animals` (the per-animal join) still cannot sync locally
+  at all (issue #10, no surrogate id) — a hydrated theft incident's `animalIds` is always `[]`,
+  unchanged from before this slice.
+  ⭐ A genuine wire-shape trap found and closed, not assumed: the events.payload for treatment/
+  vaccination/dip never carries `productId` — only `product` (a name string) and the
+  server-resolved `meatWithholdUntil`/`milkWithholdUntil`. `withdrawal.ts`'s guard functions were
+  widened from `StoredHealthEvent` to a `WithholdDose` union (`productId?` OR `meatWithholdUntil?`)
+  and `clearDateFor` prefers the hydrated, already-authoritative date over a local register lookup —
+  a naive mapper reusing `productId` would have silently dropped every hydrated dose from the fold
+  (a false CLEAR on the FR-131 guard, the one direction this file exists to prevent).
+  Guard call sites fixed together (AdjustMobScreen.tsx, RecordLossScreen.tsx, Outbox.tsx,
+  residue.ts) since `mobDisposalSubjects` reconstructs membership from animals+moves — fixing health
+  alone would have left the guard blind through a different hole. Also closed: the duplicate-tag
+  guard (`TagSessionScreen.tsx`'s `useTakenValues`), the theft-incident read/sent gap
+  (`TheftIncidentsScreen.tsx`), the move-destination picker (`MoveAnimalsScreen.tsx` now uses
+  `useEffectiveMobs`), and three informational-display gaps (prior-weight/ADG in
+  `WeighSessionScreen.tsx`, weaning dedup in `WeaningSessionScreen.tsx`, mating-date prefill in
+  `RecordPregnancyScreen.tsx`).
+  The shared test fake (`packages/sync/src/testing.ts`) was widened alongside: it recognised only
+  `'mobs' | 'events'` with a single hard-coded `type === 'tally'` filter for every `events` watcher —
+  correct while tallies were the only thing hydrated from `events`, silently wrong the moment
+  lifecycle/move/health/weight/breeding stores also query `events` with their own `type IN (...)`
+  sets. Now parses each watcher's own type filter from its SQL (`eventTypesFor`) and recognises
+  `animals`/`animal_identifiers`/`theft_incidents` as canonical tables too — proven fail-first via
+  `git stash` on just `testing.ts` before restoring.
+  Evidence: fake-driven `Outbox.test.tsx`'s `tripwire 3e (issue #8)` suite (5 tests) + a new
+  hydrated-guard test + `hydrated-table-store.spec.ts` (9 tests, 3 new) +
+  `HydratedLivestock.test.ts` (4 `mergeById` tests) + `herd.test.ts` (5 hydrated-fold tests, 3 new) +
+  `withdrawal.test.ts` (3 new `WithholdDose` tests) + one new fail-first test each in
+  `RecordLoss.test.tsx`, `AdjustMob.test.tsx`, `AttentionScreen.test.tsx`, `TagSession.test.tsx`,
+  `Theft.test.tsx`, `MoveAnimals.test.tsx`, `WeighSession.test.tsx`, `Lifecycle.test.tsx`,
+  `Breeding.test.tsx` — every one watched to FAIL against the pre-fix code via `git stash` before
+  being confirmed green with the fix restored, matching this file's own §6 clause 3 discipline. Full
+  `pnpm verify` uncached: 106 test files / 1,119 tests, 7/7 builds, 158.94 KB gz ≤ 250 KB;
+  `pnpm test:e2e`: 30 passed / 1 skipped, no regression. + the real-service e2e below.
+  ⛔ **`compliance-checker`, requested by JP over this diff, ran TWICE and found two real findings —
+  both fixed, a re-pass over the fix diff still owed before merge-ready (STATUS.md §3/§6):**
+  Finding 1 — a hydrated animal's `mob_id` is the server's denormalised CURRENT position, not the
+  opening one `mobMembership()` assumed; fixed by threading `fromMobId`/`fromLandUnitId` off the
+  wire (the server resolves these unconditionally — `movement.ts`'s `recordMove`) onto `StoredMove`
+  and seeding `openMob` from the earliest move's `fromMobId` when present. Finding 2 (re-pass) — the
+  finding-1 fix left the SAME false-CLEAR mode open through a more common trigger: `mergeById`'s
+  local-wins, plus local capture rows never being evicted, meant a move/dose THIS DEVICE captured
+  (structurally missing `fromMobId`/`meatWithholdUntil`) permanently shadowed its own hydrated echo
+  the moment that echo landed with the same id. Fixed with a new `mergeByIdPreferHydrated`
+  (`HydratedLivestock.tsx`) — hydrated wins on a shared id — applied at all 6 `foldMoves` + 4
+  `foldHealth` sites (`AdjustMobScreen.tsx`, `RecordLossScreen.tsx`, `herd.ts` ×2, `residue.ts`,
+  `Outbox.tsx`). Scoped deliberately: `mergeById`'s local-wins is UNCHANGED for tallies (hydrated
+  drops `count` — a reduction, not enrichment) and animals (single-creation row, no mixed-provenance
+  case) — the helper's own docstring states the strict-superset criterion. `herd.ts`'s position fold
+  (`useEffectiveAnimals`) was swapped too: `mapHydratedMove` already established the wire's `toMobId`
+  comes back ALWAYS resolved (never `undefined`-means-unchanged the way local is), so preferring
+  hydrated makes the client's position projection read the identical inputs the server's own
+  projection folds from. `mergeById`'s docstring, which claimed local/hydrated content is
+  interchangeable once both exist, was corrected — false for moves/health, and the premise finding 2
+  falsified. Both findings' fixes are fail-first tested, including an e2e reproduction
+  (`RecordLoss.test.tsx`) seeding BOTH the local move log and the hydrated `events` table with the
+  SAME move id — the exact shadow-copy trace. ✅ **The back-dated-local-move owner decision this
+  paragraph left open is CLOSED, 2026-08-14 — JP chose fail-closed.** See STATUS.md §3 for the full
+  record: `mobMembership` now returns an `ambiguous` flag, and `meatWithdrawalFor`/
+  `meatWithdrawalForMob` refuse rather than trust the fallback opening interval when an animal known
+  off this device has no resolvable one.
+  ✅ **A THIRD `compliance-checker` pass, scoped strictly to the finding-2 fix diff (STATUS.md §6
+  clause 1 — not the accumulated slice), returned APPROVABLE.** Verified exhaustively (grep, not
+  sampling) that all 10 call sites switched; traced against source that the tally/animal exclusion
+  from `mergeByIdPreferHydrated` is correct — animals ARE mutated server-side (the docstring's
+  original "single-creation row" framing was imprecise), but no fold trusts an animal's position/
+  status directly off the row either way, so `mergeById` stays correct there for a narrower reason
+  than first stated; confirmed the `Outbox.tsx` send-queue/guard-fold boundary intact and no
+  field-loss path for `WithholdDose`. Two LOW docstring-precision notes (the stated criteria
+  overclaimed "strict superset"; the real argument is "what does each fold consumer actually
+  read") fixed same session rather than deferred — this repo's own top recurring-defect class is a
+  comment whose premise outlived the code. **The FR-131 compliance gate on this diff is now
+  closed.**
+☑ 3e Recount resets rather than adds, and arrival order cannot change the derived result — proven
+  for mobs/tallies (`Outbox.test.tsx`'s "a hydrated RECOUNT still resets, and funds a decrease the
+  created baseline alone could not" and "hydration arriving OUT OF chronological order projects
+  the same result") AND now for land boundaries, closed 2026-08-14. Checked against source, not
+  assumed by analogy: `@werf/domain`'s `boundary.ts` module header states the shape explicitly — "A
+  BOUNDARY IS AN ABSOLUTE THAT RESETS, NOT A DELTA THAT COMPOSES. It is the same shape as a recount
+  and for the same reason" — and `LocalLand.tsx`'s `latestWalkFor` already re-derived the CURRENT
+  boundary from the whole walk log by `(occurredAt, id)` before this slice, exactly as
+  `projectHeadCount` does for a tally. `HydratedLand.test.tsx`'s "shows the CURRENT boundary as the
+  latest walk by total order, whichever device sent it" hydrates the LATER walk (10 March) BEFORE
+  the earlier one (1 March) and proves the earlier one never wins — the same out-of-order proof, one
+  aggregate over. No OTHER aggregate in this domain has the absolute-reset shape: animals/moves/
+  health/identifiers/theft/weights/breeding are either a state machine (status), last-write-wins
+  (position), or a pure append log with no running total to reset — traced against `herd.ts`, not
+  assumed, before closing this box rather than leaving it open by default.
+☑ 3e HYDRATION TRIPWIRE, LEFT BY THE TENTH PASS — CLOSED. `landed()` in `apps/web/src/sync/
+  Outbox.tsx` is now `sentLog.has(id) || hydratedTallyIds.has(id)`, where `hydratedTallyIds` comes
+  from `HydratedLivestock.tsx`'s `useHydratedTallies()` (`packages/sync/src/hydrated-table-store.ts`,
+  a new read-only reactive store over the down-synced `mobs`/`events` tables, farm-scoped, never
+  imports `@powersync/web` from application code — ADR-0003 intact). `needsHead`'s fold now merges
+  local and hydrated tallies via `mergeById` (local wins on a shared id — a device's own capture is
+  never staler than its own later-hydrated echo). `AdjustMobScreen`'s `headAsAt` needed the SAME
+  merge independently — found while implementing, not anticipated: without it, a decrease against a
+  mob this device never captured anything about refused at CAPTURE TIME with "this group is managed
+  as individual animals" before ever reaching the outbox.
+  Proven two ways, not one:
+  - **Fake-driven** (`Outbox.test.tsx`, watched to FAIL first by temporarily reverting the fix):
+    Device B hydrates a birth another device landed, without it in Device B's own sent log; Device
+    B's decrease is sent, not held; cross-farm hydrated rows never fund a decrease; a hydration
+    failure still holds the whole queue fail-closed; hydration arriving out of order does not change
+    the projection.
+  - **Real service** (`apps/web/e2e/real-sync-hydration.spec.ts`, gated behind `WERF_REAL_STACK=1`,
+    not part of `pnpm test:e2e`'s default lane — needs `apps/api` + `werf-postgres` +
+    `werf-powersync` live, see the spec's own header for the exact bootstrap): a real REST-landed
+    birth tally, a real second login, a real PowerSync `.connect()`, real SQLite hydration, the
+    real capture UI, a real send, and a real Postgres row-count check for the resulting decrease.
+    Also covers test 10 (browser reload preserves both the read projection and the — by then empty —
+    queue; real OPFS persistence, which no fake reaches). Run 3× clean (fresh `apps/api` process
+    each time, in-memory auth-throttle counters reset) — 3/3 green.
+  ⭐ **The real-service run found a genuine, previously-unknown production defect the fake suite
+  structurally cannot see**: `events` (migration 0010) is a Postgres PARTITIONED table with one
+  partition, `events_default`. PowerSync attributes replicated WAL rows to the PARTITION's own
+  relid, not the parent's, and explicitly REFUSES `publish_via_partition_root` (`PSYNC_S1143`,
+  confirmed against `journeyapps/powersync-service:1.23.3` by setting it and reading the boot
+  error). So `FROM events` against the partitioned parent VALIDATES and "replicates" — the config
+  loads clean, the server logs show flushes — while a connected client receives **zero rows**,
+  forever, no error anywhere. `mobs` (not partitioned) hydrated correctly the whole time, which is
+  what made this take four restarts and a raw-row diagnostic to isolate rather than being obvious
+  from the first red run. Fixed at the SOURCE (`packages/sync/scripts/derive-sync-streams.ts`'s new
+  `PARTITIONED_SOURCE_TABLE` map + `sync-streams.ts`'s new `SyncStreamDef.sourceTable`, rendering
+  `FROM events_default AS events` — the alias keeps the LOCAL client table name, which is matched
+  by stream key, not by Postgres FROM text, unaffected), regenerated (not hand-patched — the
+  freshness spec would have caught a hand-patch drifting from the generator), all 125
+  `@werf/sync` tests green. **This is production-blocking knowledge, not a dev-only quirk**: the
+  af-south-1 deploy's publication needs the identical aliased config or down-sync of every event
+  (tally, move, treatment, dose, birth, death, sale — everything the product's whole event log
+  carries) silently delivers nothing to any client, forever, with a config that validates and a
+  server that reports success. Found independently by `reviewer` and `sync-auditor` (issue #8
+  itself); NOT a Phase 2 defect — it cannot fire in the shipped configuration.
+⚠️ **`sync-auditor` pass, 2026-08-10, over `585ddb2..fc3d9e2` (the 3d audit, ADR-0012, this whole 3e
+  slice) — did NOT clear (two SEV-2).** Per STATUS.md §6 clause 2 that is not the terminal condition;
+  both are fixed below, each with a test watched to FAIL first, and a re-pass over the fix diff is
+  the next step, not optional. The hydration TRIPWIRE above (issue #8, `landed()`) is unaffected —
+  a different bug in the same mechanism.
+  - **Finding 1 (SEV-2, compliance-gated FR-131) — FIXED.** The withholding guard read raw local
+    `tallies`, blind to a `transfer_in` this device only knows about via down-sync, at THREE call
+    sites: `AdjustMobScreen.tsx`'s capture-time guard (the SEV-2 — previewed CLEAR on a sale the
+    server would refuse), `Outbox.tsx`'s `mobDisposalSubjects` taint chain-walk (a refused dose on
+    a hydrated-only transfer's source mob held nothing), and `residue.ts`'s register (display-only,
+    LOW/MED). Root cause was two-part: `mapHydratedTally` silently dropped `counterpartMobId`/
+    `carriedWithholdUntil`/`declaredWithdrawalUntil` even though the server persists them (traced
+    to `livestock.service.ts`'s insert before trusting the schema alone), and all three call sites
+    passed raw `tallies` instead of the local+hydrated `mergeById` fold. Fixed both; all three call
+    sites now read the fold. Tests: `AdjustMob.test.tsx` (a mob whose ENTIRE arrival history is
+    hydrated refuses a slaughter), `Outbox.test.tsx` (a refused dip on a source mob holds a
+    slaughter on the destination when the connecting transfer is hydrated-only, present before the
+    FIRST flush attempt — a mid-test hydration cannot exercise this once an item has already sent),
+    `AttentionScreen.test.tsx` (the register flags the same hydrated-only case). ⛔ Per CLAUDE.md's
+    compliance gate: this slice is not merge-ready, and its PR must not be marked ready, until the
+    owner asks for a `compliance-checker` pass and it closes — the original "this diff touches no
+    regulated code" framing (used to justify not requesting one) is now stale.
+  - **Finding 2 (SEV-2) — NOT fixed; tripwired, and an owner decision is raised in STATUS.md §3.**
+    `PARTITIONED_SOURCE_TABLE` (the fix above) is a hand-maintained map, not derived from
+    `pg_inherits`, and it is correct TODAY only because `FarmsService.createFarm` — the real
+    onboarding path — never calls `create_farm_partition`. `packages/db/scripts/seed.mjs` and
+    `events.integration.test.ts`'s own fixtures DO call it, so events for THOSE farms already
+    silently fail to down-sync, reproducibly, today. A regression test
+    (`apps/api/src/farms/farms.integration.test.ts`, "never gives a REAL onboarding farm its own
+    events partition") pins today's safe reality and goes red the day anyone wires
+    `create_farm_partition` into real onboarding without also teaching the generator — the tripwire,
+    not the fix. The fix is an architecture decision (wire provisioning + make the generator read
+    partitions dynamically, vs. retire per-farm partitioning) that is JP's to make, not mine to guess.
+  - **LOW (resource leak, not a data leak) — fixed.** `hydrated-table-store.ts`'s `db.watch()` had no
+    teardown; `HydratedLivestockProvider` built a fresh store pair per farm switch and never closed
+    the previous one. Added `close()` (an internal `AbortController`, wired to the real SDK's
+    `SQLWatchOptions.signal`) and a `useEffect` (not `useMemo` — a memo's return has no cleanup hook)
+    keyed on the store value, closing on farm switch/unmount. Fail-first test:
+    `hydrated-table-store.spec.ts`, "close() stops watching".
+✅ **`sync-auditor` RE-PASS, 2026-08-10, over `fc3d9e2..dd49a20` (the fix commit above).** Confirmed
+  Finding 1's three call sites genuinely fixed and consistent, no fourth call site missed, the
+  `Outbox.test.tsx` timing was correct (hydrates before `render()`), and the LOW fix matched the
+  real SDK. Two things it found, both fixed same day (`HydratedLivestock.tsx`,
+  `farms.integration.test.ts` — both within the files the findings name, both fail-first tested, so
+  per STATUS.md §6 clause 3 this did not require ANOTHER pass):
+  - **MEDIUM — genuinely new, introduced by the LOW fix itself.** The `useEffect` cleanup and the
+    `useMemo`-built store pair were not symmetric under React 18 StrictMode: mount → run the effect
+    → immediately simulate an unmount (run the cleanup) → remount (re-run the effect), all against
+    the SAME memoized pair since `farmId` never changed across that synthetic cycle.
+    `AbortController.abort()` has no undo, so hydration died PERMANENTLY after the first mount in
+    `pnpm dev` (`main.tsx` wraps `&lt;App/&gt;` in `&lt;StrictMode&gt;`) — invisible to every
+    existing test and to `pnpm test:e2e` (a production build strips the double-invoke). Fixed by
+    moving construction INSIDE the effect, mirroring `SyncConnection.tsx`'s already-established
+    shape for exactly this class of resource — the effect's setup and cleanup are now symmetric, so
+    a StrictMode cycle closes one pair and builds a fresh one, same as a real farm switch. First
+    paint reads a permanently-unsettled, subscription-free placeholder (`settled()` already started
+    `false` by design — one more tick of a state every consumer already tolerated). Fail-first test:
+    `AdjustMob.test.tsx`, "a StrictMode double-invoke does not permanently kill hydration" — renders
+    `&lt;StrictMode&gt;&lt;App/&gt;&lt;/StrictMode&gt;` and asserts a pre-hydrated birth is still
+    visible after mount.
+  - **Test-coverage gap in Finding 2's tripwire.** The original tripwire only exercised
+    `AuthService.register`'s own direct farm insert, not `FarmsService.createFarm` — the exact
+    function Finding 2's text names, and a genuinely SEPARATE insert path (confirmed: `register`
+    does not call `createFarm`). Strengthened to assert BOTH paths land in `events_default`.
+✅ **Finding 2 CLOSED, 2026-08-13 — JP chose retirement, not wiring-up, after the "wire it up
+  properly" option was found to hide a worse defect.** JP's first answer was option (a): wire
+  `create_farm_partition` into `FarmsService.createFarm` and teach the generator to read
+  partitions from `pg_inherits` dynamically. Before implementing, a second look surfaced a
+  conflict the original three-option framing missed: `generate-sync-streams.ts` writes a STATIC
+  file, generated at build/deploy time, never regenerated per farm at signup — and PowerSync
+  rejects `publish_via_partition_root` (`PSYNC_S1143`, already confirmed), so a stream can only
+  ever read a partition that existed when the config was generated. Reading `pg_inherits`
+  dynamically only helps at generation time; it cannot see a farm that signs up afterward. Under
+  (a), every farm created after the last config deploy would silently down-sync nothing —
+  converting Finding 2's latent risk into a guaranteed one for every real farm, which is worse
+  than the status quo it was meant to fix. Taken back to JP with the new fact; JP chose to retire
+  partitioning outright. Migration 0021 drops `create_farm_partition`; `events_default` is now the
+  permanent, only partition; `PARTITIONED_SOURCE_TABLE`/`sourceTable` in `derive-sync-streams.ts`
+  stay as they are (still true, now permanently rather than by accident). Full record: STATUS.md §3.
+☑ 3f Retention window degrades only the read set; storage-quota tests prove the queue survives.
+  **CLOSED, 2026-08-13.** Queue survival: a failed SQLite persist joins the application-level
+  durability coordinator and retries until it lands; the queue is never evicted. The coordinator
+  is shared rather than captured by each store, and `CaptureStore.close()` is wired through all
+  twelve `Local*.tsx` providers, so farm switches release store listeners without cancelling a
+  pending durable write. Read-set window: migration 0024 adds each farm's positive
+  `event_retention_months` setting (default 24). PowerSync's supported equality-bucket workaround
+  is used instead of an elapsed-time sweep: the event stream requires authorised `farm_id` and UTC
+  `YYYY-MM` subscription parameters, while `event-retention.ts` maintains that farm's configured
+  month set, subscribes the new month before releasing the oldest, and uses TTL 0 so expired read
+  buckets leave local SQLite. Capture rows live in local-only tables and are outside that stream.
+  Tests cover year-boundary bucket calculation, per-farm subscription counts, zero-TTL release,
+  close-during-quota retry, and the generated stream's independent membership predicate.
+☑ 3g Additive-migration tests send an old-client payload after the new schema is deployed.
+  `livestock.integration.test.ts`'s new `mob creation (FR-102)` test builds the EXACT pre-0018
+  request shape (no `initialHeadCount` key at all, not merely `undefined`) and proves today's
+  `newMobSchema` still accepts it and `recordMob` derives the baseline correctly — watched to FAIL
+  first by making `recordMob` read the body's own `initialHeadCount` instead of the captured
+  `headCount`.
+☑ 3h Sync health reports queue depth/failure per farm without PII. New `apps/web/src/sync/
+  syncHealth.ts`: a pure fold (`deriveSyncHealth`) over the SAME `queue`/`blocked`/`waiting`
+  `Outbox.tsx` already computes, wired through a new `useSyncHealth()` hook/context. "Without PII"
+  is a TYPE guarantee, not a runtime filter — `SyncHealthByKind` has no free-text field at all, only
+  counts and the closed `CaptureKind` enum — pinned by a test asserting the exact key set. ⚠️ Scope
+  note: the pure fold and its wiring into `OutboxProvider` are both unit-tested; there is
+  deliberately no consuming screen yet (this checklist line asks for a reporting SURFACE, not a new
+  UI, and every existing hook of this shape — `useRefusedCaptures`, `useHeldCaptures` — already had
+  a screen before it existed, unlike this one; a future support/diagnostics consumer is what would
+  use it).
+☑ 3i(a) Attachment metadata is farm-scoped, client-UUIDv7, soft-deleted and synced through SQLite.
+  Migration `0022_attachments.sql` (hand-written — see its own header on why `drizzle-kit generate`
+  could not be used cleanly here): `attachments` table, `attachment_subject_type`/`attachment_status`
+  enums, RLS + FORCE, indexes incl. a partial index for the orphan-cleanup sweep 3i(b) will need.
+  `TENANCY.attachments` added (`packages/sync/src/tenancy.ts`); local schema and
+  `infra/powersync/sync-config.yaml` regenerated and empirically confirmed loading clean against the
+  real `journeyapps/powersync-service:1.23.3` (restarted, "Loaded sync config" with no error) — the
+  publication is `FOR ALL TABLES`, confirmed via `pg_publication_tables`, so no publication-side fix
+  was needed this time. `tenancy.spec.ts`'s generated-from-the-registry test caught the missing
+  fixture row exactly as db.md promises adding a table without classifying it would.
+  ⛔ **Not yet built: the binary path.** "The binary stays in OPFS until its checksum-confirmed
+  server acknowledgement is durable" is 3i(c) scope, unstarted this session.
+☑ 3i(c) Animal photos and later crop/grievance documents use one deferred queue: capture commits
+  locally with no signal, browser kill/reload loses neither metadata nor blob, and retry is idempotent.
+  **CLOSED 2026-08-14**, built from the design notes the prior session left, followed literally:
+  - **`BlobStore` port + one real OPFS adapter** (`packages/sync/src/blob-store.ts`/
+    `opfs-blob-store.ts`), mirroring `apps/api`'s `ObjectStorage` split. New `apps/web/src/
+    attachments/LocalAttachments.tsx` holds the metadata half (SQLite-backed `CaptureStore`, same
+    shape as every other `Local*.tsx`) and the blob half separately — `capture_records.
+    payload_json` is TEXT, so a `Blob` has nowhere to live in it. `attachmentApi.ts`'s
+    `sendAttachment` runs create → PUT → finalize inside ONE `FlushItem.send`, never split into
+    three queue entries — the three-leg send is end-to-end idempotent by construction (3i(b)), and
+    `createAttachment` is called FRESH every attempt (never a cached presigned URL, per
+    offline-sync.md §3.1's "clients never store presigned URLs").
+  - **`animalrow:` subject added** to animal `FlushItem`s in `Outbox.tsx`, mirroring the existing
+    `mobrow:` pattern — a photo behind an unsent/refused animal is HELD, not 404-set-aside.
+  - **The blob is released only once `finalize` returns**, never on the PUT's own 200 — proven with
+    an interruption test: PUT succeeds, `finalize` fails (network drop), the app "restarts"
+    (unmount/remount), the blob is still in `BlobStore`, and a retry completes the send fully.
+  - **A PUT failure is treated as transient**, never a permanent refusal — `createAttachment`'s
+    idempotency means the whole send just retries from leg 1 with a fresh signature next round;
+    there is no queue-safe way to tell "never succeeds" from "needs a new signature" without
+    parsing S3's XML error body, which this app has no other reason to understand.
+  - **One real capture UI**: `RecordPhotoScreen.tsx` (`/animals/photo`), the same walk-the-herd
+    rhythm as `WeighSessionScreen.tsx`. Deliberately does NOT render photos hydrated from other
+    devices — this box is capture/durability/retry only, not a read-path slice.
+  - **Real OPFS proof**, not just the fake: `apps/web/e2e/attachment-blob-diagnostic.spec.ts`
+    mirrors `local-db-diagnostic.spec.ts`'s two-navigation shape (write, fresh navigate, read back)
+    — jsdom has no OPFS, so this is the only tier that can prove persistence rather than an
+    in-memory illusion of it. Every other test uses `@werf/sync/testing`'s new
+    `createInMemoryBlobStore`, wired through the same `vi.mock` seam as `getLocalDatabase()`.
+  - Found and fixed along the way: jsdom's `Blob` has no `.arrayBuffer()` — a real environment gap
+    (every browser this product targets has had it for years), polyfilled once in `test-setup.ts`
+    via `FileReader`, matching the existing `matchMedia` stub's "patch the environment, not the
+    code" discipline; `AuthProvider`'s boot-time refresh effect (fires when a fresh mount's
+    in-memory session has no access token — the ordinary shape of "closed and reopened") needed a
+    properly-shaped mocked response in the interruption test, not a blind `{}}` accept-all.
+  - Evidence: 9 new tests in `Outbox.test.tsx` (refused/aborted-round/landed/interruption
+    scenarios, all fail-first except the backward-compat guards), 4 in new `RecordPhoto.test.tsx`,
+    1 real-OPFS e2e. `pnpm --filter @werf/web build`: 161.37 KB gz ≤ 250 KB. Full `pnpm test:e2e`:
+    31 passed / 1 skipped.
+  - Touches FR-131-adjacent code (the `animalrow:` guard sits beside the animal disposal guard) —
+    inside the same not-yet-requested compliance-pass scope as the rest of this session's diff
+    (STATUS.md §3), not separately gated.
+◐ 3i(b) The API authorises the farm before issuing a short-lived presigned upload; object keys are
+  server-derived, never arbitrary client paths, and another farm can neither upload nor read them.
+  **Closed.** `apps/api/src/attachments/`: `createAttachment`/`finalizeAttachment`
+  (`assertCanCapture` + a farm-scoped subject check before either), object key deterministic from
+  `(farmId, id)` — a retried create reuses it rather than orphaning a new one. 9/9 integration tests
+  green against real Postgres AND real MinIO (testcontainers, never mocked): cross-farm create
+  refused, cross-farm subject refused, cross-farm finalize refused, both idempotency shapes, and the
+  wire response is pinned by parsing it through `attachmentUploadUrlSchema` after a JSON round-trip
+  (caught a real contract bug — see STATUS.md § 3).
+◐ 3i(b) One S3-compatible adapter uses MinIO in development/integration tests and S3 in `af-south-1`
+  in production; tests cover checksum/size refusal, quota pressure, retry and orphan cleanup.
+  **Checksum and size refusal closed** — empirically confirmed against `minio/minio:latest` that a
+  presigned PUT with `ChecksumSHA256` bound into the SigV4 signature is refused server-side (400
+  `XAmzContentChecksumMismatch`) on a body that doesn't hash to the declared value, so `finalize`
+  only re-derives size/checksum from the stored object via `HeadObject` rather than re-hashing the
+  body itself (`object-storage.ts`'s header has the full empirical account). A size-lie test and a
+  checksum-lie test (the latter written directly to the bucket, bypassing the presign — the PUT-time
+  enforcement makes a mismatched object impossible to produce any other way) both pass.
+  docker-compose gains a `minio` service + one-shot bucket init for dev parity.
+  **Retry-on-transient-failure and orphan cleanup CLOSED 2026-08-14; quota pressure deliberately
+  left open.**
+  - **Retry-on-transient-failure**: not hand-rolled — the AWS SDK v3 `S3Client` already retries a
+    transient `headObject`/`deleteObject` failure (5xx, throttling, network timeout) with its
+    default STANDARD retry mode (3 attempts, exponential backoff + jitter, via
+    `@smithy/middleware-retry`), applied automatically to every `.send()` call. Documented in
+    `object-storage.ts`'s header rather than reimplemented, with the one real exception named:
+    `presignPut` never calls `.send()` (`getSignedUrl` only signs locally), so the actual PUT a
+    client performs is outside this adapter's reach — `Outbox.tsx`'s own retry (3i(c): the whole
+    three-leg send is idempotent, so a failed round retries from `createAttachment` next reconnect)
+    covers that leg instead.
+  - **Orphan cleanup**: `AttachmentOrphanSweepService` (new), mirroring `MembershipExpiryService`'s
+    interval-sweep shape — an hourly `@Cron` job that finds `pending` rows past
+    `ATTACHMENT_ORPHAN_THRESHOLD_HOURS` (24h) old via the `attachments_pending_idx` partial index
+    `0022_attachments.sql` added for exactly this query, releases the object at that key (best-
+    effort — `ObjectStorage` gained a `deleteObject` method), and soft-deletes the row. Traced, not
+    assumed, that this is SAFE against a device genuinely offline for a week rather than abandoned:
+    neither `createAttachment` nor `finalizeAttachment` filters on `deleted_at`, so a late retry
+    still finds the row by id, gets a fresh presign at the same deterministic key, and completes —
+    proven by an integration test that sweeps a row, THEN successfully finishes its upload through
+    the normal service calls. 6 new tests against real Postgres + real MinIO
+    (`attachment-orphan-sweep.integration.test.ts`): no-upload orphan, uploaded-but-unfinalized
+    orphan (the object itself is verified gone via a raw `HeadObject`), a recent pending row
+    untouched, an old finalised row untouched, the late-retry-still-completes proof, and
+    sweep-is-idempotent.
+  - **Quota pressure NOT built, deliberately** — S3/MinIO storage-capacity refusal has no
+    meaningful way to simulate against `minio/minio:latest` without configuring bucket-level quotas
+    via MinIO's admin API in the testcontainer, which is real additional test infrastructure this
+    slice did not build. Flagged in STATUS.md rather than claimed covered.
+☑ 3i(d) Existing Phase 2 `photo_key` rows migrate without inventing an attachment; null remains none.
+  Grepped: no code path in `apps/web/src` has ever set `photoKey` — Phase 2 genuinely stored no
+  photo. `livestock.integration.test.ts`'s new test proves `recordAnimal` with no photo leaves
+  `photo_key` null AND creates no `attachments` row for it — creating an animal must never invent an
+  attachment. No data migration was needed because there is no non-null production data to migrate.
+☑ Offline matrix in testing-strategy.md runs against real Postgres and the real adapter, for the
+  rows Phase 3 actually owns. **Closed 2026-08-14 as a scoped decision, not a blanket claim** —
+  `testing-strategy.md` §4 now carries a coverage column so this box does not read as "every row is
+  proven" when several never belonged to this phase. The gate-verbatim row, O-3 (six weeks offline
+  → sync → `occurred_at` intact), is now proven against the REAL stack:
+  `apps/web/e2e/real-offline-matrix.spec.ts` (gated behind `WERF_REAL_STACK`, same infrastructure
+  as `real-sync-hydration.spec.ts`) sends two back-dated mob tallies via direct REST (the same
+  mechanism `Outbox.tsx` uses once it flushes), confirms Postgres stores the EXACT `occurred_at`
+  sent — not the moment the request landed — via a raw `psql` read, then proves a SECOND device
+  that captured nothing itself hydrates through real PowerSync and folds both tallies into the
+  correct head count regardless of arrival order. O-1/O-2 (local-only, real browser) and O-11
+  (real-Postgres migration test, 3g) were already covered. O-9/O-10 are covered at the
+  unit/integration tier, not the real-stack tier. **O-6/O-7/O-8 CLOSED 2026-08-15** — migration
+  0026 built the immutable `audit_log` + `conflict_reviews` mechanism these rows assume
+  (deterministic conflict keys, `(occurred_at,id)` LWW, sale-outranks-death-outranks-sale
+  projection, legitimate-twin-batch handling, RLS-scoped review UI); see STATUS.md §5 item 31.
+  O-4/O-5 are partially covered. O-12/O-15 belong to phases 4/5, not started.
+☑ `pnpm verify` and `pnpm test:e2e` green; owner-triggered sync-auditor findings closed — latest:
+  116 files / 1278 tests, 168.78 KB gz (STATUS.md §4, 2026-08-16); sync-auditor last ran clean in
+  the `baf4b4d..428200a` pass (STATUS.md §3)
+
+**P3.11–P3.16 — punch-list closure work added on top of 3a–3i, done 2026-08-15/16. Terse index
+only; full detail is in STATUS.md §5 items 32–37, not duplicated here.**
+☑ P3.11 Recent step-up (≤10 min) required before starting TOTP/passkey enrolment; a stale caller
+  gets 403 `STEP_UP_REQUIRED` and a full re-login.
+☑ P3.12 Google-first OIDC/cookie-BFF migration phased across seven additive slices (`cd0d3c0`); no
+  email-equality identity linking, no farm-authority change.
+☑ P3.13 FR-001 business contact/address fields (migration 0027, `144e7bc`); all seven new columns
+  excluded from every Sync Stream.
+☑ P3.14 Branding-register create/list/link (FR-601/602, `764c53e`); real-Postgres tenancy/
+  authorship/idempotency/species-safe-linking coverage.
+☑ P3.15 One shared `parseRandsToCents` in `@werf/core/money.ts` (`aa2b023`) replacing three
+  hand-rolled, float-crossing conversions.
+☑ P3.16 Auth hardening batch (7 sub-items, `docs/05-operations/security.md` §10.2): invite
+  soft-deleted-identity refusal, WebAuthn challenge sweep, production WebAuthn config gate,
+  immutable `auth_audit_log` (migration 0028), `users`-table column grants (migration 0029),
+  attachment MIME/size/per-farm-quota (migration 0030). Registration-enumeration hardening (the
+  7th sub-item) is deferred to Phase 7 by owner decision, not open work — see `security.md`'s
+  register-oracle row.
+☑ Q17 doc reconciliation (`f875dcc`); Q18 NFR gates implemented or honestly labelled (`1b036bf`);
+  Q19 Phase-3 real-device field-evidence needs recorded, `testing-strategy.md` §7a (`2ffb139`).
+☑ Final definition-of-done sweep (2026-08-17): `pnpm verify` 116 files/1278 tests/168.78 KB gz;
+  `pnpm test:e2e` 31/5 skipped; all 5 `WERF_REAL_STACK=1` specs pass in isolation. Two real defects
+  in real-stack e2e test tooling found and fixed (`dd1fac8`): a stale `mimeType` literal P3.16's
+  MIME whitelist broke unnoticed, and an unscoped-by-`farm_id` test lookup query.
+☑ Whole-branch `reviewer`+`sync-auditor`+`compliance-checker` pass (2026-08-17): APPROVABLE after
+  one fix round. `compliance-checker` CLEARED outright. `sync-auditor` found two LOW (grant scoping
+  on `conflict_reviews`/`attachments`, same class 0029 closed for `users`), fixed as migration 0031
+  (`47c0ffe`). `reviewer` found one SEV-2 — `opfs-blob-store.ts`'s `put()` let a real OPFS
+  `QuotaExceededError` propagate uncaught to `RecordPhotoScreen.tsx`'s save handler, silently
+  losing an attachment under device storage pressure and contradicting this phase's own exit gate
+  — fixed as `c45cd01` (a `retryDurably` wrapper giving the blob write the same never-reject
+  durability guarantee `sqlite-capture-store.ts` already gives the metadata half). A narrow
+  follow-up `reviewer` pass scoped to the fix diff alone confirmed it closes the path and found
+  nothing new. `pnpm verify` after both fixes: 117 files/1283 tests/168.80 KB gz. **Phase 3 is
+  APPROVABLE for merge** — not yet pushed; ask JP before pushing or opening the PR.
 ```
 
 **Exit gate:** six weeks of offline captures reach another device with every `occurred_at` intact;
@@ -833,20 +1388,212 @@ lost on retry, refusal, refresh expiry, schema upgrade, browser restart or quota
 
 ## Phase 4 — Crops & fields
 
-Goal: ship the crop notebook replacement on the real Phase 3 sync layer.
+Goal: a farmer on a crop or mixed farm can define blocks, record a planting, spray to GlobalGAP
+standard with the pre-harvest interval enforced *at capture*, fertilise, harvest, and see the
+crop-facing home metrics — all with the network off. Written now, at the start of the phase, per
+this file's own §"Phases 6–7" rule (write each phase's checklist when you reach it) — not
+pre-written speculatively; Phase 4 is the phase this session is opening.
+
+**FR bucketing correction.** Both this file and `roadmap.md`'s Phase 4 table previously grouped
+`4c` as "FR-208…212" — wrong on inspection: FR-508 is the `chemical_products` reference table,
+FR-204 is the spray record, and FR-208/209/210/212 (soil/leaf/fruit analysis, scouting, rotation
+history, weather) are **not** in `roadmap.md`'s own Phase 4 "Ships" line and are priority-2 —
+deferred, named below rather than silently dropped. This is the "two incompatible phase maps"
+defect class (STATUS.md §2) eaten once already; both files are corrected in the same commit.
+
+**Reuse map — read before designing anything, most of the substrate already exists.**
+- **Blocks are `land_units` with `kind='block'`.** The table, `parent_id` (FR-202 splitting),
+  `soil_type`, `irrigation`, PostGIS geometry + synced GeoJSON, and the terminology layer
+  ("block" for vines) are ALL already built (Phase 2, migration 0008). FR-201 is mostly a new
+  capture path through existing infrastructure, not new schema.
+- **`chemical_products` is already fully specified** (`database-schema.md:562`) as a sibling of
+  `veterinary_products` — same shape (jurisdiction, registration_number, active_ingredients,
+  versioned by `effective_from`/`effective_to`). `ReferenceService.listVeterinaryProducts`
+  (`apps/api/src/reference/reference.service.ts`) is the pattern to copy for
+  `listChemicalProducts`, **including the P1.3 every-version-when-`onDay`-omitted semantics** — a
+  device must resolve the PHI in force on the *spray* day, and must tell "registered, no PHI"
+  apart from "never heard of this product," for the identical reason P1.3 exists for withdrawal.
+- **`spray`, `harvest`, `fertiliser`, `planting`, `irrigation`, `scouting`, `soil_test` are
+  already `event_type` enum values** (migration 0010, day one — no `ALTER TYPE` needed) and the
+  `spray`/`harvest` payload shapes are already sketched (`database-schema.md:356-359`):
+  `spray: { productId, activeIngredients, rateLPerHa, waterLPerHa, operator, equipment, windKph?,
+  tempC?, targetPest, phiDays, earliestHarvestDate }` — `phiDays`/`earliestHarvestDate` computed
+  at capture and stored, the exact discipline `treatment`'s `meatClearDate`/`milkClearDate`
+  already proved (ADR-0005).
+- **There is no `plantings` table, and none is needed.** "What's planted in block B12" is a
+  PROJECTION over `planting` events, the same shape as `land_units.boundary` over
+  `boundary_walk` and `mobs.head_count` over `tally` — see 4a below for the specific rule.
+- **No crop code exists yet** (confirmed by search) — 4a–4e below is a clean start, not a rewrite.
+
+**Slice order corrects the roadmap's.** `roadmap.md` sequenced 4b (harvest) before 4d (the PHI
+guard). Phase 2's tenth review pass found exactly this mistake for treatment/sale — a capture
+screen shipped before its guard is a live unsafe path, not a partial feature ("refusing to
+half-build is a decision, not a delay" — STATUS.md's promoted lesson). **Harvest capture and the
+PHI guard are ONE slice below (4d), never split**, mirroring how Phase 2's health slice shipped
+the withdrawal guard together with treatment capture, not after it. Fertiliser has no such gate
+and can ship independently (4b).
 
 ```
-☐ 4a Blocks and plantings (FR-201…204), with canonical PostGIS geometry plus synced GeoJSON text
-☐ 4b Fertiliser and harvest capture (FR-205…207), fully offline
-☐ 4c Versioned chemical-product reference data (FR-208…212), available on the device
-☐ 4d PHI and re-entry rules enforced at capture and at the server boundary; regulated intervals
-  come from dated reference data, never constants
-☐ 4d US-030 passes with the network off, including the explicit override/reason audit path
-☐ 4e Grazing, feed and inventory links (FR-150…153, FR-501…503)
-☐ Crop home metrics are derived from local data and never require signal to render
-☐ `pnpm verify` and `pnpm test:e2e` green; regulated crop logic waits on the owner-triggered
-  compliance pass before merge-ready
+Land — blocks & plantings
+□ 4a·1 FR-201 Define a block: capture screen reusing AddLandUnitScreen's `kind='block'` path —
+  schema, RLS, TENANCY, geometry trigger are ALL already built (Phase 2). This is a UI/routing
+  slice, not a schema slice.
+□ 4a·2 FR-202 Split a block into sub-blocks without losing history — `parent_id` already exists;
+  new is the split ACTION (a screen + server endpoint that creates children referencing the
+  parent, closes nothing on the parent — closing loses history, which is the FR's own words).
+  ⚠️ SAFETY EDGE, decide now: a spray recorded against the parent BEFORE the split still applies
+  to every resulting child (the same soil and plants received it) — the harvest/PHI guard (4d)
+  for a child block MUST walk `parent_id` for spray events dated before the split's own
+  `occurred_at`, not just query the child's own `land_unit_id`. Undecided until 4d, but the
+  guard's query shape has to know this on day one or splitting silently launders a PHI.
+□ 4a·3 FR-203 Record a planting: crop, cultivar, planted date, density, seed source, expected
+  harvest — new `planting` event payload (Zod, @werf/core), capture screen `/crops/plant`,
+  server write through the shared `insertEvent`/`assertHerdScoped`-equivalent path (crop events
+  are land-scoped, not herd-scoped — `FARM_SCOPED_EVENT_TYPES`-style exception or a new
+  `LAND_SCOPED_EVENT_TYPES` list; decide which, name it in the domain layer).
+  ⭐ DESIGN DECISION — the "current planting" READ PROJECTION: latest `planting` event per
+  `land_unit_id`, ordered `(occurred_at, id)`, no status machine, no closing event. An annual
+  crop gets a fresh `planting` event every season; a vineyard gets ONE that persists for years
+  with harvests filed against the block underneath it. This is intentionally the SIMPLEST rule
+  that fits both cases — it is a UX/reporting decision (what a screen shows as "currently
+  planted"), NOT a safety dependency: the PHI guard (4d) reads the block's SPRAY HISTORY
+  directly and never needs to know what's currently planted, so getting this wrong is a wrong
+  label on a screen, not a compliance defect. Revisit if a real crop-rotation case breaks it
+  (FR-210, deferred, would need this same log).
+
+Reference data & spray capture
+□ 4c·1 FR-508 `chemical_products` migration + RLS (world-readable, `reference-sync`, filtered by
+  jurisdiction, NOT farm-scoped — same class as `veterinary_products`/`species_gestation`) +
+  TENANCY classification `reference-sync` (`database-schema.md:740` already names it) + seed rows
+  marked EXPLICITLY unverified for dev/test (see the ⛔ blocker below — mirrors `regulatory_rates`
+  dev placeholders).
+□ 4c·2 `ReferenceService.listChemicalProducts` — copy `listVeterinaryProducts` exactly, jurisdiction
+  filter, `onDay` optional, every version when omitted. `GET /reference/chemical-products`.
+  Client `createReferenceCache` sibling entry (same cache primitive Phase 2 already built).
+□ 4c·3 FR-204 Record a spray to GlobalGAP standard: registered product, active ingredient(s),
+  rate, water volume, operator, equipment, weather at application, target pest — capture screen
+  `/crops/spray`, `phiDays`/`earliestHarvestDate` resolved from the chemical_products registration
+  IN FORCE ON THE SPRAY DAY and stored ON THE EVENT (never recomputed on read — ADR-0005). What is
+  STORED is a `productId`, never a bare PHI number — the server resolves it, exactly as treatment
+  never stores a bare withdrawal period.
+□ 4c·4 FR-211 🇿🇦 Auditor-ready spray history report per block, per season — a read endpoint/screen
+  over `spray` events filtered by `land_unit_id` + season, NOT the full GlobalGAP checklist engine
+  (control points, non-conformances, corrective actions — that is `legal-compliance.md` §4.1's
+  Phase 6 build requirement, named here so it is not smuggled in). This is one report, not an
+  audit product.
+
+PHI guard + harvest — ONE slice, never split (see the note above)
+□ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
+  client-side (device has the cached chemical_products + this block's own local spray events —
+  O-12: blocked locally, no server round trip) AND server-side (a server-only rule arrives after
+  the truck has left). Message names the product, the spray date, and the earliest safe harvest
+  date (US-030's own gherkin — this is the acceptance test, use it verbatim).
+□ 4d·2 The override path: a written reason, audited, never silent (FR-205's own words) — mirrors
+  the sale-guard override PATTERN but is NOT the same mechanism as the cross-device race case
+  below; keep them distinct or 4d conflates a deliberate human override with an automatic flag.
+□ 4d·3 FR-207 Record a harvest: quantity, unit, grade, destination, date — the payload shape is
+  already sketched (`database-schema.md:359`) including `phiOverride?: { reason, by }`. Screen and
+  guard ship together (see slice-order note above).
+□ 4d·4 Both routes a PHI check must read, mirroring the dose-reaches-an-animal defect
+  (`713634b`, Phase 2): a block's own spray AND (per 4a·2) an ancestor's pre-split spray. A guard
+  reading only the child's own events is the same class of bug, just in the crop domain.
+□ 4d·5 Flush ordering: sprays flush before harvests, same reasoning as `16fbb6a` — a point-in-time
+  guard cannot refuse a harvest against a spray that has not arrived yet.
+□ 4d·6 Cross-device race (device A sprays, device B — never having seen it — harvests before
+  either syncs): apply the Phase 2 resolution VERBATIM — **FLAG, NEVER REFUSE** a disposal already
+  recorded; a retroactive compliance flag is DERIVED on read (order-independent) and surfaced on
+  `/attention`, the same screen the meat-withdrawal flag already uses. This is NOT the FR-205
+  override path (4d·2), which is a deliberate in-the-moment human decision — say which mechanism
+  covers which case so a reviewer doesn't conflate them.
+□ 4d·7 Idempotency checked BEFORE validation for a re-flushed harvest, same reasoning as the move
+  fix (`findEvent` pattern) — a harvest that already landed must not re-validate against the state
+  its own first flush wrote and refuse itself.
+□ 4d·8 A PHI refusal on flush is a 4xx: set the capture ASIDE, continue the round, never `return`.
+□ 4d·9 Day arithmetic through `farmLocalDay`, not `toISOString().slice(0,10)` — third recurrence
+  of this exact gotcha in this repo (STATUS.md memory), check it explicitly in review.
+□ 4d·10 Compliance-gated (FR-205/US-030, food-safety/export). No hardcoded PHI anywhere —
+  resolved by `(jurisdiction, productId, occurred_at)` through the reference cache, never a
+  literal in the domain function.
+
+Fertiliser (no compliance gate — ships independently of 4c/4d)
+□ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, method
+  field distinguishes fertigation from broadcast/band, capture screen `/crops/fertilise`. Feeds
+  the GlobalGAP evidence requirement (§4.1) as a record, nothing more, in this phase.
+
+Grazing, feed & inventory — the one slice with real new schema
+□ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — a PURE projection over existing
+  `move` + `boundary_walk` events (no new event type): days between arrival and departure ×
+  hectares (from the boundary projection, 4a is not needed for this — land_units already has it)
+  gives grazing days; LSU-on-camp over that window gives stocking rate. Table-driven domain fn,
+  no I/O, same discipline as `averageDailyGain`.
+□ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — the rest-period NUMBER is
+  agronomic, not legal: it does not belong in `regulatory_rates` (that seam is for LAW, not
+  veld-management best practice — ADR-0006's own boundary). It is a per-camp or per-farm SETTING
+  the owner sets, never a literal in code, for the same "never hardcode a number the farmer might
+  reasonably disagree with" reasoning `CLAUDE.md` applies to regulated numbers, extended here on
+  product-design grounds rather than legal ones.
+□ 4e·3 FR-501 `inventory_items`/`inventory_lots` migration + RLS + TENANCY (farm-scoped, new
+  schema — chemicals, fertiliser, feed, medicine; batch, expiry, location). ⭐ Stock ON HAND is a
+  PROJECTION over an append-only movement log (received/consumed/adjusted/counted), the identical
+  pattern `mobs.head_count` already proved for exactly the same reason: two people recording
+  consumption on two phones in a dead zone must COMPOSE, and a stock count is an ABSOLUTE THAT
+  RESETS, never an edited field. Do not build a directly-edited `quantity_on_hand` column.
+□ 4e·4 FR-502 Inventory auto-decrements on use — spray (4c) and fertiliser (4b) capture gain an
+  OPTIONAL inventory-lot reference (additive to the schema already shipped in 4b/4c, no rework):
+  a farm without inventory tracking on can still spray/fertilise; one that does emits a
+  `consumed` movement. The chemical_products reference row (what the product IS, national,
+  read-only) and an inventory lot (how much of it THIS FARM has, farm-owned, mutable) are
+  deliberately two different tables — conflating them would make a farm's stock count sync-scoped
+  by jurisdiction instead of by farm.
+□ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
+  candidate Sprays/crop tile badge (see the home-metrics note below).
+□ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —
+  depends on 4e·3 existing; a `feed` consumption movement against a `land_unit_id`/`mob_id`, Money
+  in integer cents for the cost side.
+
+Crop-facing home metrics (FR-017's discipline: carry a number ONLY if it is true and computable)
+□ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks
+  currently inside an active pre-harvest interval, computed directly from spray events +
+  chemical_products.phi_days, the exact "N withholding" precedent the Health tile already set
+  (never the "N due" mistake that tile avoided for want of a schedule this domain doesn't have).
+□ Crop home metrics are derived from local cached data and never require signal to render.
+
+⛔ External blocker — production data source, same class as Phase 5's B-1/B-2. Do not seed
+production `chemical_products` from a fabricated or guessed table: `legal-compliance.md` §4.3
+requires "synced from a maintained source" for Act 36 of 1947 registrations, and nobody has named
+who provides it yet. Dev/test rows are explicitly marked unverified (mirrors the `regulatory_rates`
+placeholder discipline); production seeding is BLOCKED until JP names a source, and this can run
+in parallel with 4a–4c build — it blocks DEPLOYMENT, not development, the same shape as B-1/B-2.
+
+Quality gates
+□ Every write path works with the network off — no `if (!navigator.onLine) throw`
+□ Domain logic (grazing days, stocking rate, PHI resolution) pure, unit-tested, table-driven
+□ testing-strategy.md O-12 (PHI check offline, blocked locally, no server round trip) and the
+  "Spray → PHI → blocked harvest, Offline" journey row are the REQUIRED matrix for this phase —
+  O-12's `⛔ Phase 4 — PHI does not exist yet` marker clears when 4d lands
+□ Both derived artifacts regenerated in the SAME commit as any synced-table change
+  (`generate:schema` + `generate:sync-rules`) — verify fails on drift otherwise
+□ TENANCY classification written in the same commit as its table, every time
+□ `pnpm verify` and `pnpm test:e2e` green
+□ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
+  slice (the labour phase alone gets per-slice review). Say out loud when 4c/4d reach
+  merge-ready so JP decides when to trigger the pass — regulated code is not merge-ready until
+  it has happened (`CLAUDE.md`)
 ```
+
+**Deferred — not in Phase 4, named so they are not mistaken for a miss (all priority-2 in the FR
+catalogue and absent from `roadmap.md`'s own Phase 4 "Ships" line):** FR-208 (soil/leaf/fruit
+analysis), FR-209 (pest/disease scouting), FR-210 (crop rotation history + rotation-rule warning —
+would reuse the 4a·3 planting log once it exists), FR-212 (weather integration). The GlobalGAP
+checklist ENGINE (control points, non-conformances, corrective actions, evidence completeness —
+`legal-compliance.md` §4.1) is Phase 6, not this phase; FR-211's spray-history report (4c·4) is
+real Phase 4 scope and is not the same deliverable.
+
+**Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green including O-12 and the spray→PHI→
+harvest journey; every checklist line ☑ or ◐ with its remainder named; `reviewer` +
+`sync-auditor` + `compliance-checker` all pass (owner-triggered, batched); a crop farmer can
+define a block, plant, spray, and be blocked from harvesting inside the PHI, with the network off,
+and can override with a reason when they choose to.
 
 ---
 

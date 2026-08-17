@@ -8,12 +8,14 @@
  * created on day one was a 300-head flock forever, through a lambing, a drought and an abattoir run.
  */
 
-import { render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
 import { farmToday } from '../farmTime';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -118,12 +120,15 @@ function seedDip(): void {
     JSON.stringify([
       {
         id: PRODUCT_ID,
+        jurisdiction: 'ZA',
         name: 'Tickaway',
         registrationNumber: 'G4321 Act 36/1947',
         species: ['sheep'],
         meatWithdrawalDays: 28,
         milkWithdrawalHours: null,
         route: 'topical',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
       },
     ]),
   );
@@ -145,10 +150,8 @@ function seedDip(): void {
   );
 }
 
-function storedTallies(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(TALLIES_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedTallies(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(TALLIES_KEY);
 }
 
 /** Seed the tally log directly, for the cases about how adjustments COMPOSE. */
@@ -173,7 +176,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     const { unmount } = render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^died$/i }));
     await user.type(screen.getByLabelText(/how many/i), '3');
 
@@ -183,8 +186,12 @@ describe('changing a group’s numbers (FR-102)', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    const saved = storedTallies();
-    expect(saved).toHaveLength(1);
+    // append() commits to the in-memory snapshot synchronously (NFR-007), but persistence to the
+    // SQLite-backed store is fire-and-forget — wait for it to land before reading it back.
+    await waitFor(async () => {
+      expect(await storedTallies()).toHaveLength(1);
+    });
+    const saved = await storedTallies();
     expect(saved[0]).toMatchObject({
       farmId: FARM_ID,
       mobId: MOB_ID,
@@ -197,7 +204,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     unmount();
     window.history.pushState({}, '', '/');
     render(<App />);
-    expect(screen.getByText('297')).toBeTruthy();
+    expect(await screen.findByText('297')).toBeTruthy();
   });
 
   it('adds a lambing, so the count can go UP as well as down', async () => {
@@ -207,12 +214,14 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^born$/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    expect(storedTallies()[0]).toMatchObject({ reason: 'birth', count: 40, delta: 40 });
+    await waitFor(async () => {
+      expect((await storedTallies())[0]).toMatchObject({ reason: 'birth', count: 40, delta: 40 });
+    });
   });
 
   it('⭐ keeps BOTH adjustments when two were captured separately, instead of losing one', async () => {
@@ -244,7 +253,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/');
     render(<App />);
 
-    expect(screen.getByText('294')).toBeTruthy();
+    expect(await screen.findByText('294')).toBeTruthy();
   });
 
   it('lets a recount supersede the arithmetic before it', async () => {
@@ -274,7 +283,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/');
     render(<App />);
 
-    expect(screen.getByText('291')).toBeTruthy();
+    expect(await screen.findByText('291')).toBeTruthy();
   });
 
   it('refuses to take more head out than the flock has, and says what to do instead', async () => {
@@ -284,14 +293,14 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
     await user.type(screen.getByLabelText(/how many/i), '4');
 
     // Answers the next question rather than only refusing.
     expect(screen.getByText(/count the group and record what you find/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /^save$/i }).hasAttribute('disabled')).toBe(true);
-    expect(storedTallies()).toHaveLength(0);
+    expect(await storedTallies()).toHaveLength(0);
   });
 
   it('says that recording a theft is not filing a stock-theft report', async () => {
@@ -301,7 +310,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^stolen$/i }));
 
     expect(screen.getByText(/does not file a stock-theft report/i)).toBeTruthy();
@@ -348,7 +357,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await userEvent.click(screen.getByRole('button', { name: /flock a/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /flock a/i }));
 
     expect(screen.getByText('309')).toBeTruthy();
     expect(screen.queryByText('318')).toBeNull();
@@ -368,14 +377,14 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
 
     // Says no AND says when.
     expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /^save$/i }).hasAttribute('disabled')).toBe(true);
-    expect(storedTallies()).toHaveLength(0);
+    expect(await storedTallies()).toHaveLength(0);
   });
 
   it('still lets a dipped flock record a DEATH — a dead sheep is not food', async () => {
@@ -388,12 +397,14 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^died$/i }));
     await user.type(screen.getByLabelText(/how many/i), '3');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    expect(storedTallies()).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedTallies()).toHaveLength(1);
+    });
   });
 
   it('⭐ refuses a flock tally when ONE animal in it was treated individually', async () => {
@@ -422,12 +433,15 @@ describe('changing a group’s numbers (FR-102)', () => {
       JSON.stringify([
         {
           id: PRODUCT_ID,
+          jurisdiction: 'ZA',
           name: 'Terramycin LA',
           registrationNumber: 'G1234 Act 36/1947',
           species: ['sheep'],
           meatWithdrawalDays: 28,
           milkWithdrawalHours: null,
           route: 'intramuscular',
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
         },
       ]),
     );
@@ -450,12 +464,77 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
 
     expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
-    expect(storedTallies()).toHaveLength(0);
+    expect(await storedTallies()).toHaveLength(0);
+  });
+
+  it('⭐ refuses a flock tally when the member AND its treatment are known only via hydration (phase-checklists.md 3e)', async () => {
+    // The test just above proves the guard sees a member THIS device captured, individually
+    // registered and dosed on its own phone. The gap this closes is the member captured on ANOTHER
+    // device: `AdjustMobScreen.tsx` read `useAnimals()`/`useMoves()`/`useHealthEvents()` — all
+    // local-only — so a member standing in this mob only because another device registered it (and
+    // dosed it) was invisible to `meatWithdrawalForMob`'s mob-membership reconstruction. This
+    // device never runs any `seedHerd`-equivalent for the member: the animal and its treatment
+    // both arrive purely through down-sync.
+    cachedSession();
+    seedFlock();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('animals', {
+        id: ANIMAL_ID,
+        farm_id: FARM_ID,
+        species: 'sheep',
+        sex: 'female',
+        breed: null,
+        status: 'alive',
+        dob: null,
+        dob_estimated: 0,
+        status_at: null,
+        dam_id: null,
+        sire_id: null,
+        // Standing in Flock A as first captured — the opening mob `mobMembership` reads.
+        mob_id: MOB_ID,
+        land_unit_id: null,
+        source: null,
+        acquired_at: null,
+        brand_id: null,
+        brand_applied_at: null,
+        attributes: '{}',
+        photo_key: null,
+        enterprise_id: null,
+      });
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000f003',
+        farm_id: FARM_ID,
+        animal_id: ANIMAL_ID,
+        mob_id: null,
+        type: 'treatment',
+        occurred_at: new Date().toISOString(),
+        payload: JSON.stringify({
+          product: 'Terramycin LA',
+          administeredOn: farmToday(),
+          meatWithholdUntil: '2099-01-01',
+        }),
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: /^sold$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '40');
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    });
+    expect(await storedTallies()).toHaveLength(0);
   });
 
   it('⭐ lets a BACK-DATED tally be recorded against the flock as it stood THAT day', async () => {
@@ -481,7 +560,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^died$/i }));
     await user.clear(screen.getByLabelText(/what day/i));
     await user.type(screen.getByLabelText(/what day/i), '2026-07-18');
@@ -489,7 +568,9 @@ describe('changing a group’s numbers (FR-102)', () => {
 
     // The flock stood at 300 on the 18th, so five dying is an ordinary fact.
     await user.click(screen.getByRole('button', { name: /^save$/i }));
-    expect(storedTallies().some((t) => t['count'] === 5 && t['delta'] === -5)).toBe(true);
+    await waitFor(async () => {
+      expect((await storedTallies()).some((t) => t['count'] === 5 && t['delta'] === -5)).toBe(true);
+    });
   });
 
   it('⭐ keeps a SECOND tally on the same mob on the same day, with its own id', async () => {
@@ -506,7 +587,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^died$/i }));
     await user.type(screen.getByLabelText(/how many/i), '3');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
@@ -519,8 +600,10 @@ describe('changing a group’s numbers (FR-102)', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    const saved = storedTallies();
-    expect(saved).toHaveLength(2);
+    await waitFor(async () => {
+      expect(await storedTallies()).toHaveLength(2);
+    });
+    const saved = await storedTallies();
     // Two distinct ids, or the flush sends one and silently drops the other.
     expect(new Set(saved.map((t) => t['id'])).size).toBe(2);
   });
@@ -537,7 +620,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /moved to another group/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
     await user.selectOptions(screen.getByLabelText(/which group did they go to/i), OTHER_MOB_ID);
@@ -548,8 +631,10 @@ describe('changing a group’s numbers (FR-102)', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    const saved = storedTallies();
-    expect(saved).toHaveLength(2);
+    await waitFor(async () => {
+      expect(await storedTallies()).toHaveLength(2);
+    });
+    const saved = await storedTallies();
     // Distinct ids, or the flush treats the second as a duplicate of the first and sends one.
     expect(new Set(saved.map((t) => t['id'])).size).toBe(2);
 
@@ -581,7 +666,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /moved to another group/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
     await user.selectOptions(screen.getByLabelText(/which group did they go to/i), OTHER_MOB_ID);
@@ -591,9 +676,11 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.type(screen.getByLabelText(/how many/i), '10');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    const saved = storedTallies();
+    await waitFor(async () => {
+      expect(await storedTallies()).toHaveLength(1);
+    });
+    const saved = await storedTallies();
     // ONE tally — the sale — and no phantom `transfer_in` on the other flock.
-    expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({ mobId: MOB_ID, reason: 'sale', delta: -10 });
     expect(saved[0]?.['counterpartMobId']).toBeUndefined();
     expect(saved[0]?.['batchId']).toBeUndefined();
@@ -618,7 +705,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
     await user.type(screen.getByLabelText(/how many/i), '5');
     await user.type(screen.getByLabelText(/who bought them/i), 'Willem Botha');
@@ -629,8 +716,10 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.type(screen.getByLabelText(/how many/i), '5');
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    const saved = storedTallies();
-    expect(saved).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedTallies()).toHaveLength(1);
+    });
+    const saved = await storedTallies();
     expect(saved[0]).toMatchObject({ mobId: MOB_ID, reason: 'theft', delta: -5 });
     // The two that matter: no buyer and no price on a theft.
     expect(saved[0]?.['counterparty']).toBeUndefined();
@@ -647,7 +736,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     const { unmount } = render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /moved to another group/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
     await user.selectOptions(screen.getByLabelText(/which group did they go to/i), OTHER_MOB_ID);
@@ -657,7 +746,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock b/i }));
+    await user.click(await screen.findByRole('button', { name: /flock b/i }));
     await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
     await user.type(screen.getByLabelText(/how many/i), '10');
 
@@ -665,6 +754,55 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it('⭐ refuses slaughter when the withholding arrived via a HYDRATED transfer this device never captured', async () => {
+    // sync-auditor Finding 1 (2026-08-10), first call site. The local test just above proves the
+    // guard sees a transfer THIS device captured; the gap is a transfer another device captured,
+    // sent, and PowerSync has since replicated here — this device never ran a `transfer_in` capture
+    // of its own, so nothing in `LocalTallies` names the withholding. `AdjustMobScreen.tsx`'s guard
+    // read only the raw local tally log, so a mob whose entire arrival history lives in
+    // `HydratedLivestock` previewed CLEAR while the server, which sees the real transfer, would
+    // refuse — the exact "saved, refused three days later, truck already left" failure this file's
+    // guard exists to prevent.
+    const SOURCE = '0190f3a0-0000-7000-8000-00000000c001';
+    const TRANSFER_ID = '0190f3a0-0000-7000-8000-00000000c002';
+    cachedSession();
+    seedFlock();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('events', {
+        id: TRANSFER_ID,
+        farm_id: FARM_ID,
+        mob_id: MOB_ID,
+        type: 'tally',
+        occurred_at: '2026-07-20T12:00:00.000Z',
+        payload: JSON.stringify({
+          reason: 'transfer_in',
+          delta: 40,
+          counterpartMobId: SOURCE,
+          // Far enough out that no reasonable test clock ever runs past it.
+          carriedWithholdUntil: '2099-01-01',
+        }),
+      });
+    });
+
+    await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
+    await user.type(screen.getByLabelText(/how many/i), '10');
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    });
+    expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(await storedTallies()).toHaveLength(0);
   });
 
   it('records a purchase with no declared withdrawal as unknown history, never a guess', async () => {
@@ -676,7 +814,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /flock a/i }));
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^bought$/i }));
     await user.type(screen.getByLabelText(/how many/i), '12');
 
@@ -686,8 +824,10 @@ describe('changing a group’s numbers (FR-102)', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    const saved = storedTallies();
-    expect(saved).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedTallies()).toHaveLength(1);
+    });
+    const saved = await storedTallies();
     expect(saved[0]).not.toHaveProperty('declaredWithdrawalUntil');
   });
 
@@ -699,8 +839,10 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals/groups/count');
     render(<App />);
 
+    // findByText waits out the fresh render's async hydration before this positive assertion; the
+    // negative one only makes sense once that same wait has happened, so it comes after.
+    expect(await screen.findByText(/no group here is managed by a head count yet/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /flock a/i })).toBeNull();
-    expect(screen.getByText(/no group here is managed by a head count yet/i)).toBeTruthy();
   });
 
   it('is not offered from the animals screen when there is no counted group to change', async () => {
@@ -709,6 +851,45 @@ describe('changing a group’s numbers (FR-102)', () => {
     window.history.pushState({}, '', '/animals');
     render(<App />);
 
-    expect(screen.queryByRole('link', { name: /change a group’s numbers/i })).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: /change a group’s numbers/i })).toBeNull();
+    });
+  });
+
+  it('⭐ a StrictMode double-invoke does not permanently kill hydration (sync-auditor re-pass, 2026-08-10)', async () => {
+    // The LOW fix's `close()`/`useEffect` cleanup and the store-construction `useMemo` were not
+    // symmetric: React 18 StrictMode mounts, runs the effect, immediately simulates an unmount (runs
+    // the cleanup), then remounts (re-runs the effect) — all against the SAME `useMemo`'d store pair,
+    // since `farmId` never changed across that synthetic cycle. The cleanup closed it; nothing
+    // reconstructed it; `AbortController.abort()` has no undo. Production strips StrictMode's
+    // double-invoke, so this was invisible to every existing test and to `pnpm test:e2e` (a
+    // production build) — only `pnpm dev` (which `main.tsx` wraps in `<StrictMode>`) would ever see
+    // hydration die silently after the very first mount.
+    cachedSession();
+    seedFlock();
+
+    const fake = await getCurrentFakeLocalDatabase();
+    fake.hydrateRow('events', {
+      id: '0190f3a0-0000-7000-8000-00000000c006',
+      farm_id: FARM_ID,
+      mob_id: MOB_ID,
+      type: 'tally',
+      occurred_at: '2026-07-20T12:00:00.000Z',
+      payload: JSON.stringify({ reason: 'birth', delta: 40 }),
+    });
+
+    window.history.pushState({}, '', '/animals/groups/count');
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /flock a/i }));
+
+    // 300 (the flock's baseline) + 40 (the hydrated birth) — only visible if the hydrated store
+    // survived StrictMode's synthetic mount→cleanup→remount cycle.
+    expect(await screen.findByText('340')).toBeTruthy();
   });
 });

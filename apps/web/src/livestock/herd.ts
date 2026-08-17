@@ -19,21 +19,44 @@ import {
   summariseHerd,
   type AnimalClass,
   type HerdSummary,
+  type TallyRecord,
 } from '@werf/domain';
 import type { AnimalStatus } from '@werf/core';
-import { useAnimals, type StoredAnimal } from './LocalHerd';
-import { useLifecycleEvents, type StoredLifecycleEvent } from './LocalLifecycle';
+import { useAnimals, useAnimalsSettled, type StoredAnimal } from './LocalHerd';
+import { useLifecycleEvents, useLifecycleEventsSettled } from './LocalLifecycle';
 import { useMobs, type StoredMob } from './LocalMobs';
-import { useTallies, type StoredTally } from './LocalTallies';
-import { useMoves, type StoredMove } from './LocalMoves';
+import { useTallies } from './LocalTallies';
+import {
+  useHydratedMobs,
+  useHydratedTallies,
+  useHydratedAnimals,
+  useHydratedAnimalsSettled,
+  useHydratedLifecycleEvents,
+  useHydratedLifecycleEventsSettled,
+  useHydratedMoves,
+  useHydratedMovesSettled,
+  useHydratedHealthEvents,
+  mergeById,
+  mergeByIdPreferHydrated,
+} from './HydratedLivestock';
+import { useMoves, useMovesSettled, type StoredMove } from './LocalMoves';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
-import { meatWithdrawalFor } from './withdrawal';
+import { meatWithdrawalFor, type WithholdDose } from './withdrawal';
 import { farmDay } from '../farmTime';
+import type { HydratedLifecycleEvent } from './HydratedLivestock';
+
+/**
+ * The fold's own minimal shape for a lifecycle event (see `HydratedLivestock.tsx`'s
+ * `HydratedLifecycleEvent`, which this re-exports the name of): both a local `StoredLifecycleEvent`
+ * and a hydrated one satisfy it structurally, so `mergeById` can widen the two into one array
+ * without either side losing a field this fold reads.
+ */
+type LifecycleFoldEvent = HydratedLifecycleEvent;
 
 /** The most-final status each animal has been moved to by a lifecycle event, keyed by animal id. */
 function mostFinalByAnimal(
-  events: readonly StoredLifecycleEvent[],
+  events: readonly LifecycleFoldEvent[],
 ): ReadonlyMap<string, AnimalStatus> {
   const map = new Map<string, AnimalStatus>();
   for (const e of events) {
@@ -92,7 +115,7 @@ function positionByAnimal(
  */
 export function projectHerd(
   animals: readonly StoredAnimal[],
-  events: readonly StoredLifecycleEvent[],
+  events: readonly LifecycleFoldEvent[],
   moves: readonly StoredMove[] = [],
 ): readonly StoredAnimal[] {
   const byAnimal = mostFinalByAnimal(events);
@@ -116,15 +139,59 @@ export function projectHerd(
  * (captured before the farm's herds were known to the device) belong to no herd and so appear only
  * in the unfiltered view — hiding them would be worse than the alternative, which is why the farm
  * total never filters.
+ *
+ * ⭐ Merges in HYDRATED animals/lifecycle events/moves (phase-checklists.md 3e) — an animal another
+ * device registered, and every status/position change another device has already sent, both already
+ * replicated to this one via PowerSync. Without this an animal nobody on THIS device ever touched
+ * would not appear at all, and one this device DID capture would silently ignore a death/sale/move a
+ * co-worker recorded — the same class of staleness `useEffectiveMobs` closes for mobs/tallies.
+ * `mergeById` prefers the local copy of the ANIMAL row on a shared id, and it is safe to: the row's
+ * own `status`/`landUnitId`/`mobId` are never trusted directly by this fold (see below), only
+ * re-derived from the (also merged) event/move logs, so a stale local baseline is corrected by the
+ * fold rather than by which copy of the row won.
  */
 export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
   const animals = useAnimals();
+  const hydratedAnimals = useHydratedAnimals();
   const events = useLifecycleEvents();
+  const hydratedEvents = useHydratedLifecycleEvents();
   const moves = useMoves();
+  const hydratedMoves = useHydratedMoves();
   return useMemo(() => {
-    const projected = projectHerd(animals, events, moves);
+    const foldAnimals = mergeById(animals, hydratedAnimals);
+    const foldEvents = mergeById<LifecycleFoldEvent>(events, hydratedEvents);
+    // `mergeByIdPreferHydrated`, not `mergeById`: a move's hydrated echo carries the server's own
+    // resolved `fromMobId`/`fromLandUnitId`, and preferring it also means this projection reads the
+    // identical `to*`/`from*` inputs the server's own position projection folds from — the
+    // drift-free property this fold otherwise cannot guarantee on a collision. See
+    // `HydratedLivestock.tsx`'s `mergeByIdPreferHydrated` docstring.
+    const foldMoves = mergeByIdPreferHydrated(moves, hydratedMoves);
+    const projected = projectHerd(foldAnimals, foldEvents, foldMoves);
     return herdId === undefined ? projected : projected.filter((a) => a.enterpriseId === herdId);
-  }, [animals, events, moves, herdId]);
+  }, [animals, hydratedAnimals, events, hydratedEvents, moves, hydratedMoves, herdId]);
+}
+
+/**
+ * Whether every store `useEffectiveAnimals` folds together has finished its initial hydration
+ * attempt (`CaptureStore.settled()`). A consumer that captures a ONE-TIME snapshot of this
+ * projection — a fixed work queue for a session, most of all — must wait for this before
+ * capturing, or it freezes on whatever partial, still-hydrating world happened to exist at mount.
+ */
+export function useEffectiveAnimalsSettled(): boolean {
+  const animalsSettled = useAnimalsSettled();
+  const hydratedAnimalsSettled = useHydratedAnimalsSettled();
+  const eventsSettled = useLifecycleEventsSettled();
+  const hydratedEventsSettled = useHydratedLifecycleEventsSettled();
+  const movesSettled = useMovesSettled();
+  const hydratedMovesSettled = useHydratedMovesSettled();
+  return (
+    animalsSettled &&
+    hydratedAnimalsSettled &&
+    eventsSettled &&
+    hydratedEventsSettled &&
+    movesSettled &&
+    hydratedMovesSettled
+  );
 }
 
 /**
@@ -141,9 +208,11 @@ export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
  * `headCount`, which is the running total this function produces. Folding a log over its own output
  * counts every tally twice. That this file used to fold over `headCount` and still gave the right
  * answer was an accident of one fact: nothing writes back into the local mob register, so the count
- * it holds happens to still be the created one. The accident ends the moment `mobs` is hydrated from
- * the server, and it ends silently, on every counted mob at once — which is why this is a named
- * field now rather than a comment saying "do not write here".
+ * it holds happens to still be the created one. This is why the field is named rather than left as
+ * a comment saying "do not write here" — and per phase-checklists.md 3e, `mobs` IS now hydrated
+ * from the server (`useEffectiveMobs`, below): a hydrated row's `initialHeadCount` comes back as
+ * an explicit `null` (never `undefined`), so this function's `undefined`-vs-`null` branch already
+ * does the right thing for it without change here.
  *
  * The server derives the same number from the same events with the same function, from the same
  * immutable baseline (`mobs.initial_head_count`, migration 0018) AND the same total order —
@@ -151,13 +220,19 @@ export function useEffectiveAnimals(herdId?: string): readonly StoredAnimal[] {
  * day the same instant and a fold containing a recount does not commute. Ordering on the instant
  * alone left this at the mercy of the capture-store append order here and the query plan there,
  * which is how the same log could produce two different counts.
+ *
+ * `tallies` is typed as `TallyRecord` (the fold's own minimal shape — id/mobId/occurredAt/reason/
+ * delta/countedHead), not `StoredTally`, because a hydrated tally read back from the server's
+ * `events` table (phase-checklists.md 3e) never carries `count` — only the device that captured it
+ * did. `StoredTally` remains structurally assignable, so every existing local-only caller is
+ * unaffected.
  */
 export function projectMobs(
   mobs: readonly StoredMob[],
-  tallies: readonly StoredTally[],
+  tallies: readonly TallyRecord[],
 ): readonly StoredMob[] {
   if (tallies.length === 0) return mobs;
-  const byMob = new Map<string, StoredTally[]>();
+  const byMob = new Map<string, TallyRecord[]>();
   for (const tally of tallies) {
     const held = byMob.get(tally.mobId);
     if (held) held.push(tally);
@@ -186,14 +261,26 @@ export function projectMobs(
  *
  * A mob is head a farmer has, so it belongs in the total: leaving it out would make the home tile
  * say 0 on a farm running 300 sheep as a flock, which is the exact farm FR-102 exists for.
+ *
+ * ⭐ Merges in HYDRATED mobs and tallies (phase-checklists.md 3e) — a mob another device created,
+ * and every tally another device has already sent, both already replicated to this one via
+ * PowerSync. Without this a counted mob nobody on THIS device ever touched would not appear at
+ * all, and a mob this device DID create would silently under-count every tally a co-worker landed
+ * — the same class of staleness `Outbox.tsx`'s `needsHead` closes on the write side. `mergeById`
+ * prefers the local copy on a shared id, so a capture this device made moments ago is never
+ * shadowed by a same-id row still catching up through down-sync.
  */
 export function useEffectiveMobs(herdId?: string): readonly StoredMob[] {
   const mobs = useMobs();
   const tallies = useTallies();
+  const hydratedMobs = useHydratedMobs();
+  const hydratedTallies = useHydratedTallies();
   return useMemo(() => {
-    const projected = projectMobs(mobs, tallies);
+    const foldMobs = mergeById(mobs, hydratedMobs);
+    const foldTallies = mergeById(tallies, hydratedTallies);
+    const projected = projectMobs(foldMobs, foldTallies);
     return herdId === undefined ? projected : projected.filter((m) => m.enterpriseId === herdId);
-  }, [mobs, tallies, herdId]);
+  }, [mobs, hydratedMobs, tallies, hydratedTallies, herdId]);
 }
 
 /** The herd summary (FR-705/017), for one herd or (unfiltered) the whole farm. */
@@ -263,20 +350,50 @@ export function useWithholdingCount(herdId?: string): number {
   // The RAW herd and the move log, because the guard reconstructs mob membership from them — a
   // projected animal carries where it is NOW, which is the value that reconstruction exists to
   // stop trusting. The projected list decides only WHICH animals are still alive.
+  //
+  // ⭐ RAW is now local+hydrated, merged (phase-checklists.md 3e) — an animal known to this device
+  // only via down-sync used to be absent from `raw` entirely, so `byId.get(a.id)` found nothing and
+  // this tile silently skipped the withholding check for it. Same for moves/health: local-only left
+  // the guard blind to a dose or a walk another device recorded, exactly the class of bug closed for
+  // mobs/tallies in the same slice.
   const raw = useAnimals();
+  const hydratedRaw = useHydratedAnimals();
   const moves = useMoves();
+  const hydratedMoves = useHydratedMoves();
   const healthEvents = useHealthEvents();
+  const hydratedHealthEvents = useHydratedHealthEvents();
   const products = useVetProducts();
   return useMemo(() => {
     const today = farmDay(new Date());
-    const byId = new Map(raw.map((a) => [a.id, a]));
+    const foldRaw = mergeById(raw, hydratedRaw);
+    // `mergeByIdPreferHydrated`: a move/dose's hydrated echo carries `fromMobId`/`fromLandUnitId`/
+    // `meatWithholdUntil`, which a local capture never can — local-wins would shadow that
+    // enrichment once this device's own capture round-trips back with the same id
+    // (compliance-checker finding, phase-checklists.md 3e). See `HydratedLivestock.tsx`'s
+    // `mergeByIdPreferHydrated` docstring.
+    const foldMoves = mergeByIdPreferHydrated(moves, hydratedMoves);
+    const foldHealth = mergeByIdPreferHydrated<WithholdDose>(healthEvents, hydratedHealthEvents);
+    const byId = new Map(foldRaw.map((a) => [a.id, a]));
+    // The raw hydrated-animal id set (STATUS.md §3, fail-closed) — an animal known off this
+    // device cannot lean on `animal.mobId` as a stand-in opening mob when its earliest known move
+    // is a back-dated local one with no `fromMobId`. See `withdrawal.ts`'s `mobMembership`.
+    const hydratedAnimalIds = new Set(hydratedRaw.map((a) => a.id));
     return animals.filter((a) => {
       const stored = byId.get(a.id);
       return (
         a.status === 'alive' &&
         stored !== undefined &&
-        meatWithdrawalFor(stored, today, healthEvents, products, moves).blocked
+        meatWithdrawalFor(stored, today, foldHealth, products, foldMoves, hydratedAnimalIds).blocked
       );
     }).length;
-  }, [animals, raw, moves, healthEvents, products]);
+  }, [
+    animals,
+    raw,
+    hydratedRaw,
+    moves,
+    hydratedMoves,
+    healthEvents,
+    hydratedHealthEvents,
+    products,
+  ]);
 }

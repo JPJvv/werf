@@ -8,7 +8,10 @@ import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 
-const url = process.env.DATABASE_URL ?? 'postgres://werf:werf@localhost:5432/werf';
+const url =
+  process.env.DATABASE_ELEVATED_URL ??
+  process.env.DATABASE_URL ??
+  'postgres://werf:werf@localhost:5432/werf';
 const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url));
 
 const pool = new pg.Pool({ connectionString: url });

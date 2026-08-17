@@ -1,0 +1,12 @@
+-- Retires create_farm_partition (STATUS.md §3, Finding 2). `events` stays PARTITION BY LIST
+-- (farm_id) — un-partitioning it is a separate, much riskier migration (RLS/grants/indexes are
+-- defined on the parent, not automatically on a detached partition) and nothing here needs it.
+-- What retires is only the ABILITY to create a SECOND partition: PowerSync rejects
+-- publish_via_partition_root (PSYNC_S1143, confirmed 2026-08-10 against
+-- journeyapps/powersync-service:1.23.3) and derive-sync-streams.ts's sync config is a static file
+-- generated at build/deploy time, not regenerated per farm at signup. A farm given its own
+-- partition after the last config deploy would down-sync nothing, silently, forever — Finding
+-- 2's latent risk turned into a guaranteed one. Neither real onboarding path (AuthService.register,
+-- FarmsService.createFarm) ever called this function; events_default has carried every row since
+-- 0010. `events_default` remains the permanent, only partition.
+DROP FUNCTION IF EXISTS create_farm_partition(uuid);

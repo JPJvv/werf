@@ -18,9 +18,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordRainfall } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** A gauge reading as held locally. `occurredAt` is an ISO string (JSON-safe across a cold start). */
 export interface StoredRainfall {
@@ -49,7 +51,11 @@ export type RainfallStore = CaptureStore<StoredRainfall>;
 export type RainfallStoreFactory = (key: string) => RainfallStore;
 
 const defaultFactory: RainfallStoreFactory = (key) =>
-  createCaptureStore<StoredRainfall>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredRainfall>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const RainfallStoreContext = createContext<RainfallStore | null>(null);
 
@@ -65,6 +71,7 @@ export function LocalRainfallProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-rainfall:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <RainfallStoreContext.Provider value={store}>{children}</RainfallStoreContext.Provider>;
 }
@@ -81,13 +88,28 @@ export function useRainfall(): readonly StoredRainfall[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useRainfall()` until this is true. */
+export function useRainfallSettled(): boolean {
+  const store = useRainfallStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useRainfall()` as
+ *  confirmed empty, when this is true. */
+export function useRainfallHydrationFailed(): boolean {
+  const store = useRainfallStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Commit a gauge reading to the local log. Synchronous; never awaits the network (NFR-007). The
  * capture is validated through the domain rule first — a millimetre reading of zero or more — so a
  * bad reading throws here rather than entering the append-only log; only then is the JSON-safe
  * projection persisted.
  */
-export function useRecordRainfall(): (capture: RainfallCapture) => void {
+export function useRecordRainfall(): (capture: RainfallCapture) => Promise<void> {
   const store = useRainfallStore();
   return useCallback(
     (capture) => {
@@ -98,7 +120,7 @@ export function useRecordRainfall(): (capture: RainfallCapture) => void {
         mm: capture.mm,
         ...(capture.gauge === undefined ? {} : { gauge: capture.gauge }),
       });
-      store.append({
+      return store.append({
         id: capture.id,
         farmId: capture.farmId,
         mm: capture.mm,

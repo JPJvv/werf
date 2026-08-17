@@ -1,8 +1,16 @@
 /**
- * The sent-log — a durable, reactive record of which local captures have reached the server
- * (Phase 2). It is the Phase-2 stand-in for PowerSync's upload cursor: the capture stores hold
- * the facts; this holds the small set of ids the best-effort flush has confirmed the server
- * stored. Pending = every captured record whose id is NOT in here.
+ * The sent-log — a durable, reactive record of which local captures THIS DEVICE has confirmed the
+ * server stored. It is `Outbox.tsx`'s permanent upload cursor (ADR-0012), not a stand-in for a
+ * PowerSync upload cursor — PowerSync carries no upload role in this product. The capture stores
+ * hold the facts; this holds the small set of ids the best-effort flush has confirmed sent.
+ * Pending = every captured record whose id is NOT in here.
+ *
+ * ⚠️ "Confirmed by the server" here means "this device sent it and got a 2xx" — it is NOT the same
+ * question as "does the server hold this record at all" once down-sync hydration exists (3e): a
+ * record another device sent and this device later reads back via PowerSync is never added here.
+ * That second, independent source of "the server has this" is derived live from the local
+ * down-synced tables, never by writing hydrated ids into this log — which would conflate "this
+ * device sent it" with "the server holds it" and, on a large farm, grow this log unboundedly.
  *
  * Why a separate log rather than a flag on each record: the capture stores are append-only and
  * their snapshot identity must stay stable for `useSyncExternalStore` (mutating a record in place

@@ -21,6 +21,7 @@ import {
   landUnitKindSchema,
   timestampSchema,
   uuidSchema,
+  uuidV7Schema,
 } from './primitives';
 import { boundaryWalkPayloadSchema } from './events';
 
@@ -52,6 +53,8 @@ export type LandUnit = z.infer<typeof landUnitSchema>;
 export const newLandUnitSchema = landUnitSchema
   .pick({ id: true, farmId: true, kind: true, code: true })
   .extend({
+    /** Client-generated UUIDv7 for the land unit row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     enterpriseId: landUnitSchema.shape.enterpriseId.default(null),
     parentId: landUnitSchema.shape.parentId.default(null),
     name: landUnitSchema.shape.name.default(null),
@@ -83,7 +86,7 @@ export type NewLandUnit = z.infer<typeof newLandUnitSchema>;
  */
 export const recordBoundaryWalkRequestSchema = z.object({
   /** Client-generated UUIDv7 for the event row. */
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   /** The camp or block whose fence was walked. Required — a shape with no ground is nothing. */
   landUnitId: uuidSchema,

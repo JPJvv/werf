@@ -95,6 +95,13 @@ export function AnimalsScreen() {
         {t('animals.addGroup')}
       </Link>
 
+      <Link
+        to="/animals/brands"
+        className="mb-3 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+      >
+        {t('animals.branding')}
+      </Link>
+
       {/* ⭐ Sits OUTSIDE the `hasLive` block below, like the stock-theft action and for the same
           reason: a farm running everything as flocks has no individual animal rows at all, and it
           is exactly that farm whose numbers can only move through here (FR-102). Offered only when
@@ -213,6 +220,12 @@ export function AnimalsScreen() {
             className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
           >
             {t('animals.loss')}
+          </Link>
+          <Link
+            to="/animals/photo"
+            className="flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+          >
+            {t('animals.photo')}
           </Link>
         </div>
       )}

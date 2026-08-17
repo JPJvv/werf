@@ -29,7 +29,7 @@ Werf is that product: an offline-first web application, installable on any phone
 
 Source: Stats SA Census of Agricultural Households; commercial farm counts from the Census of Commercial Agriculture. Figures are directional and should be re-verified before any investor-facing use.
 
-**v1 target:** the ~40,000 commercial farmers, with the ~2,600 large commercial as the reference customers whose requirements (multi-farm, audit, RBAC) pull the product upmarket. The market-connected smallholder segment is a Phase 7 expansion via a free tier, not a v1 focus — serving them properly needs USSD/SMS and a different unit economic model.
+**v1 target:** the ~40,000 commercial farmers, with the ~2,600 large commercial as the reference customers whose requirements (multi-farm, audit, RBAC) pull the product upmarket. The market-connected smallholder segment is a post-v1 expansion via a free tier, not a v1 focus — serving them properly needs USSD/SMS and a different unit economic model.
 
 ### 2.2 Why now
 
@@ -110,13 +110,13 @@ BO-2 is the one that matters. If it is met, BO-4 follows. If features ship but B
 | BC-2 | Pricing is in Rand, with local payment rails | Market reality. Card-in-USD is a conversion killer. |
 | BC-3 | The application must be installable without an app store | Distribution: PWA sidesteps Play Store friction and lets us ship daily. |
 | BC-4 | Total data footprint per sync must suit a metered mobile connection | Data cost is a real objection in rural SA. |
-| BC-5 | No feature may require a hardware purchase to be useful | Hardware (EID readers, scales) is a Phase 6 enhancement, never a dependency. |
+| BC-5 | No feature may require a hardware purchase to be useful | Hardware integrations are post-v1 enhancements, never dependencies. |
 
 ---
 
 ## 6. Success criteria and the gate we will not cross
 
-**Launch gate (end of Phase 5):** three pilot farms — one livestock, one crop, one mixed — have used Werf as their only record system for a full month, including a pay cycle, and one has passed a real external audit or inspection on Werf output alone.
+**Launch gate (end of Phase 7):** three pilot farms — one livestock, one crop, one mixed — have used Werf as their only record system for a full month, including a pay cycle, and one has passed a real external audit or inspection on Werf output alone.
 
 If that gate is not met, we do not launch. We fix. A farm management product that loses a farmer's data or gets a payslip wrong does not get a second chance in a community this tightly networked — and word travels faster at a Nampo stand than any marketing budget can outrun.
 

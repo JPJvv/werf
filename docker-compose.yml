@@ -7,6 +7,12 @@ services:
   postgres:
     image: postgis/postgis:16-3.4
     container_name: werf-postgres
+    # wal_level=logical, added for Phase 3 slice 3b: the self-hosted PowerSync service below
+    # replicates off this database, which Postgres's default `replica` level cannot support.
+    # ⚠️ Changing this on an EXISTING dev volume requires the container to recreate
+    # (`docker compose up -d`), which the running container will do automatically — data
+    # survives (it lives in the `werf_pg` volume), but the running process restarts.
+    command: ['postgres', '-c', 'wal_level=logical']
     environment:
       POSTGRES_USER: werf
       POSTGRES_PASSWORD: werf
@@ -20,11 +26,89 @@ services:
       - '127.0.0.1:5432:5432'
     volumes:
       - werf_pg:/var/lib/postgresql/data
+      # Only runs against a FRESH volume (Postgres only executes initdb.d scripts once, on an
+      # empty data directory) — see the script's own header for the one-time manual command an
+      # EXISTING dev volume needs instead.
+      - ./infra/postgres:/docker-entrypoint-initdb.d
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U werf -d werf']
       interval: 3s
       timeout: 3s
       retries: 20
 
+  # Self-hosted PowerSync service (Phase 3 slice 3b, ADR-0003). LOCAL DEV ONLY — production is
+  # its own af-south-1 deployment, not this compose file. Config lives in infra/powersync/;
+  # see service.yaml's header for why storage reuses this same Postgres server as a second
+  # database rather than MongoDB (the docs' own default), and for the dev-only JWT keypair.
+  powersync:
+    image: journeyapps/powersync-service:1.23.3
+    container_name: werf-powersync
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ['start', '-r', 'unified']
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      # Public key material only. `pnpm setup:local` derives it from the ignored private key.
+      PS_JWKS_N: ${PS_JWKS_N:?Run pnpm setup:local first}
+    volumes:
+      - ./infra/powersync/service.yaml:/config/service.yaml
+      - ./infra/powersync/sync-config.yaml:/config/sync-config.yaml
+    ports:
+      # Loopback only, same reasoning as postgres above — nothing needs this off-box for local
+      # dev, and it would otherwise publish a database-adjacent service to the laptop's Wi-Fi.
+      - '127.0.0.1:8080:8080'
+
+  # Object storage for attachment binaries (phase-checklists.md 3i). LOCAL DEV ONLY — production
+  # is real S3 in af-south-1 (ADR-0002). Credentials match .env.example's OBJECT_STORAGE_* defaults.
+  minio:
+    image: minio/minio:latest
+    container_name: werf-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: werf-dev
+      MINIO_ROOT_PASSWORD: werf-dev-secret
+      # P1.4 (2026-08-14): per-bucket CORS via the standard S3 `PutBucketCors` API returns `501
+      # NotImplemented` on this image — empirically confirmed against `minio/minio:latest` with
+      # BOTH the AWS SDK v3 and MinIO's own `mc cors set`, so this is a genuine server-side gap in
+      # this edition, not a client quirk. The community edition's CORS control is this server-wide
+      # env var instead. Real S3 in production has no such gap and uses the per-bucket
+      # `PutBucketCors` API — see `apps/api/scripts/configure-bucket-cors.mjs`, which stays the
+      # correct mechanism there. Origins match `generate-headers.mjs`'s local defaults (the built
+      # PWA under `vite preview`) plus the dev server and the deployed-header e2e proof's own
+      # static server (`apps/web/e2e/deployed-server.ts`, `deployed-connectivity.spec.ts`),
+      # comma-separated per MinIO's own contract.
+      MINIO_API_CORS_ALLOW_ORIGIN: 'http://localhost:4173,http://localhost:5173,http://127.0.0.1:4180'
+    command: ['server', '/data', '--console-address', ':9001']
+    ports:
+      # Loopback only, same reasoning as postgres/powersync above.
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
+    volumes:
+      - werf_minio:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: creates the dev bucket. `minio/minio` has no built-in "create this bucket on boot"
+  # option, so a companion `mc` container does it and exits — `docker compose up` converges to a
+  # ready bucket without a manual step.
+  minio-init:
+    image: minio/mc:latest
+    container_name: werf-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 werf-dev werf-dev-secret &&
+      mc mb -p local/werf-attachments-dev &&
+      exit 0
+      "
+
 volumes:
   werf_pg:
+  werf_minio:

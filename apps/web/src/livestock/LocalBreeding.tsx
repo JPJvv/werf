@@ -26,9 +26,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /**
  * The vocabularies come FROM the payload schemas rather than being written out again here. A
@@ -90,7 +92,11 @@ export type BreedingStore = CaptureStore<StoredBreedingEvent>;
 export type BreedingStoreFactory = (key: string) => BreedingStore;
 
 const defaultFactory: BreedingStoreFactory = (key) =>
-  createCaptureStore<StoredBreedingEvent>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredBreedingEvent>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const BreedingStoreContext = createContext<BreedingStore | null>(null);
 
@@ -106,6 +112,7 @@ export function LocalBreedingProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-breeding:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <BreedingStoreContext.Provider value={store}>{children}</BreedingStoreContext.Provider>;
 }
@@ -122,6 +129,21 @@ export function useBreedingEvents(): readonly StoredBreedingEvent[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useBreedingEvents()` until this is true. */
+export function useBreedingEventsSettled(): boolean {
+  const store = useBreedingStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useBreedingEvents()` as confirmed empty, when this is true. */
+export function useBreedingEventsHydrationFailed(): boolean {
+  const store = useBreedingStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Record one breeding capture. Synchronous; never awaits the network (NFR-007).
  *
@@ -129,11 +151,11 @@ export function useBreedingEvents(): readonly StoredBreedingEvent[] {
  * tested — so there is no batch here and adding one would be inventing a grouping the work does
  * not have.
  */
-export function useRecordBreeding(): (event: StoredBreedingEvent) => void {
+export function useRecordBreeding(): (event: StoredBreedingEvent) => Promise<void> {
   const store = useBreedingStore();
   return useCallback(
     (event) => {
-      store.append(event);
+      return store.append(event);
     },
     [store],
   );

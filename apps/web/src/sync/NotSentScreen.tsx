@@ -43,6 +43,7 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   boundaryWalk: 'notSent.kind.boundaryWalk',
   mob: 'notSent.kind.mob',
   tally: 'notSent.kind.tally',
+  branding: 'notSent.kind.branding',
   animal: 'notSent.kind.animal',
   identifier: 'notSent.kind.identifier',
   weight: 'notSent.kind.weight',
@@ -52,6 +53,7 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   breeding: 'notSent.kind.breeding',
   theft: 'notSent.kind.theft',
   rainfall: 'notSent.kind.rainfall',
+  attachment: 'notSent.kind.attachment',
 };
 
 /**
@@ -72,6 +74,8 @@ function reasonKey(capture: RefusedCapture): TranslationKey {
       return 'notSent.why.notFound';
     case 'TENANCY':
       return 'notSent.why.tenancy';
+    case 'QUOTA_EXCEEDED':
+      return 'notSent.why.quotaExceeded';
     default:
       // An unrecognised code says so rather than guessing. A wrong specific explanation sends a
       // farmer to fix something that was never wrong.

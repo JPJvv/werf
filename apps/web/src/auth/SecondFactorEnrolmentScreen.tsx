@@ -54,6 +54,7 @@ export function SecondFactorEnrolmentScreen() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<TranslationKey | null>(null);
   const [busy, setBusy] = useState(false);
+  const [stepUpRequired, setStepUpRequired] = useState(false);
 
   const accessToken = session?.accessToken;
 
@@ -75,6 +76,11 @@ export function SecondFactorEnrolmentScreen() {
         if (cancelled) return;
         if (caught instanceof AuthApiError && caught.code === 'CONFLICT') {
           await alreadyEnrolled();
+          return;
+        }
+        if (caught instanceof AuthApiError && caught.code === 'STEP_UP_REQUIRED') {
+          setStepUpRequired(true);
+          setError('security.enrol.stepUp');
           return;
         }
         setError(
@@ -122,6 +128,11 @@ export function SecondFactorEnrolmentScreen() {
         await alreadyEnrolled();
         return;
       }
+      if (caught instanceof AuthApiError && caught.code === 'STEP_UP_REQUIRED') {
+        setStepUpRequired(true);
+        setError('security.enrol.stepUp');
+        return;
+      }
       setError(
         caught instanceof NetworkUnavailableError ? 'auth.signIn.offline' : 'security.enrol.failed',
       );
@@ -163,6 +174,15 @@ export function SecondFactorEnrolmentScreen() {
     }
   };
 
+  const signInAgain = async () => {
+    setBusy(true);
+    await signOut();
+    navigate('/sign-in', {
+      replace: true,
+      state: { from: '/security/second-factor' },
+    });
+  };
+
   if (stage.name === 'recovery') {
     const codes = stage.codes;
     return (
@@ -202,7 +222,18 @@ export function SecondFactorEnrolmentScreen() {
       <p className="mb-4 text-body text-soil-900">{t('security.enrol.body')}</p>
       <FormError messageKey={error} />
 
-      {stage.name === 'choose' && (
+      {stepUpRequired && (
+        <button
+          type="button"
+          onClick={() => void signInAgain()}
+          disabled={busy}
+          className="mb-4 min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
+        >
+          {t('security.enrol.stepUpAction')}
+        </button>
+      )}
+
+      {!stepUpRequired && stage.name === 'choose' && (
         <>
           {/* The one ochre action on the screen. A passkey is the preferred factor, so it is the
               one that looks like the answer; the app route below it is a border, not a colour. */}
@@ -226,7 +257,7 @@ export function SecondFactorEnrolmentScreen() {
         </>
       )}
 
-      {stage.name === 'confirm' && (
+      {!stepUpRequired && stage.name === 'confirm' && (
         <>
           <ol className="mb-4 flex list-decimal flex-col gap-2 pl-5 text-body text-soil-900">
             <li>{t('security.enrol.step1')}</li>

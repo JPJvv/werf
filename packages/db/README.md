@@ -7,14 +7,15 @@ table obeys (UUIDv7 PKs, `farm_id`, soft-delete, audit columns, jurisdiction, RL
 ## Local database
 
 ```bash
-pnpm db:up        # docker compose: Postgres 16 + PostGIS on :5432
-pnpm db:migrate   # apply migrations (generated DDL + extensions + UUIDv7 fn + RLS)
+pnpm real-stack:up # local env + Docker + migrations + the RLS-bound app login
+pnpm db:up         # Docker services only (runs setup:local first)
+pnpm db:migrate    # migrations through DATABASE_ELEVATED_URL
 pnpm db:down      # stop it
 ```
 
-`DATABASE_URL` defaults to `postgres://werf:werf@localhost:5432/werf` for local dev.
-Production is self-hosted Postgres+PostGIS on AWS af-south-1 (ADR-0002); its URL lives in
-the deployment secret store, never in the repo.
+`pnpm setup:local` gives `DATABASE_URL` the RLS-bound `werf_app` login and keeps the owner URL in
+`DATABASE_ELEVATED_URL`. Production is self-hosted Postgres+PostGIS on AWS af-south-1 (ADR-0002);
+both credentials live in the deployment secret store, never in the repo.
 
 ## Migrations
 

@@ -7,6 +7,20 @@
 
 Offline-first PWA for South African farm management. Monorepo, TypeScript everywhere.
 
+## Canonical workflow guidance
+
+Claude Code is the primary implementation environment. This file and `.claude/rules/` own the
+repository workflow; `docs/INDEX.md` owns document precedence. `AGENTS.md` is a small Codex adapter
+and `.codex/` is compatibility plumbing only. Neither may introduce a competing product,
+architecture, review or hook policy. When guidance changes, update the Claude-owned source first.
+
+## Canonical workflow guidance
+
+Claude Code is the primary implementation environment. This file and `.claude/rules/` own the
+repository workflow; `docs/INDEX.md` owns document precedence. `AGENTS.md` is a small Codex adapter
+and `.codex/` is compatibility plumbing only. Neither may introduce a competing product,
+architecture, review or hook policy. When guidance changes, update the Claude-owned source first.
+
 ## Commands
 
 Scripts live in the root `package.json` — read it rather than trusting a copy here.

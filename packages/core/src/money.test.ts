@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMoney, formatZAR, money, scaleMoney, subMoney, ZERO } from './money';
+import { addMoney, formatZAR, money, parseRandsToCents, scaleMoney, subMoney, ZERO } from './money';
 import { InvalidMoneyError } from './errors';
 
 describe('money', () => {
@@ -34,5 +34,38 @@ describe('money', () => {
     [4820411, 'R48 204.11'],
   ])('formats %d cents as %s', (cents, expected) => {
     expect(formatZAR(money(cents))).toBe(expected);
+  });
+});
+
+describe('parseRandsToCents', () => {
+  it.each([
+    ['5000', 500000],
+    ['8500', 850000],
+    ['0', 0],
+    ['241.84', 24184],
+    ['241.8', 24180],
+    ['241.80', 24180],
+    ['0.05', 5],
+    ['  8500  ', 850000], // whitespace at the edges, exactly as a mobile keyboard leaves it
+  ])('parses %s as %d cents', (typed, expected) => {
+    expect(parseRandsToCents(typed)).toBe(expected);
+  });
+
+  it.each([
+    [''],
+    ['   '],
+    ['-100'],
+    ['abc'],
+    ['1e3'], // scientific notation — never route through this to a rand amount
+    ['Infinity'],
+    ['150.999'], // a third decimal digit is a likely typo, not R150.999 rounded to R151.00
+    ['1,234.56'], // no thousands separator support — matches the pre-existing screen behaviour
+  ])('refuses %s rather than guessing', (typed) => {
+    expect(parseRandsToCents(typed)).toBeNull();
+  });
+
+  it('never crosses a float boundary — a value Number()*100 would mis-round parses exactly', () => {
+    // Number('0.1') * 100 === 10.000000000000002 in IEEE 754; the string-based parse avoids it.
+    expect(parseRandsToCents('0.10')).toBe(10);
   });
 });

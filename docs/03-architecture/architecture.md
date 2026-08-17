@@ -67,9 +67,12 @@ graph TB
         UI["React 19 PWA<br/>Vite · Tailwind · TanStack Query"]
         SW["Service Worker<br/>Workbox · app shell"]
         SQL[("SQLite (WASM)<br/>OPFS-persisted")]
-        PSC["PowerSync client SDK<br/>watched queries · upload queue"]
+        PSC["PowerSync client SDK<br/>watched queries · DOWN-SYNC ONLY"]
+        OBX["Outbox.tsx<br/>durable upload queue"]
         UI <--> PSC
+        UI <--> OBX
         PSC <--> SQL
+        OBX -.reads capture_records.-> SQL
         SW -.caches.-> UI
     end
 
@@ -99,12 +102,12 @@ graph TB
     end
 
     UI --> CDN
-    PSC <-->|"sync protocol<br/>deltas, checkpointed"| WAF --> ALB --> PS
+    PSC <-->|"sync protocol<br/>DOWN-SYNC ONLY, checkpointed"| WAF --> ALB --> PS
+    OBX -->|"REST + JWT<br/>captures, idempotent"| WAF
     UI -->|"server-authoritative<br/>REST + JWT"| WAF
     ALB --> API
 
     PS -->|"logical replication<br/>WAL"| PG
-    PS -->|writes via| API
     API --> PG & RD & S3
     WRK --> PG & RD & S3
     API --> SB & PF
@@ -116,20 +119,22 @@ graph TB
 
 ### Two paths to the server, and why
 
-This is the load-bearing idea in the architecture.
+This is the load-bearing idea in the architecture. **ADR-0012 (2026-08-10) is the permanent
+statement of the sync path's write direction** — PowerSync down-syncs, `Outbox.tsx` uploads. This
+was left implicit by this document and by the original ADR-0003 text below until then.
 
-| | Sync path | API path |
-|---|---|---|
-| Transport | PowerSync protocol | REST/JSON |
-| Data | Operational records: animals, events, blocks, attendance | Computed & authoritative: payroll, PDFs, integrations |
-| Offline | **Always available** | Unavailable, and says so |
-| Latency to user | Zero (local write) | Network round trip |
-| Authority | Client optimistic, server reconciles | Server only |
-| Examples | Record a calving, a weight, a spray | Run payroll, generate an evidence pack, import from Stud Book |
+| | Sync path (down) | Sync path (up) | API path |
+|---|---|---|---|
+| Mechanism | PowerSync watched queries | `Outbox.tsx` → REST | REST/JSON |
+| Data | Operational records: animals, events, blocks, attendance, read back | The same records, captured on this device | Computed & authoritative: payroll, PDFs, integrations |
+| Offline | **Always available (reads local SQLite)** | **Always available (queues locally)** | Unavailable, and says so |
+| Latency to user | N/A — background hydration | Zero (local write; upload is background) | Network round trip |
+| Authority | Server, replicated | Client optimistic, server reconciles on receipt | Server only |
+| Examples | A co-worker's calving appearing on this device | Record a calving, a weight, a spray | Run payroll, generate an evidence pack, import from Stud Book |
 
 **Why not one path?** Because the two have opposite requirements. Capture must never block on the network; payroll must never run on stale rates. Forcing one mechanism to do both means either payroll becomes unreliable or capture becomes online-only. Both failures kill the product.
 
-**Why not two databases?** Both paths write the same Postgres. PowerSync replicates *from* Postgres via logical replication and routes client writes *back through* the API (`writeCheckpoint`), so business rules and RLS apply to every write regardless of path. There is one source of truth on the server; there are two ways to reach it.
+**Why not two databases?** Both paths write the same Postgres. `Outbox.tsx` posts captures to the domain-owned REST endpoints, which apply business rules and RLS before writing; PowerSync replicates the result back down to every device via logical replication. There is one source of truth on the server; there are two ways to reach it, and only one of them (REST, via `Outbox.tsx`) carries a write. See [ADR-0012](adr/ADR-0012-upload-topology.md) for why PowerSync's own CRUD upload queue cannot carry the never-discard / 4xx-set-aside invariants this product requires.
 
 ---
 
@@ -148,7 +153,7 @@ This is the load-bearing idea in the architecture.
 | DB | **Postgres 16 + PostGIS** | PostGIS is required (camps, blocks, GPS). RDS Multi-AZ in af-south-1. |
 | Queue | BullMQ + Redis | PDFs, exports, imports, the scheduled compliance jobs. |
 | Objects | S3 (af-south-1); MinIO in dev/test | Phase 3 shared attachment path: OPFS-first capture, synced farm-scoped metadata, then presigned direct upload through one S3-compatible adapter. |
-| Auth | Custom JWT in the API | Not Auth0/Clerk: offline sessions (30-day) and per-farm RBAC are not their model, and the data must stay in SA. |
+| Auth | NestJS OIDC BFF + opaque Werf session; interim API JWT during migration | Google proves identity only; Werf retains the 30-day offline session, per-farm RBAC and RLS authority. ADR-0011 and its [migration plan](../04-delivery/google-bff-migration-plan.md) define the staged removal of the browser JWT. |
 | Monorepo | pnpm workspaces + Turborepo | |
 | Tests | Vitest · Playwright · Testcontainers | Real Postgres in tests. Never mock the database. |
 | IaC | Terraform | |
@@ -191,37 +196,35 @@ werf/
 sequenceDiagram
     actor U as Manager, in a camp
     participant UI as React
-    participant PS as PowerSync SDK
-    participant DB as Local SQLite
-    participant Q as Upload queue
-    participant S as PowerSync Service
+    participant OBX as Outbox.tsx
+    participant DB as Local SQLite (capture_records)
     participant A as API
     participant PG as Postgres
+    participant PS as PowerSync Service
 
     Note over U,DB: 📵 No signal
     U->>UI: Record calving
     UI->>UI: Validate (Zod, @werf/core)
-    UI->>PS: insert event + animal
-    PS->>DB: BEGIN; INSERT; INSERT; COMMIT
-    DB-->>PS: ok (<50ms)
-    PS->>Q: enqueue, durable
-    PS-->>UI: watched query fires
+    UI->>DB: append to capture_records (local-only)
+    DB-->>UI: ok (<50ms)
     UI-->>U: Calf visible. "1 to send"
 
     Note over U,PG: 📶 Signal returns, 6 days later
-    PS->>S: connect, auth (JWT)
-    PS->>S: upload queue, occurred_at order
-    S->>A: apply writes (business rules + RLS)
+    OBX->>DB: read pending (FK + safety order)
+    OBX->>A: POST /livestock/... (idempotent on client id)
+    A->>A: validate, RLS, idempotency check
     A->>PG: INSERT ... RETURNING
     PG-->>A: ok
-    A-->>S: write checkpoint
-    S->>PG: read changes since client checkpoint
-    S-->>PS: deltas
-    PS->>DB: apply
-    PS-->>UI: "Synced"
+    A-->>OBX: 201
+    OBX->>DB: mark sent (sent-log)
+    OBX-->>UI: "Sent"
+
+    Note over PS,PG: independently, in the background
+    PS->>PG: read changes (logical replication)
+    PS-->>UI: watched query fires (down-sync, e.g. a co-worker's calving)
 ```
 
-Two things to notice. **The user's turnaround is under 50ms and never touches the network.** And **client writes still go through the API**, so RLS and business rules are applied to a write that was composed six days ago on a phone in a camp — the client's optimism is never the server's trust.
+Two things to notice. **The user's turnaround is under 50ms and never touches the network.** And **client writes still go through the API**, so RLS and business rules are applied to a write that was composed six days ago on a phone in a camp — the client's optimism is never the server's trust. PowerSync's role here is down-sync only, decoupled from the upload; see [ADR-0012](adr/ADR-0012-upload-topology.md).
 
 ---
 
@@ -281,11 +284,12 @@ Full detail: [deployment-guide.md](../05-operations/deployment-guide.md).
 |---|---|---|
 | [0001](adr/ADR-0001-pwa-over-native.md) | PWA, not native | Accepted |
 | [0002](adr/ADR-0002-data-residency.md) | Self-host in af-south-1; not Supabase Cloud | Accepted · amended by 0006 |
-| [0003](adr/ADR-0003-sync-engine.md) | PowerSync, not RxDB/Electric/custom | Accepted |
+| [0003](adr/ADR-0003-sync-engine.md) | PowerSync, not RxDB/Electric/custom | Accepted · clarified by 0012 |
 | [0004](adr/ADR-0004-enterprise-model.md) | One shared schema + validated JSONB, not per-species tables | Accepted |
 | [0005](adr/ADR-0005-regulatory-rates.md) | Regulated values are data with effective dates | Accepted · amended by 0006 |
 | [0006](adr/ADR-0006-multi-jurisdiction.md) | SA-locked, jurisdiction-ready. Seams, not abstractions | Accepted |
 | [0007](adr/ADR-0007-authentication.md) | Passkeys + TOTP. Never SMS as a second factor | Accepted |
+| [0012](adr/ADR-0012-upload-topology.md) | REST-up (`Outbox.tsx`) / PowerSync-down, permanently | Accepted |
 
 ---
 

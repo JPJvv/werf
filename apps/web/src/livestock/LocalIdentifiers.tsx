@@ -16,9 +16,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** What the register holds: identifiers composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredIdentifier = schemas.NewAnimalIdentifier;
@@ -28,7 +30,11 @@ export type IdentifierStore = CaptureStore<StoredIdentifier>;
 export type IdentifierStoreFactory = (key: string) => IdentifierStore;
 
 const defaultFactory: IdentifierStoreFactory = (key) =>
-  createCaptureStore<StoredIdentifier>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredIdentifier>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const IdentifierStoreContext = createContext<IdentifierStore | null>(null);
 
@@ -44,6 +50,7 @@ export function LocalIdentifiersProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-identifiers:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return (
     <IdentifierStoreContext.Provider value={store}>{children}</IdentifierStoreContext.Provider>
@@ -60,6 +67,21 @@ function useIdentifierStore(): IdentifierStore {
 export function useIdentifiers(): readonly StoredIdentifier[] {
   const store = useIdentifierStore();
   return useSyncExternalStore(store.subscribe, store.all);
+}
+
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useIdentifiers()` until this is true. */
+export function useIdentifiersSettled(): boolean {
+  const store = useIdentifierStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useIdentifiers()` as confirmed empty, when this is true. */
+export function useIdentifiersHydrationFailed(): boolean {
+  const store = useIdentifierStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
 }
 
 /**
@@ -93,8 +115,9 @@ export function useTakenValues(): ReadonlySet<string> {
   );
 }
 
-/** Commit an identifier to the local register. Synchronous; never awaits the network (NFR-007). */
-export function useRecordIdentifier(): (identifier: StoredIdentifier) => void {
+/** Commit an identifier to the local register. Never awaits the network (NFR-007); the returned
+ *  promise resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordIdentifier(): (identifier: StoredIdentifier) => Promise<void> {
   const store = useIdentifierStore();
   return useCallback((identifier) => store.append(identifier), [store]);
 }

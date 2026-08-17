@@ -13,6 +13,12 @@ Where a card is required, every available hard spend cap is set to its floor and
 > [ADR-0008](../03-architecture/adr/ADR-0008-dev-hosting.md). This is what makes free hosting POPIA-safe
 > for now.
 
+> **Price/limit warning (2026-08-09):** the table below is a planning snapshot, not a current vendor
+> quote. Free tiers change without an architecture decision. Re-verify each official pricing page,
+> region, card requirement, data-processing term and hard-cap behaviour immediately before creating
+> or upgrading an account. The architecture decisions are synthetic-only offshore development and
+> `af-south-1` before real data; no vendor limit can override those gates.
+
 ---
 
 ## 1. The stack, and why each piece can't surprise-bill you

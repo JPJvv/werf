@@ -41,6 +41,17 @@ CREATE TABLE businesses (
   name          text NOT NULL,
   registration_number text,
   vat_number    text,
+  -- Nullable only for tenants created before the additive FR-001 migration. The current
+  -- registration contract requires at least one contact method and a complete address. These
+  -- fields remain server-side: no current offline feature needs a sole proprietor's contact/home
+  -- address, so the PowerSync classifier explicitly strips them from the businesses projection.
+  contact_email text,
+  contact_phone text,
+  physical_address_line_1 text,
+  physical_address_line_2 text,
+  physical_address_locality text,
+  physical_address_province text,
+  physical_address_postal_code text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz
@@ -63,12 +74,14 @@ CREATE TABLE farms (
   boundary_geojson text,
   hectares      numeric(10,2),
   timezone      text NOT NULL DEFAULT 'Africa/Johannesburg',
+  event_retention_months integer NOT NULL DEFAULT 24,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz,
   -- v1 lock. Removing this CHECK is the deliberate act of adding a country —
   -- it should require a migration and a conversation, not a config flag.
-  CONSTRAINT farms_jurisdiction_v1 CHECK (jurisdiction = 'ZA')
+  CONSTRAINT farms_jurisdiction_v1 CHECK (jurisdiction = 'ZA'),
+  CONSTRAINT farms_event_retention_months_positive CHECK (event_retention_months > 0)
 );
 
 CREATE TABLE users (
@@ -314,17 +327,18 @@ CREATE TABLE events (
 ) PARTITION BY LIST (farm_id);
 ```
 
-**Partitioned by `farm_id` from day one.** At NFR-305 (500k events/farm/year) × NFR-301 (10k farms) this table is the constraint. Partitioning later means a migration on a table with billions of rows, which is a thing that does not happen. Partitioning now costs one line.
+**Partitioned by `farm_id` from day one, but `events_default` is the sole partition, permanently.**
+At NFR-305 (500k events/farm/year) × NFR-301 (10k farms) this table is the constraint, and the
+`PARTITION BY LIST` clause itself still costs nothing to keep. Per-farm partitions are a different
+story: PowerSync explicitly rejects `publish_via_partition_root` (`PSYNC_S1143`, empirically
+confirmed 2026-08-10 against `journeyapps/powersync-service:1.23.3`), and the Sync Streams config
+consumed by the self-hosted service is a static file generated at build/deploy time
+(`packages/sync/scripts/generate-sync-streams.ts`), never regenerated per farm at signup. A farm
+given its own partition after the last config deploy would silently down-sync nothing, forever —
+so migration 0021 retires `create_farm_partition` outright rather than ever calling it from a real
+onboarding path. STATUS.md §3, Finding 2, has the full decision record.
 
 ```sql
--- Partitions are created by the farm-provisioning path
-CREATE OR REPLACE FUNCTION create_farm_partition(p_farm_id uuid) RETURNS void AS $$
-BEGIN
-  EXECUTE format(
-    'CREATE TABLE IF NOT EXISTS events_%s PARTITION OF events FOR VALUES IN (%L)',
-    replace(p_farm_id::text,'-','_'), p_farm_id);
-END $$ LANGUAGE plpgsql;
-
 CREATE INDEX events_farm_occurred ON events (farm_id, occurred_at DESC);
 CREATE INDEX events_animal        ON events (animal_id, occurred_at DESC) WHERE animal_id IS NOT NULL;
 CREATE INDEX events_type_occurred ON events (farm_id, type, occurred_at DESC);
@@ -361,6 +375,8 @@ attendance:{ startAt, endAt, breakMin, pin, gps? }
 ⭐ **`land_units.boundary` is the denormalised CURRENT value of this log, re-derived rather than stepped** — the same relationship `mobs.head_count` has to `tally` and `animals.land_unit_id` has to `move`. A boundary is an ABSOLUTE THAT RESETS (a recount of a shape), so the current one is the newest walk by the total order `(occurred_at, id)`, re-selected from the whole log after every insert. Arrival order is not `occurred_at` order: two phones offline in the same week can both walk one camp, and a server that wrote each arrival straight onto the column would leave the boundary at whichever phone reconnected last. The superseded walk is kept — it is a true fact about a fence that really was there. The device runs the identical cut, so the two sides cannot drift.
 
 The wire carries the CORNERS and never the ring: the server rebuilds the polygon from the fixes with the same `@werf/domain` function the device ran, so a shape and its own evidence cannot disagree (the same discipline as a projected due date never crossing the wire). `land_units.hectares` is untouched by a walk — it is the farmer's declared figure, often off a title deed, and a walk that clipped a corner must never silently replace it.
+
+**Attachments (migration 0022, Phase 3 slice 3i) — one shared table for photos today, discriminated by `subject_type` (only `animal` so far) for later crop/grievance documents.** The binary itself never lives in Postgres: `attachments` is metadata only (`farm_id`, `subject_type`/`subject_id`, `mime_type`, `size_bytes`, `checksum`, a server-derived `object_key`, `status` — `pending`|`finalised`, `occurred_at`), written the moment the client commits the blob to OPFS; the object lives in MinIO (dev/test) or S3 `af-south-1` (production). RLS-scoped and farm-forced like every other domain table; `werf_app` holds `SELECT, INSERT, UPDATE`, no hard `DELETE`. A 25 MB per-attachment cap and a five-type photo whitelist (JPEG/PNG/WebP/HEIC/HEIF, with MIME-alias normalisation for `image/jpg`) are enforced in the shared `@werf/core` Zod schema, so the picker refuses an oversized or unsupported file before it ever reaches OPFS or the queue. **Per-farm quota (migration 0030, P3.16, owner decision 2026-08-16):** `farms.attachment_bytes_used bigint NOT NULL DEFAULT 0` is a running total of finalised bytes, charged atomically (a single conditional `UPDATE ... WHERE attachment_bytes_used + n <= 5_368_709_120 RETURNING id` inside the same transaction as the row insert/revival) the moment `createAttachment` decides a row will occupy real storage, and released by `AttachmentOrphanSweepService` when it reclaims an abandoned upload. No request body ever accepts a value for this column — despite `farms` syncing whole-row, there is no client-writable path to it.
 
 ---
 
@@ -635,29 +651,41 @@ CREATE TABLE compliance_items (
 
 ## 8. Audit
 
-```sql
-CREATE TABLE audit_log (
-  id            bigserial PRIMARY KEY,
-  farm_id       uuid NOT NULL,
-  user_id       uuid,
-  table_name    text NOT NULL,
-  record_id     uuid NOT NULL,
-  action        text NOT NULL,        -- 'insert','update','delete','conflict_resolved'
-  before        jsonb,
-  after         jsonb,
-  source        text,                 -- 'web','sync','api','system'
-  ip_address    inet,
-  occurred_at   timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX audit_log_record ON audit_log (table_name, record_id, occurred_at DESC);
-CREATE INDEX audit_log_farm   ON audit_log (farm_id, occurred_at DESC);
+Two immutable logs hold two different kinds of evidence rather than forcing either one to invent
+identifiers it does not have:
 
--- ⭐ Immutable at the database level (NFR-211). Not by convention. By grant.
-REVOKE UPDATE, DELETE ON audit_log FROM PUBLIC;
-REVOKE UPDATE, DELETE ON audit_log FROM werf_app;
-```
+- `audit_log` is farm-scoped conflict evidence. It retains both facts, the rule, winner,
+  actor/session provenance and a deterministic conflict key; retries cannot manufacture a second
+  explanation.
+- `auth_audit_log` records login success/challenge/failure, logout, farm switch, invitation and
+  refresh-token reuse detection. `farm_id`, actor and subject may be null because an unknown-account
+  failure happens before a tenant or identity exists. It stores controlled reason/method/role
+  metadata plus the individual session and stable rotation-family ids, source IP and bounded user
+  agent; never an email, password, token, challenge or credential.
 
-`bigserial`, not UUIDv7 — audit rows are written server-side only and never sync, so there is no offline ID problem, and a sequence gives cheap ordering.
+Both use `bigserial`, not UUIDv7: they are server-authored and never sync, so a sequence gives cheap
+ordering without violating the client-ID rule. Both reject `UPDATE` and `DELETE` through a database
+trigger. The ordinary `werf_app` role cannot access `auth_audit_log` at all; it is written only by
+the explicit elevated authentication paths. RLS is enabled and forced with zero policies as a
+second lock. Migration 0028 and its integration tests pin all three properties (immutability,
+ordinary-role denial and server-only classification) for NFR-211.
+
+`conflict_reviews` (migration 0026, closed 2026-08-15) is `audit_log`'s companion: a mutable,
+RLS-scoped review queue (owner/manager-visible) for conflicts that need a human look — a duplicate
+birth batch, for instance — as distinct from `audit_log`'s immutable record of what was decided and
+why. Deterministic conflict keys make retries idempotent; movement conflicts resolve by
+`(occurred_at,id)` LWW; status conflicts resolve sale-outranks-death-outranks-sale; a genuinely
+separate second litter is distinguished from a duplicate capture of the same birth
+(`apps/api/src/conflicts/conflicts.service.ts`).
+
+`users` grants were narrowed to column-level in migration 0029 (P3.16, closed 2026-08-16):
+`werf_app` previously held table-wide `SELECT, INSERT, UPDATE` on `users` from migration 0001, which
+combined with the row-scoped `users_self_and_comembers` RLS policy meant the scoped connection could
+read a co-member's encrypted TOTP seed or password hash. The grant now names only the non-credential
+columns (id, email, phone, full_name, locale, theme, last_seen_at, timestamps); every credential
+column (`password_hash`, `totp_secret_encrypted`, `totp_enrolled_at`, `totp_last_used_step`,
+`recovery_codes_hashed`) is reachable only from the elevated connection, where every current
+read/write of them already lived.
 
 ---
 
@@ -708,10 +736,10 @@ Every table is one of these. This table is the input to both the sync rules and 
 
 | Class | Tables | Rule |
 |---|---|---|
-| **Full sync** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers` | Farm-scoped, bidirectional |
+| **Full sync** | `animals`, `animal_identifiers`, `mobs`, `land_units`, `events`, `enterprises`, `branding_registers`, `attachments`, `farms` (incl. `attachment_bytes_used`) | Farm-scoped, bidirectional |
 | **Reference sync** | `chemical_products`, `veterinary_products`, `regulatory_rates`, `notifiable_diseases`, `public_holidays` | **Filtered by the farm's `jurisdiction`**, read-only. Required for offline PHI/withdrawal checks. A ZA device never downloads Namibian withdrawal periods. |
 | **Filtered sync** | `employees` (minus encrypted columns), `attendance` events | Role-gated |
-| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
+| **Server only** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `auth_audit_log`, `conflict_reviews`, `compliance_items`, `user_passkeys`, `users.totp_secret_encrypted` | **Never touch a device.** Money, health, audit, and auth secrets stay home. |
 
 The "server only" row is a security decision as much as an architectural one. A stolen phone should not contain 40 workers' payslips.
 

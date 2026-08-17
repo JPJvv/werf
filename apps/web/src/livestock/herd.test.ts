@@ -8,9 +8,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { projectHerd } from './herd';
+import { projectHerd, projectMobs } from './herd';
 import type { StoredAnimal } from './LocalHerd';
 import type { StoredMove } from './LocalMoves';
+import type { StoredMob } from './LocalMobs';
 
 const FARM_ID = '01900000-0000-7000-8000-000000000f01';
 const ANIMAL_ID = '01900000-0000-7000-8000-0000000000a1';
@@ -81,5 +82,115 @@ describe('projectHerd — where an animal is, when two moves share a day', () =>
     const projected = projectHerd([animal()], [], [walked, unassigned])[0];
     expect(projected?.landUnitId).toBe(CAMP_4);
     expect(projected?.mobId).toBeNull();
+  });
+});
+
+describe('projectHerd — reading a hydrated (down-synced) animal/event, not just a local one', () => {
+  // ⭐ `useEffectiveAnimals` (phase-checklists.md 3e, extended past mobs/tallies) merges
+  // `LocalHerd`/`LocalLifecycle`/`LocalMoves` with `HydratedLivestock`'s down-synced copies BEFORE
+  // calling this function — this proves the fold itself accepts and correctly folds a lifecycle
+  // event shaped exactly like a hydrated row can honestly provide (`HydratedLifecycleEvent`: no
+  // `cause`/`counterparty`/`priceCents`/etc, only what `mostFinalByAnimal` reads), so the merge
+  // cannot be shadowed by a stricter `StoredLifecycleEvent`-only type here.
+  it('folds a death shaped exactly like a hydrated row over an animal captured only locally', () => {
+    const hydratedDeath = {
+      id: '01900000-0000-7000-8000-0000000000d1',
+      animalId: ANIMAL_ID,
+      type: 'death' as const,
+      status: 'dead' as const,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+    };
+    const [projected] = projectHerd([animal()], [hydratedDeath]);
+    expect(projected?.status).toBe('dead');
+  });
+
+  it('folds a death shaped exactly like a hydrated row over an animal ALSO known only via hydration', () => {
+    // The sharper case: neither the animal row nor the death event was ever captured by this
+    // device — both arrived purely through down-sync, which is exactly what happens when a
+    // co-worker's phone registers and disposes of an animal this device has never heard of before.
+    const hydratedAnimal = { ...animal(), status: 'alive' as const };
+    const hydratedDeath = {
+      id: '01900000-0000-7000-8000-0000000000d2',
+      animalId: ANIMAL_ID,
+      type: 'death' as const,
+      status: 'dead' as const,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+    };
+    const [projected] = projectHerd([hydratedAnimal], [hydratedDeath]);
+    expect(projected?.status).toBe('dead');
+  });
+
+  it('a birth/purchase/weaning-shaped hydrated event moves no status', () => {
+    const hydratedWeaning = {
+      id: '01900000-0000-7000-8000-0000000000d3',
+      animalId: ANIMAL_ID,
+      type: 'weaning' as const,
+      status: null,
+      occurredAt: '2026-07-22T12:00:00.000Z',
+    };
+    const [projected] = projectHerd([animal()], [hydratedWeaning]);
+    expect(projected?.status).toBe('alive');
+  });
+});
+
+describe('projectMobs — reading a hydrated (down-synced) mob, not just a local one', () => {
+  // ⭐ `useEffectiveMobs` (phase-checklists.md 3e) merges `LocalMobs`/`LocalTallies` with
+  // `HydratedLivestock`'s down-synced copies BEFORE calling this function — this file proves the
+  // fold itself accepts and correctly counts a mob and a tally that carry no more than what a
+  // hydrated `events`/`mobs` row can honestly provide (no `count`, the field only the capturing
+  // device's own `StoredTally` carries), so the merge cannot be shadowed by a stricter type here.
+  const M = '01900000-0000-7000-8000-0000000000b1';
+
+  it('folds a tally shaped exactly like a hydrated row (no `count`) over a hydrated mob', () => {
+    const hydratedMob: StoredMob = {
+      id: M,
+      farmId: FARM_ID,
+      enterpriseId: null,
+      landUnitId: null,
+      name: 'Flock Down-synced',
+      species: 'sheep',
+      headCount: 260, // whatever the server last reported — irrelevant, the baseline decides
+      initialHeadCount: 260,
+    };
+    // The `TallyRecord` shape a hydrated `events` row maps to — see `HydratedLivestock.tsx`'s
+    // `mapHydratedTally`. No `count`.
+    const hydratedBirth = {
+      id: '01900000-0000-7000-8000-0000000000b2',
+      mobId: M,
+      occurredAt: '2026-07-20T12:00:00.000Z',
+      reason: 'birth' as const,
+      delta: 40,
+    };
+
+    const [projected] = projectMobs([hydratedMob], [hydratedBirth]);
+    expect(projected?.headCount).toBe(300);
+  });
+
+  it('a hydrated mob with no baseline (initialHeadCount null) does not double-count', () => {
+    // A row this build read straight off the wire never has `undefined` — only ever a real number
+    // or an explicit `null`. `null` must NOT fall back to `headCount`, or a hydrated mob's own
+    // running total gets folded over a second time the moment any tally lands on it.
+    const hydratedMob: StoredMob = {
+      id: M,
+      farmId: FARM_ID,
+      enterpriseId: null,
+      landUnitId: null,
+      name: 'Pre-migration mob',
+      species: 'sheep',
+      headCount: 50,
+      initialHeadCount: null,
+    };
+    const hydratedTally = {
+      id: '01900000-0000-7000-8000-0000000000b3',
+      mobId: M,
+      occurredAt: '2026-07-20T12:00:00.000Z',
+      reason: 'death' as const,
+      delta: -5,
+    };
+
+    const [projected] = projectMobs([hydratedMob], [hydratedTally]);
+    // `projectHeadCount(null, ...)` returns null — the honest "cannot compute" answer — rather
+    // than 45 (which would be `headCount` folded a second time).
+    expect(projected?.headCount).toBeNull();
   });
 });

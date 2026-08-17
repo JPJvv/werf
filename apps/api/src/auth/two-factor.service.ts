@@ -24,6 +24,7 @@ import { farmUsers, users, type ElevatedDb } from '@werf/db';
 import { ConflictError, InvalidCredentialsError, SessionInvalidError, schemas } from '@werf/core';
 import { APP_CONFIG, ELEVATED_DB } from '../db/db.module';
 import type { AppConfig } from '../config/config';
+import type { AuthAuditContext } from './auth-audit';
 import { SessionService, type IssuedSession } from './session.service';
 import { PasskeyService } from './passkey.service';
 import { RecoveryCodeService } from './recovery-code.service';
@@ -139,6 +140,7 @@ export class TwoFactorService {
    */
   async verifySecondFactor(
     input: schemas.VerifySecondFactorRequest,
+    context: AuthAuditContext = {},
   ): Promise<{ userId: string; session: IssuedSession }> {
     const pending = await this.sessions.findPendingSecondFactor(input.challengeToken);
     if (!pending) throw new SessionInvalidError('unknown');
@@ -159,12 +161,23 @@ export class TwoFactorService {
         : await this.recoveryCodes.consume(user.id, input.code);
     if (!accepted) throw new InvalidCredentialsError();
 
-    const session = await this.sessions.issue({
-      userId: pending.userId,
-      activeFarmId: pending.activeFarmId,
-      deviceLabel: pending.deviceLabel,
-      secondFactorSatisfied: true,
-    });
+    const session = await this.sessions.issue(
+      {
+        userId: pending.userId,
+        activeFarmId: pending.activeFarmId,
+        deviceLabel: pending.deviceLabel,
+        secondFactorSatisfied: true,
+      },
+      {
+        event: 'login',
+        outcome: 'success',
+        actorUserId: pending.userId,
+        subjectUserId: pending.userId,
+        farmId: pending.activeFarmId,
+        ...context,
+        metadata: { method: input.method },
+      },
+    );
 
     return { userId: pending.userId, session };
   }

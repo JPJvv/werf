@@ -128,6 +128,23 @@ So: explicit choice, light default, "Match my phone" for anyone who wants it. Da
 
 ---
 
+### 2.5 Loading and local-first rendering
+
+Use a skeleton only when the shape of incoming content is known and reserving its layout prevents
+a jump. The skeleton uses semantic surface tokens, is `aria-hidden`, exposes one concise live
+loading label, sets `aria-busy`, and disables animation under `prefers-reduced-motion`. Do not
+render fake data, shimmer forever, or replace a destructive/long-running operation with an
+ambiguous shape.
+
+Werf captures are not speculative server optimism. A write commits to the local database first and
+the UI renders that durable local fact immediately. Reconciliation then moves through explicit
+states: saved on this device, sending, sent, or set aside with a reason. Never show a temporary
+green server success before the local commit, never roll a valid local capture out of the UI merely
+because the network failed, and never discard a refused row.
+
+For a server-only read or action, preserve the previous truthful view while refreshing when safe;
+otherwise use a labelled skeleton. Announce errors and state changes without moving focus.
+
 ## 3. Type
 
 ```css

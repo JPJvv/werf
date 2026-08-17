@@ -15,10 +15,17 @@ import {
   type AppDb,
   type ElevatedDb,
 } from '@werf/db';
-import { ConflictError, InvalidCredentialsError, NotFoundError, schemas } from '@werf/core';
+import {
+  ConflictError,
+  InvalidCredentialsError,
+  NotFoundError,
+  SessionInvalidError,
+  schemas,
+} from '@werf/core';
 import { ACCESS_TOKEN_TTL_SECONDS } from '../config/config';
 import { APP_DB, ELEVATED_DB } from '../db/db.module';
 import { enterprisesByFarm } from '../common/session-farm';
+import { type AuthAuditContext, writeAuthAudit } from './auth-audit';
 import { SessionService, type IssuedSession } from './session.service';
 import { TokenService } from './token.service';
 import { TwoFactorService } from './two-factor.service';
@@ -96,6 +103,13 @@ export class AuthService {
         .values({
           name: input.business.name,
           registrationNumber: input.business.registrationNumber,
+          contactEmail: input.business.contact.email,
+          contactPhone: input.business.contact.phone,
+          physicalAddressLine1: input.business.physicalAddress.line1,
+          physicalAddressLine2: input.business.physicalAddress.line2,
+          physicalAddressLocality: input.business.physicalAddress.locality,
+          physicalAddressProvince: input.business.physicalAddress.province,
+          physicalAddressPostalCode: input.business.physicalAddress.postalCode,
         })
         .returning();
 
@@ -186,7 +200,10 @@ export class AuthService {
    * that answers faster for non-existent accounts tells an attacker exactly which farmers
    * bank with us.
    */
-  async login(input: schemas.LoginRequest): Promise<schemas.LoginResponse> {
+  async login(
+    input: schemas.LoginRequest,
+    context: AuthAuditContext = {},
+  ): Promise<schemas.LoginResponse> {
     const [user] = await this.elevated.db
       .select()
       .from(users)
@@ -194,11 +211,26 @@ export class AuthService {
 
     if (!user?.passwordHash) {
       await this.tokens.verifyPassword(await dummyHash(this.tokens), input.password);
+      await writeAuthAudit(this.elevated.db, {
+        event: 'login',
+        outcome: 'failure',
+        ...context,
+        metadata: { reason: 'invalid_credentials', method: 'password' },
+      });
       throw new InvalidCredentialsError();
     }
 
     const ok = await this.tokens.verifyPassword(user.passwordHash, input.password);
-    if (!ok) throw new InvalidCredentialsError();
+    if (!ok) {
+      await writeAuthAudit(this.elevated.db, {
+        event: 'login',
+        outcome: 'failure',
+        subjectUserId: user.id,
+        ...context,
+        metadata: { reason: 'invalid_credentials', method: 'password' },
+      });
+      throw new InvalidCredentialsError();
+    }
 
     const memberships = await this.loadFarms(user.id);
 
@@ -212,16 +244,31 @@ export class AuthService {
     // dam — is exactly the case where this is the only line left (FR-014a).
     if (methods.length > 0) methods.push('recovery_code');
 
-    const session = await this.sessions.issue({
-      userId: user.id,
-      activeFarmId: memberships[0]?.id ?? null,
-      deviceLabel: input.deviceLabel,
-      // A second factor is owed only if one is actually enrolled. An account that has
-      // none cannot be asked for one — that is a lockout, not a security control. The
-      // rule that owners and bookkeepers must ENROL is enforced after login, by the
-      // guard, which confines them to the enrolment routes until they do (FR-014).
-      secondFactorSatisfied: methods.length === 0,
-    });
+    const activeFarmId = memberships[0]?.id ?? null;
+    const secondFactorSatisfied = methods.length === 0;
+    const session = await this.sessions.issue(
+      {
+        userId: user.id,
+        activeFarmId,
+        deviceLabel: input.deviceLabel,
+        // A second factor is owed only if one is actually enrolled. An account that has
+        // none cannot be asked for one — that is a lockout, not a security control. The
+        // rule that owners and bookkeepers must ENROL is enforced after login, by the
+        // guard, which confines them to the enrolment routes until they do (FR-014).
+        secondFactorSatisfied,
+      },
+      {
+        event: 'login',
+        outcome: secondFactorSatisfied ? 'success' : 'challenge',
+        ...(secondFactorSatisfied ? { actorUserId: user.id } : {}),
+        subjectUserId: user.id,
+        farmId: activeFarmId,
+        ...context,
+        metadata: secondFactorSatisfied
+          ? { method: 'password' }
+          : { method: 'password', reason: 'second_factor_required' },
+      },
+    );
 
     if (session.secondFactorAt === null) {
       return {
@@ -235,21 +282,41 @@ export class AuthService {
   }
 
   /** Redeems a refresh token. No second factor is re-demanded here — ADR-0007. */
-  async refresh(refreshToken: string): Promise<schemas.AuthSession> {
-    const session = await this.sessions.rotate(refreshToken);
+  async refresh(
+    refreshToken: string,
+    context: AuthAuditContext = {},
+  ): Promise<schemas.AuthSession> {
+    const session = await this.sessions.rotate(refreshToken, context);
     return this.buildAuthSession(await this.userIdForSession(session), session);
   }
 
-  async logout(refreshToken: string): Promise<void> {
+  async logout(refreshToken: string, context: AuthAuditContext = {}): Promise<void> {
     const hash = this.tokens.hashRefreshToken(refreshToken);
     const [session] = await this.elevated.db
-      .select({ familyId: userSessions.familyId })
+      .select({
+        id: userSessions.id,
+        familyId: userSessions.familyId,
+        userId: userSessions.userId,
+        activeFarmId: userSessions.activeFarmId,
+      })
       .from(userSessions)
       .where(eq(userSessions.refreshTokenHash, hash));
 
     // Logging out with an already-dead token is not an error — it is the state the caller
     // wanted. Reporting a failure here just teaches clients to ignore the response.
-    if (session) await this.sessions.revokeFamily(session.familyId, 'logout');
+    if (session) {
+      await this.sessions.revokeFamily(session.familyId, 'logout', {
+        event: 'logout',
+        outcome: 'success',
+        actorUserId: session.userId,
+        subjectUserId: session.userId,
+        farmId: session.activeFarmId,
+        sessionId: session.id,
+        sessionFamilyId: session.familyId,
+        ...context,
+        metadata: { reason: 'user_requested' },
+      });
+    }
   }
 
   /**
@@ -315,15 +382,45 @@ export class AuthService {
    * Completes a login that stopped at the second factor, returning the real session.
    * The half-authenticated challenge is spent inside `verifySecondFactor`.
    */
-  async verifySecondFactor(input: schemas.VerifySecondFactorRequest): Promise<schemas.AuthSession> {
-    const { userId, session } = await this.twoFactor.verifySecondFactor(input);
-    return this.buildAuthSession(userId, session);
+  async verifySecondFactor(
+    input: schemas.VerifySecondFactorRequest,
+    context: AuthAuditContext = {},
+  ): Promise<schemas.AuthSession> {
+    try {
+      const { userId, session } = await this.twoFactor.verifySecondFactor(input, context);
+      return this.buildAuthSession(userId, session);
+    } catch (error) {
+      if (error instanceof InvalidCredentialsError || error instanceof SessionInvalidError) {
+        await writeAuthAudit(this.elevated.db, {
+          event: 'login',
+          outcome: 'failure',
+          ...context,
+          metadata: { reason: 'invalid_second_factor', method: input.method },
+        });
+      }
+      throw error;
+    }
   }
 
   /** The same, satisfied with a passkey instead of a typed code (ADR-0007). */
-  async verifyPasskey(input: schemas.PasskeyAuthenticationRequest): Promise<schemas.AuthSession> {
-    const { userId, session } = await this.passkeys.verifySecondFactor(input);
-    return this.buildAuthSession(userId, session);
+  async verifyPasskey(
+    input: schemas.PasskeyAuthenticationRequest,
+    context: AuthAuditContext = {},
+  ): Promise<schemas.AuthSession> {
+    try {
+      const { userId, session } = await this.passkeys.verifySecondFactor(input, context);
+      return this.buildAuthSession(userId, session);
+    } catch (error) {
+      if (error instanceof InvalidCredentialsError || error instanceof SessionInvalidError) {
+        await writeAuthAudit(this.elevated.db, {
+          event: 'login',
+          outcome: 'failure',
+          ...context,
+          metadata: { reason: 'invalid_second_factor', method: 'passkey' },
+        });
+      }
+      throw error;
+    }
   }
 
   /**
@@ -344,6 +441,7 @@ export class AuthService {
           businessId: farms.businessId,
           name: farms.name,
           enterpriseTypes: farms.enterpriseTypes,
+          eventRetentionMonths: farms.eventRetentionMonths,
           role: farmUsers.role,
         })
         .from(farmUsers)

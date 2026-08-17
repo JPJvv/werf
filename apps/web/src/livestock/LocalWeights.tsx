@@ -20,9 +20,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { recordWeight, type WeightMethod } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** A weight reading as held locally. `occurredAt` is an ISO string (JSON-safe across a cold start). */
 export interface StoredWeight {
@@ -52,7 +54,11 @@ export type WeightStore = CaptureStore<StoredWeight>;
 export type WeightStoreFactory = (key: string) => WeightStore;
 
 const defaultFactory: WeightStoreFactory = (key) =>
-  createCaptureStore<StoredWeight>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredWeight>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const WeightStoreContext = createContext<WeightStore | null>(null);
 
@@ -68,6 +74,7 @@ export function LocalWeightsProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-weights:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <WeightStoreContext.Provider value={store}>{children}</WeightStoreContext.Provider>;
 }
@@ -84,6 +91,21 @@ export function useWeights(): readonly StoredWeight[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useWeights()` until this is true. */
+export function useWeightsSettled(): boolean {
+  const store = useWeightStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useWeights()` as
+ *  confirmed empty, when this is true. */
+export function useWeightsHydrationFailed(): boolean {
+  const store = useWeightStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /** The readings for one animal, in capture order. */
 export function useAnimalWeights(animalId: string): readonly StoredWeight[] {
   const all = useWeights();
@@ -96,7 +118,7 @@ export function useAnimalWeights(animalId: string): readonly StoredWeight[] {
  * so a bad reading throws here rather than entering the append-only log; only then is the JSON-safe
  * projection persisted.
  */
-export function useRecordWeight(): (capture: WeightCapture) => void {
+export function useRecordWeight(): (capture: WeightCapture) => Promise<void> {
   const store = useWeightStore();
   return useCallback(
     (capture) => {
@@ -108,7 +130,7 @@ export function useRecordWeight(): (capture: WeightCapture) => void {
         kg: capture.kg,
         method: capture.method,
       });
-      store.append({
+      return store.append({
         id: capture.id,
         farmId: capture.farmId,
         animalId: capture.animalId,

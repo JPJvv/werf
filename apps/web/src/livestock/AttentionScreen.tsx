@@ -26,6 +26,7 @@
  * food-chain event at all. A register that scolds is one people stop opening.
  */
 
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
@@ -33,6 +34,8 @@ import { useSyncStatus } from '../sync/useSyncStatus';
 import { useSentCaptures } from '../sync/Outbox';
 import { useResidueRegister, type StoredResidueFlag } from './LocalResidueRegister';
 import { useLocalResidueFlags, type LocalResidueFlag } from './residue';
+import { useConflictReviews, useMarkConflictReviewed } from './LocalConflictReviews';
+import { useAnimalLabels } from './LocalIdentifiers';
 
 /** One row as the screen renders it, whichever source it came from. */
 interface Row {
@@ -123,6 +126,11 @@ export function AttentionScreen() {
   // still sitting here from one the server has and chose not to flag.
   const sent = useSentCaptures();
   const offline = useSyncStatus().status === 'offline';
+  const conflicts = useConflictReviews();
+  const markReviewed = useMarkConflictReviewed();
+  const labels = useAnimalLabels();
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -187,7 +195,7 @@ export function AttentionScreen() {
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
       <h1 className="mb-2 font-ui text-h1 text-soil-900">{t('residue.title')}</h1>
-      <p className="mb-6 text-body text-soil-700">{t('residue.intro')}</p>
+      <p className="mb-6 text-body text-soil-700">{t('attention.intro')}</p>
 
       {/* Not an error and not styled as one. The register still opens with no signal — it says what
           is true about how fresh it is, rather than showing a spinner over a list it already has. */}
@@ -197,9 +205,71 @@ export function AttentionScreen() {
         </p>
       )}
 
-      {newestFirst.length === 0 ? (
+      {conflicts.length > 0 && (
+        <section className="mb-8" aria-labelledby="conflict-review-title">
+          <h2 id="conflict-review-title" className="mb-2 font-ui text-h2 text-soil-900">
+            {t('conflict.title')}
+          </h2>
+          <p className="mb-4 text-body text-soil-700">{t('conflict.intro')}</p>
+          {reviewError && (
+            <p role="alert" className="mb-3 text-body text-klei-700">
+              {t('conflict.error')}
+            </p>
+          )}
+          <ul className="flex list-none flex-col gap-4 p-0">
+            {conflicts.map((conflict) => {
+              const kindKey =
+                conflict.kind === 'field_lww'
+                  ? 'conflict.move'
+                  : conflict.kind === 'possible_duplicate_birth'
+                    ? 'conflict.birth'
+                    : 'conflict.status';
+              const canReview = activeFarm.role === 'owner' || activeFarm.role === 'manager';
+              return (
+                <li
+                  key={conflict.id}
+                  className="rounded border border-soil-200 bg-sand-50 p-3 text-soil-900"
+                >
+                  <p className="text-body font-semibold">{t(kindKey)}</p>
+                  <p className="mt-2 text-body text-soil-700">
+                    {t('conflict.subject')} {labels.get(conflict.subjectId) ?? t('conflict.animal')}
+                  </p>
+                  {canReview ? (
+                    <button
+                      type="button"
+                      disabled={offline || reviewing !== null}
+                      onClick={() => {
+                        setReviewError(false);
+                        setReviewing(conflict.id);
+                        void markReviewed(conflict.id)
+                          .catch(() => setReviewError(true))
+                          .finally(() => setReviewing(null));
+                      }}
+                      className="mt-3 min-h-touch-min rounded border border-dam-700 px-4 text-body text-dam-700 disabled:opacity-60"
+                    >
+                      {t('conflict.reviewed')}
+                    </button>
+                  ) : (
+                    <p className="mt-2 text-body text-soil-700">{t('conflict.manager')}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {newestFirst.length > 0 && (
+        <>
+          <h2 className="mb-2 font-ui text-h2 text-soil-900">{t('residue.sectionTitle')}</h2>
+          <p className="mb-4 text-body text-soil-700">{t('residue.intro')}</p>
+        </>
+      )}
+
+      {newestFirst.length === 0 && conflicts.length === 0 && (
         <p className="text-body text-soil-700">{t('residue.empty')}</p>
-      ) : (
+      )}
+      {newestFirst.length > 0 && (
         <ul aria-label={t('residue.title')} className="flex list-none flex-col gap-4 p-0">
           {newestFirst.map((row) => (
             <li

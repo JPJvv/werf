@@ -27,4 +27,25 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // ADR-0003's exit depends on application code never knowing PowerSync exists: only
+    // packages/sync (the adapter) may import the SDK directly. Everyone else goes through
+    // `createLocalDatabase` / `LocalDatabase` from `@werf/sync`. See packages/sync/src/local-database.ts.
+    ignores: ['packages/sync/**'],
+    files: ['**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@powersync/*'],
+              message:
+                'Import the PowerSync SDK only from packages/sync (ADR-0003 exit clause 2). Use createLocalDatabase / LocalDatabase from @werf/sync instead.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

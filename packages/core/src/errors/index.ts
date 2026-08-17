@@ -14,7 +14,9 @@ export type WerfErrorCode =
   | 'INVALID_CREDENTIALS'
   | 'SESSION_INVALID'
   | 'SECOND_FACTOR_ENROLMENT_REQUIRED'
-  | 'CONFLICT';
+  | 'STEP_UP_REQUIRED'
+  | 'CONFLICT'
+  | 'QUOTA_EXCEEDED';
 
 export abstract class WerfError extends Error {
   abstract readonly code: WerfErrorCode;
@@ -109,9 +111,33 @@ export class SecondFactorEnrolmentRequiredError extends WerfError {
   }
 }
 
+/**
+ * The caller has a live session, but its human authentication is too old for a
+ * credential-changing operation. Specific because the safe recovery is actionable:
+ * perform a new full sign-in, including the account's existing second factor.
+ */
+export class StepUpRequiredError extends WerfError {
+  readonly code = 'STEP_UP_REQUIRED';
+
+  constructor() {
+    super('Sign in again before changing sign-in methods');
+  }
+}
+
 /** A uniqueness rule was violated — an email already registered, a farm name taken. */
 export class ConflictError extends WerfError {
   readonly code = 'CONFLICT';
+}
+
+/**
+ * A farm's attachment storage quota (P3.16, owner decision 2026-08-16) would be exceeded by
+ * this write. Distinct from `ConflictError` — `ConflictError` on an attachment already covers
+ * several unrelated shapes (an id reused with different content, a row the orphan sweep just
+ * reclaimed), and a farmer told "already exists" for a quota refusal would be sent to fix
+ * nothing that was ever wrong. This code gives the client an accurate, specific reason.
+ */
+export class QuotaExceededError extends WerfError {
+  readonly code = 'QUOTA_EXCEEDED';
 }
 
 export class InvalidMoneyError extends WerfError {

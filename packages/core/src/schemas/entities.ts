@@ -42,11 +42,45 @@ export type Theme = z.infer<typeof themeSchema>;
 // ── Business ────────────────────────────────────────────────────────────────
 // The account root. One business owns many farms (FR-001, FR-004).
 
+const businessTextSchema = z.string().trim().min(1).max(200);
+const businessContactEmailSchema = z.string().trim().email().max(254).nullable();
+const businessContactPhoneSchema = z.string().trim().min(1).max(32).nullable();
+
+/** At least one durable way to reach the business, independent of a user's account (FR-001). */
+export const businessContactSchema = z
+  .object({
+    email: businessContactEmailSchema,
+    phone: businessContactPhoneSchema,
+  })
+  .refine(({ email, phone }) => email !== null || phone !== null, {
+    message: 'Provide a business contact email or phone number',
+  });
+export type BusinessContact = z.infer<typeof businessContactSchema>;
+
+/** Structured enough for invoices and evidence packs without pretending it is a postal address. */
+export const physicalAddressSchema = z.object({
+  line1: businessTextSchema,
+  line2: businessTextSchema.nullable(),
+  locality: z.string().trim().min(1).max(100),
+  province: z.string().trim().min(1).max(100),
+  postalCode: z.string().trim().min(1).max(16),
+});
+export type PhysicalAddress = z.infer<typeof physicalAddressSchema>;
+
 export const businessSchema = z.object({
   id: uuidSchema,
   name: z.string().min(1),
   registrationNumber: z.string().min(1).nullable(),
   vatNumber: z.string().min(1).nullable(),
+  // Nullable on persisted rows for the additive migration of pre-FR-001 tenants. New
+  // registrations require a complete contact/address through registerRequestSchema.
+  contactEmail: businessContactEmailSchema,
+  contactPhone: businessContactPhoneSchema,
+  physicalAddressLine1: physicalAddressSchema.shape.line1.nullable(),
+  physicalAddressLine2: physicalAddressSchema.shape.line2,
+  physicalAddressLocality: physicalAddressSchema.shape.locality.nullable(),
+  physicalAddressProvince: physicalAddressSchema.shape.province.nullable(),
+  physicalAddressPostalCode: physicalAddressSchema.shape.postalCode.nullable(),
   ...auditTimestamps,
 });
 export type Business = z.infer<typeof businessSchema>;
@@ -54,6 +88,13 @@ export type Business = z.infer<typeof businessSchema>;
 export const newBusinessSchema = businessSchema.pick({ id: true, name: true }).extend({
   registrationNumber: businessSchema.shape.registrationNumber.default(null),
   vatNumber: businessSchema.shape.vatNumber.default(null),
+  contactEmail: businessSchema.shape.contactEmail.default(null),
+  contactPhone: businessSchema.shape.contactPhone.default(null),
+  physicalAddressLine1: businessSchema.shape.physicalAddressLine1.default(null),
+  physicalAddressLine2: businessSchema.shape.physicalAddressLine2.default(null),
+  physicalAddressLocality: businessSchema.shape.physicalAddressLocality.default(null),
+  physicalAddressProvince: businessSchema.shape.physicalAddressProvince.default(null),
+  physicalAddressPostalCode: businessSchema.shape.physicalAddressPostalCode.default(null),
 });
 export type NewBusiness = z.infer<typeof newBusinessSchema>;
 
@@ -73,6 +114,8 @@ export const farmSchema = z.object({
   enterpriseTypes: z.array(enterpriseTypeSchema),
   hectares: z.number().nonnegative().nullable(),
   timezone: z.string().min(1),
+  /** UTC calendar-month event buckets kept on a device; 24 is the offline-sync.md §3 default. */
+  eventRetentionMonths: z.number().int().positive(),
   ...auditTimestamps,
 });
 export type Farm = z.infer<typeof farmSchema>;
@@ -85,6 +128,7 @@ export const newFarmSchema = farmSchema
     enterpriseTypes: z.array(enterpriseTypeSchema).min(1),
     hectares: farmSchema.shape.hectares.default(null),
     timezone: farmSchema.shape.timezone.default('Africa/Johannesburg'),
+    eventRetentionMonths: farmSchema.shape.eventRetentionMonths.default(24),
   });
 export type NewFarm = z.infer<typeof newFarmSchema>;
 

@@ -25,6 +25,7 @@ import { Link } from 'react-router-dom';
 import {
   ANIMAL_SEXES,
   enterpriseSpecies,
+  parseRandsToCents,
   uuidv7,
   schemas,
   type AnimalSex,
@@ -37,18 +38,13 @@ import { useRecordAnimal } from './LocalHerd';
 import { useRecordPurchase } from './LocalLifecycle';
 import { farmToday } from '../farmTime';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
+import { useEffectiveBrandingRegisters } from './LocalBranding';
 import type { TranslationKey } from '../i18n/dictionaries';
 
 type Herd = schemas.SessionEnterprise;
 
-/** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
-function toCents(rands: string): number {
-  return Math.round(Number(rands) * 100);
-}
-
 function priceIsValid(rands: string): boolean {
-  const n = Number(rands);
-  return rands.trim() !== '' && Number.isFinite(n) && n >= 0;
+  return parseRandsToCents(rands) !== null;
 }
 
 /** The farm's herds that keep animals — a crop enterprise is not somewhere to file an animal. */
@@ -75,6 +71,7 @@ export function AddAnimalScreen() {
   const { activeFarm } = useAuth();
   const recordAnimal = useRecordAnimal();
   const recordPurchase = useRecordPurchase();
+  const brandingRegisters = useEffectiveBrandingRegisters();
 
   const herds = useMemo(() => livestockHerds(activeFarm?.enterprises ?? []), [activeFarm]);
   const speciesOptions = useMemo(
@@ -88,6 +85,8 @@ export function AddAnimalScreen() {
   const [breed, setBreed] = useState('');
   const [dob, setDob] = useState('');
   const [dobEstimated, setDobEstimated] = useState(false);
+  const [brandId, setBrandId] = useState('');
+  const [brandAppliedOn, setBrandAppliedOn] = useState('');
   // Where it came from (FR-106). "Bought" is not a different KIND of animal — it is the same herd
   // row plus a purchase event, which is why this lives here rather than on a screen of its own.
   // FR-107. Per-species, and the screen asks only what THIS species has: a wool class field on a
@@ -99,6 +98,7 @@ export function AddAnimalScreen() {
   const [acquiredOn, setAcquiredOn] = useState(farmToday);
   const [priceRands, setPriceRands] = useState('');
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -111,7 +111,13 @@ export function AddAnimalScreen() {
     : species || speciesOptions[0] || '';
 
   const today = farmToday();
+  const compatibleBrands = selectedSpecies
+    ? brandingRegisters.filter((register) => register.species.includes(selectedSpecies))
+    : [];
+  const selectedBrand = compatibleBrands.find((register) => register.id === brandId);
   const dobIsValid = dob === '' || dob <= today;
+  const brandIsValid =
+    selectedBrand === undefined || (brandAppliedOn !== '' && brandAppliedOn <= today);
   const purchaseIsValid =
     !bought ||
     (seller.trim() !== '' &&
@@ -135,9 +141,18 @@ export function AddAnimalScreen() {
     selectedSpecies === '' ||
     schemas.attributeSchemaFor(selectedSpecies).safeParse(attributes).success;
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid) return;
+    if (
+      !selectedSpecies ||
+      !dobIsValid ||
+      !brandIsValid ||
+      !purchaseIsValid ||
+      !attributesAreValid ||
+      saving
+    )
+      return;
+    setSaving(true);
 
     const occurredAt =
       bought && acquiredOn !== today ? new Date(`${acquiredOn}T12:00:00.000Z`) : new Date();
@@ -152,26 +167,35 @@ export function AddAnimalScreen() {
       dob: dob || null,
       dobEstimated: dob !== '' && dobEstimated,
       attributes,
+      brandId: selectedBrand?.id ?? null,
+      brandAppliedAt: selectedBrand ? brandAppliedOn : null,
       // A bought animal carries where it came from on the herd row too, because "who did I buy
       // this from" is asked of the ANIMAL, and an evidence pack reads `source`/`acquired_at`
       // rather than trawling the event log (FR-603).
       ...(bought ? { source: seller.trim(), acquiredAt: acquiredOn } : {}),
     });
-    recordAnimal(animal);
+    const saves: Promise<void>[] = [recordAnimal(animal)];
 
     // The money side (FR-106). A purchase changes no status — the animal arrived alive — so it is
     // an event about the animal, not a state it is in.
     if (bought) {
-      recordPurchase({
-        id: uuidv7(),
-        farmId: activeFarm.id,
-        animalId: animal.id,
-        occurredAt,
-        currentStatus: 'alive',
-        counterparty: seller.trim(),
-        priceCents: toCents(priceRands),
-      });
+      saves.push(
+        recordPurchase({
+          id: uuidv7(),
+          farmId: activeFarm.id,
+          animalId: animal.id,
+          occurredAt,
+          currentStatus: 'alive',
+          counterparty: seller.trim(),
+          // `purchaseIsValid` already gated `save` on `priceIsValid(priceRands)`.
+          priceCents: parseRandsToCents(priceRands)!,
+        }),
+      );
     }
+
+    // Not "saved" until every local write is durable (P1.1) — never before, and never gated on
+    // the network, which never appears in this path.
+    await Promise.all(saves);
 
     // Kept: herd/species, sex, and the seller — a farmer buying a truckload buys them from one
     // person. Cleared: the per-animal breed and price.
@@ -183,6 +207,7 @@ export function AddAnimalScreen() {
     // carrying the last one forward would quietly stamp it on the next fifty head.
     setHornStatus('');
     setWoolClass('');
+    setSaving(false);
     setJustSaved(true);
   };
 
@@ -394,6 +419,62 @@ export function AddAnimalScreen() {
           </div>
         )}
 
+        {/* FR-602. The link is written on the animal row in the same offline commit; the outbox
+            sends a newly captured register before the animal FK. Only marks whose certificate
+            covers this species are offered. */}
+        {compatibleBrands.length > 0 ? (
+          <>
+            <div className="mb-4 flex flex-col">
+              <label htmlFor="brand" className="mb-1 text-label uppercase text-soil-700">
+                {t('animals.new.brand')}
+              </label>
+              <select
+                id="brand"
+                value={selectedBrand?.id ?? ''}
+                onChange={(event) => {
+                  setJustSaved(false);
+                  setBrandId(event.target.value);
+                  if (event.target.value !== '' && brandAppliedOn === '') setBrandAppliedOn(today);
+                }}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+              >
+                <option value="">{t('animals.new.noBrand')}</option>
+                {compatibleBrands.map((register) => (
+                  <option key={register.id} value={register.id}>
+                    {register.mark}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedBrand && (
+              <div className="mb-4 flex flex-col">
+                <label htmlFor="brand-applied" className="mb-1 text-label uppercase text-soil-700">
+                  {t('animals.new.brandApplied')}
+                </label>
+                <input
+                  id="brand-applied"
+                  type="date"
+                  max={today}
+                  value={brandAppliedOn}
+                  onChange={(event) => {
+                    setJustSaved(false);
+                    setBrandAppliedOn(event.target.value);
+                  }}
+                  required
+                  className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+                />
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="mb-4 text-body text-soil-700">
+            {t('animals.new.noRegisteredBrand')}{' '}
+            <Link to="/animals/brands" className="text-dam-700 underline">
+              {t('animals.new.registerBrand')}
+            </Link>
+          </p>
+        )}
+
         {/* FR-106. Off by default: most animals on a farm were born there, and asking every
             capture where it came from would tax the common case to serve the rarer one. */}
         <div className="mb-4">
@@ -473,7 +554,9 @@ export function AddAnimalScreen() {
 
         <button
           type="submit"
-          disabled={!selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid}
+          disabled={
+            !selectedSpecies || !dobIsValid || !purchaseIsValid || !attributesAreValid || saving
+          }
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
           {justSaved ? t('animals.new.another') : t('animals.new.save')}

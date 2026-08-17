@@ -28,7 +28,7 @@ STRIDE, scoped to what is real here.
 
 | Threat | Vector | Control |
 |---|---|---|
-| **Spoofing** | Credential stuffing | Argon2id · rate limit 10/min/IP · **passkey/TOTP mandatory for owner+bookkeeper** (FR-014, §3.5) · breach-list check at registration |
+| **Spoofing** | Credential stuffing | Google/passkey target · Argon2id during migration · layered burst/account/edge throttles · **passkey/TOTP mandatory for owner+bookkeeper** (FR-014, §3.5) · compromised-password screening before password onboarding can be launchable |
 | | **SIM swap** 🇿🇦 | **SMS is never a second factor.** Industrialised in SA. See §3.5 and [ADR-0007](../03-architecture/adr/ADR-0007-authentication.md). |
 | | Session theft | 15-min access token · rotating single-use refresh · bind to device fingerprint |
 | **Tampering** | Client forges a sync write | **Client writes route through the API** — RLS + business rules apply regardless of path ([architecture.md §3](../03-architecture/architecture.md)) |
@@ -157,11 +157,11 @@ A test asserts that an event containing a 13-digit number never leaves. It runs 
 | A01 Broken access control | Three layers (§3.2) · tenancy suite · `FORCE ROW LEVEL SECURITY` |
 | A02 Cryptographic failures | §3.1 · TLS 1.3 · Argon2id · column encryption |
 | A03 Injection | Drizzle parameterised · Zod on every boundary · raw SQL needs review |
-| A04 Insecure design | This document · ADRs · pen test at Phase 5 |
+| A04 Insecure design | This document · ADRs · pen test at Phase 7 |
 | A05 Misconfiguration | Terraform · no console changes · `terraform plan` in CI |
 | A06 Vulnerable components | `pnpm audit` blocks on critical · Dependabot |
 | A07 Auth failures | Rate limits · TOTP · rotating refresh · breach-list check |
-| A08 Integrity failures | Signed images · `--frozen-lockfile` · SLSA provenance (Phase 6) |
+| A08 Integrity failures | Signed images · `--frozen-lockfile` · SLSA provenance (Phase 7) |
 | A09 Logging failures | Structured logs · audit log · **PII deny-list, tested** |
 | A10 SSRF | No user-supplied URLs fetched server-side. If this changes, allowlist. |
 
@@ -179,7 +179,7 @@ Detail in [legal-compliance.md](../00-business/legal-compliance.md). The securit
 | s26 | Special personal information | **No biometrics in v1** · health data role-restricted · **no suspect field** |
 | s72 | Transborder flows | §3.4 |
 
-**On s22 and "identify affected data subjects fast":** this is an engineering requirement hiding in a legal clause. When a breach happens, we have hours to answer "whose data?" — and if that answer requires a bespoke query written under pressure at 2am, we will get it wrong. Build the query in Phase 5. Test it in the restore drill.
+**On s22 and "identify affected data subjects fast":** this is an engineering requirement hiding in a legal clause. When a breach happens, we have hours to answer "whose data?" — and if that answer requires a bespoke query written under pressure at 2am, we will get it wrong. Build the query in Phase 6. Test it in the restore drill.
 
 ---
 
@@ -234,13 +234,13 @@ DETECT ──▶ CONTAIN ──▶ ASSESS ──▶ NOTIFY ──▶ RECOVER ─
 
 **The s22 notification is not optional and it is not discretionary based on how bad it looks.** Where there are reasonable grounds to believe personal information was accessed by an unauthorised person, the Regulator and each affected data subject are notified. Notification to the data subject must be in writing and describe the possible consequences and what we intend to do.
 
-For a farm worker, "in writing" means **in a language they read**, delivered somehow — and their contact details may be their employer's records. Work this out in Phase 5, not during the incident.
+For a farm worker, "in writing" means **in a language they read**, delivered somehow — and their contact details may be their employer's records. Work this out in Phase 6, not during the incident.
 
 ---
 
 ## 8. Pre-launch security gate
 
-Phase 5. Every line must be true.
+Phase 7. Every line must be true.
 
 ```
 ✓ External penetration test: 0 critical, 0 high
@@ -302,12 +302,22 @@ A running record of what the auth work actually changed, and what it has NOT yet
 | `TwoFactorService.*` | TOTP seeds and recovery-code hashes are credential state no request path may read; verification runs before there is a session to scope by |
 | `PasskeyService.*` | Same, plus `webauthn_challenges` is granted nothing on `werf_app`; the ceremony resolves a credential before the session exists |
 | `RecoveryCodeService.*` | Reads and consumes `users.recovery_codes_hashed`, which `werf_app` must never see |
+| Auth audit writes in `AuthService` / `FarmsService` / `SessionService` | `auth_audit_log` is intentionally unreachable from `werf_app`; pre-auth failures also have no user whose RLS scope could authorise them |
 
 `createFarm` and `invite` both authorise the caller through the **RLS-bound** path first, so the elevated write is only ever reached by someone RLS already agreed is an owner. That ordering is the control; reversing it would be a silent privilege escalation.
 
 **`user_sessions` is doubly unreachable from the request path.** RLS is `ENABLE`d and `FORCE`d with *zero policies*, and `werf_app` is granted nothing (`migrations/0003`). Either lock alone would suffice; both exist so that a future stray `GRANT` is not the difference between a leak and no leak. `@werf/sync` classifies it `server-only`, so sync and RLS agree by both saying "never".
 
-**Refresh-token rotation with family reuse detection.** Single-use; replaying a spent token revokes the entire lineage. The revocation is deliberately committed *outside* the transaction that rejects the request — issuing it inside means the rollback silently undoes it and the stolen family keeps working. This was a real bug, caught by its own test.
+**Refresh-token rotation with family reuse detection.** Single-use; replaying a spent token revokes the entire lineage. The revocation and its immutable auth audit row commit together, and the request is rejected only afterwards — throwing inside that transaction would roll both back and leave the stolen family working. This was a real bug, caught by its own test.
+
+**Authentication evidence is immutable and server-only (`migrations/0028`).** `auth_audit_log`
+records login success/challenge/failure, logout, farm switch, invitation and refresh-token reuse
+detection. It deliberately accepts a null user/farm for an unknown-address attempt instead of
+storing the address; controlled metadata contains reasons/methods/roles, never request bodies,
+passwords, email addresses, refresh/challenge tokens or WebAuthn material. Individual session and
+stable rotation-family ids retain provenance after refresh. The ordinary app role has no table or
+sequence privilege and zero RLS policies; PowerSync classifies the table `server-only`; and an
+elevated integration test proves both `UPDATE` and `DELETE` are rejected.
 
 **Half-authenticated sessions cannot act.** A session whose `second_factor_at` is null is rejected by both `SessionService.rotate` and `findLive`, so the login challenge token can only be spent at the 2FA step. Without this, the challenge token (which *is* a refresh token) could be presented to `/auth/refresh` for a full access token — ADR-0007's "2FA at login" would have been decorative.
 
@@ -341,22 +351,23 @@ Counter handling is split deliberately: **rollback** (the cloned-credential sign
 
 ### 10.2 Open — NOT yet implemented, and load-bearing
 
-> These are gaps, not accepted risks. None may survive to the Phase 5 gate (§8).
+> These are gaps, not accepted risks. None may survive to the Phase 7 launch gate (§8). A closed
+> application control remains listed when a separate edge/operational layer is still outstanding.
 
 | Gap | Consequence today | Where it lands |
 |---|---|---|
-| **No rate limiting** on login, refresh, register, or `/auth/2fa/verify` | Online password guessing is unthrottled; argon2's cost is the only brake, and register is a trivial resource-exhaustion vector. For 2FA the challenge is now spent per attempt, so guessing costs a full password round trip — but there is still no lockout, no backoff and **no signal to the account owner** that anyone is trying | Before any deployment reachable from the internet |
-| **A stolen session can ADD a second factor** — a passkey via `POST /auth/2fa/passkey`, *or TOTP* via `POST /auth/2fa/totp`. Neither has a step-up check, and both are reachable pre-enrolment. The refusal on TOTP re-enrolment only fires when TOTP is *already* enrolled, so a passkey-only account has an open TOTP door | An attacker who steals a live session can plant a second, persistent credential. A planted passkey is at least visible in the device list and revocable (FR-014c); a planted TOTP seed is visible nowhere and there is no disenrolment path at all | Step-up re-authentication before enrolling *any* factor |
+| ~~**No application rate limiting** on auth routes.~~ **PARTIALLY CLOSED 2026-08-09.** Nest global throttles and tighter login/register/refresh/2FA/WebAuthn budgets are implemented and pinned by tests | A single instance now resists bursts, but in-process counters do not coordinate replicas or survive restart. Carrier NAT also makes IP-only limits unsafe as the sole control | Before internet deployment: shared Redis-backed limits, per-account exponential delay, WAF/bot rules, alerting and an emergency tuning runbook |
+| ~~**A stolen session can ADD a second factor.**~~ **CLOSED 2026-08-15.** Starting either TOTP or passkey enrolment now requires a human authentication no older than 10 minutes. Session refresh carries the original `authenticated_at`, so it cannot renew that proof; a stale caller gets 403 `STEP_UP_REQUIRED`, and the client clears the old session and performs a full login (offering the phishing-resistant passkey first when enrolled, with ADR-0011's transitional TOTP/recovery fallback) | A credential still may be added by an attacker who steals a session inside the deliberately short post-login window; this is the ordinary residual risk of recent-auth gates, not the former 30-day planting window | P3.11 closed; Google/passkey-first primary authentication remains P3.12 and immutable auth events remain P3.16 |
 | **No TOTP disenrolment, and no 2FA reset path.** Re-enrolling TOTP over a live factor is refused (a stolen session must not swap the factor out), and FR-014b's support-channel reset with its 48h delay is deferred | A farmer who loses their phone **and** all ten recovery codes cannot be recovered by us at all. Passkeys can at least be revoked individually | FR-014b, later phase |
-| **Nothing purges spent WebAuthn challenges.** The `expires_at` index exists; the sweep does not | Consumed rows accumulate for the life of an account and slow the per-user scan on the ceremony hot path | With the session-expiry sweep |
-| **`WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` default to localhost** rather than refusing to boot, unlike `JWT_SECRET` and `PII_ENCRYPTION_KEY` | A deploy missing them fails *closed* — the browser rejects the RP ID mismatch — so this is not a security hole, but it surfaces as "passkeys are broken in production" rather than as a boot failure | Make them required when `NODE_ENV=production` |
-| **`users` grants are table-wide, not column-level** (`migrations/0001`). `werf_app` holds `SELECT, INSERT, UPDATE` on all of `users` | Nothing exploits it today — every credential path is elevated and bound to the acting user — but the app role *can* read a co-member's encrypted seed and rewrite its own `totp_last_used_step`. The separation is convention, not a grant. One future `PATCH /me` doing `set(body)` on the app connection is a self-service replay-guard reset | Column-level `GRANT`/`REVOKE` in a follow-up migration |
-| **`POST /auth/register` is an account-enumeration oracle.** It answers 409 `That email address is already registered` for a real account, while login and `invite` are meticulously equalised | Anyone can test an address and learn whether that person banks with us — the exact disclosure §10.1's enumeration-resistance paragraph claims we prevent. Registration genuinely has to tell an honest user their address is taken, so the fix is email verification (answer identically, send a mail that differs), not a vaguer message | With invitation/verification delivery; rate limiting narrows it meanwhile |
-| **`invite` reuses a soft-deleted user row.** The lookup filters on email only, not `deleted_at IS NULL` | An erased identity (POPIA) is pulled back into a farm as a live membership and reappears in co-member lists. The account still cannot log in — `login` filters `deleted_at` — so this is a disclosure and a data-lifecycle defect, not an access one | Filter `deleted_at` in the invite lookup; decide whether re-inviting an erased person is allowed at all |
-| **No auth audit log.** Logins, failures, farm switches, invitations and reuse-detected revocations write no audit row | A breach cannot be reconstructed, and §7's "whose data?" query has nothing to read. `.claude/rules/db.md` requires an audit row for every conflict resolution; auth events deserve the same | With the audit-log table |
-| **No `helmet`, no CORS policy, no CSP** on the API | Default Express headers | Before deployment |
-| **No client passkey enrolment.** The API ceremonies are complete and tested; the client enrols TOTP only | A farmer satisfies FR-014 with an authenticator app, never with the fingerprint ADR-0007 prefers. The enrolment-rate risk the ADR names as its own falsification condition is untested in the field | Passkey client slice |
-| **Session tokens are in `localStorage`** (via the `packages/sync` adapter) | Readable by any script that achieves XSS on the origin. Mitigated today by there being no user-generated HTML anywhere in the app and no third-party scripts, but a CSP is still absent (row above) and the refresh token is a 30-day credential | Revisit with the CSP; consider a worker-held token or httpOnly cookies for the refresh token |
+| ~~**Nothing purges spent WebAuthn challenges.**~~ **CLOSED 2026-08-15.** `WebauthnChallengeSweepService` runs the same one-minute `@Cron` cadence as `MembershipExpiryService`, hard-deleting any row that is consumed or past `expires_at` — this table carries no `deleted_at` and is exempt from the tombstone rule for the same reason `user_sessions` is | None — the index this sweep uses already existed; only the job was missing | P3.16 |
+| ~~**`WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN` default to localhost** rather than refusing to boot.~~ **CLOSED 2026-08-15.** `loadConfig` now refuses to boot when `NODE_ENV=production` and either is unset, checked against the raw env values (not the parsed defaults), naming exactly which is missing | None — this was a diagnosability gap, not a security hole (the browser already fails closed on an RP ID/origin mismatch) | P3.16 |
+| ~~**`users` grants are table-wide, not column-level** (`migrations/0001`).~~ **CLOSED 2026-08-16.** Migration 0029 narrows `werf_app`'s grant on `users` to the 10 non-credential columns; an audit found zero production paths touching `users` via the scoped connection at all, so only the grant changed | None — the app role can no longer read a co-member's encrypted seed or rewrite `totp_last_used_step` via the scoped connection | P3.16 |
+| **`POST /auth/register` is an account-enumeration oracle.** It answers 409 `That email address is already registered` for a real account, while login and `invite` are meticulously equalised | Anyone can test an address and learn whether that person banks with us — the exact disclosure §10.1's enumeration-resistance paragraph claims we prevent. Registration genuinely has to tell an honest user their address is taken, so the fix is email verification (answer identically, send a mail that differs), not a vaguer message | **Deferred to Phase 7 hardening (owner decision, 2026-08-16)** — rate limiting narrows the gap meanwhile; the `Mailer`/SMTP port already exists (built for invitations), so this is a scheduling choice, not an infra blocker |
+| ~~**`invite` reuses a soft-deleted user row.**~~ **CLOSED 2026-08-15.** A tombstoned identity now refuses the invite outright (`ConflictError`), mirroring `AuthService.register`'s existing precedent for the same row shape, rather than reviving it or falling through to an insert that would hit `users.email`'s UNIQUE constraint | None for the disclosure. Whether an erased person may ever be re-invited at all (a fresh row, a new address) is a separate product decision, not yet asked | P3.16 |
+| ~~**No auth audit log.**~~ **CLOSED 2026-08-15.** Migration 0028 adds immutable, server-only `auth_audit_log`; login success/challenge/failure, logout, farm switch, invitation and reuse-detected family revocation write controlled evidence. No email, password, token, challenge or credential enters the row | None for application event capture. Operational export/alerting over these rows still belongs to the Phase 7 monitoring work | P3.16 |
+| ~~**No security headers or CSP.**~~ **PARTIALLY CLOSED 2026-08-09.** Helmet now protects API responses, the static PWA has a strict no-inline CSP/header baseline, and the pre-paint theme script is external. The deployment layer must reproduce and test these headers; `connect-src` must name only the exact PowerSync origin when 3b connects it | A source file is not proof that CloudFront/Cloudflare emitted the header. CSP reduces XSS impact but does not cure unsafe rendering or compromised dependencies | Header assertions in deployed-environment tests; CSP reporting and production PowerSync origin in 3b/Phase 7 |
+| ~~**No client passkey enrolment.**~~ **CLOSED.** The client can enrol, authenticate with, list and revoke labelled passkeys; lost-device and last-factor states are covered by user-visible tests | Pilot adoption and recovery behaviour still need real-device evidence | Phase 7 device/pilot matrix |
+| ~~**Session tokens are in `localStorage`.**~~ **CLOSED FOR THE ROTATING CREDENTIAL 2026-08-09.** Refresh/session rotation uses a host-only HttpOnly cookie; auth responses no longer expose refresh tokens; durable browser storage keeps only a non-secret offline identity/farm projection. A 15-minute access token remains in React memory during the BFF migration | This removes the long-lived XSS-readable prize, not the effect of XSS itself. Same-origin script can still act as the user and read the interim memory token | ADR-0011: CSP/headers now; complete cookie-mediated BFF plus Origin/CSRF checks before broad cookie-authenticated mutations |
 | ~~**Invitation delivery does not exist.**~~ **CLOSED.** An invitation by email is now delivered through the `Mailer` port (`apps/api/src/mail`), configured by `SMTP_*` env vars. A PHONE-ONLY invitation still reaches nobody, deliberately: SMS is ruled out for the same SIM-swap reason it is ruled out as a second factor, and an invitation link is a credential-shaped thing | A phone-only invitation is handed over in person. The email is best-effort — the pending membership is the durable fact and survives a failed relay | Phone invitations need a channel decision, not a fallback to SMS |
 | **JWT signing is a single HS256 secret** with no rotation story | Key rotation requires invalidating every live access token | Before launch |
 | **`AuthContext.activeFarmId` is advisory**, not re-checked against membership at guard time | Safe today because every `FarmsService` method re-checks membership under RLS. It *looks* authoritative, and the next feature to trust it introduces a hole | Intersect with `app_user_farm_ids()` at the guard, or rename it |

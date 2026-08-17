@@ -12,11 +12,14 @@ import { inflateSync } from 'node:zlib';
 import type { input as ZodInput } from 'zod';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
+  attachments,
+  auditLog,
   brandingRegisters,
+  conflictReviews,
   createAppDb,
   createElevatedDb,
   enterprises,
@@ -50,11 +53,23 @@ import { TwoFactorService } from '../auth/two-factor.service';
 import { PasskeyService } from '../auth/passkey.service';
 import { RecoveryCodeService } from '../auth/recovery-code.service';
 import { LivestockService } from './livestock.service';
+import { ConflictsService } from '../conflicts/conflicts.service';
 
 const BOOT_TIMEOUT_MS = 180_000;
 
 const registration = (label: string): schemas.RegisterRequest => ({
-  business: { name: `${label} Boerdery`, registrationNumber: null },
+  business: {
+    name: `${label} Boerdery`,
+    registrationNumber: null,
+    contact: { email: `${label.toLowerCase()}@example.test`, phone: null },
+    physicalAddress: {
+      line1: `${label} Plaas`,
+      line2: null,
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: `${label} Plaas`,
     province: 'Free State',
@@ -76,7 +91,7 @@ const weightBody = (
   over: Partial<ZodInput<typeof schemas.recordWeightRequestSchema>>,
 ): schemas.RecordWeightRequest =>
   schemas.recordWeightRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     occurredAt: '2026-07-20T06:00:00.000Z',
     kg: 412.5,
@@ -89,10 +104,23 @@ const animalBody = (
   over: Partial<ZodInput<typeof schemas.recordAnimalRequestSchema>>,
 ): schemas.RecordAnimalRequest =>
   schemas.recordAnimalRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     species: 'cattle',
     sex: 'female',
+    ...over,
+  });
+
+/** A registered identification mark composed offline (FR-601). */
+const brandingBody = (
+  over: Partial<ZodInput<typeof schemas.newBrandingRegisterSchema>>,
+): schemas.NewBrandingRegister =>
+  schemas.newBrandingRegisterSchema.parse({
+    id: uuidv7(),
+    farmId: over.farmId,
+    mark: 'AM7',
+    markType: 'hot_brand',
+    species: ['cattle'],
     ...over,
   });
 
@@ -101,7 +129,7 @@ const deathBody = (
   over: Partial<ZodInput<typeof schemas.recordDeathRequestSchema>>,
 ): schemas.RecordDeathRequest =>
   schemas.recordDeathRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -114,7 +142,7 @@ const saleBody = (
   over: Partial<ZodInput<typeof schemas.recordSaleRequestSchema>>,
 ): schemas.RecordSaleRequest =>
   schemas.recordSaleRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -128,7 +156,7 @@ const treatmentBody = (
   over: Partial<ZodInput<typeof schemas.recordTreatmentRequestSchema>>,
 ): schemas.RecordTreatmentRequest =>
   schemas.recordTreatmentRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -142,7 +170,7 @@ const vaccinationBody = (
   over: Partial<ZodInput<typeof schemas.recordVaccinationRequestSchema>>,
 ): schemas.RecordVaccinationRequest =>
   schemas.recordVaccinationRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -156,7 +184,7 @@ const dipBody = (
   over: Partial<ZodInput<typeof schemas.recordDipRequestSchema>>,
 ): schemas.RecordDipRequest =>
   schemas.recordDipRequestSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     animalId: over.animalId,
     occurredAt: '2026-07-20T06:00:00.000Z',
@@ -170,7 +198,7 @@ const theftIncidentBody = (
   over: Partial<ZodInput<typeof schemas.newTheftIncidentSchema>>,
 ): schemas.NewTheftIncident =>
   schemas.newTheftIncidentSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     farmId: over.farmId,
     discoveredAt: '2026-07-24T04:00:00.000Z',
     headCount: 2,
@@ -183,6 +211,7 @@ describe('weight capture (FR-140)', () => {
   let elevated: ElevatedDb;
   let auth: AuthService;
   let service: LivestockService;
+  let conflicts: ConflictsService;
 
   beforeAll(async () => {
     pg = await startWerfTestDatabase();
@@ -199,6 +228,7 @@ describe('weight capture (FR-140)', () => {
         PasskeyService,
         RecoveryCodeService,
         LivestockService,
+        ConflictsService,
         {
           provide: APP_CONFIG,
           useValue: {
@@ -216,6 +246,7 @@ describe('weight capture (FR-140)', () => {
 
     auth = moduleRef.get(AuthService);
     service = moduleRef.get(LivestockService);
+    conflicts = moduleRef.get(ConflictsService);
   }, BOOT_TIMEOUT_MS);
 
   afterEach(async () => {
@@ -446,6 +477,93 @@ describe('weight capture (FR-140)', () => {
         service.recordAnimal(viewer!.id, animalBody({ farmId: a.farmId })),
       ).rejects.toThrow(TenancyError);
     });
+
+    // ⭐ 3i(d): `photo_key` is Phase 2 leftover — STATUS.md's own record says Phase 2 "stores no
+    // photo and claims none until that slice lands", and nothing in apps/web/src ever sets it. The
+    // 3i attachments table is a SEPARATE mechanism (metadata + OPFS blob + presigned upload); a
+    // null photo_key must stay null, and creating an animal must never invent an attachments row
+    // to "migrate" a photo that was never captured.
+    it('⭐ 3i(d): an animal created with no photo carries a null photo_key and no attachments row is invented', async () => {
+      const a = await tenant('Alpha');
+
+      const created = await service.recordAnimal(a.userId, animalBody({ farmId: a.farmId }));
+
+      expect(created.photoKey).toBeNull();
+      const [row] = await elevated.db.select().from(animals).where(eq(animals.id, created.id));
+      expect(row!.photoKey).toBeNull();
+
+      const linkedAttachments = await elevated.db
+        .select()
+        .from(attachments)
+        .where(eq(attachments.subjectId, created.id));
+      expect(linkedAttachments).toHaveLength(0);
+    });
+  });
+
+  describe('branding register creation (FR-601)', () => {
+    it('stores the certificate details under the farm jurisdiction and authenticated author', async () => {
+      const a = await tenant('Alpha');
+
+      const created = await service.createBrandingRegister(
+        a.userId,
+        brandingBody({
+          farmId: a.farmId,
+          bodyPosition: 'left hip',
+          certificateReference: 'AIS-2026-0042',
+          registeredAt: '2026-07-01',
+        }),
+      );
+
+      expect(created).toMatchObject({
+        farmId: a.farmId,
+        jurisdiction: 'ZA',
+        mark: 'AM7',
+        bodyPosition: 'left hip',
+        certificateReference: 'AIS-2026-0042',
+        createdBy: a.userId,
+      });
+    });
+
+    it('is idempotent on the client id and invisible to a stranger', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const body = brandingBody({ farmId: a.farmId });
+
+      const first = await service.createBrandingRegister(a.userId, body);
+      const again = await service.createBrandingRegister(a.userId, body);
+      expect(again.id).toBe(first.id);
+
+      await expect(service.createBrandingRegister(b.userId, body)).rejects.toThrow(NotFoundError);
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(brandingRegisters));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('returns a permanent validation refusal for a mark the jurisdiction DB rule rejects', async () => {
+      const a = await tenant('Alpha');
+      await expect(
+        service.createBrandingRegister(a.userId, brandingBody({ farmId: a.farmId, mark: 'FOUR' })),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses to link an animal to a mark whose certificate does not cover its species', async () => {
+      const a = await tenant('Alpha');
+      const sheepMark = await service.createBrandingRegister(
+        a.userId,
+        brandingBody({ farmId: a.farmId, species: ['sheep'] }),
+      );
+
+      await expect(
+        service.recordAnimal(
+          a.userId,
+          animalBody({
+            farmId: a.farmId,
+            species: 'cattle',
+            brandId: sheepMark.id,
+            brandAppliedAt: '2026-07-01',
+          }),
+        ),
+      ).rejects.toThrow(/does not cover/i);
+    });
   });
 
   // ── Mobs (FR-102) ───────────────────────────────────────────────────────────────────
@@ -492,7 +610,7 @@ describe('weight capture (FR-140)', () => {
   describe('mob creation (FR-102)', () => {
     const mobBody = (over: Partial<schemas.NewMob> & { farmId: string }): schemas.NewMob =>
       schemas.newMobSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         name: 'Flock A',
         species: 'sheep',
         headCount: 300,
@@ -610,7 +728,14 @@ describe('weight capture (FR-140)', () => {
       ).rejects.toThrow(NotFoundError);
 
       await expect(
-        service.recordAnimal(a.userId, animalBody({ farmId: a.farmId, brandId: bravosBrand!.id })),
+        service.recordAnimal(
+          a.userId,
+          animalBody({
+            farmId: a.farmId,
+            brandId: bravosBrand!.id,
+            brandAppliedAt: '2026-07-01',
+          }),
+        ),
       ).rejects.toThrow(NotFoundError);
 
       const rows = await app.asUser(a.userId, (tx) => tx.select().from(animals));
@@ -644,6 +769,42 @@ describe('weight capture (FR-140)', () => {
       const rows = await elevated.db.select().from(mobs);
       expect(rows).toHaveLength(0);
     });
+
+    // ── 3g: additive migrations must not break a device that queued a write BEFORE the
+    // migration shipped and flushes it AFTER (db.md: "Additive-only... A farmer offline for six
+    // weeks will sync writes composed against a schema from two releases ago").
+    it('⭐ 3g: an OLD client that never heard of migration 0018 still lands correctly today', async () => {
+      // The exact shape a pre-0018 app build would have sent: `initialHeadCount` did not exist in
+      // its request schema, so its serialised JSON never carried the key at all — not `undefined`,
+      // genuinely absent, as `JSON.stringify` on an object that never had the field would produce.
+      const oldClientJson: Record<string, unknown> = {
+        id: uuidv7(),
+        farmId: undefined, // set below, once the farm exists
+        name: 'Pre-0018 Flock',
+        species: 'sheep',
+        headCount: 250,
+      };
+      const a = await tenant('Alpha');
+      oldClientJson['farmId'] = a.farmId;
+
+      // Today's schema (post-0018) still accepts the old shape — `initialHeadCount` defaults, it
+      // is never required of the client.
+      const parsed = schemas.newMobSchema.parse(oldClientJson);
+      expect(parsed.initialHeadCount).toBeNull();
+
+      const mob = await service.recordMob(a.userId, parsed);
+
+      // `recordMob` derives the baseline from `headCount`, the field every app version — old and
+      // new — has always sent; it never reads the client's `initialHeadCount` (livestock.service.ts
+      // recordMob's own comment: "taken from the count that was captured, not from the body's own
+      // initialHeadCount"). So the row lands correct even though the request that produced it could
+      // not possibly have populated the column 0018 added.
+      expect(mob.headCount).toBe(250);
+      expect(mob.initialHeadCount).toBe(250);
+
+      const [row] = await elevated.db.select().from(mobs).where(eq(mobs.id, parsed.id));
+      expect(row!.initialHeadCount).toBe(250);
+    });
   });
 
   // ── A mob's head count can change, and says why (FR-102) ────────────────────────────
@@ -655,7 +816,7 @@ describe('weight capture (FR-140)', () => {
       },
     ): schemas.RecordMobTallyRequest =>
       schemas.recordMobTallyRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         occurredAt: '2026-07-14T05:30:00.000Z',
         reason: 'death',
         count: 3,
@@ -885,7 +1046,7 @@ describe('weight capture (FR-140)', () => {
 
       await expect(
         schemas.recordMobTallyRequestSchema.parseAsync({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-14T05:30:00.000Z',
@@ -1018,7 +1179,7 @@ describe('weight capture (FR-140)', () => {
       const calf = await anAnimal(a.farmId);
 
       const birth = await service.recordBirth(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId: dam,
         occurredAt: new Date('2026-08-14T05:30:00.000Z'),
@@ -1041,7 +1202,7 @@ describe('weight capture (FR-140)', () => {
 
       await expect(
         service.recordBirth(a.userId, {
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: new Date(),
@@ -1057,7 +1218,7 @@ describe('weight capture (FR-140)', () => {
       const animalId = await anAnimal(a.farmId);
 
       const weaning = await service.recordWeaning(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId,
         occurredAt: new Date('2026-09-01T08:00:00.000Z'),
@@ -1080,7 +1241,7 @@ describe('weight capture (FR-140)', () => {
       const animalId = await anAnimal(a.farmId);
 
       const purchase = await service.recordPurchase(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId,
         occurredAt: new Date('2026-05-04T09:00:00.000Z'),
@@ -1098,7 +1259,7 @@ describe('weight capture (FR-140)', () => {
       const lastSeen = JSON.stringify({ type: 'Point', coordinates: [26.21, -29.12] });
 
       const missing = await service.recordMissing(a.userId, {
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId,
         occurredAt: new Date('2026-06-18T16:00:00.000Z'),
@@ -1122,7 +1283,7 @@ describe('weight capture (FR-140)', () => {
 
       await expect(
         service.recordMissing(a.userId, {
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId,
           occurredAt: new Date(),
@@ -1141,7 +1302,7 @@ describe('weight capture (FR-140)', () => {
       },
     ): schemas.RecordMoveRequest =>
       schemas.recordMoveRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         occurredAt: '2026-04-02T06:00:00.000Z',
         ...over,
       });
@@ -1368,7 +1529,7 @@ describe('weight capture (FR-140)', () => {
       over: Partial<schemas.NewAnimalIdentifier> & { farmId: string; animalId: string },
     ): schemas.NewAnimalIdentifier =>
       schemas.newAnimalIdentifierSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         type: 'visual_tag',
         value: '4021',
         ...over,
@@ -1949,7 +2110,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: member!.id,
           occurredAt: '2026-07-21T06:00:00.000Z',
@@ -2003,7 +2164,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: newcomer!.id,
           occurredAt: '2026-07-21T06:00:00.000Z',
@@ -2051,7 +2212,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: member!.id,
           occurredAt: '2026-07-20T08:00:00.000Z',
@@ -2108,7 +2269,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: member!.id,
           occurredAt: '2026-07-20T12:00:00.000Z',
@@ -2163,7 +2324,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: early!.id,
           occurredAt: '2026-07-19T14:00:00.000Z',
@@ -2223,7 +2384,7 @@ describe('weight capture (FR-140)', () => {
         service.recordDeath(
           a.userId,
           schemas.recordDeathRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             animalId,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2237,7 +2398,7 @@ describe('weight capture (FR-140)', () => {
       const died = await service.recordDeath(
         a.userId,
         schemas.recordDeathRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: other,
           occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2251,7 +2412,7 @@ describe('weight capture (FR-140)', () => {
       const slaughtered = await service.recordDeath(
         a.userId,
         schemas.recordDeathRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId,
           occurredAt: '2026-08-17T06:00:00.000Z',
@@ -2298,7 +2459,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: mob!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2312,7 +2473,7 @@ describe('weight capture (FR-140)', () => {
       const after = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: mob!.id,
           occurredAt: '2026-08-17T06:00:00.000Z',
@@ -2361,7 +2522,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: ox!.id,
           occurredAt: '2026-07-22T06:00:00.000Z',
@@ -2373,7 +2534,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: oxen!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2459,7 +2620,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: flock!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2474,7 +2635,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: flock!.id,
             occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2522,7 +2683,7 @@ describe('weight capture (FR-140)', () => {
       const died = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: flock!.id,
           occurredAt: '2026-08-16T06:00:00.000Z',
@@ -2535,7 +2696,7 @@ describe('weight capture (FR-140)', () => {
       const counted = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: flock!.id,
           occurredAt: '2026-08-16T07:00:00.000Z',
@@ -2653,7 +2814,7 @@ describe('weight capture (FR-140)', () => {
     const tally = (over: Partial<ZodInput<typeof schemas.recordMobTallyRequestSchema>>) => {
       const transfer = over.reason === 'transfer_out' || over.reason === 'transfer_in';
       return schemas.recordMobTallyRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         occurredAt: '2026-07-25T06:00:00.000Z',
         count: 40,
         ...(transfer ? { batchId: randomUUID() } : {}),
@@ -2786,7 +2947,7 @@ describe('weight capture (FR-140)', () => {
       const orphan = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: destination,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -2971,7 +3132,7 @@ describe('weight capture (FR-140)', () => {
       const tally = await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-08-16T06:00:00.000Z',
@@ -3182,7 +3343,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -3210,7 +3371,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-08-01T06:00:00.000Z',
@@ -3221,7 +3382,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-20T06:00:00.000Z',
@@ -3269,7 +3430,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: source,
           occurredAt: '2026-07-22T08:00:00.000Z',
@@ -3282,7 +3443,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: dest,
           occurredAt: '2026-07-22T08:00:00.000Z',
@@ -3312,7 +3473,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: dest,
             occurredAt: '2026-08-01T06:00:00.000Z',
@@ -3342,7 +3503,7 @@ describe('weight capture (FR-140)', () => {
         await service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: from,
             occurredAt: at,
@@ -3355,7 +3516,7 @@ describe('weight capture (FR-140)', () => {
         await service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: to,
             occurredAt: at,
@@ -3384,7 +3545,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMobTally(
           a.userId,
           schemas.recordMobTallyRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             mobId: one,
             occurredAt: '2026-08-01T06:00:00.000Z',
@@ -3420,7 +3581,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId: from,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -3457,7 +3618,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMobTally(
         a.userId,
         schemas.recordMobTallyRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           mobId,
           occurredAt: '2026-07-25T06:00:00.000Z',
@@ -3579,7 +3740,11 @@ describe('weight capture (FR-140)', () => {
           text += ' ';
         }
       }
-      return text;
+      // pdfkit wraps long lines mid-string (a long object key is exactly what does it), which
+      // splits one logical run across two `TJ` arrays and doubles up the space this loop inserts
+      // between them. Collapsed here so an assertion about the WORDS never has to know or care
+      // where the renderer happened to break a line.
+      return text.replace(/\s+/g, ' ');
     }
 
     it('creates an incident, links its animals, and stores the last-seen GPS mirror via the trigger', async () => {
@@ -3671,9 +3836,60 @@ describe('weight capture (FR-140)', () => {
       expect(pack).not.toHaveProperty('suspect');
     });
 
+    it('excludes an unlinked (soft-deleted) animal from the pack, not just from the list view', async () => {
+      // Migration 0025 added theft_incident_animals.deleted_at so a farmer can unlink an animal
+      // named in error and relink it later (the partial unique index in packages/db/src/schema/
+      // theft.ts exists for exactly this). The evidence pack is handed to the SAPS Stock Theft
+      // Unit under the reverse-onus Stock Theft Act — it must reflect the CURRENT link set, not
+      // every animal ever linked.
+      const a = await tenant('Alpha');
+      const kept = await anAnimalWithTrail(a.farmId);
+      const [unmarked] = await elevated.db
+        .insert(animals)
+        .values({ farmId: a.farmId, species: 'cattle', sex: 'female' })
+        .returning();
+      const unlinkedAnimalId = unmarked!.id;
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({
+          farmId: a.farmId,
+          headCount: 2,
+          animalIds: [kept.animalId, unlinkedAnimalId],
+        }),
+      );
+
+      await elevated.db
+        .update(theftIncidentAnimals)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            eq(theftIncidentAnimals.incidentId, incident.id),
+            eq(theftIncidentAnimals.animalId, unlinkedAnimalId),
+          ),
+        );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals.map((animal) => animal.animalId)).toEqual([kept.animalId]);
+    });
+
     it('renders the pack to a PDF a farmer can hand the Stock Theft Unit', async () => {
       const a = await tenant('Alpha');
       const { animalId } = await anAnimalWithTrail(a.farmId);
+      // A finalised attachment the renderer's caller did NOT verify/pass in below — the ordinary
+      // shape when `LivestockController` couldn't fetch or verify the bytes (object storage down,
+      // checksum mismatch). `renderEvidencePackPdf(pack)` with no second argument is exactly that.
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'a'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/heifer.jpg`,
+        status: 'finalised',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+      });
       const incident = await service.createTheftIncident(
         a.userId,
         theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
@@ -3693,6 +3909,124 @@ describe('weight capture (FR-140)', () => {
       expect(text).toContain('Treatment history');
       expect(text).toContain('image not attached to this pack');
       expect(text).not.toContain('Photograph on file: Yes');
+    });
+
+    it('P2.5: resolves the photo reference from the finalised attachment, never `animals.photo_key`', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'b'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/finalised.jpg`,
+        status: 'finalised',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+      });
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      // `anAnimalWithTrail` still sets the legacy `animals.photo_key` column (STATUS.md — a field
+      // nothing ever read); the pack must ignore it entirely and carry the ATTACHMENT's reference.
+      expect(pack.animals[0]).toMatchObject({
+        photoObjectKey: `farm/${a.farmId}/attachments/finalised.jpg`,
+        photoChecksumSha256Hex: 'b'.repeat(64),
+      });
+    });
+
+    it('P2.5: ignores a photo that never finished uploading', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'c'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/pending.jpg`,
+        status: 'pending',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+      });
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals[0]).toMatchObject({ photoObjectKey: null, photoChecksumSha256Hex: null });
+    });
+
+    it('P2.5: ignores a finalised photo that was later soft-deleted', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values({
+        farmId: a.farmId,
+        subjectType: 'animal',
+        subjectId: animalId,
+        mimeType: 'image/jpeg',
+        sizeBytes: 4,
+        checksum: 'd'.repeat(64),
+        objectKey: `farm/${a.farmId}/attachments/deleted.jpg`,
+        status: 'finalised',
+        occurredAt: new Date('2026-07-15T06:00:00.000Z'),
+        deletedAt: new Date('2026-07-16T00:00:00.000Z'),
+      });
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals[0]).toMatchObject({ photoObjectKey: null, photoChecksumSha256Hex: null });
+    });
+
+    it('P2.5: when an animal has more than one finalised photo, the pack carries the LATEST', async () => {
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      await elevated.db.insert(attachments).values([
+        {
+          farmId: a.farmId,
+          subjectType: 'animal',
+          subjectId: animalId,
+          mimeType: 'image/jpeg',
+          sizeBytes: 4,
+          checksum: 'e'.repeat(64),
+          objectKey: `farm/${a.farmId}/attachments/older.jpg`,
+          status: 'finalised',
+          occurredAt: new Date('2026-07-10T06:00:00.000Z'),
+        },
+        {
+          farmId: a.farmId,
+          subjectType: 'animal',
+          subjectId: animalId,
+          mimeType: 'image/jpeg',
+          sizeBytes: 4,
+          checksum: 'f'.repeat(64),
+          objectKey: `farm/${a.farmId}/attachments/newer.jpg`,
+          status: 'finalised',
+          occurredAt: new Date('2026-07-18T06:00:00.000Z'),
+        },
+      ]);
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+
+      expect(pack.animals[0]).toMatchObject({
+        photoObjectKey: `farm/${a.farmId}/attachments/newer.jpg`,
+        photoChecksumSha256Hex: 'f'.repeat(64),
+      });
     });
 
     it('⭐ carries the POSSESSION TRAIL — movements, and doses given to the animal AND its mob', async () => {
@@ -3742,7 +4076,7 @@ describe('weight capture (FR-140)', () => {
       await service.recordMove(
         a.userId,
         schemas.recordMoveRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId,
           occurredAt: '2026-07-14T06:00:00.000Z',
@@ -3876,7 +4210,7 @@ describe('weight capture (FR-140)', () => {
       const mating = await service.recordMating(
         a.userId,
         schemas.recordMatingRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-01-05T12:00:00.000Z',
@@ -3904,7 +4238,7 @@ describe('weight capture (FR-140)', () => {
       const mating = await service.recordMating(
         a.userId,
         schemas.recordMatingRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-01-05T12:00:00.000Z',
@@ -3935,7 +4269,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMating(
           a.userId,
           schemas.recordMatingRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             animalId: dam,
             occurredAt: '2026-01-05T12:00:00.000Z',
@@ -3955,7 +4289,7 @@ describe('weight capture (FR-140)', () => {
         service.recordMating(
           a.userId,
           schemas.recordMatingRequestSchema.parse({
-            id: randomUUID(),
+            id: uuidv7(),
             farmId: a.farmId,
             animalId: theirCow,
             occurredAt: '2026-01-05T12:00:00.000Z',
@@ -3978,7 +4312,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4006,7 +4340,7 @@ describe('weight capture (FR-140)', () => {
       // request schema had kept `dueDate`, hiding the very leak this exists to prevent. Parsing must
       // DROP the field outright.
       const parsed = schemas.recordPregnancyTestRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId: dam,
         occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4031,7 +4365,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4051,7 +4385,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: dam,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4079,7 +4413,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: doe,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4104,7 +4438,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: doe,
           occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4130,7 +4464,7 @@ describe('weight capture (FR-140)', () => {
       const test = await service.recordPregnancyTest(
         a.userId,
         schemas.recordPregnancyTestRequestSchema.parse({
-          id: randomUUID(),
+          id: uuidv7(),
           farmId: a.farmId,
           animalId: ewe,
           occurredAt: '2026-06-01T09:00:00.000Z',
@@ -4153,7 +4487,7 @@ describe('weight capture (FR-140)', () => {
       const a = await tenant('Alpha');
       const dam = await anAnimal(a.farmId);
       const body = schemas.recordPregnancyTestRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: a.farmId,
         animalId: dam,
         occurredAt: '2026-03-20T09:00:00.000Z',
@@ -4169,6 +4503,177 @@ describe('weight capture (FR-140)', () => {
         tx.select().from(events).where(eq(events.id, body.id)),
       );
       expect(seen).toHaveLength(1);
+    });
+  });
+
+  describe('offline conflict audit and review (US-040)', () => {
+    it('O-6 keeps both cross-device moves and uses the later farm time for the current camp', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const [campA, campB] = await elevated.db
+        .insert(landUnits)
+        .values([
+          { farmId: a.farmId, code: 'NORTH', name: 'North', kind: 'camp' },
+          { farmId: a.farmId, code: 'SOUTH', name: 'South', kind: 'camp' },
+        ])
+        .returning();
+      const laterId = uuidv7();
+      const earlierId = uuidv7();
+
+      // Later event arrives first; arrival order must not be mistaken for farm time.
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: laterId,
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-08-10T11:00:00.000Z',
+          toLandUnitId: campB!.id,
+        }),
+        randomUUID(),
+      );
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: earlierId,
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-08-10T10:00:00.000Z',
+          toLandUnitId: campA!.id,
+        }),
+        randomUUID(),
+      );
+
+      const [animal] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      const moves = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.animalId, animalId)),
+      );
+      const reviews = await conflicts.listOpen(a.userId, a.farmId);
+      const audits = await app.asUser(a.userId, (tx) => tx.select().from(auditLog));
+
+      expect(animal!.landUnitId).toBe(campB!.id);
+      expect(moves.map((row) => row.id).sort()).toEqual([earlierId, laterId].sort());
+      expect(reviews).toEqual([
+        expect.objectContaining({
+          kind: 'field_lww',
+          field: 'toLandUnitId',
+          winnerEventId: laterId,
+        }),
+      ]);
+      expect(audits[0]).toMatchObject({ action: 'field_lww', recordId: animalId });
+      expect(audits[0]!.facts).toHaveLength(2);
+      expect(audits[0]!.winner).toMatchObject({ eventId: laterId, value: campB!.id });
+    });
+
+    it('O-7 keeps possible duplicate births while a legitimate twin batch stays unflagged', async () => {
+      const a = await tenant('Alpha');
+      const dam = await anAnimal(a.farmId);
+      const calfA = await anAnimal(a.farmId);
+      const calfB = await anAnimal(a.farmId);
+      const firstId = uuidv7();
+      const secondId = uuidv7();
+      const body = (id: string, calfId: string, batchId: string) =>
+        schemas.recordBirthRequestSchema.parse({
+          id,
+          farmId: a.farmId,
+          animalId: dam,
+          batchId,
+          calfId,
+          occurredAt: '2026-08-10T06:00:00.000Z',
+          easeScore: 1,
+          multiples: 1,
+        });
+
+      await service.recordBirth(a.userId, body(firstId, calfA, uuidv7()), randomUUID());
+      await service.recordBirth(a.userId, body(secondId, calfB, uuidv7()), randomUUID());
+
+      const births = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.animalId, dam)),
+      );
+      expect(births).toHaveLength(2);
+      expect(births.every((row) => row.deletedAt === null)).toBe(true);
+      expect(await conflicts.listOpen(a.userId, a.farmId)).toEqual([
+        expect.objectContaining({ kind: 'possible_duplicate_birth', winnerEventId: null }),
+      ]);
+
+      await pg.reset();
+      const twinFarm = await tenant('Twin');
+      const twinDam = await anAnimal(twinFarm.farmId);
+      const twinA = await anAnimal(twinFarm.farmId);
+      const twinB = await anAnimal(twinFarm.farmId);
+      const batchId = uuidv7();
+      for (const calfId of [twinA, twinB]) {
+        await service.recordBirth(
+          twinFarm.userId,
+          schemas.recordBirthRequestSchema.parse({
+            id: uuidv7(),
+            farmId: twinFarm.farmId,
+            animalId: twinDam,
+            batchId,
+            calfId,
+            occurredAt: '2026-08-10T06:00:00.000Z',
+            easeScore: 1,
+            multiples: 2,
+          }),
+          randomUUID(),
+        );
+      }
+      expect(await conflicts.listOpen(twinFarm.userId, twinFarm.farmId)).toEqual([]);
+    });
+
+    it('O-8 keeps sale and death, projects dead, audits precedence, and preserves immutable evidence', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+      const death = await service.recordDeath(
+        a.userId,
+        deathBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-10T10:00:00.000Z' }),
+        randomUUID(),
+      );
+      const sale = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-10T14:00:00.000Z' }),
+        randomUUID(),
+      );
+
+      const [animal] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(animals).where(eq(animals.id, animalId)),
+      );
+      const facts = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.animalId, animalId)),
+      );
+      const queue = await conflicts.listOpen(a.userId, a.farmId);
+      const audits = await app.asUser(a.userId, (tx) => tx.select().from(auditLog));
+
+      expect(animal).toMatchObject({ status: 'dead', statusAt: death.occurredAt });
+      expect(facts.map((row) => row.id).sort()).toEqual([death.id, sale.id].sort());
+      expect(queue).toEqual([
+        expect.objectContaining({ kind: 'status_contradiction', winnerEventId: death.id }),
+      ]);
+      expect(audits[0]).toMatchObject({
+        action: 'status_contradiction',
+        winner: expect.objectContaining({ eventId: death.id, value: 'dead' }),
+      });
+
+      await expect(
+        app.asUser(a.userId, (tx) =>
+          tx.update(auditLog).set({ rule: 'rewritten' }).where(eq(auditLog.id, audits[0]!.id)),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        app.asUser(a.userId, (tx) => tx.delete(auditLog).where(eq(auditLog.id, audits[0]!.id))),
+      ).rejects.toThrow();
+
+      await conflicts.markReviewed(a.userId, queue[0]!.id, { farmId: a.farmId });
+      expect(await conflicts.listOpen(a.userId, a.farmId)).toEqual([]);
+      const [review] = await app.asUser(a.userId, (tx) => tx.select().from(conflictReviews));
+      expect(review).toMatchObject({ status: 'reviewed', reviewedBy: a.userId });
+      const afterReview = await app.asUser(a.userId, (tx) => tx.select().from(auditLog));
+      expect(afterReview.map((row) => row.action).sort()).toEqual([
+        'conflict_reviewed',
+        'status_contradiction',
+      ]);
     });
   });
 });

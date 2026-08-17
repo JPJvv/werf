@@ -78,3 +78,40 @@ jobs:
       # inner loop fast is what stops people skipping the gate.
       - name: E2E and accessibility
         run: pnpm test:e2e
+
+      # A red run with no trace is a red run diagnosed by guesswork (playwright.config.ts's own
+      # A8/A9 lesson). `retain-on-failure` already writes the trace/screenshot locally; nothing
+      # was ever uploading them off the runner, so every CI-only failure had to be reproduced
+      # blind. Failure-only and 7-day retention: this is a debugging aid, not an audit trail.
+      - name: Upload Playwright trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
+  dependency-audit:
+    name: Dependency audit (NFR-208)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # NFR-208 as written: "no known critical CVE in production". --prod scopes to production
+      # dependencies only — a devDependency-only vulnerability (e.g. one reachable solely through
+      # a local dev-server tool nobody runs in production) is a real finding worth tracking, but
+      # it is not what this gate promises, and failing the build on it would make the gate lie in
+      # the other direction the day someone "fixes" it by suppressing a true production alert to
+      # get back to green.
+      - name: Audit production dependencies
+        run: pnpm audit --audit-level=critical --prod

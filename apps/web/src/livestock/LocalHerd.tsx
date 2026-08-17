@@ -19,9 +19,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** What the local herd holds: animals composed offline with a client UUIDv7 (the `new` shape). */
 export type StoredAnimal = schemas.NewAnimal;
@@ -31,7 +33,11 @@ export type HerdStore = CaptureStore<StoredAnimal>;
 export type HerdStoreFactory = (key: string) => HerdStore;
 
 const defaultFactory: HerdStoreFactory = (key) =>
-  createCaptureStore<StoredAnimal>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredAnimal>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const HerdStoreContext = createContext<HerdStore | null>(null);
 
@@ -47,6 +53,7 @@ export function LocalHerdProvider({ children, factory = defaultFactory }: LocalH
   // always exists, but a keyless store would still be harmless (it just holds nothing).
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-herd:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <HerdStoreContext.Provider value={store}>{children}</HerdStoreContext.Provider>;
 }
@@ -63,8 +70,24 @@ export function useAnimals(): readonly StoredAnimal[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
-/** Commit an animal to the local herd. Synchronous; never awaits the network (NFR-007). */
-export function useRecordAnimal(): (animal: StoredAnimal) => void {
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useAnimals()` until this is true. */
+export function useAnimalsSettled(): boolean {
+  const store = useHerdStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useAnimals()` as
+ *  confirmed empty, when this is true. */
+export function useAnimalsHydrationFailed(): boolean {
+  const store = useHerdStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
+/** Commit an animal to the local herd. Never awaits the network (NFR-007); the returned promise
+ *  resolves once the write is durably persisted — await it before reporting "Saved" (P1.1). */
+export function useRecordAnimal(): (animal: StoredAnimal) => Promise<void> {
   const store = useHerdStore();
   return useCallback((animal) => store.append(animal), [store]);
 }

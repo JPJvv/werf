@@ -68,7 +68,11 @@ export type CapturedEvent = Awaited<ReturnType<typeof insertEvent>>;
  * the next reconnect — so a re-flushed event must be a no-op, not a duplicate row or a key crash.
  * The existing row is read back through the same RLS-bound connection.
  */
-export async function insertEvent(tx: CaptureTx, event: schemas.NewEvent) {
+export async function insertEvent(
+  tx: CaptureTx,
+  event: schemas.NewEvent,
+  context: { readonly sourceSessionId?: string | undefined } = {},
+) {
   // FR-113: nothing enters the log unfiled. Checked HERE rather than in each capture so a capture
   // added in a later phase cannot skip it — the only way into `events` is through this function.
   assertHerdScoped(event);
@@ -99,6 +103,7 @@ export async function insertEvent(tx: CaptureTx, event: schemas.NewEvent) {
       landUnitId: event.landUnitId,
       employeeId: event.employeeId,
       batchId: event.batchId,
+      sourceSessionId: context.sourceSessionId,
       payload: event.payload,
       locationGeojson: event.locationGeojson,
       notes: event.notes,

@@ -14,6 +14,7 @@ import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { eq } from 'drizzle-orm';
 import {
+  authAuditLog,
   businesses,
   createAppDb,
   createElevatedDb,
@@ -48,7 +49,18 @@ const BOOT_TIMEOUT_MS = 180_000;
 
 /** A complete, valid registration. Individual tests override just the field under test. */
 const REGISTRATION: schemas.RegisterRequest = {
-  business: { name: 'Rietfontein Boerdery', registrationNumber: null },
+  business: {
+    name: 'Rietfontein Boerdery',
+    registrationNumber: null,
+    contact: { email: 'kantoor@rietfontein.test', phone: '+27 51 555 0100' },
+    physicalAddress: {
+      line1: 'Plaas Rietfontein',
+      line2: 'S305 distrikspad',
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: 'Rietfontein',
     province: 'Free State',
@@ -131,6 +143,25 @@ describe('auth', () => {
       expect(session.activeFarmId).toBe(session.farms[0]!.id);
       expect(session.accessToken).toBeTruthy();
       expect(session.expiresIn).toBe(ACCESS_TOKEN_TTL_SECONDS);
+    });
+
+    it('retains the business contact and physical address supplied at registration', async () => {
+      await auth.register(REGISTRATION);
+
+      const [business] = await elevated.db
+        .select()
+        .from(businesses)
+        .where(eq(businesses.name, REGISTRATION.business.name));
+
+      expect(business).toMatchObject({
+        contactEmail: 'kantoor@rietfontein.test',
+        contactPhone: '+27 51 555 0100',
+        physicalAddressLine1: 'Plaas Rietfontein',
+        physicalAddressLine2: 'S305 distrikspad',
+        physicalAddressLocality: 'Bothaville',
+        physicalAddressProvince: 'Free State',
+        physicalAddressPostalCode: '9660',
+      });
     });
 
     it('gives each chosen enterprise type something to attribute costs to (ADR-0004)', async () => {
@@ -217,7 +248,7 @@ describe('auth', () => {
       await expect(
         auth.register({
           ...REGISTRATION,
-          business: { name: 'Orphan Boerdery', registrationNumber: null },
+          business: { ...REGISTRATION.business, name: 'Orphan Boerdery' },
         }),
       ).rejects.toThrow(ConflictError);
 
@@ -268,12 +299,58 @@ describe('auth', () => {
       await auth.register(REGISTRATION);
 
       await expect(
-        auth.login({
-          email: REGISTRATION.owner.email,
-          password: 'not the right password',
-          deviceLabel: null,
-        }),
+        auth.login(
+          {
+            email: REGISTRATION.owner.email,
+            password: 'not the right password',
+            deviceLabel: null,
+          },
+          {
+            sourceIp: '203.0.113.8',
+            userAgent: 'Werf audit integration test',
+          },
+        ),
       ).rejects.toThrow(InvalidCredentialsError);
+
+      const [event] = await elevated.db.select().from(authAuditLog);
+      expect(event).toMatchObject({
+        event: 'login',
+        outcome: 'failure',
+        sourceIp: '203.0.113.8',
+        userAgent: 'Werf audit integration test',
+        metadata: { reason: 'invalid_credentials', method: 'password' },
+      });
+      expect(event!.subjectUserId).not.toBeNull();
+      // The evidence is useful without becoming a second credential/PII store.
+      expect(JSON.stringify(event)).not.toContain(REGISTRATION.owner.email);
+      expect(JSON.stringify(event)).not.toContain('not the right password');
+    });
+
+    it('keeps authentication evidence immutable even for the elevated application path', async () => {
+      await auth.register(REGISTRATION);
+      await auth.login({
+        email: REGISTRATION.owner.email,
+        password: REGISTRATION.owner.password,
+        deviceLabel: null,
+      });
+      const [event] = await elevated.db.select().from(authAuditLog);
+      expect(event!.sessionFamilyId).not.toBeNull();
+
+      await expect(
+        elevated.db
+          .update(authAuditLog)
+          .set({ outcome: 'failure' })
+          .where(eq(authAuditLog.id, event!.id)),
+      ).rejects.toThrow(/immutable/);
+      await expect(
+        elevated.db.delete(authAuditLog).where(eq(authAuditLog.id, event!.id)),
+      ).rejects.toThrow(/immutable/);
+      await expect(
+        app.asUser(event!.subjectUserId!, (tx) => tx.select().from(authAuditLog)),
+      ).rejects.toThrow(/permission denied|row-level security/i);
+
+      const [unchanged] = await elevated.db.select().from(authAuditLog);
+      expect(unchanged).toMatchObject({ id: event!.id, event: 'login', outcome: 'success' });
     });
 
     it('answers an unknown address exactly as it answers a wrong password', async () => {
@@ -356,6 +433,17 @@ describe('auth', () => {
       // The legitimate successor dies too. The real user re-authenticates (an annoyance);
       // the attacker loses the session (the point).
       await expect(auth.refresh(second.refreshToken)).rejects.toThrow(SessionInvalidError);
+
+      const reuseEvents = await elevated.db
+        .select()
+        .from(authAuditLog)
+        .where(eq(authAuditLog.event, 'session_reuse'));
+      expect(reuseEvents).toHaveLength(1);
+      expect(reuseEvents[0]).toMatchObject({
+        outcome: 'failure',
+        subjectUserId: first.user.id,
+        metadata: { reason: 'refresh_token_reuse' },
+      });
     });
 
     it('rejects a token that was never issued', async () => {
@@ -407,6 +495,18 @@ describe('auth', () => {
       await auth.logout(session.refreshToken);
 
       await expect(auth.refresh(session.refreshToken)).rejects.toThrow(SessionInvalidError);
+
+      const [event] = await elevated.db
+        .select()
+        .from(authAuditLog)
+        .where(eq(authAuditLog.event, 'logout'));
+      expect(event).toMatchObject({
+        outcome: 'success',
+        actorUserId: session.user.id,
+        subjectUserId: session.user.id,
+        farmId: session.activeFarmId,
+        metadata: { reason: 'user_requested' },
+      });
     });
 
     it('is idempotent — logging out twice is not an error', async () => {
@@ -415,6 +515,12 @@ describe('auth', () => {
       await auth.logout(session.refreshToken);
       await expect(auth.logout(session.refreshToken)).resolves.toBeUndefined();
       await expect(auth.logout('a token that never existed')).resolves.toBeUndefined();
+
+      const events = await elevated.db
+        .select()
+        .from(authAuditLog)
+        .where(eq(authAuditLog.event, 'logout'));
+      expect(events).toHaveLength(1);
     });
   });
 

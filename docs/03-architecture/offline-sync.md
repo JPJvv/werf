@@ -55,7 +55,7 @@ They differ by **weeks**. A manager records a calving on 1 March, stays offline 
 | **Filtered** | `employees` (minus encrypted columns), attendance events | ↕ role-gated | Attendance is captured in the field; ID numbers and banking are not. |
 | **Never** | `payroll_runs`, `payslips`, `financial_transactions`, `injury_records`, `audit_log`, `compliance_items` | ✗ | Money, health, audit. A stolen phone must not contain 40 workers' payslips (NFR-215). |
 
-**The retention window.** A farm with 50,000 animals and ten years of events will not fit in OPFS on a mid-range phone. Sync rules bound the client to a rolling window (default 24 months of events; all live animals; all reference data). The window is configurable per farm and degrades the *read* set only — **the write queue is never bounded and never evicted.**
+**The retention window.** A farm with 50,000 animals and ten years of events will not fit in OPFS on a mid-range phone. Sync rules bound the client to a rolling window (default 24 UTC calendar-month buckets of events; all live animals; all reference data). The window is configurable per farm through `farms.event_retention_months` and degrades the *read* set only — **the write queue is never bounded and never evicted.** PowerSync cannot compare a row timestamp to a moving parameter with `>`/`<`, so the event stream uses its documented equality-bucket workaround: one authorised `(farm_id, YYYY-MM)` subscription per retained month. The client subscribes the new month before releasing the oldest with TTL 0; queue rows live in separate local-only tables and are untouched.
 
 ### 3.1 Attachment blobs are local facts before they are objects
 

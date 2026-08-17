@@ -9,11 +9,14 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
 import { schemas } from '@werf/core';
+import type { Request } from 'express';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { AuthContext } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { authAuditContextFrom } from '../auth/auth-audit';
 import { FarmsService } from './farms.service';
 
 // No @UseGuards: AuthGuard is registered globally (AuthModule), so this controller is
@@ -59,8 +62,9 @@ export class FarmsController {
     @Param('farmId', ParseUUIDPipe) farmId: string,
     @Body(new ZodValidationPipe(schemas.inviteUserRequestSchema))
     body: schemas.InviteUserRequest,
+    @Req() request: Request,
   ): Promise<{ status: 'pending'; role: string }> {
-    return this.farms.invite(auth.userId, farmId, body);
+    return this.farms.invite(auth.userId, farmId, body, authAuditContextFrom(request));
   }
 
   /** Accept an invitation addressed to you — the moment the membership becomes real. */
@@ -80,7 +84,13 @@ export class FarmsController {
     @CurrentUser() auth: AuthContext,
     @Body(new ZodValidationPipe(schemas.switchFarmRequestSchema))
     body: schemas.SwitchFarmRequest,
+    @Req() request: Request,
   ): Promise<void> {
-    await this.farms.switchActiveFarm(auth.userId, auth.sessionId, body.farmId);
+    await this.farms.switchActiveFarm(
+      auth.userId,
+      auth.sessionId,
+      body.farmId,
+      authAuditContextFrom(request),
+    );
   }
 }

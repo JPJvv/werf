@@ -15,14 +15,20 @@
  * captures), and says the same thing.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { IDENTIFIER_TYPES, schemas, uuidv7, type IdentifierType } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
-import { useEffectiveAnimals } from './herd';
-import { useAnimalLabels, useRecordIdentifier, useTakenValues } from './LocalIdentifiers';
+import { useEffectiveAnimals, useEffectiveAnimalsSettled } from './herd';
+import {
+  useAnimalLabels,
+  useIdentifiersSettled,
+  useRecordIdentifier,
+  useTakenValues,
+} from './LocalIdentifiers';
+import { useHydratedIdentifiers, useHydratedIdentifiersSettled } from './HydratedLivestock';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 export function identifierTypeLabel(
@@ -37,14 +43,45 @@ export function TagSessionScreen() {
   const { activeFarm } = useAuth();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
   const labels = useAnimalLabels();
-  const taken = useTakenValues();
+  const localTaken = useTakenValues();
+  // ⭐ Merged with hydrated identifiers (phase-checklists.md 3e) — a tag another device applied and
+  // the server has replicated down is a value already live on the farm, and this guard exists
+  // precisely so a misread digit is caught HERE rather than jamming the outbox days later with a
+  // refusal nothing on the phone explains (see the module header). `useTakenValues()` is a Set of
+  // values, not rows with an id, so this unions the two sets directly rather than `mergeById`.
+  const hydratedIdentifiers = useHydratedIdentifiers();
+  const taken = useMemo(() => {
+    if (hydratedIdentifiers.length === 0) return localTaken;
+    const merged = new Set(localTaken);
+    for (const identifier of hydratedIdentifiers) {
+      merged.add(identifier.value.trim().toLowerCase());
+    }
+    return merged;
+  }, [localTaken, hydratedIdentifiers]);
   const record = useRecordIdentifier();
+  // Both called unconditionally, one per line, before combining — `useX() && useY()` would
+  // short-circuit and skip calling useY() whenever useX() is false, which varies how many hooks
+  // this component calls between renders and breaks React outright (Rules of Hooks).
+  const animalsReady = useEffectiveAnimalsSettled();
+  const identifiersReady = useIdentifiersSettled();
+  const hydratedIdentifiersReady = useHydratedIdentifiersSettled();
+  const readyToOpen = animalsReady && identifiersReady && hydratedIdentifiersReady;
 
-  // The queue is fixed when the session opens: animals that had no number then. Recomputing it
-  // after every save would make the list shrink under the farmer's thumb as they work down the race.
-  const [queue] = useState<readonly string[]>(() =>
-    live.filter((a) => !labels.has(a.id)).map((a) => a.id),
-  );
+  // The queue is fixed once every store it is built from has hydrated — animals that had no
+  // number THEN. Recomputing it after every save would make the list shrink under the farmer's
+  // thumb as they work down the race, so it is captured exactly once, not derived on every
+  // render (`useMemo` would do that). Capturing it at MOUNT, rather than once hydration settles,
+  // was a real regression this screen shipped with: the SQLite-backed capture stores
+  // (phase-checklists.md 3c) start empty and hydrate asynchronously, so a mount-time snapshot
+  // froze on an empty herd forever, on every cold start with a queue to work through.
+  const [queue, setQueue] = useState<readonly string[] | null>(null);
+  useEffect(() => {
+    if (readyToOpen && queue === null) {
+      setQueue(live.filter((a) => !labels.has(a.id)).map((a) => a.id));
+    }
+    // Deliberately NOT depending on `live`/`labels`: this must run exactly once, the first time
+    // `readyToOpen` becomes true, and never again — see the comment above.
+  }, [readyToOpen]);
   const byId = useMemo(() => new Map(live.map((a) => [a.id, a])), [live]);
 
   const [index, setIndex] = useState(0);
@@ -52,8 +89,18 @@ export function TagSessionScreen() {
   const [value, setValue] = useState('');
   const [savedCount, setSavedCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
+
+  if (queue === null) {
+    return (
+      <section className="mx-auto w-full max-w-3xl p-4">
+        <h1 className="mb-4 font-ui text-h1 text-soil-900">{t('tag.title')}</h1>
+        <p className="mb-6 text-body text-soil-700">{t('tag.loading')}</p>
+      </section>
+    );
+  }
 
   const animalId = queue[index];
   const animal = animalId === undefined ? undefined : byId.get(animalId);
@@ -67,10 +114,12 @@ export function TagSessionScreen() {
     setIndex((i) => i + 1);
   };
 
-  const save = () => {
-    if (!animal || !canSave) return;
+  const save = async () => {
+    if (!animal || !canSave || saving) return;
+    setSaving(true);
 
-    record(
+    // Not "saved" until the local write is durable (P1.1).
+    await record(
       schemas.newAnimalIdentifierSchema.parse({
         id: uuidv7(),
         farmId: activeFarm.id,
@@ -85,6 +134,7 @@ export function TagSessionScreen() {
 
     setLastSaved(trimmed);
     setSavedCount((n) => n + 1);
+    setSaving(false);
     advance();
   };
 
@@ -123,7 +173,7 @@ export function TagSessionScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             <div className="mb-4 flex flex-col">
@@ -172,7 +222,7 @@ export function TagSessionScreen() {
 
             <button
               type="submit"
-              disabled={!canSave}
+              disabled={!canSave || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {t('tag.save')}

@@ -25,6 +25,7 @@ import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql, type SQL } from '
 import {
   animalIdentifiers,
   animals,
+  attachments,
   brandingRegisters,
   events,
   farms,
@@ -70,6 +71,13 @@ import {
   type CapturedEvent,
 } from '../common/event-capture';
 import { farmLocalDay } from '../common/farm-time';
+import {
+  detectMoveConflicts,
+  detectPossibleDuplicateBirth,
+  detectStatusContradiction,
+  hasDeathFact,
+  rederiveAnimalStatus,
+} from '../common/conflict-review';
 
 /** The `theft_incidents` columns returned to the caller — every column EXCEPT the PostGIS
  *  `last_seen_location`, which is geometry (neverSyncColumns) and never goes on the wire. */
@@ -95,6 +103,8 @@ const theftIncidentProjection = {
 
 /** Postgres' unique-violation SQLSTATE. */
 const UNIQUE_VIOLATION = '23505';
+/** PostgreSQL check-constraint violation SQLSTATE. */
+const CHECK_VIOLATION = '23514';
 
 /**
  * Turns the live-rows-only unique violation on (farm_id, type, value) into a ConflictError a farmer
@@ -118,8 +128,27 @@ function rethrowDuplicateIdentifier(value: string) {
   };
 }
 
+/** Turns the ZA mark-length DB check into a permanent 4xx refusal, never an endless 5xx retry. */
+function rethrowInvalidRegisteredMark(error: unknown): never {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === CHECK_VIOLATION &&
+    (error as { constraint?: unknown }).constraint === 'branding_registers_mark_length'
+  ) {
+    throw new ValidationError(
+      'The registered mark does not meet this farm jurisdiction’s rules. Copy it exactly from the certificate.',
+    );
+  }
+  throw error;
+}
+
 /** The persisted animal as returned to the caller. */
 export type CapturedAnimal = Awaited<ReturnType<LivestockService['recordAnimal']>>;
+/** The persisted registered identification mark (FR-601). */
+export type CapturedBrandingRegister = Awaited<
+  ReturnType<LivestockService['createBrandingRegister']>
+>;
 /** The persisted mob as returned to the caller. */
 export type CapturedMob = Awaited<ReturnType<LivestockService['recordMob']>>;
 /** The persisted identifier as returned to the caller. */
@@ -131,6 +160,47 @@ export type CapturedTheftIncident = Awaited<ReturnType<LivestockService['createT
 @Injectable()
 export class LivestockService {
   constructor(@Inject(APP_DB) private readonly app: AppDb) {}
+
+  /**
+   * Registers a farm's identification mark (FR-601). The client creates the row offline and the
+   * outbox sends it before any animal that references it. Jurisdiction is always read from the
+   * farm, never trusted from the device; authorship comes from the authenticated session.
+   */
+  async createBrandingRegister(userId: string, input: schemas.NewBrandingRegister) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+      const [farm] = await tx
+        .select({ jurisdiction: farms.jurisdiction })
+        .from(farms)
+        .where(and(eq(farms.id, input.farmId), isNull(farms.deletedAt)));
+      if (!farm) throw new NotFoundError('Farm not found');
+
+      const [row] = await tx
+        .insert(brandingRegisters)
+        .values({
+          id: input.id,
+          farmId: input.farmId,
+          jurisdiction: farm.jurisdiction,
+          mark: input.mark,
+          markType: input.markType,
+          species: input.species,
+          bodyPosition: input.bodyPosition,
+          certificateReference: input.certificateReference,
+          registeredAt: input.registeredAt,
+          createdBy: userId,
+        })
+        .onConflictDoNothing({ target: brandingRegisters.id })
+        .returning()
+        .catch(rethrowInvalidRegisteredMark);
+
+      if (row) return row;
+      const [existing] = await tx
+        .select()
+        .from(brandingRegisters)
+        .where(and(eq(brandingRegisters.id, input.id), eq(brandingRegisters.farmId, input.farmId)));
+      return existing!;
+    });
+  }
 
   /**
    * Creates an animal (FR-101) as a herd row. This is the FK root the flush sends FIRST: a
@@ -155,6 +225,21 @@ export class LivestockService {
         enterpriseId: input.enterpriseId,
         brandId: input.brandId,
       });
+      if (input.brandId !== null) {
+        const [brand] = await tx
+          .select({ species: brandingRegisters.species })
+          .from(brandingRegisters)
+          .where(
+            and(
+              eq(brandingRegisters.id, input.brandId),
+              eq(brandingRegisters.farmId, input.farmId),
+              isNull(brandingRegisters.deletedAt),
+            ),
+          );
+        if (!brand?.species.includes(input.species)) {
+          throw new ValidationError('This registered mark does not cover the animal’s species');
+        }
+      }
 
       const [row] = await tx
         .insert(animals)
@@ -503,7 +588,7 @@ export class LivestockService {
    * already knows where it is, and letting the client restate it only creates a way for the stored
    * history to disagree with reality.
    */
-  async recordMove(userId: string, input: schemas.RecordMoveRequest) {
+  async recordMove(userId: string, input: schemas.RecordMoveRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
 
@@ -572,7 +657,7 @@ export class LivestockService {
         createdBy: userId,
       });
 
-      const stored = await insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
 
       // The denormalised position follows the history, not the other way round — and "the history"
       // means the LATEST move in the log, not the last one to arrive. A back-dated move that lands
@@ -590,6 +675,8 @@ export class LivestockService {
           .where(and(eq(animals.id, input.animalId), eq(animals.farmId, input.farmId)));
       }
 
+      await detectMoveConflicts(tx, stored, userId, sourceSessionId);
+
       return stored;
     });
   }
@@ -597,11 +684,10 @@ export class LivestockService {
   /**
    * Records a death (FR-105) as an append-only `events` row. The animal's current status is
    * read (RLS-scoped) so the domain state machine can guard the transition to 'dead'; a death
-   * of an animal this farm cannot see is a 404. The event is the durable fact — materialising
-   * the animal row's status from the event log is a Phase 3 read-model concern, exactly as the
-   * client projects status rather than editing the append-only herd row.
+   * of an animal this farm cannot see is a 404. The event is the durable fact; after appending,
+   * the animal row's status is re-derived from the whole lifecycle log as a disposable projection.
    */
-  async recordDeath(userId: string, input: schemas.RecordDeathRequest) {
+  async recordDeath(userId: string, input: schemas.RecordDeathRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
       const { status: currentStatus, enterpriseId } = await animalFacts(
@@ -654,7 +740,10 @@ export class LivestockService {
         input.disposal === undefined ? base : { ...base, disposal: input.disposal },
       );
 
-      return insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
+      await detectStatusContradiction(tx, stored, userId, sourceSessionId);
+      await rederiveAnimalStatus(tx, input.farmId, input.animalId, userId);
+      return stored;
     });
   }
 
@@ -664,7 +753,7 @@ export class LivestockService {
    * events, so it is already here); this event ties the two together and carries the calving facts.
    * The calf is checked to be on this farm for the same reason every reference is.
    */
-  async recordBirth(userId: string, input: schemas.RecordBirthRequest) {
+  async recordBirth(userId: string, input: schemas.RecordBirthRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
       await assertOwnedReferences(tx, input.farmId, {
@@ -684,6 +773,7 @@ export class LivestockService {
         occurredAt: input.occurredAt,
         currentStatus,
         enterpriseId,
+        ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
         calfId: input.calfId,
         easeScore: input.easeScore,
         multiples: input.multiples,
@@ -695,7 +785,9 @@ export class LivestockService {
         ...(input.birthWeightKg === undefined ? {} : { birthWeightKg: input.birthWeightKg }),
       });
 
-      return insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
+      await detectPossibleDuplicateBirth(tx, stored, userId, sourceSessionId);
+      return stored;
     });
   }
 
@@ -892,10 +984,12 @@ export class LivestockService {
 
   /**
    * Records a sale (FR-106) as an append-only `events` row. As with a death, the animal's
-   * current status is read so the state machine can guard the transition to 'sold'. `priceCents`
-   * is Money — integer cents, validated by the domain, never a float.
+   * current status is read so the state machine can guard the transition to 'sold'. An already
+   * stored death is the one exception: a sale arriving later from an offline phone is retained as
+   * contradictory evidence, then the log projection applies dead > sold. `priceCents` is Money —
+   * integer cents, validated by the domain, never a float.
    */
-  async recordSale(userId: string, input: schemas.RecordSaleRequest) {
+  async recordSale(userId: string, input: schemas.RecordSaleRequest, sourceSessionId?: string) {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
       const { status: currentStatus, enterpriseId } = await animalFacts(
@@ -908,12 +1002,18 @@ export class LivestockService {
       // reads the rule that applied then, not today's registration.
       await assertClearOfMeatWithdrawal(tx, input.farmId, input.animalId, input.occurredAt);
 
+      // A death already stored can race a sale captured offline on another device. That sale is a
+      // real fact and US-040 explicitly forbids dropping it; precedence is applied after append.
+      const transitionStatus =
+        currentStatus === 'dead' && (await hasDeathFact(tx, input.farmId, input.animalId))
+          ? ('alive' as const)
+          : currentStatus;
       const base = {
         id: input.id,
         farmId: input.farmId,
         animalId: input.animalId,
         occurredAt: input.occurredAt,
-        currentStatus,
+        currentStatus: transitionStatus,
         enterpriseId,
         counterparty: input.counterparty,
         priceCents: input.priceCents,
@@ -923,7 +1023,10 @@ export class LivestockService {
         input.weightKg === undefined ? base : { ...base, weightKg: input.weightKg },
       );
 
-      return insertEvent(tx, event);
+      const stored = await insertEvent(tx, event, { sourceSessionId });
+      await detectStatusContradiction(tx, stored, userId, sourceSessionId);
+      await rederiveAnimalStatus(tx, input.farmId, input.animalId, userId);
+      return stored;
     });
   }
 
@@ -1107,7 +1210,6 @@ export class LivestockService {
       const animalRows = await tx
         .select({
           animalId: animals.id,
-          photoKey: animals.photoKey,
           acquiredAt: animals.acquiredAt,
           source: animals.source,
           mark: brandingRegisters.mark,
@@ -1135,6 +1237,7 @@ export class LivestockService {
           and(
             eq(theftIncidentAnimals.incidentId, incidentId),
             eq(theftIncidentAnimals.farmId, farmId),
+            isNull(theftIncidentAnimals.deletedAt),
           ),
         );
 
@@ -1172,6 +1275,49 @@ export class LivestockService {
         identifiersByAnimal.set(row.animalId, list);
       }
 
+      // ⭐ P2.5: the finalised attachment IS the photo — never `animals.photo_key`, a column FR-101
+      // reserved but the 3i(c) pipeline never wrote to. Farm-scoped (the same predicate every other
+      // read here carries) and `status = 'finalised'` — a still-pending upload has nothing this
+      // server can vouch for, so it is treated the same as "no photo" rather than named and left
+      // unreadable, matching the fail-honest rule the OLD `photoKey` line in the renderer used to
+      // apply for a different reason (§ evidence-pack.pdf.ts header).
+      const photoRows =
+        animalIds.length === 0
+          ? []
+          : await tx
+              .select({
+                animalId: attachments.subjectId,
+                objectKey: attachments.objectKey,
+                checksum: attachments.checksum,
+                occurredAt: attachments.occurredAt,
+                id: attachments.id,
+              })
+              .from(attachments)
+              .where(
+                and(
+                  eq(attachments.farmId, farmId),
+                  eq(attachments.subjectType, 'animal'),
+                  inArray(attachments.subjectId, animalIds),
+                  eq(attachments.status, 'finalised'),
+                  isNull(attachments.deletedAt),
+                ),
+              );
+
+      // The LATEST photo per animal wins, by the same total order `(occurredAt, id)` every other
+      // projection in this codebase uses — arrival order is not occurred_at order, and a farmer who
+      // retakes a photo means the newer one, not whichever finalised last.
+      const photoByAnimal = new Map<string, (typeof photoRows)[number]>();
+      for (const row of photoRows) {
+        const current = photoByAnimal.get(row.animalId);
+        if (
+          !current ||
+          row.occurredAt > current.occurredAt ||
+          (row.occurredAt.getTime() === current.occurredAt.getTime() && row.id > current.id)
+        ) {
+          photoByAnimal.set(row.animalId, row);
+        }
+      }
+
       // ⭐ The possession trail (legal-compliance.md § 3.2). Under the Stock Theft Act's reverse
       // onus this is the DEFENCE — a pack that identifies an animal and cannot show it was here,
       // being kept and treated, week after week, has omitted the part that does the legal work.
@@ -1191,17 +1337,21 @@ export class LivestockService {
         observations: incident.observations,
         caseNumber: incident.caseNumber,
         reportingStation: incident.reportingStation,
-        animals: animalRows.map((r) => ({
-          animalId: r.animalId,
-          identifiers: identifiersByAnimal.get(r.animalId) ?? [],
-          mark: r.mark ?? null,
-          certificateReference: r.certificateReference ?? null,
-          photoKey: r.photoKey,
-          acquiredAt: r.acquiredAt,
-          source: r.source,
-          movements: trail.movements.get(r.animalId) ?? [],
-          treatments: trail.treatments.get(r.animalId) ?? [],
-        })),
+        animals: animalRows.map((r) => {
+          const photo = photoByAnimal.get(r.animalId);
+          return {
+            animalId: r.animalId,
+            identifiers: identifiersByAnimal.get(r.animalId) ?? [],
+            mark: r.mark ?? null,
+            certificateReference: r.certificateReference ?? null,
+            photoObjectKey: photo?.objectKey ?? null,
+            photoChecksumSha256Hex: photo?.checksum ?? null,
+            acquiredAt: r.acquiredAt,
+            source: r.source,
+            movements: trail.movements.get(r.animalId) ?? [],
+            treatments: trail.treatments.get(r.animalId) ?? [],
+          };
+        }),
       });
     });
   }

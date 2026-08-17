@@ -20,7 +20,7 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { uuidv7 } from '@werf/core';
+import { parseRandsToCents, uuidv7 } from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
@@ -33,7 +33,14 @@ import { useAnimalLabels } from './LocalIdentifiers';
 import { currentPoint, type FixFailure } from '../geo/geolocation';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
-import { meatWithdrawalFor } from './withdrawal';
+import { meatWithdrawalFor, type WithholdDose } from './withdrawal';
+import {
+  useHydratedAnimals,
+  useHydratedMoves,
+  useHydratedHealthEvents,
+  mergeById,
+  mergeByIdPreferHydrated,
+} from './HydratedLivestock';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 /**
@@ -51,14 +58,8 @@ interface SavedSummary {
   readonly outcome: Outcome;
 }
 
-/** Rands as typed → integer cents (Money). Rounded at the I/O boundary, never carried as a float. */
-function toCents(rands: string): number {
-  return Math.round(Number(rands) * 100);
-}
-
 function priceIsValid(rands: string): boolean {
-  const n = Number(rands);
-  return rands.trim() !== '' && Number.isFinite(n) && n >= 0;
+  return parseRandsToCents(rands) !== null;
 }
 
 /** The sale weight is optional; blank is fine, but a typed weight must be a positive number. */
@@ -84,12 +85,26 @@ export function RecordLossScreen() {
   const recordMissing = useRecordMissing();
   const labels = useAnimalLabels();
   const healthEvents = useHealthEvents();
+  const hydratedHealthEvents = useHydratedHealthEvents();
   const products = useVetProducts();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
   // The RAW herd row and the move log: the withdrawal guard reconstructs which mob this animal
   // was in on the day of each dose, and a projected animal carries only where it is NOW.
-  const stored = useAnimals();
-  const moves = useMoves();
+  //
+  // ⭐ Merged with hydrated animals/moves/health (phase-checklists.md 3e). Without this, an animal
+  // this device never itself captured — only heard about via down-sync — was invisible to `stored`,
+  // so `selectedStored` came back `undefined` and the guard below silently skipped ENTIRELY (not
+  // narrowly wrong — off) for exactly the animal a co-worker's phone knows the treatment history of.
+  const hydratedAnimals = useHydratedAnimals();
+  const stored = mergeById(useAnimals(), hydratedAnimals);
+  // The raw hydrated-animal id set (STATUS.md §3, fail-closed) — see `withdrawal.ts`'s
+  // `mobMembership` "OWNER DECISION" note.
+  const hydratedAnimalIds = new Set(hydratedAnimals.map((a) => a.id));
+  // `mergeByIdPreferHydrated`: a move's hydrated echo carries `fromMobId`/`fromLandUnitId`, which a
+  // local capture never can — local-wins would shadow that enrichment once this device's own move
+  // round-trips back with the same id (compliance-checker finding, phase-checklists.md 3e). See
+  // `HydratedLivestock.tsx`'s `mergeByIdPreferHydrated` docstring.
+  const moves = mergeByIdPreferHydrated(useMoves(), useHydratedMoves());
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -106,6 +121,7 @@ export function RecordLossScreen() {
   const [locating, setLocating] = useState(false);
   const [fixFailed, setFixFailed] = useState<FixFailure | null>(null);
   const [lastSaved, setLastSaved] = useState<SavedSummary | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -117,10 +133,20 @@ export function RecordLossScreen() {
   // Judged on the DAY THE FARMER GAVE, not on today — a back-dated disposal must be judged against
   // the withholding as it stood when the animal actually left.
   const selectedStored = selected === null ? undefined : stored.find((a) => a.id === selected.id);
+  // Same reasoning as `moves` above: a hydrated dose carries `meatWithholdUntil`, a local capture
+  // never can.
+  const foldHealth = mergeByIdPreferHydrated<WithholdDose>(healthEvents, hydratedHealthEvents);
   const withdrawal =
     selectedStored === undefined
       ? null
-      : meatWithdrawalFor(selectedStored, disposalDay, healthEvents, products, moves);
+      : meatWithdrawalFor(
+          selectedStored,
+          disposalDay,
+          foldHealth,
+          products,
+          moves,
+          hydratedAnimalIds,
+        );
   // Both routes into the food chain, and the guard has to cover both. A server-only check on the
   // slaughter path arrives days after the animal has been eaten.
   const intoFoodChain = outcome === 'sold' || outcome === 'slaughtered';
@@ -153,6 +179,16 @@ export function RecordLossScreen() {
     labels.get(animal.id) ?? speciesLabel(t, animal.species);
 
   const save = async () => {
+    if (!selected || saving) return;
+    setSaving(true);
+    try {
+      await saveOutcome();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveOutcome = async () => {
     if (!selected) return;
     const base = {
       id: uuidv7(),
@@ -166,7 +202,7 @@ export function RecordLossScreen() {
 
     if (outcome === 'died') {
       if (cause.trim().length === 0) return;
-      recordDeath({ ...base, cause: cause.trim() });
+      await recordDeath({ ...base, cause: cause.trim() });
     } else if (outcome === 'slaughtered') {
       if (withheld) return;
       // The cause is the act itself, so nothing is asked for: standing at a carcass with gloves on,
@@ -176,17 +212,18 @@ export function RecordLossScreen() {
       // English device and "Geslag" from an Afrikaans one into a register a residue traceback or an
       // export auditor reads — farmer-facing copy leaking into the data, which is the mirror of the
       // defect that put raw English in front of the farmer. The machine-readable fact is the flag.
-      recordDeath({ ...base, cause: SLAUGHTER_CAUSE, slaughtered: true });
+      await recordDeath({ ...base, cause: SLAUGHTER_CAUSE, slaughtered: true });
     } else if (outcome === 'sold') {
       if (counterparty.trim().length === 0 || !priceIsValid(priceRands)) return;
       // The same backstop the slaughter branch carries, and for the same reason: `canSave` is what
       // the farmer sees, this is what the code guarantees. A sale is a route into the food chain
       // exactly as a slaughter is, and it had no second line.
       if (withheld || disposalDay === '') return;
-      recordSale({
+      await recordSale({
         ...base,
         counterparty: counterparty.trim(),
-        priceCents: toCents(priceRands),
+        // Guarded above: this branch already returned if `!priceIsValid(priceRands)`.
+        priceCents: parseRandsToCents(priceRands)!,
         // The liveweight the deal was struck on (FR-106). Optional, because plenty of sales are
         // per head off the veld with no scale in sight — but when there IS a scale, this is the
         // number the price per kilogram is argued over, and it is unrecoverable afterwards.
@@ -202,7 +239,7 @@ export function RecordLossScreen() {
         setFixFailed(fix.reason);
         return;
       }
-      recordMissing({
+      await recordMissing({
         ...base,
         // The day the farmer gave, not today: a missing report is filed after the fact, and a
         // theft dated to the day it was noticed is a theft dated wrong.
@@ -214,6 +251,7 @@ export function RecordLossScreen() {
       return;
     }
 
+    // Not "saved" until the local write is durable (P1.1) — every branch above is awaited first.
     setLastSaved({ what: nameOf(selected), outcome });
     reset();
   };
@@ -504,7 +542,7 @@ export function RecordLossScreen() {
                 <button
                   type="submit"
                   className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
-                  disabled={!canSave}
+                  disabled={!canSave || saving}
                 >
                   {locating
                     ? t('loss.locating')

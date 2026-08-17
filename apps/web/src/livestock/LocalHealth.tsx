@@ -25,9 +25,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import type { schemas } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** Which of the three health captures this is. Each posts to its own endpoint. */
 export type HealthKind = 'treatment' | 'vaccination' | 'dip';
@@ -83,7 +85,11 @@ export type HealthStore = CaptureStore<StoredHealthEvent>;
 export type HealthStoreFactory = (key: string) => HealthStore;
 
 const defaultFactory: HealthStoreFactory = (key) =>
-  createCaptureStore<StoredHealthEvent>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredHealthEvent>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const HealthStoreContext = createContext<HealthStore | null>(null);
 
@@ -99,6 +105,7 @@ export function LocalHealthProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-health:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <HealthStoreContext.Provider value={store}>{children}</HealthStoreContext.Provider>;
 }
@@ -115,16 +122,33 @@ export function useHealthEvents(): readonly StoredHealthEvent[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useHealthEvents()` until this is true. */
+export function useHealthEventsSettled(): boolean {
+  const store = useHealthStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat
+ *  `useHealthEvents()` as confirmed empty, when this is true. A failed health-events hydration
+ *  is the sharpest case there is: it is what the FR-131 disposal guard reads to decide whether a
+ *  slaughter/sale must be held behind a dose this device cannot currently verify. */
+export function useHealthEventsHydrationFailed(): boolean {
+  const store = useHealthStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Record one health event per animal in a dosing run, under ONE batch id (FR-112). Synchronous;
  * never awaits the network (NFR-007). A dosing run is a batch by nature — nobody doses one animal
  * and walks away — so the group is the unit here and a single animal is a group of one.
  */
-export function useRecordHealth(): (events: readonly StoredHealthEvent[]) => void {
+export function useRecordHealth(): (events: readonly StoredHealthEvent[]) => Promise<void> {
   const store = useHealthStore();
   return useCallback(
-    (events) => {
-      for (const event of events) store.append(event);
+    async (events) => {
+      await Promise.all(events.map((event) => store.append(event)));
     },
     [store],
   );

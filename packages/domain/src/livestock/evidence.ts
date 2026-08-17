@@ -26,7 +26,10 @@ export interface EvidencePackAnimalInput {
   readonly mark: string | null;
   /** The certificate for THIS animal's mark — per animal, because marks can differ in one loss. */
   readonly certificateReference: string | null;
-  readonly photoKey: string | null;
+  /** The finalised attachment's object key + checksum (P2.5) — see `evidencePackSchema`'s own
+   *  field docs for why this is not `animals.photo_key`. */
+  readonly photoObjectKey: string | null;
+  readonly photoChecksumSha256Hex: string | null;
   /** Acquisition record — the start of the ownership chain (YYYY-MM-DD). */
   readonly acquiredAt: string | null;
   readonly source: string | null;
@@ -96,7 +99,8 @@ export function assembleEvidencePack(input: EvidencePackInput): schemas.Evidence
       })),
       mark: a.mark,
       certificateReference: a.certificateReference,
-      photoKey: a.photoKey,
+      photoObjectKey: a.photoObjectKey,
+      photoChecksumSha256Hex: a.photoChecksumSha256Hex,
       acquiredAt: a.acquiredAt,
       source: a.source,
       movements: a.movements.map((m) => ({

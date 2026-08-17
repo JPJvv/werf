@@ -31,7 +31,14 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { ConflictError, NotFoundError, TenancyError, ValidationError, schemas } from '@werf/core';
+import {
+  ConflictError,
+  NotFoundError,
+  TenancyError,
+  ValidationError,
+  schemas,
+  uuidv7,
+} from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
@@ -58,7 +65,18 @@ const SQUARE = JSON.stringify({
 });
 
 const registration = (label: string): schemas.RegisterRequest => ({
-  business: { name: `${label} Boerdery`, registrationNumber: null },
+  business: {
+    name: `${label} Boerdery`,
+    registrationNumber: null,
+    contact: { email: `${label.toLowerCase()}@example.test`, phone: null },
+    physicalAddress: {
+      line1: `${label} Plaas`,
+      line2: null,
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: `${label} Plaas`,
     province: 'Free State',
@@ -77,7 +95,7 @@ const registration = (label: string): schemas.RegisterRequest => ({
 /** A minimal valid camp; overlay the fields a test cares about. */
 const campBody = (over: Partial<schemas.NewLandUnit> & { farmId: string }): schemas.NewLandUnit =>
   schemas.newLandUnitSchema.parse({
-    id: randomUUID(),
+    id: uuidv7(),
     kind: 'camp',
     code: 'Camp 3',
     ...over,
@@ -308,7 +326,7 @@ describe('creating a camp (FR-150)', () => {
       corners?: typeof BOX;
     }) =>
       schemas.recordBoundaryWalkRequestSchema.parse({
-        id: over.id ?? randomUUID(),
+        id: over.id ?? uuidv7(),
         farmId: over.farmId,
         landUnitId: over.landUnitId,
         occurredAt: over.occurredAt ?? '2026-03-02T04:10:00Z',
@@ -521,7 +539,7 @@ describe('creating a camp (FR-150)', () => {
       // An assertion that CAN fail: restore `boundaryGeojson` to the request schema and this reds.
       // Without it, "the shape never crosses the wire" is a claim in a comment.
       const parsed = schemas.recordBoundaryWalkRequestSchema.parse({
-        id: randomUUID(),
+        id: uuidv7(),
         farmId: randomUUID(),
         landUnitId: randomUUID(),
         occurredAt: '2026-03-02T04:10:00Z',

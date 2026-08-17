@@ -38,7 +38,12 @@ import { vocabularyFor } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { currentFix, type FixFailure } from '../geo/geolocation';
 import { landKey } from './AddLandUnitScreen';
-import { useCurrentBoundary, useLandUnits, useRecordBoundaryWalk, useWalkDraft } from './LocalLand';
+import {
+  useCurrentBoundary,
+  useEffectiveLandUnits,
+  useRecordBoundaryWalk,
+  useWalkDraft,
+} from './LocalLand';
 
 /**
  * Above this, a fix is worth saying something about: in the open a phone reports 3–10 m, so 20 m
@@ -54,7 +59,9 @@ const showHectares = (hectares: number): string => hectares.toFixed(1);
 export function WalkBoundaryScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const units = useLandUnits();
+  // Merged with hydrated land units (phase-checklists.md 3e) — a camp another device created is a
+  // real piece of ground this device can walk, not just one it typed in itself.
+  const units = useEffectiveLandUnits();
   const recordWalk = useRecordBoundaryWalk();
   const [params] = useSearchParams();
 
@@ -96,6 +103,7 @@ export function WalkBoundaryScreen() {
   const [marking, setMarking] = useState(false);
   const [fixFailed, setFixFailed] = useState<FixFailure | null>(null);
   const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const area = walkAreaHectares(corners);
   const crosses = ringSelfIntersects(corners);
@@ -122,10 +130,13 @@ export function WalkBoundaryScreen() {
     mark({ lon: fix.lon, lat: fix.lat, accuracyM: fix.accuracyM });
   };
 
-  const save = () => {
-    if (!closed.ok || !selected) return;
+  const save = async () => {
+    if (!closed.ok || !selected || saving) return;
+    setSaving(true);
 
-    recordWalk({
+    // Not "saved" until the local write is durable (P1.1) — the draft is only discarded once the
+    // fact it becomes is genuinely committed, never before.
+    await recordWalk({
       id: uuidv7(),
       farmId: activeFarm.id,
       landUnitId: selected.id,
@@ -140,6 +151,7 @@ export function WalkBoundaryScreen() {
     // than inheriting corners that are now in the append-only log.
     discard();
     setJustSaved(selected.code);
+    setSaving(false);
   };
 
   if (units.length === 0) {
@@ -278,8 +290,8 @@ export function WalkBoundaryScreen() {
 
       <button
         type="button"
-        onClick={save}
-        disabled={!closed.ok || selected === null}
+        onClick={() => void save()}
+        disabled={!closed.ok || selected === null || saving}
         className="min-h-touch-primary w-full rounded border-2 border-soil-900 bg-sand-100 px-4 font-ui text-body font-semibold text-soil-900 disabled:opacity-60"
       >
         {t(landKey(term, 'walkSave'))}

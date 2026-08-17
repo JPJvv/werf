@@ -24,10 +24,9 @@ import type { TranslationKey } from '../i18n/dictionaries';
 import { vocabularyFor } from '../i18n/terminology';
 import type { EnterpriseType } from '@werf/core';
 import { useAuth } from '../auth/AuthProvider';
-import { useLandUnits } from '../land/LocalLand';
-import { useEffectiveAnimals } from './herd';
+import { useEffectiveLandUnits } from '../land/LocalLand';
+import { useEffectiveAnimals, useEffectiveMobs } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
-import { useMobs } from './LocalMobs';
 import { useRecordMoves, type StoredMove } from './LocalMoves';
 import { speciesLabel } from './AnimalsScreen';
 
@@ -43,8 +42,15 @@ function whereLabel(
 export function MoveAnimalsScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const landUnits = useLandUnits();
-  const mobs = useMobs();
+  // ⭐ Merged with hydrated land units (phase-checklists.md 3e, land hydration — closed 2026-08-14,
+  // `useEffectiveLandUnits`) — a camp another device created is a real origin/destination a gate
+  // can walk animals through, not just one this device happened to type in itself. Was local-only
+  // until this slice, in explicit contrast to the mobs merge one line below.
+  const landUnits = useEffectiveLandUnits();
+  // ⭐ Merged with hydrated mobs (phase-checklists.md 3e, `useEffectiveMobs`) — a mob another device
+  // created is a real destination a gate can walk animals into, not just one this device happened
+  // to make itself.
+  const mobs = useEffectiveMobs();
   const labels = useAnimalLabels();
   const recordMoves = useRecordMoves();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
@@ -61,6 +67,7 @@ export function MoveAnimalsScreen() {
   const [toLandUnitId, setToLandUnitId] = useState('');
   const [toMobId, setToMobId] = useState('');
   const [movedCount, setMovedCount] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const shown = useMemo(
     () =>
@@ -98,8 +105,9 @@ export function MoveAnimalsScreen() {
   );
   const blocked = !destinationNamed || wouldMove.length === 0;
 
-  const save = () => {
-    if (blocked) return;
+  const save = async () => {
+    if (blocked || saving) return;
+    setSaving(true);
     // ONE batch id across the whole walk — the group is a single action, not forty coincidences.
     const batchId = uuidv7();
     const occurredAt = new Date().toISOString();
@@ -115,10 +123,12 @@ export function MoveAnimalsScreen() {
       ...(toLandUnitId === '' ? {} : { toLandUnitId }),
       ...(toMobId === '' ? {} : { toMobId }),
     }));
-    recordMoves(moves);
+    // Not "saved" until every animal's move is durable (P1.1) — a gate opening is one act.
+    await recordMoves(moves);
 
     setMovedCount(moves.length);
     setSelected(new Set());
+    setSaving(false);
   };
 
   return (
@@ -225,7 +235,7 @@ export function MoveAnimalsScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             {landUnits.length > 0 && (
@@ -274,7 +284,7 @@ export function MoveAnimalsScreen() {
 
             <button
               type="submit"
-              disabled={blocked}
+              disabled={blocked || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {wouldMove.length > 0 ? `${t('move.save')} · ${wouldMove.length}` : t('move.save')}

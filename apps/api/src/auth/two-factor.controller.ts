@@ -16,13 +16,19 @@ import {
   Inject,
   Param,
   Post,
+  Req,
+  Res,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { schemas } from '@werf/core';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { AllowsPendingEnrolment, Public } from './auth.guard';
+import { AuthCeremonyRateLimit, SecondFactorRateLimit } from '../security/rate-limits';
+import { AllowsPendingEnrolment, Public, RequiresRecentAuthentication } from './auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { AuthContext } from './auth.guard';
 import { AuthService } from './auth.service';
+import { attachSessionCookie } from './session-cookie';
+import { authAuditContextFrom } from './auth-audit';
 import { PasskeyService } from './passkey.service';
 import { TwoFactorService } from './two-factor.service';
 
@@ -40,6 +46,8 @@ export class TwoFactorController {
    * second call while an authenticator is already enrolled is a conflict, not a re-read.
    */
   @AllowsPendingEnrolment()
+  @RequiresRecentAuthentication()
+  @AuthCeremonyRateLimit()
   @Post('totp')
   @HttpCode(HttpStatus.OK)
   async beginTotp(@CurrentUser() user: AuthContext): Promise<schemas.TotpEnrolmentStartResponse> {
@@ -53,6 +61,7 @@ export class TwoFactorController {
    * and there is no resource here a client could re-fetch at a Location.
    */
   @AllowsPendingEnrolment()
+  @SecondFactorRateLimit()
   @Post('totp/confirm')
   @HttpCode(HttpStatus.OK)
   async confirmTotp(
@@ -70,6 +79,8 @@ export class TwoFactorController {
    * browser hands to `navigator.credentials.create()`.
    */
   @AllowsPendingEnrolment()
+  @RequiresRecentAuthentication()
+  @AuthCeremonyRateLimit()
   @Post('passkey')
   @HttpCode(HttpStatus.OK)
   async beginPasskey(@CurrentUser() user: AuthContext): Promise<schemas.PasskeyCeremonyOptions> {
@@ -78,6 +89,7 @@ export class TwoFactorController {
 
   /** Completes passkey enrolment. The attestation is verified against OUR challenge. */
   @AllowsPendingEnrolment()
+  @AuthCeremonyRateLimit()
   @Post('passkey/confirm')
   @HttpCode(HttpStatus.OK)
   async confirmPasskey(
@@ -115,6 +127,7 @@ export class TwoFactorController {
    * would answer "which passkeys does this address have?", which is an enumeration oracle.
    */
   @Public()
+  @AuthCeremonyRateLimit()
   @Post('passkey/challenge')
   @HttpCode(HttpStatus.OK)
   async passkeyChallenge(
@@ -126,12 +139,18 @@ export class TwoFactorController {
 
   /** Completes a login with a passkey, returning the real session. */
   @Public()
+  @SecondFactorRateLimit()
   @Post('passkey/verify')
   @HttpCode(HttpStatus.OK)
   async passkeyVerify(
     @Body(new ZodValidationPipe(schemas.passkeyAuthenticationRequestSchema))
     body: schemas.PasskeyAuthenticationRequest,
-  ): Promise<schemas.AuthSession> {
-    return this.auth.verifyPasskey(body);
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<schemas.BrowserAuthSession> {
+    return attachSessionCookie(
+      response,
+      await this.auth.verifyPasskey(body, authAuditContextFrom(request)),
+    );
   }
 }

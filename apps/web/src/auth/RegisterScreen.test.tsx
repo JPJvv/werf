@@ -33,9 +33,10 @@ const FARM = {
 };
 
 // These are deliberately full keyboard-and-pointer journeys. Under the uncached verify lane they
-// share a process with Docker-backed integration suites, where the default 5 s unit-test ceiling is
-// too tight for userEvent's per-keystroke semantics. Ten seconds still fails a genuinely stalled UI.
-const UI_FLOW_TIMEOUT_MS = 10_000;
+// share a process with Docker-backed integration suites, where userEvent's per-keystroke semantics
+// pushed more than one healthy journey past ten seconds. Keep one explicit suite-wide budget so the
+// definition-of-done lane is reproducible while a genuinely stalled UI still fails promptly.
+const UI_FLOW_TIMEOUT_MS = 20_000;
 vi.setConfig({ testTimeout: UI_FLOW_TIMEOUT_MS });
 
 function session(secondFactor: 'required' | 'complete') {
@@ -102,6 +103,10 @@ afterAll(() => vi.resetConfig());
 
 async function fillRegistration(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/business name/i), 'Rietfontein Boerdery');
+  await user.type(screen.getByLabelText(/business contact email/i), 'kantoor@rietfontein.test');
+  await user.type(screen.getByLabelText(/physical address/i), 'Plaas Rietfontein');
+  await user.type(screen.getByLabelText(/town or district/i), 'Bothaville');
+  await user.type(screen.getByLabelText(/postal code/i), '9660');
   await user.type(screen.getByLabelText(/farm name/i), 'Rietfontein');
   await user.click(screen.getByRole('checkbox', { name: /beef cattle/i }));
   await user.click(screen.getByRole('checkbox', { name: /row crops/i }));
@@ -123,6 +128,13 @@ describe('onboarding in Afrikaans (FR-008)', () => {
 
     // The form itself is now Afrikaans — proven by filling it in with Afrikaans labels.
     await user.type(screen.getByLabelText('Besigheidsnaam'), 'Rietfontein Boerdery');
+    await user.type(
+      screen.getByLabelText('Besigheid se kontak-e-pos (opsioneel)'),
+      'kantoor@rietfontein.test',
+    );
+    await user.type(screen.getByLabelText('Fisiese adres'), 'Plaas Rietfontein');
+    await user.type(screen.getByLabelText('Dorp of distrik'), 'Bothaville');
+    await user.type(screen.getByLabelText('Poskode'), '9660');
     await user.type(screen.getByLabelText('Plaasnaam'), 'Rietfontein');
     await user.click(screen.getByRole('checkbox', { name: /beef cattle/i }));
     await user.type(screen.getByLabelText('Jou volle naam'), 'Thabo Mokoena');
@@ -170,10 +182,46 @@ describe('registering a farm business', () => {
     expect(screen.getByRole('link', { name: /herd/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /blocks/i })).toBeTruthy();
 
+    // Even this deliberately legacy-shaped fixture contains both tokens. The production cache
+    // must strip them before writing the offline identity projection.
+    const persisted = window.localStorage.getItem('werf-session') ?? '';
+    expect(persisted).not.toContain('access-token');
+    expect(persisted).not.toContain('refresh-complete');
+    expect(persisted).not.toContain('refresh-required');
+
     // The enterprise choice really was sent, not just rendered locally.
     expect(calls[0]!.body).toMatchObject({
+      business: {
+        contact: { email: 'kantoor@rietfontein.test', phone: null },
+        physicalAddress: {
+          line1: 'Plaas Rietfontein',
+          line2: null,
+          locality: 'Bothaville',
+          province: 'Free State',
+          postalCode: '9660',
+        },
+      },
       farm: { enterpriseTypes: ['beef_cattle', 'row_crops'] },
     });
+  });
+
+  it('keeps an incomplete FR-001 registration local and explains what is missing', async () => {
+    const calls = stubApi();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/business name/i), 'Rietfontein Boerdery');
+    await user.type(screen.getByLabelText(/farm name/i), 'Rietfontein');
+    await user.click(screen.getByRole('checkbox', { name: /beef cattle/i }));
+    await user.type(screen.getByLabelText(/your full name/i), 'Thabo Mokoena');
+    await user.type(screen.getByLabelText(/email address/i), 'thabo@rietfontein.test');
+    await user.type(screen.getByLabelText(/password/i), 'correct horse battery staple');
+    await user.click(screen.getByRole('button', { name: /create my farm/i }));
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /email address or phone number/i,
+    );
+    expect(calls).toHaveLength(0);
   });
 
   it('will not submit without an enterprise type, and says why', async () => {

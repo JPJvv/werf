@@ -9,6 +9,7 @@ import { useLocalResidueFlags } from '../livestock/residue';
 import { useLandUnits } from '../land/LocalLand';
 import { useSeasonRainfall } from '../rainfall/LocalRainfall';
 import { FirstRunGuide } from './FirstRunGuide';
+import { useConflictReviews } from '../livestock/LocalConflictReviews';
 
 /**
  * The home screen: the enterprise-adaptive grid for the farm this session is looking at
@@ -39,10 +40,12 @@ export function HomeScreen() {
   // row present in both is one thing that happened, not two.
   const server = useResidueRegister();
   const localFlags = useLocalResidueFlags();
-  const needsAttention = new Set([
+  const conflictReviews = useConflictReviews();
+  const residueAttention = new Set([
     ...server.map((f) => f.eventId),
     ...localFlags.map((f) => f.eventId),
   ]).size;
+  const needsAttention = residueAttention + conflictReviews.length;
 
   // A signed-in user with no farm is not a state the product can reach: registration
   // creates a business and its first farm in one transaction, and Phase 1 cannot delete a

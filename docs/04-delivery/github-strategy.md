@@ -210,7 +210,8 @@ stock theft procedure, and export audit in the core.
 React 19 · TypeScript · PowerSync · NestJS · Postgres 16 + PostGIS · AWS af-south-1
 
 ## Status
-Phase 2 of 8. See [docs/04-delivery/roadmap.md].
+Eight delivery phases (0–7). The live position is in [`STATUS.md`](../../STATUS.md); see
+[`roadmap.md`](roadmap.md) for the stable sequence.
 
 ## Docs
 36 documents from BRD to runbook: [docs/](docs/)

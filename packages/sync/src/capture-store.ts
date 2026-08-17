@@ -31,10 +31,42 @@ export interface CaptureStore<T> {
    * next `append` — safe to use as a `useSyncExternalStore` snapshot.
    */
   all(): readonly T[];
-  /** Commits a record locally and notifies subscribers. Synchronous; never touches the network. */
-  append(record: T): void;
+  /**
+   * Commits a record locally and notifies subscribers; never touches the network. The returned
+   * promise resolves ONLY once the record is durably persisted — a caller (a capture screen) must
+   * await it before reporting "Saved" or advancing the flow, never before. This store's own
+   * `persist()` is synchronous storage, so the promise is already resolved by the time it is
+   * returned; the SQLite-backed sibling (`createSqliteCaptureStore`) is where this genuinely
+   * awaits an async commit.
+   */
+  append(record: T): Promise<void>;
   /** Subscribe to changes; returns an unsubscribe. The listener fires after each `append`. */
   subscribe(listener: () => void): () => void;
+  /**
+   * Whether the store's initial hydration ATTEMPT is over — `all()` reflects everything this
+   * store can currently account for, not a still-loading subset. True immediately and always for
+   * this synchronous, localStorage-backed store; the SQLite-backed sibling
+   * (`createSqliteCaptureStore`) starts `false` and flips `true` once its async open/migrate/read
+   * completes, on EITHER outcome (see that module's header on why success-only signalling hangs
+   * a waiter). Exists so a consumer that reads MULTIPLE stores together — `Outbox.tsx`'s flush,
+   * most of all — can wait for every one of them to have a true account of what a farmer's device
+   * holds before acting on any of them. Treating "not yet loaded" as "confirmed empty" is how a
+   * dose that has not hydrated yet stops being evidence a disposal is judged against.
+   */
+  settled(): boolean;
+  /**
+   * Whether the hydration attempt `settled()` reports as over ended in a genuine failure (the
+   * database would not open, or reading it back threw) rather than a clean read. Always `false`
+   * for this synchronous, localStorage-backed store. The SQLite-backed sibling
+   * (`createSqliteCaptureStore`) can flip this `true`: unlike a single corrupt row (tolerated —
+   * skipped, not fatal), an unopenable database means `all()` for this store is NOT a trustworthy
+   * "confirmed empty" the moment `settled()` is true, and a consumer that reads multiple stores
+   * together (`Outbox.tsx`'s flush, most of all) must not treat it as one — a disposal guarded by
+   * a store that failed to hydrate must be held, not waved through as if the guard read nothing.
+   */
+  hydrationFailed(): boolean;
+  /** Releases instance-owned listeners/resources. Pending durable work must not be discarded. */
+  close(): void;
 }
 
 export interface CaptureStoreOptions {
@@ -59,7 +91,7 @@ export function createCaptureStore<T>(options: CaptureStoreOptions): CaptureStor
       return snapshot;
     },
 
-    append(record: T): void {
+    async append(record: T): Promise<void> {
       snapshot = [...snapshot, record];
       persist(storage, key, snapshot);
       for (const listener of listeners) listener();
@@ -68,6 +100,17 @@ export function createCaptureStore<T>(options: CaptureStoreOptions): CaptureStor
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+
+    settled(): boolean {
+      return true; // read once at construction — synchronous, so always already settled
+    },
+
+    hydrationFailed(): boolean {
+      return false; // load() below never throws — a corrupt value reads as [], not a failure
+    },
+    close(): void {
+      listeners.clear();
     },
   };
 }

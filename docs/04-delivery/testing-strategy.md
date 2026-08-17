@@ -189,26 +189,28 @@ It is generated from the classification table, so **adding a table without addin
 
 Playwright with `context.setOffline(true)`. **This suite is the product's insurance policy.** Every row maps to a scenario in [offline-sync.md §7](../03-architecture/offline-sync.md).
 
-| # | Test | Asserts | Story |
-|---|---|---|---|
-| O-1 | Write offline → kill browser → reopen offline | Record present, still queued | US-010 |
-| O-2 | Write offline → **reboot device** → reopen | Record present | US-010 |
-| O-3 | Offline 6 weeks → sync | All applied, **`occurred_at` preserved**, reports use `occurred_at` | US-010 |
-| O-4 | Kill connection mid-upload | Resumes from checkpoint, no dup, no loss | UC-050 A3.1 |
-| O-5 | Two devices, different fields | Both survive, no audit row | US-040 |
-| O-6 | Two devices, same field | Later `occurred_at` wins + audit row | US-040 |
-| O-7 | Two devices, same birth | Two rows + review item, nothing deleted | US-040 |
-| O-8 | Sale vs death | `dead`, sale flagged, audit row | US-040 |
-| O-9 | **Refresh token expires with 47 queued writes** | **Queue HELD, uploaded after login** | UC-050 A2.1 |
-| O-10 | Storage quota exceeded | Read set degrades, **queue intact** | UC-050 E7.1 |
-| O-11 | Old client → new schema | Applied or quarantined, **never lost** | offline-sync §6 |
-| O-12 | PHI check offline | Blocked locally, no server round trip | US-030 |
-| O-13 | Withdrawal check offline | Blocked locally | US-032 |
-| O-14 | Mark missing offline | GPS + timestamp captured locally | US-031 |
-| O-15 | Payroll offline | **Refuses, plainly, without losing attendance** | UC-020 E2 |
-| O-16 | **TOTP offline** | Code verifies with the radio off — it is time-based | ADR-0007 |
-| O-17 | **Passkey auth offline** | Platform authenticator works locally; only *registration* needs network | ADR-0007 |
-| O-18 | Reference data offline, jurisdiction-filtered | ZA device holds ZA withdrawal periods, nothing else | ADR-0006 |
+| # | Test | Asserts | Story | Phase 3 coverage (2026-08-14) |
+|---|---|---|---|---|
+| O-1 | Write offline → kill browser → reopen offline | Record present, still queued | US-010 | ✅ `offline-capture.spec.ts` (real browser, local-only — no server contact needed for this row) |
+| O-2 | Write offline → **reboot device** → reopen | Record present | US-010 | ✅ `offline-capture.spec.ts` / `capture-migration.spec.ts` (real browser, local-only) |
+| O-3 | Offline 6 weeks → sync | All applied, **`occurred_at` preserved**, reports use `occurred_at` | US-010 | ✅ `real-offline-matrix.spec.ts`, real Postgres + real PowerSync (`WERF_REAL_STACK`) — a back-dated capture's `occurred_at` verified byte-exact in Postgres, then a second device's fold reads the same date, not arrival order |
+| O-4 | Kill connection mid-upload | Resumes from checkpoint, no dup, no loss | UC-050 A3.1 | ◐ Covered for attachments specifically (3i(c)'s interruption test: PUT succeeds, finalize fails, app restarts, retry completes) — not a general mid-upload-of-any-capture-kind test |
+| O-5 | Two devices, different fields | Both survive, no audit row | US-040 | ◐ Partially — `real-sync-hydration.spec.ts` proves one two-device shape (a hydrated birth funding a decrease); the fake-driven 3e conflict-matrix suites cover more shapes, not against the real stack |
+| O-6 | Two devices, same field | Later `occurred_at` wins + audit row | US-040 | ✅ **CLOSED 2026-08-15.** Migration 0026's immutable `audit_log`; `(occurred_at,id)` LWW resolves movement conflicts, proven against real Postgres in `livestock.integration.test.ts` |
+| O-7 | Two devices, same birth | Two rows + review item, nothing deleted | US-040 | ✅ **CLOSED 2026-08-15.** `conflict_reviews` queue + `AttentionScreen.tsx`/`LocalConflictReviews.tsx`; legitimate-twin-batch handling distinguishes a real second litter from a duplicate capture |
+| O-8 | Sale vs death | `dead`, sale flagged, audit row | US-040 | ✅ **CLOSED 2026-08-15.** Same mechanism as O-6; sale-outranks-death-outranks-sale projection in `apps/api/src/conflicts/conflicts.service.ts` |
+| O-9 | **Refresh token expires with 47 queued writes** | **Queue HELD, uploaded after login** | UC-050 A2.1 | ✅ `Outbox.test.tsx`'s invariant-5 test (fake-driven, pins the behaviour precisely); no real-stack variant built |
+| O-10 | Storage quota exceeded | Read set degrades, **queue intact** | UC-050 E7.1 | ✅ Unit/integration level (3f's durability coordinator); no real-browser-quota-exhaustion e2e |
+| O-11 | Old client → new schema | Applied or quarantined, **never lost** | offline-sync §6 | ✅ `livestock.integration.test.ts`'s additive-migration test, against real Postgres (3g) |
+| O-12 | PHI check offline | Blocked locally, no server round trip | US-030 | ⛔ Phase 4 (crops) — PHI does not exist yet |
+| O-13 | Withdrawal check offline | Blocked locally | US-032 | ✅ FR-131 guard, extensively covered (`withdrawal.test.ts`, `AdjustMob.test.tsx`, `RecordLoss.test.tsx`) |
+| O-14 | Mark missing offline | GPS + timestamp captured locally | US-031 | ✅ Phase 2, `RecordLossScreen`'s missing-report path |
+| O-15 | Payroll offline | **Refuses, plainly, without losing attendance** | UC-020 E2 | ⛔ Phase 5 (labour) — not started |
+| O-16 | **TOTP offline** | Code verifies with the radio off — it is time-based | ADR-0007 | ✅ Phase 1, `totp.ts` tested against RFC vectors, no network in the verify path |
+| O-17 | **Passkey auth offline** | Platform authenticator works locally; only *registration* needs network | ADR-0007 | ✅ Phase 1 |
+| O-18 | Reference data offline, jurisdiction-filtered | ZA device holds ZA withdrawal periods, nothing else | ADR-0006 | ✅ Phase 2/3, the reference-cache read path |
+
+**Reading the coverage column**: ✅ = a real test exists and was verified this session (or in an earlier one, re-confirmed here); ◐ = partial — the mechanism is proven, but not every angle the row implies; ⛔ = not built, either because the row's own premise doesn't hold yet in this codebase or because it belongs to a phase that hasn't started (O-12/O-15). This replaces an unannotated table that read as a claim of blanket coverage it never had — `docs-contradict-the-code`'s own recurring failure mode in this repo.
 
 ```ts
 // apps/web/e2e/offline/durability.spec.ts
@@ -320,12 +322,32 @@ These are gates. They are in the roadmap because they cannot be in CI.
 | **The crush test** — a real handler, a real crush, timed | 2 | If a weight takes >4s, the tests all pass and the product is dead |
 | **The reboot test** — real Android, real aeroplane mode, real reboot | 1 | Emulator OPFS ≠ device OPFS |
 | **The sunlight test** — real phone, midday, gloves | 1, 2 | `axe-core` measures contrast ratios, not glare |
-| **The bookkeeper test** — a real payslip, a 20-year bookkeeper | 3 | They will spot in 5 seconds what the test suite cannot express |
-| **The auditor test** — a real GlobalGAP auditor, a real pack | 4 | They know what is missing. We do not. |
-| **The SAPS test** — a real Stock Theft Unit officer | 4 | Same |
-| **The legal review** — a qualified labour-law practitioner | 3 | **The tests encode our understanding. If our understanding is wrong, the tests are confidently wrong too.** |
+| **The bookkeeper test** — a real payslip, a 20-year bookkeeper | 5 | They will spot in 5 seconds what the test suite cannot express |
+| **The auditor test** — a real GlobalGAP auditor, a real pack | 6 | They know what is missing. We do not. |
+| **The SAPS test** — a real Stock Theft Unit officer | 6 | Same |
+| **The legal review** — a qualified labour-law practitioner | 5 | **The tests encode our understanding. If our understanding is wrong, the tests are confidently wrong too.** |
 
 The last one is the important one. Everywhere else in this codebase, a passing test means the code is right. In payroll, a passing test means the code matches what we *believed* the law says. Those are not the same claim, and no amount of coverage closes the gap. Only a lawyer does.
+
+⚠️ The Phase column above was wrong for three rows until 2026-08-17 (Q19): bookkeeper/legal-review
+said `3`, auditor/SAPS said `4`. Payroll is Phase 5 and evidence packs are Phase 6 — see
+`roadmap.md`. Fixed here rather than left for the next reconciliation pass.
+
+### 7a. Phase 3 field evidence — recorded 2026-08-17 (Q19), not yet run
+
+Phase 7 (`roadmap.md` 7e) pilots three farms for a month, but that gate is generic — it does not
+name what Phase 3's sync engine specifically needs proven. These are the offline-sync claims this
+codebase makes that no CI run, testcontainer or Playwright `context.setOffline()` can substitute
+for. None of these have been run yet; they are recorded so Phase 7 doesn't have to rediscover them
+under pilot pressure.
+
+| Check | Why a human, on real hardware |
+|---|---|
+| **The dead-zone test** — a real device, genuinely out of signal (not airplane mode) for multiple days on an actual farm | `page.setOffline()`/`WERF_REAL_STACK`'s network toggle is a clean binary switch. Real rural connectivity degrades — partial signal, DNS timeouts, a carrier that silently drops a long-idle socket — in ways the sync client's retry/backoff has never been exercised against |
+| **The low-end-device storage test** — OPFS quota and eviction-under-pressure on the cheap Android hardware SA farm workers actually carry, filled with weeks of queued writes and photos | CI's OPFS has effectively unlimited disk. A real device fills up, and browser eviction behaviour under storage pressure is device- and Android-version-specific — untested anywhere in this repo |
+| **The two-workers-one-farm test** — two real people on two real phones, capturing concurrently over days, then reading the conflict-review queue themselves | The two-browser Playwright specs prove the *projection* is correct. They cannot prove a real farm manager reads `conflict_reviews` and picks the right winner under time pressure — that is a legibility claim, not a correctness claim |
+| **The big-attachment-on-bad-signal test** — a real ≤25MB photo queued and flushed to S3 af-south-1 over actual rural mobile data | The presigned-PUT retry path is proven against `minio/minio:latest` on localhost. Real EDGE/3G-class latency and timeout behaviour against the production bucket is unverified |
+| **The real-authenticator test** — TOTP/passkey enrolment and step-up on the phone or hardware key a farm owner actually owns, including a genuine "I lost my phone" recovery | WebAuthn tests use a virtual authenticator. A real biometric prompt, a real hardware key, and the actual recovery-code UX have never been exercised by anyone but the person who wrote the code |
 
 ---
 

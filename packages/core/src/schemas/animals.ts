@@ -22,6 +22,7 @@ import {
   speciesSchema,
   timestampSchema,
   uuidSchema,
+  uuidV7Schema,
 } from './primitives';
 
 // ── Animal ──────────────────────────────────────────────────────────────────
@@ -60,6 +61,8 @@ export type Animal = z.infer<typeof animalSchema>;
 export const newAnimalSchema = animalSchema
   .pick({ id: true, farmId: true, species: true, sex: true })
   .extend({
+    /** Client-generated UUIDv7 for the animal row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     enterpriseId: animalSchema.shape.enterpriseId.default(null),
     breed: animalSchema.shape.breed.default(null),
     dob: animalSchema.shape.dob.default(null),
@@ -76,6 +79,17 @@ export const newAnimalSchema = animalSchema
     brandAppliedAt: animalSchema.shape.brandAppliedAt.default(null),
     attributes: z.record(z.string(), z.unknown()).default({}),
     photoKey: animalSchema.shape.photoKey.default(null),
+  })
+  .superRefine((animal, context) => {
+    // A mark link without its application day cannot support the FR-602 overdue check; a day
+    // without a mark claims an application nobody can identify. The pair is one fact.
+    if ((animal.brandId === null) !== (animal.brandAppliedAt === null)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: animal.brandId === null ? ['brandId'] : ['brandAppliedAt'],
+        message: 'A registered mark and the day it was applied must be recorded together',
+      });
+    }
   });
 export type NewAnimal = z.infer<typeof newAnimalSchema>;
 
@@ -122,6 +136,8 @@ export type Mob = z.infer<typeof mobSchema>;
 export const newMobSchema = mobSchema
   .pick({ id: true, farmId: true, name: true, species: true })
   .extend({
+    /** Client-generated UUIDv7 for the mob row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     enterpriseId: mobSchema.shape.enterpriseId.default(null),
     landUnitId: mobSchema.shape.landUnitId.default(null),
     headCount: mobSchema.shape.headCount.default(null),
@@ -233,6 +249,8 @@ export type AnimalIdentifier = z.infer<typeof animalIdentifierSchema>;
 export const newAnimalIdentifierSchema = animalIdentifierSchema
   .pick({ id: true, farmId: true, animalId: true, type: true, value: true })
   .extend({
+    /** Client-generated UUIDv7 for the identifier row (P2.9) — not merely a well-formed UUID. */
+    id: uuidV7Schema,
     isPrimary: z.boolean().default(false),
     appliedAt: animalIdentifierSchema.shape.appliedAt.default(null),
   });

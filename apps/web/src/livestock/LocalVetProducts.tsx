@@ -34,9 +34,18 @@ import { useAuth } from '../auth/AuthProvider';
 import { useSyncStatus } from '../sync/useSyncStatus';
 import { referenceApi } from './referenceApi';
 
-/** A registered product, as the device holds it. */
+/**
+ * A registered product VERSION, as the device holds it — one row per registration, not one per
+ * product name. `id` is the specific version a treatment's `productId` points at, and the cache
+ * holds every version this farm's jurisdiction has ever had (P1.3, 2026-08-14), not only whichever
+ * is in force today: a treatment captured against a since-superseded registration still needs to
+ * resolve its own clear date, and the device must be able to tell "this exact version is
+ * registered with no withdrawal" apart from "I have no record of this version at all" — the two
+ * mean opposite things for FR-131's fail-closed guard (`withdrawal.ts`).
+ */
 export interface StoredVetProduct {
   readonly id: string;
+  readonly jurisdiction: string;
   readonly name: string;
   readonly registrationNumber: string | null;
   readonly species: readonly string[];
@@ -45,6 +54,22 @@ export interface StoredVetProduct {
   /** Milk withdrawal in HOURS — that is how registrations are published; null = none. */
   readonly milkWithdrawalHours: number | null;
   readonly route: string | null;
+  /** The day this VERSION's registration took effect. */
+  readonly effectiveFrom: string;
+  /** The day this VERSION was superseded, or null while it is still current. */
+  readonly effectiveTo: string | null;
+}
+
+/** The version of `product` that was in force on `day` (a treatment's `administeredOn`, or a
+ *  capture screen's own "today"), if this device's cache holds it. Inclusive of `effectiveFrom`,
+ *  exclusive of `effectiveTo` — the same boundary the server's own registration query uses. */
+export function inForceOn(
+  products: readonly StoredVetProduct[],
+  day: string,
+): readonly StoredVetProduct[] {
+  return products.filter(
+    (p) => p.effectiveFrom <= day && (p.effectiveTo === null || p.effectiveTo > day),
+  );
 }
 
 export type VetProductStore = ReferenceCache<StoredVetProduct>;

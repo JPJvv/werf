@@ -1,11 +1,13 @@
 /**
- * The outbox — the best-effort flush that carries offline captures up to the server (Phase 2).
+ * The outbox — the best-effort flush that carries offline captures up to the server.
  *
  * This is the seam that finally runs the two halves of the product together: the capture screens
  * write to the local stores with no network in the path, and THIS sends what they hold once there
- * is a signal. It is the Phase-2 stand-in for the PowerSync uploader; when the real replication
- * engine lands in Phase 3 the stores and screens above this do not change — the flush is simply
- * done by PowerSync instead of by hand against the `apps/api` capture endpoints.
+ * is a signal. It is the PERMANENT durable upload queue (ADR-0012), not a Phase-2 stand-in awaiting
+ * a PowerSync CRUD-native uploader — `PowerSyncBackendConnector.uploadData`
+ * (`packages/sync/src/connector.ts`) throws by design and never drains a batch. PowerSync's role in
+ * this product is down-sync only; every capture reaches Postgres by hand, against the `apps/api`
+ * capture endpoints, through this file.
  *
  * Three rules shape it, all from .claude/rules/db.md and the offline-first promise:
  *
@@ -41,24 +43,96 @@ import { projectHeadCount } from '@werf/domain';
 import { createSentLog, type SentLog } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
-import { useBoundaryWalks, useLandUnits } from '../land/LocalLand';
+import {
+  useBoundaryWalks,
+  useBoundaryWalksHydrationFailed,
+  useBoundaryWalksSettled,
+  useLandUnits,
+  useLandUnitsHydrationFailed,
+  useLandUnitsSettled,
+} from '../land/LocalLand';
 import { landApi } from '../land/landApi';
-import { useAnimals } from '../livestock/LocalHerd';
-import { useMobs } from '../livestock/LocalMobs';
-import { useTallies, type StoredTally } from '../livestock/LocalTallies';
-import { useAnimalLabels, useIdentifiers } from '../livestock/LocalIdentifiers';
-import { useWeights } from '../livestock/LocalWeights';
-import { useLifecycleEvents, type StoredLifecycleEvent } from '../livestock/LocalLifecycle';
-import { useMoves } from '../livestock/LocalMoves';
+import { useHydratedLandUnits } from '../land/HydratedLand';
+import {
+  useAttachments,
+  useAttachmentsHydrationFailed,
+  useAttachmentsSettled,
+  useAttachmentBlobStore,
+} from '../attachments/LocalAttachments';
+import { sendAttachment } from '../attachments/attachmentApi';
+import { useAnimals, useAnimalsHydrationFailed, useAnimalsSettled } from '../livestock/LocalHerd';
+import {
+  useBrandingRegisters,
+  useBrandingRegistersHydrationFailed,
+  useBrandingRegistersSettled,
+} from '../livestock/LocalBranding';
+import { useMobs, useMobsHydrationFailed, useMobsSettled } from '../livestock/LocalMobs';
+import {
+  useTallies,
+  useTalliesHydrationFailed,
+  useTalliesSettled,
+  type StoredTally,
+} from '../livestock/LocalTallies';
+import {
+  useHydratedMobs,
+  useHydratedMobsHydrationFailed,
+  useHydratedMobsSettled,
+  useHydratedTallies,
+  useHydratedTalliesHydrationFailed,
+  useHydratedTalliesSettled,
+  useHydratedAnimals,
+  useHydratedAnimalsHydrationFailed,
+  useHydratedAnimalsSettled,
+  useHydratedMoves,
+  useHydratedMovesHydrationFailed,
+  useHydratedMovesSettled,
+  mergeById,
+  mergeByIdPreferHydrated,
+} from '../livestock/HydratedLivestock';
+import {
+  useAnimalLabels,
+  useIdentifiers,
+  useIdentifiersHydrationFailed,
+  useIdentifiersSettled,
+} from '../livestock/LocalIdentifiers';
+import {
+  useWeights,
+  useWeightsHydrationFailed,
+  useWeightsSettled,
+} from '../livestock/LocalWeights';
+import {
+  useLifecycleEvents,
+  useLifecycleEventsHydrationFailed,
+  useLifecycleEventsSettled,
+  type StoredLifecycleEvent,
+} from '../livestock/LocalLifecycle';
+import { useMoves, useMovesHydrationFailed, useMovesSettled } from '../livestock/LocalMoves';
 import { animalDisposalSubjects, mobDisposalSubjects } from '../livestock/withdrawal';
 import { farmDay } from '../farmTime';
-import { useHealthEvents } from '../livestock/LocalHealth';
-import { useBreedingEvents } from '../livestock/LocalBreeding';
-import { useTheftIncidents } from '../livestock/LocalTheft';
+import {
+  useHealthEvents,
+  useHealthEventsHydrationFailed,
+  useHealthEventsSettled,
+} from '../livestock/LocalHealth';
+import {
+  useBreedingEvents,
+  useBreedingEventsHydrationFailed,
+  useBreedingEventsSettled,
+} from '../livestock/LocalBreeding';
+import {
+  useTheftIncidents,
+  useTheftIncidentsHydrationFailed,
+  useTheftIncidentsSettled,
+} from '../livestock/LocalTheft';
 import { livestockApi } from '../livestock/livestockApi';
-import { useRainfall } from '../rainfall/LocalRainfall';
+import {
+  useRainfall,
+  useRainfallHydrationFailed,
+  useRainfallSettled,
+} from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
+import { deriveSyncHealth, type SyncHealth } from './syncHealth';
 
 /**
  * Send one lifecycle event to its own endpoint. The switch is exhaustive on the union, so adding a
@@ -153,6 +227,7 @@ export type CaptureKind =
   | 'boundaryWalk'
   | 'mob'
   | 'tally'
+  | 'branding'
   | 'animal'
   | 'identifier'
   | 'weight'
@@ -161,7 +236,8 @@ export type CaptureKind =
   | 'health'
   | 'breeding'
   | 'theft'
-  | 'rainfall';
+  | 'rainfall'
+  | 'attachment';
 
 /** One queued capture: its id (for the sent-log), what it is, and how to send it. */
 interface FlushItem {
@@ -313,6 +389,10 @@ function orderTallies(tallies: readonly StoredTally[]): readonly StoredTally[] {
 /** Injectable so tests can back the sent-log with in-memory storage instead of localStorage. */
 export type SentLogFactory = (key: string) => SentLog;
 
+// See the "FINDING 2" comment at this constant's one use site (the errored-retry effect) for
+// why 90s and not something shorter or unbounded.
+const RETRY_INTERVAL_MS = 90_000;
+
 const defaultSentLogFactory: SentLogFactory = (key) =>
   createSentLog({ storage: window.localStorage, key });
 
@@ -353,6 +433,10 @@ const RefusedCapturesContext = createContext<readonly RefusedCapture[]>(EMPTY_RE
 /** The captures HELD behind one of those refusals — waiting, not rejected. */
 const HeldCapturesContext = createContext<readonly RefusedCapture[]>(EMPTY_REFUSED);
 
+/** Phase-checklists.md 3h: per-farm queue depth/failure, PII-shaped fields structurally absent
+ *  (see syncHealth.ts's own header). Null outside a provider — no farm to scope it to. */
+const SyncHealthContext = createContext<SyncHealth | null>(null);
+
 export interface OutboxProviderProps {
   children: ReactNode;
   factory?: SentLogFactory;
@@ -362,9 +446,33 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
   const boundaryWalks = useBoundaryWalks();
+  // ⭐ The down-sync half of land (phase-checklists.md 3e, land hydration — closed 2026-08-14) — a
+  // camp another device created, already replicated to this one. Read ONLY for `landUnitCodes`
+  // below (display), never for the send-queue loops above: those stay on the raw local `landUnits`
+  // so a hydrated row is never re-queued for send, the same rule every other kind here follows.
+  const hydratedLandUnits = useHydratedLandUnits();
   const mobs = useMobs();
   const tallies = useTallies();
+  // ⭐ The down-sync half of the same two tables (phase-checklists.md 3e) — mobs another device
+  // created and tallies another device sent, already replicated to this one. This is what closes
+  // tripwire 3e: see the `foldMobs`/`foldTallies`/`hydratedTallyIds` block below `queue`, and
+  // `needsHead`'s own comment, for exactly how.
+  const hydratedMobs = useHydratedMobs();
+  const hydratedTallies = useHydratedTallies();
+  const brandingRegisters = useBrandingRegisters();
   const animals = useAnimals();
+  // ⭐ Same down-sync half, extended to animals/moves (phase-checklists.md 3e) — an animal another
+  // device registered, or a walk another device recorded, already replicated to this one.
+  // `foldAnimals`/`foldMoves`, below `queue`, feed ONLY the FR-131 guard computations
+  // (`mobDisposalSubjects`/`animalDisposalSubjects`) — never the item-build loops, which stay on
+  // the raw local stores below so a hydrated row is never re-queued for send. Health does NOT need
+  // the same fold here: this queue's `guardedBy`/`provides`/`taintedSubjects` mechanism holds a
+  // LOCAL disposal behind a LOCAL dose refused THIS round — a hydrated dose is, by definition,
+  // already accepted, so there is nothing for it to taint. The withdrawal STATUS computation that
+  // does read hydrated health lives at capture time (`AdjustMobScreen.tsx`/`RecordLossScreen.tsx`)
+  // and in the residue preview (`residue.ts`), not here.
+  const hydratedAnimals = useHydratedAnimals();
+  const hydratedMoves = useHydratedMoves();
   const identifiers = useIdentifiers();
   // What each animal is CALLED. Read here purely so a refused capture can be named by the number
   // on the animal's ear rather than by a uuid the farmer has never seen.
@@ -376,6 +484,120 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
   const rainfall = useRainfall();
+  const attachments = useAttachments();
+  // Never a `FlushItem` field, never read outside `sendAttachment` — the outbox holds no blob
+  // itself, only the handle to where the local capture store already keeps them.
+  const attachmentBlobStore = useAttachmentBlobStore();
+
+  // ⭐ EVERY STORE THIS QUEUE READS, SETTLED, BEFORE ANY OF IT IS TRUSTED. Each store
+  // above hydrates independently and asynchronously (phase-checklists.md 3c) — the SQLite-backed
+  // capture stores start empty and fill in on their own schedule, not necessarily together. An
+  // unhydrated store's `all()` is `[]`, which is INDISTINGUISHABLE from "this farm genuinely has
+  // none of these" to every FK/`guardedBy`/`needsHead` check below: a dip that has not hydrated
+  // yet cannot taint the tally it is meant to guard, because from this queue's point of view the
+  // dip simply does not exist. A real regression this way: the tallies store hydrating first, on
+  // its own, produced a queue with no dose to hold a slaughter behind — the slaughter posted, the
+  // dip posted six entries later, and a server-side guard that exists specifically to stop meat
+  // leaving inside a withdrawal was never given the chance to run. Gating the flush (below) and
+  // "synced" itself (in `state`, below) on every one of these settling closes it: an unhydrated
+  // store reads as "still finding out", never as "confirmed empty".
+  //
+  // ⛔ Every hook called UNCONDITIONALLY, one per line, before the `&&` chain — combining them
+  // with `useX() && useY()` directly would short-circuit and skip calling useY() the moment useX()
+  // is false, which changes how many hooks this component calls between renders and breaks React
+  // outright (the Rules of Hooks), not just this feature.
+  const landUnitsSettled = useLandUnitsSettled();
+  const boundaryWalksSettled = useBoundaryWalksSettled();
+  const mobsSettled = useMobsSettled();
+  const talliesSettled = useTalliesSettled();
+  // Same "not yet trustworthy" gate as every local store above, for the down-sync sources —
+  // `HydratedTableStore.settled()` is the first LOCAL read completing, never a live-sync wait
+  // (`hydrated-table-store.ts`'s own header), so an offline device settles immediately.
+  const hydratedMobsSettled = useHydratedMobsSettled();
+  const hydratedTalliesSettled = useHydratedTalliesSettled();
+  const hydratedAnimalsSettled = useHydratedAnimalsSettled();
+  const hydratedMovesSettled = useHydratedMovesSettled();
+  const brandingRegistersSettled = useBrandingRegistersSettled();
+  const animalsSettled = useAnimalsSettled();
+  const identifiersSettled = useIdentifiersSettled();
+  const weightsSettled = useWeightsSettled();
+  const eventsSettled = useLifecycleEventsSettled();
+  const movesSettled = useMovesSettled();
+  const healthSettled = useHealthEventsSettled();
+  const breedingSettled = useBreedingEventsSettled();
+  const theftSettled = useTheftIncidentsSettled();
+  const rainfallSettled = useRainfallSettled();
+  const attachmentsSettled = useAttachmentsSettled();
+  const allSettled =
+    landUnitsSettled &&
+    boundaryWalksSettled &&
+    mobsSettled &&
+    talliesSettled &&
+    hydratedMobsSettled &&
+    hydratedTalliesSettled &&
+    hydratedAnimalsSettled &&
+    hydratedMovesSettled &&
+    brandingRegistersSettled &&
+    animalsSettled &&
+    identifiersSettled &&
+    weightsSettled &&
+    eventsSettled &&
+    movesSettled &&
+    healthSettled &&
+    breedingSettled &&
+    theftSettled &&
+    rainfallSettled &&
+    attachmentsSettled;
+
+  // ⭐ FINDING 1 (sync-auditor, 2026-08-09): `settled()` flips true on EITHER outcome, by design
+  // (a store that can never open must not strand every other store's flush forever) — but that
+  // means a store whose hydration genuinely FAILED (the database would not open, or reading it
+  // back threw) also reports `all() === []` once `allSettled` is true, and nothing above told
+  // `allSettled` apart from a store that hydrated successfully and confirmed it holds nothing. A
+  // failed `health` read is the sharp case: the FR-131 disposal guard would read it as "no dose
+  // outstanding" and wave a slaughter through that a dose this device cannot currently verify
+  // should have held. `hydrationFailed()` is the second signal that closes this — same
+  // unconditional-hook-call discipline as the settled flags above, for the same Rules-of-Hooks
+  // reason.
+  const landUnitsHydrationFailed = useLandUnitsHydrationFailed();
+  const boundaryWalksHydrationFailed = useBoundaryWalksHydrationFailed();
+  const mobsHydrationFailed = useMobsHydrationFailed();
+  const talliesHydrationFailed = useTalliesHydrationFailed();
+  const hydratedMobsHydrationFailed = useHydratedMobsHydrationFailed();
+  const hydratedTalliesHydrationFailed = useHydratedTalliesHydrationFailed();
+  const hydratedAnimalsHydrationFailed = useHydratedAnimalsHydrationFailed();
+  const hydratedMovesHydrationFailed = useHydratedMovesHydrationFailed();
+  const brandingRegistersHydrationFailed = useBrandingRegistersHydrationFailed();
+  const animalsHydrationFailed = useAnimalsHydrationFailed();
+  const identifiersHydrationFailed = useIdentifiersHydrationFailed();
+  const weightsHydrationFailed = useWeightsHydrationFailed();
+  const eventsHydrationFailed = useLifecycleEventsHydrationFailed();
+  const movesHydrationFailed = useMovesHydrationFailed();
+  const healthHydrationFailed = useHealthEventsHydrationFailed();
+  const breedingHydrationFailed = useBreedingEventsHydrationFailed();
+  const theftHydrationFailed = useTheftIncidentsHydrationFailed();
+  const rainfallHydrationFailed = useRainfallHydrationFailed();
+  const attachmentsHydrationFailed = useAttachmentsHydrationFailed();
+  const anyHydrationFailed =
+    landUnitsHydrationFailed ||
+    boundaryWalksHydrationFailed ||
+    mobsHydrationFailed ||
+    talliesHydrationFailed ||
+    hydratedMobsHydrationFailed ||
+    hydratedTalliesHydrationFailed ||
+    hydratedAnimalsHydrationFailed ||
+    hydratedMovesHydrationFailed ||
+    brandingRegistersHydrationFailed ||
+    animalsHydrationFailed ||
+    identifiersHydrationFailed ||
+    weightsHydrationFailed ||
+    eventsHydrationFailed ||
+    movesHydrationFailed ||
+    healthHydrationFailed ||
+    breedingHydrationFailed ||
+    theftHydrationFailed ||
+    rainfallHydrationFailed ||
+    attachmentsHydrationFailed;
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
   const online = useSyncStatus().status !== 'offline';
@@ -383,15 +605,63 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // The sent-log is farm-scoped by key, exactly like the stores it shadows: one farm's send-state
   // never counts against another's pending total.
   // What each camp is CALLED, for the same reason `labels` exists: a refused boundary walk must be
-  // named by the code on the gate ("Camp 3") rather than by a uuid the farmer has never seen.
+  // named by the code on the gate ("Camp 3") rather than by a uuid the farmer has never seen. Local
+  // + hydrated merged (`mergeById`, local-wins) — a walk this device sends can reference a camp only
+  // known via down-sync, and that camp's code must still resolve here rather than falling back to
+  // the bare id.
   const landUnitCodes = useMemo(
-    () => new Map(landUnits.map((unit) => [unit.id, unit.code])),
-    [landUnits],
+    () => new Map(mergeById(landUnits, hydratedLandUnits).map((unit) => [unit.id, unit.code])),
+    [landUnits, hydratedLandUnits],
   );
 
   const farmId = activeFarm?.id ?? 'none';
   const sentLog = useMemo(() => factory(`werf-sent:${farmId}`), [factory, farmId]);
   const sent = useSyncExternalStore(sentLog.subscribe, sentLog.all);
+
+  // ⭐ TRIPWIRE 3e CLOSED HERE. `needsHead` (inside `queue`, below) folds over `foldTallies`/
+  // `foldMobs` rather than the raw local `mobs`/`tallies` — the merge of what this device
+  // captured with what another device captured and the server has already replicated down. Two
+  // rules make this safe rather than a second way to duplicate a send:
+  //
+  //   1. The QUEUE ITSELF (the `for` loops below that push `FlushItem`s) still iterates the LOCAL
+  //      `mobs`/`tallies` arrays ONLY, filtered by `!sent.has(id)` exactly as before. A hydrated
+  //      row is never a `FlushItem` and is never POSTed — `foldTallies`/`foldMobs` exist ONLY to
+  //      answer "what does the fold this device can see currently say", never "what should be
+  //      sent". Widening the queue itself to hydrated rows would make a device re-POST another
+  //      device's already-landed work.
+  //   2. `hydratedTallyIds` is folded into `landed()`, not into the sent-log. Writing a hydrated
+  //      id into `sentLog` would conflate "this device sent it" with "the server holds it" and,
+  //      on a large farm, grow that log unboundedly — `sent-log.ts`'s own header now says so.
+  //      Deriving the set live from the down-synced table instead means it cannot drift from what
+  //      is actually hydrated, and it costs nothing to keep in sync: it IS the table.
+  const foldMobs = useMemo(() => mergeById(mobs, hydratedMobs), [mobs, hydratedMobs]);
+  const foldTallies = useMemo(
+    () => mergeById(tallies, hydratedTallies),
+    [tallies, hydratedTallies],
+  );
+  const hydratedTallyIds = useMemo(
+    () => new Set(hydratedTallies.map((t) => t.id)),
+    [hydratedTallies],
+  );
+  // ⭐ Same fold, same two rules, extended to animals/moves (phase-checklists.md 3e) — these feed
+  // ONLY `mobDisposalSubjects`/`animalDisposalSubjects` below (the FR-131 send-order guard), never
+  // a `FlushItem` loop. Unlike `foldTallies`, no `landed()`/`hydratedXIds` counterpart exists for
+  // these two: nothing here asks "has the server already got this row", only "what does the
+  // guard's evidence currently say" — the same read `AdjustMobScreen.tsx`/`RecordLossScreen.tsx`/
+  // `residue.ts` now make. Health is deliberately NOT folded here — see the note above `animals`.
+  const foldAnimals = useMemo(
+    () => mergeById(animals, hydratedAnimals),
+    [animals, hydratedAnimals],
+  );
+  // `mergeByIdPreferHydrated`, not `mergeById`: a move's hydrated echo carries `fromMobId`/
+  // `fromLandUnitId`, which a local capture never can (compliance-checker finding, phase-
+  // checklists.md 3e) — local-wins would permanently shadow that enrichment once this device's
+  // own move round-trips back down with the same id. See `HydratedLivestock.tsx`'s
+  // `mergeByIdPreferHydrated` docstring for the full reasoning.
+  const foldMoves = useMemo(
+    () => mergeByIdPreferHydrated(moves, hydratedMoves),
+    [moves, hydratedMoves],
+  );
 
   // The pending queue, in send order. Two rules decide it, and the second is not obvious:
   //   1. FOREIGN KEYS — a row must not arrive before what it points at. Land, then mobs, then
@@ -414,6 +684,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'landUnit',
           detail: unit.name,
           send: (token) => landApi.createLandUnit(unit, token),
+          // The row every boundary walk, mob, animal, move and theft incident behind it is a
+          // foreign key to (P2.7, issue tracked in STATUS.md — same shape as `mobrow:`/
+          // `animalrow:`). Refused or held, everything naming this camp must wait rather than
+          // each earning its own 404 for the same one cause.
+          provides: [`landrow:${unit.id}`],
         });
       }
     }
@@ -424,6 +699,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // different questions. Nothing in this pair creates evidence a server-side guard reads, and
     // nothing judges it: a boundary is not a withholding, a disposal, or a head count. Where the
     // walk lands relative to everything below it is a matter of foreign keys alone.
+    //
+    // ⭐ `guardedBy` is a SEPARATE axis from that ordering claim: a camp created this same round and
+    // then refused (a duplicate code, a second device's clash) means the server never has it, and a
+    // walk sent anyway 404s for the one cause a farmer cannot see from this screen. `landUnitId` is
+    // never null on a walk — it is the shape OF a camp — so the guard is unconditional (P2.7).
     for (const walk of boundaryWalks) {
       if (!sent.has(walk.id)) {
         items.push({
@@ -431,6 +711,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'boundaryWalk',
           detail: landUnitCodes.get(walk.landUnitId) ?? null,
           send: (token) => landApi.recordBoundaryWalk(walk, token),
+          guardedBy: [`landrow:${walk.landUnitId}`],
         });
       }
     }
@@ -445,16 +726,44 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // The row every tally on this mob is a foreign key to. Refused or held, the tallies
           // behind it must wait rather than each earning its own 404 for the same one cause.
           provides: [`mobrow:${mob.id}`],
+          // ⭐ P2.7: a mob created IN a not-yet-accepted camp must wait behind that camp, the same
+          // shape a walk waits behind the camp it is the shape of. `landUnitId` is optional (a mob
+          // may carry no camp at all), so this is conditional, unlike `walk`'s unconditional guard.
+          ...(mob.landUnitId !== null ? { guardedBy: [`landrow:${mob.landUnitId}`] } : {}),
+        });
+      }
+    }
+    // A registered mark is an FK root for `animals.brand_id`. It references only the farm, so it
+    // can be sent here after the other roots and must be sent before every linked animal below.
+    for (const register of brandingRegisters) {
+      if (!sent.has(register.id)) {
+        items.push({
+          id: register.id,
+          kind: 'branding',
+          detail: register.mark,
+          send: (token) => livestockApi.createBrandingRegister(register, token),
+          provides: [`brandrow:${register.id}`],
         });
       }
     }
     for (const animal of animals) {
       if (!sent.has(animal.id)) {
+        const guardedByFor = [
+          ...(animal.landUnitId !== null ? [`landrow:${animal.landUnitId}`] : []),
+          ...(animal.brandId !== null ? [`brandrow:${animal.brandId}`] : []),
+        ];
         items.push({
           id: animal.id,
           kind: 'animal',
           detail: labels.get(animal.id) ?? null,
           send: (token) => livestockApi.createAnimal(animal, token),
+          // The row an attachment behind it is a foreign key to (phase-checklists.md 3i(c)) —
+          // same shape as `mobrow:` above. Refused or held, a photo of this animal must wait
+          // rather than 404ing individually for the same one cause.
+          provides: [`animalrow:${animal.id}`],
+          // ⭐ P2.7: same reasoning as the mob above — an animal created directly into a
+          // not-yet-accepted camp must wait behind it.
+          ...(guardedByFor.length > 0 ? { guardedBy: guardedByFor } : {}),
         });
       }
     }
@@ -495,6 +804,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // Settles the animal's membership, and the mob it walks INTO — both are subjects a later
           // disposal is judged against.
           provides: nonNull(move.animalId, move.toMobId),
+          // ⭐ P2.7: a move INTO a not-yet-accepted camp — `toLandUnitId` is the event's own
+          // `land_unit_id` server-side (`recordMove` in `movement.ts`), so a refused/held camp
+          // 404s the move exactly as it would a boundary walk. `undefined` means "camp unchanged"
+          // (nothing to guard against) and `null` means "taken off a mapped camp" (also nothing to
+          // guard against) — only a genuine destination camp id needs the wait.
+          ...(typeof move.toLandUnitId === 'string'
+            ? { guardedBy: [`landrow:${move.toLandUnitId}`] }
+            : {}),
         });
       }
     }
@@ -595,13 +912,21 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
             ? mobDisposalSubjects(
                 tally.mobId,
                 farmDay(new Date(tally.occurredAt)),
-                animals,
-                moves,
-                // ⛔ The tally log, so the subject set walks the TRANSFER CHAIN the guard walks.
-                // Without it the set stopped at this mob and its members, and a refused dose on
-                // the SOURCE of an accepted transfer held nothing — 201 for meat inside an active
-                // withholding, which is the only shape in this file where meat reaches a truck.
-                tallies,
+                // ⛔ `foldAnimals`/`foldMoves` — local+hydrated, not the raw local `animals`/`moves`
+                // (phase-checklists.md 3e) — so a member standing in this mob only known via
+                // down-sync, or a walk another device recorded for one, is not invisible to the
+                // subject walk. Same class of gap `foldTallies` below already closed for the
+                // transfer chain.
+                foldAnimals,
+                foldMoves,
+                // ⛔ `foldTallies` — local+hydrated — not the raw local `tallies`, so the subject
+                // set walks the TRANSFER CHAIN the guard walks even when this device never
+                // captured the transfer itself. Without the fold the set stopped at this mob and
+                // its members, and a refused dose on the SOURCE of a transfer known only by
+                // down-sync held nothing — 201 for meat inside an active withholding, which is the
+                // only shape in this file where meat reaches a truck (sync-auditor Finding 1,
+                // 2026-08-10).
+                foldTallies,
               )
             : []),
           ...(tally.reason === 'transfer_in' && link !== undefined ? [link] : []),
@@ -638,7 +963,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           ...(consumesHead
             ? {
                 needsHead: (landed: (id: string) => boolean): boolean => {
-                  const stored = mobs.find((m) => m.id === tally.mobId);
+                  // ⭐ TRIPWIRE 3e CLOSED. `foldMobs`, not `mobs` — a mob this device has never
+                  // itself captured anything about, only heard about via down-sync, still has a
+                  // baseline to fold over. See the comment above `foldMobs`'s own declaration for
+                  // why this cannot duplicate a send.
+                  const stored = foldMobs.find((m) => m.id === tally.mobId);
                   // The mob row itself has not been seen. `mobrow:` above is what holds this;
                   // underflow is not the question and a guess here would be a second answer.
                   if (stored === undefined) return false;
@@ -652,18 +981,18 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
                   // ⭐ Strictly BEFORE `(occurredAt, id)` and only what the server actually holds —
                   // the same cut `deriveHeadCount` applies, with the same total order. A tally
                   // later in this queue, refused this round, or held this round is not in the
-                  // sent-log and is correctly absent: the server will not have it either.
+                  // sent-log AND not hydrated, and is correctly absent: the server will not have
+                  // it either.
                   //
-                  // ⛔ PHASE 3 TRIPWIRE. That last sentence rests on a premise this file cannot
-                  // enforce: `landed()` is `sentLog.has(id)`, which answers "did THIS DEVICE send
-                  // it", and that equals "does the server hold it" ONLY while the device holds the
-                  // whole log. True today — nothing hydrates. The moment PowerSync brings mobs and
-                  // tallies DOWN, a tally another phone landed is invisible here, this fold
-                  // under-counts, and the decrease is held every round for ever with no refusal
-                  // above it to clear. `landed()` must become
-                  // `sentLog.has(id) || hydratedFromServer.has(id)` in the same slice that ships
-                  // hydration. Checklist item 3e carries this; a comment alone goes stale.
-                  const before = tallies.filter(
+                  // `landed(id)` (passed in by the flush loop, below) is now
+                  // `sentLog.has(id) || hydratedTallyIds.has(id)` — recognising a tally another
+                  // device sent, once the server has replicated it back down to this one, exactly
+                  // as if this device had sent it itself. `foldTallies`, not `tallies`, is the
+                  // CANDIDATE list `landed` filters — the fix above is necessary but not
+                  // sufficient on its own: a tally device A created is not in device B's local
+                  // `tallies` array at all, so without folding it into the candidate list here,
+                  // `landed()` recognising its id would have nothing to find.
+                  const before = foldTallies.filter(
                     (t) =>
                       t.mobId === tally.mobId &&
                       landed(t.id) &&
@@ -720,7 +1049,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       // which is exactly the carried-in class the capture guard was widened for this same session.
       const intoFoodChain =
         event.type === 'sale' || (event.type === 'death' && event.slaughtered === true);
-      const subject = animals.find((a) => a.id === event.animalId);
+      // ⛔ `foldAnimals` — local+hydrated (phase-checklists.md 3e) — not the raw local `animals`,
+      // so an animal registered only on another device still resolves to a subject here. Reading
+      // `animals` alone made this fall through to the weaker `nonNull(event.animalId)` set — the
+      // animal's OWN id with no mob history — for exactly the animal a co-worker's phone knows the
+      // full history of, which is a narrower guard than `meatWithdrawalFor` runs at capture.
+      const subject = foldAnimals.find((a) => a.id === event.animalId);
       items.push({
         id: event.id,
         kind: 'lifecycle',
@@ -728,7 +1062,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         send: (token) => sendLifecycleEvent(event, token),
         ...(intoFoodChain
           ? {
-              guardedBy: subject ? animalDisposalSubjects(subject, moves) : nonNull(event.animalId),
+              guardedBy: subject
+                ? animalDisposalSubjects(subject, foldMoves)
+                : nonNull(event.animalId),
             }
           : {}),
       });
@@ -736,13 +1072,43 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // A theft incident points at a camp AND at the animals it concerns, so it comes after both.
     // Its evidence pack cannot be generated until it has been through here, which is why the
     // incidents screen reads the sent-set below rather than offering a button that would 404.
+    //
+    // ⭐ P2.7: this header already said "points at a camp AND at the animals it concerns", but
+    // neither dependency was actually guarded — a refused/held camp or a refused/held animal
+    // named in the same offline session 404'd the incident with no held/refused signal to show
+    // for it. `createTheftIncident` (`livestock.service.ts`) checks BOTH: `assertOwnedReferences`
+    // for `landUnitId`, and a direct existence check for every id in `animalIds`.
     for (const incident of theftIncidents) {
       if (!sent.has(incident.id)) {
+        const guardedByFor = [
+          ...(incident.landUnitId !== null ? [`landrow:${incident.landUnitId}`] : []),
+          ...incident.animalIds.map((animalId) => `animalrow:${animalId}`),
+        ];
         items.push({
           id: incident.id,
           kind: 'theft',
           detail: null,
           send: (token) => livestockApi.createTheftIncident(incident, token),
+          ...(guardedByFor.length > 0 ? { guardedBy: guardedByFor } : {}),
+        });
+      }
+    }
+    // An attachment references its subject (an animal today) and nothing else — FK-only, same
+    // class as a boundary walk or a weight, with no safety ordering: nothing here creates evidence
+    // a server-side guard reads, and nothing judges one.
+    for (const attachment of attachments) {
+      if (!sent.has(attachment.id)) {
+        items.push({
+          id: attachment.id,
+          kind: 'attachment',
+          detail:
+            attachment.subjectType === 'animal' ? (labels.get(attachment.subjectId) ?? null) : null,
+          send: (token) => sendAttachment(attachment, attachmentBlobStore, token),
+          // Held behind its subject's own row, exactly as a tally is held behind `mobrow:` — an
+          // attachment for an animal this device has not yet had accepted must wait rather than
+          // 404ing individually for the same one cause.
+          guardedBy:
+            attachment.subjectType === 'animal' ? [`animalrow:${attachment.subjectId}`] : [],
         });
       }
     }
@@ -763,7 +1129,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     landUnitCodes,
     boundaryWalks,
     mobs,
+    brandingRegisters,
     tallies,
+    foldMobs,
+    foldTallies,
+    foldAnimals,
+    foldMoves,
     animals,
     identifiers,
     weights,
@@ -773,6 +1144,8 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     breeding,
     theftIncidents,
     rainfall,
+    attachments,
+    attachmentBlobStore,
     sent,
   ]);
   const pendingCount = queue.length;
@@ -855,7 +1228,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         // other half of its move — must wait too. `sentLog` is the live view of what the server
         // holds, so this asks the server's own question at the moment of sending rather than from a
         // snapshot taken when the queue was built.
-        if (item.needsHead?.((id) => sentLog.has(id)) === true) {
+        //
+        // ⭐ TRIPWIRE 3e: `landed(id)` is `sentLog.has(id) || hydratedTallyIds.has(id)` — a tally
+        // another device sent counts as landed the moment the server has replicated it back down
+        // to this one, not only when THIS device is the one that sent it. `hydratedTallyIds` is
+        // derived live from the down-synced `events` table (`HydratedLivestock.tsx`), never
+        // written into `sentLog` itself — see `foldMobs`'s declaration comment, above, for why.
+        if (item.needsHead?.((id) => sentLog.has(id) || hydratedTallyIds.has(id)) === true) {
           taint(item);
           heldThisRound.add(item.id);
           continue;
@@ -922,14 +1301,51 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         setHeld((previous) => replaceSetIfChanged(previous, heldThisRound));
       }
     }
-  }, [online, sentLog, refreshSession]);
+  }, [online, sentLog, refreshSession, hydratedTallyIds]);
+  // ⭐ `hydratedTallyIds` is a dep because `landed()` above reads it directly, not via a ref — and
+  // that is deliberate: a hydration event alone (a tally another device sent finally arriving,
+  // `pendingCount` UNCHANGED because it was already counted as pending) must still get this
+  // device's held decrease re-checked and sent. `flush` changing identity is what re-fires the
+  // auto-flush effect below on that exact event, via its own `flush` dependency — no separate
+  // "hydration changed" signal needed.
 
   // Flush whenever there is something to send and a way to send it. `pendingCount` in the deps
   // makes a new capture (or a reconnect) trigger a fresh attempt; a server error does not change
   // the deps, so a stuck queue does not spin — it waits for the next capture or reconnect.
+  //
+  // ⭐ `allSettled` gates this exactly as `online` does — a flush must not read a queue built from
+  // stores that have not finished saying what they hold. `pendingCount` climbing from 0 as stores
+  // settle one at a time re-fires this effect on its own, so the flush simply waits for the last
+  // store rather than needing a separate "now everything is ready" signal.
+  //
+  // ⭐ `!anyHydrationFailed` (Finding 1, sync-auditor 2026-08-09): `allSettled` alone cannot tell a
+  // store that hydrated successfully and confirmed it holds nothing apart from one whose hydration
+  // ATTEMPT ended (so it counts as settled) but genuinely FAILED — and the FK/`guardedBy`/
+  // `needsHead` checks the flush runs need that distinction to stay conservative. Holding the
+  // whole flush, not just the failed store's own captures, matches db.md's "an expired refresh
+  // token HOLDS the queue" — an unverifiable state is held, never treated as evidence of absence.
   useEffect(() => {
-    if (online && pendingCount > 0) void flush();
-  }, [online, pendingCount, flush]);
+    if (online && allSettled && !anyHydrationFailed && pendingCount > 0) void flush();
+  }, [online, allSettled, anyHydrationFailed, pendingCount, flush]);
+
+  // ⭐ FINDING 2 (sync-auditor, 2026-08-09): an aborted round previously had NO autonomous
+  // retry. `errored` only ever changes inside `flush()` itself, and nothing besides `online`/
+  // `pendingCount` changing re-triggers the effect above — a farmer's device syncing weeks of
+  // offline captures at once is exactly the case most likely to exceed the global per-IP
+  // request budget (app.module.ts's `ThrottlerModule`: 30/sec burst, 300/min sustained), which
+  // aborts the round as an unrecognised 4xx (`isRefusal` deliberately excludes 429 — db.md's
+  // "a 5xx is transient" rule applies to it too) and leaves the strip reading "Not sent — will
+  // retry" with nothing actually scheduled to retry it, until the farmer captured something new
+  // or restarted the app. `RETRY_INTERVAL_MS` is chosen to comfortably outlast every
+  // `blockDuration` in `app.module.ts`'s throttler config (10s burst, 60s sustained) and every
+  // budget in `security/rate-limits.ts`, so a throttle block has always cleared server-side by
+  // the time the next attempt lands. Uncapped and indefinite, matching the promise the copy
+  // already makes and db.md's "the queue is never discarded... only a human, explicitly."
+  useEffect(() => {
+    if (!errored || !online) return;
+    const timer = setInterval(() => void flush(), RETRY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [errored, online, flush]);
 
   // Only refusals that are still queued count. One the farmer resolved another way — or that the
   // server accepted on a later round — leaves the queue and stops being reported.
@@ -964,24 +1380,65 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   );
   const waitingCount = waiting.length;
 
+  // Phase-checklists.md 3h. A pure fold (syncHealth.ts) over the SAME queue/blocked/waiting this
+  // provider already computed and already proves correct elsewhere in this file — never a second
+  // read of a capture store, so it cannot disagree with `state` below about what is pending.
+  const syncHealth = useMemo<SyncHealth>(
+    () =>
+      deriveSyncHealth(
+        farmId,
+        queue,
+        new Set(blocked.map((item) => item.id)),
+        new Set(waiting.map((item) => item.id)),
+      ),
+    [farmId, queue, blocked, waiting],
+  );
+
   const state = useMemo<SyncState>(() => {
+    // ⭐ `!allSettled` is checked BEFORE the empty-queue fallthrough reaches 'synced'. Before every
+    // store has hydrated, `pendingCount` reads 0 not because the farm has nothing pending but
+    // because nothing has finished saying what it holds yet — reaching 'synced' here is the
+    // farmer-visible half of the same bug the flush gate above closes: "Saved and sent" on ground
+    // this device has not actually finished checking. There is no dedicated status for "still
+    // finding out" (`SyncStatus` has no loading state); 'syncing' is the closest honest word and
+    // it self-corrects within the same render pass once the last store settles.
+    // ⭐ `anyHydrationFailed` (Finding 1, sync-auditor 2026-08-09) is checked right after the
+    // still-settling branch, before any pendingCount-based status: once every store's hydration
+    // ATTEMPT is over (`allSettled` is true even for a store that failed), a failed one must not
+    // fall through to 'synced' (a lie — this device does not actually know it holds nothing) or
+    // silently to 'pending' (undercounts — the failed store's own captures are invisible to
+    // `pendingCount`, not merely unsent). 'error' is the honest word already in the vocabulary:
+    // "Not sent — will retry" is true here in the same sense it is true of a dropped signal.
     const status: SyncState['status'] = !online
       ? 'offline'
-      : flushing
+      : !allSettled || flushing
         ? 'syncing'
-        : (errored || blockedCount > 0) && pendingCount > 0
+        : anyHydrationFailed
           ? 'error'
-          : pendingCount > 0
-            ? 'pending'
-            : 'synced';
+          : (errored || blockedCount > 0) && pendingCount > 0
+            ? 'error'
+            : pendingCount > 0
+              ? 'pending'
+              : 'synced';
     return { status, pendingCount, blockedCount, waitingCount };
-  }, [online, flushing, errored, pendingCount, blockedCount, waitingCount]);
+  }, [
+    online,
+    allSettled,
+    flushing,
+    anyHydrationFailed,
+    errored,
+    pendingCount,
+    blockedCount,
+    waitingCount,
+  ]);
 
   return (
     <OutboxContext.Provider value={state}>
       <SentCapturesContext.Provider value={sent}>
         <RefusedCapturesContext.Provider value={blocked}>
-          <HeldCapturesContext.Provider value={waiting}>{children}</HeldCapturesContext.Provider>
+          <HeldCapturesContext.Provider value={waiting}>
+            <SyncHealthContext.Provider value={syncHealth}>{children}</SyncHealthContext.Provider>
+          </HeldCapturesContext.Provider>
         </RefusedCapturesContext.Provider>
       </SentCapturesContext.Provider>
     </OutboxContext.Provider>
@@ -1018,6 +1475,19 @@ export function useRefusedCaptures(): readonly RefusedCapture[] {
  */
 export function useHeldCaptures(): readonly RefusedCapture[] {
   return useContext(HeldCapturesContext);
+}
+
+/**
+ * Phase-checklists.md 3h: this farm's queue depth and failure counts, by kind. `null` outside an
+ * `OutboxProvider` — there is no farm to scope a report to, and withholding is the safe default
+ * every other hook in this file already uses.
+ *
+ * For a support/diagnostics consumer, never a farmer's own screen — see syncHealth.ts's header
+ * for why the type itself, not this hook, is what keeps a tag number or an animal label from ever
+ * reaching this path.
+ */
+export function useSyncHealth(): SyncHealth | null {
+  return useContext(SyncHealthContext);
 }
 
 /**

@@ -34,14 +34,45 @@
  *
  * ⭐ AND EVERY ROUTE IS BOUNDED BY THE DAY BEING JUDGED. A dose given after a disposal cannot
  * withhold it — see `latestClearAcross`, which had no such bound while the server did.
+ *
+ * ⭐ A DOSE IS READ TWO WAYS, and which one applies is not a caller's choice. `StoredHealthEvent`
+ * (a LOCAL capture, not yet confirmed sent) carries a `productId` — the device's own cached
+ * register is the only clear date it can preview. A dose read back through `HydratedLivestock`
+ * (this device's own capture, once round-tripped through the server, or another device's) carries
+ * no `productId` at all: the wire payload stores `product` (a NAME string, resolved server-side)
+ * and the ALREADY-COMPUTED `meatWithholdUntil`, because the withdrawal is a regulated number
+ * (ADR-0005) and the server never sends the id back. `WithholdDose` is the shape both satisfy, and
+ * `clearDateFor` prefers the hydrated date when present — it is the authoritative answer, not a
+ * second preview of the same one. A mapper that tried to force a hydrated dose into `productId`
+ * would find nothing in the local register and silently drop it from the fold: a false CLEAR on
+ * the one guard this file exists to keep from ever being wrong in that direction.
  */
 
 import { isWithinWithdrawal, withholdUntil } from '@werf/domain';
 import { farmDay } from '../farmTime';
 import type { StoredAnimal } from './LocalHerd';
-import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMove } from './LocalMoves';
 import type { StoredVetProduct } from './LocalVetProducts';
+
+/**
+ * What the withdrawal guard needs from ONE dose, and nothing more — the fold's own minimal shape,
+ * satisfied by both a local `StoredHealthEvent` (structurally: `productId` required narrows to this
+ * field's optional type) and a hydrated dose (`meatWithholdUntil` in place of `productId`). See the
+ * module header for why a dose is read two different ways.
+ */
+export interface WithholdDose {
+  /** Not read by any function in this file — present so callers can `mergeById` a local+hydrated
+   *  dose list (dedup needs an id) without a second, narrower type just for that. */
+  readonly id: string;
+  readonly animalId: string | null;
+  readonly mobId?: string | null;
+  /** The farm-local day the dose was given (YYYY-MM-DD). */
+  readonly administeredOn: string;
+  /** A LOCAL capture's productId — looked up against the device's cached register. */
+  readonly productId?: string;
+  /** A HYDRATED dose's already-resolved clear date — the server's own answer, preferred when present. */
+  readonly meatWithholdUntil?: string;
+}
 
 export interface WithdrawalStatus {
   /** The day this animal clears its meat withholding, or null when nothing is withholding it. */
@@ -59,16 +90,44 @@ interface MobInterval {
 
 /**
  * When an animal was in which mob, from the device's own move log — the same reconstruction the
- * server runs, in the same farm-local DAYS, inclusive at BOTH ends (a move day belongs to both
- * mobs, and a food-safety boundary must fail toward blocking).
+ * server runs (`livestock.service.ts`'s own `mobMembership`), in the same farm-local DAYS,
+ * inclusive at BOTH ends (a move day belongs to both mobs, and a food-safety boundary must fail
+ * toward blocking).
  *
- * The client log holds only the DESTINATION of each move, because that is all a capture sends. So
- * the opening mob is the animal's `mobId` AS FIRST CAPTURED, which is exactly what the herd store
- * keeps: it is append-only and never rewritten. Pass the RAW animal for that reason — a projected
- * one carries where it is NOW, which is the denormalised value this whole reconstruction exists to
- * stop trusting.
+ * ⭐ The opening mob is the FIRST move's `fromMobId` when the animal has moved at all — exactly the
+ * server's rule ("the mob it was in before the FIRST move is that move's `fromMobId`") — and ONLY
+ * `animal.mobId` when it has never moved. This is NOT the same thing as "the animal's `mobId` AS
+ * FIRST CAPTURED" this function's header used to claim: that was true for every LOCAL animal (the
+ * herd store is append-only and `mobId` is frozen at creation) but silently false for a HYDRATED
+ * one, whose `mobId` is the server's denormalised CURRENT position — overwritten on every move that
+ * lands as the latest (`livestock.service.ts`'s `recordMove`, "the denormalised position follows
+ * the history"). Seeding `openMob` from a hydrated animal's `mobId` made the loop below skip
+ * pushing the animal's true opening interval outright (its first move's `toMobId` equalled the
+ * wrongly-seeded CURRENT mob, so `to === openMob` fired on iteration one) — a dose given to the
+ * animal's real opening mob, before it ever moved, became invisible to this reconstruction: a false
+ * CLEAR on the one guard this file exists to keep from ever being wrong in that direction. A LOCAL
+ * move never carries `fromMobId` (the app never sends it — see `LocalMoves.tsx`'s `StoredMove`), so
+ * this only ever engages for a HYDRATED move, which is exactly where the bug was.
+ *
+ * ⛔ OWNER DECISION (STATUS.md §3, 2026-08-14, fail-closed): the fallback above is only trustworthy
+ * when the animal cannot possibly have history this device is missing. That is true for an animal
+ * this device alone has ever known about — the herd store is append-only, so its own capture log
+ * IS the complete history. It is NOT true the moment the animal is known server-side
+ * (`hydratedAnimalIds`, the raw `useHydratedAnimals()` set — present whether this device or another
+ * one created the row): another device could have moved it before this device's earliest KNOWN
+ * move, and a `fromMobId`-less earliest move (structurally every LOCAL move) gives no way to tell.
+ * `ambiguous` is that exact gap made explicit rather than silently guessed past — set only when
+ * there IS at least one known move (an animal with none has never left `animal.mobId` by anything
+ * this device has ever captured, ambiguous or not) whose opening is unresolved AND the animal is
+ * known off this device. Callers fail the whole judgement closed rather than trust the fallback
+ * interval this function still computes for them (needed so `reachedAnimal`'s later, KNOWN
+ * intervals keep working; only the BLOCKING decision must refuse to lean on the guessed one).
  */
-function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): readonly MobInterval[] {
+function mobMembership(
+  animal: StoredAnimal,
+  moves: readonly StoredMove[],
+  hydratedAnimalIds: ReadonlySet<string> = EMPTY_ID_SET,
+): { readonly intervals: readonly MobInterval[]; readonly ambiguous: boolean } {
   const mine = moves
     .filter((m) => m.animalId === animal.id && m.toMobId !== undefined)
     // ⭐ (occurredAt, id), the same TOTAL order the server runs. Day-grained moves tie on the
@@ -89,7 +148,10 @@ function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): read
     );
 
   const intervals: MobInterval[] = [];
-  let openMob = animal.mobId ?? null;
+  const openingFromWire = mine[0]?.fromMobId;
+  const ambiguous =
+    mine.length > 0 && openingFromWire === undefined && hydratedAnimalIds.has(animal.id);
+  let openMob = openingFromWire !== undefined ? openingFromWire : (animal.mobId ?? null);
   let openedOn = '0000-01-01';
 
   for (const move of mine) {
@@ -101,8 +163,11 @@ function mobMembership(animal: StoredAnimal, moves: readonly StoredMove[]): read
     openedOn = movedOn;
   }
   if (openMob !== null) intervals.push({ mobId: openMob, fromDay: openedOn, toDay: null });
-  return intervals;
+  return { intervals, ambiguous };
 }
+
+/** A stable empty set so an omitted `hydratedAnimalIds` never allocates and never matches. */
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 
 /** Was this mob the animal's on that day? Inclusive at both ends, like the server. */
 function inMobOn(wasIn: readonly MobInterval[], mobId: string, day: string): boolean {
@@ -113,7 +178,7 @@ function inMobOn(wasIn: readonly MobInterval[], mobId: string, day: string): boo
 
 /** True when this dose reached this animal — its own, or its mob's while it was in that mob. */
 function reachedAnimal(
-  event: StoredHealthEvent,
+  event: WithholdDose,
   animal: StoredAnimal,
   wasIn: readonly MobInterval[],
 ): boolean {
@@ -138,15 +203,21 @@ function reachedAnimal(
 export function meatWithdrawalFor(
   animal: StoredAnimal,
   disposalOn: string,
-  events: readonly StoredHealthEvent[],
+  events: readonly WithholdDose[],
   products: readonly StoredVetProduct[],
   moves: readonly StoredMove[] = [],
+  /** The raw hydrated-animal id set — see `mobMembership`'s "OWNER DECISION" note. */
+  hydratedAnimalIds: ReadonlySet<string> = EMPTY_ID_SET,
 ): WithdrawalStatus {
   // Before anything is read: an unreadable day cannot be judged. See `unreadableDay`.
   if (unreadableDay(disposalOn)) return { clearFrom: null, blocked: true };
-  const wasIn = mobMembership(animal, moves);
+  const wasIn = mobMembership(animal, moves, hydratedAnimalIds);
+  // A back-dated local move with no hydrated context: the true opening mob cannot be known, so a
+  // dose given to it before this animal's earliest KNOWN move would be silently invisible either
+  // way. Fail closed rather than trust the fallback interval `mobMembership` still computed.
+  if (wasIn.ambiguous) return { clearFrom: null, blocked: true };
   return latestClearAcross(
-    events.filter((e) => reachedAnimal(e, animal, wasIn)),
+    events.filter((e) => reachedAnimal(e, animal, wasIn.intervals)),
     disposalOn,
     products,
   );
@@ -167,7 +238,7 @@ export function meatWithdrawalFor(
 export function meatWithdrawalForMob(
   mobId: string,
   disposalOn: string,
-  events: readonly StoredHealthEvent[],
+  events: readonly WithholdDose[],
   products: readonly StoredVetProduct[],
   animals: readonly StoredAnimal[] = [],
   moves: readonly StoredMove[] = [],
@@ -186,20 +257,28 @@ export function meatWithdrawalForMob(
    * that refused. A caller with no arrivals must say `[]` out loud.
    */
   tallies: readonly ArrivedHead[],
+  /** The raw hydrated-animal id set — see `mobMembership`'s "OWNER DECISION" note. */
+  hydratedAnimalIds: ReadonlySet<string> = EMPTY_ID_SET,
 ): WithdrawalStatus {
   // ⭐ HERE rather than inside, because `mobWithdrawal` recombines `blocked` with an arrival's date
   // and would discard a fail-closed verdict returned deeper in. See `unreadableDay`.
   if (unreadableDay(disposalOn)) return { clearFrom: null, blocked: true };
-  return mobWithdrawal(mobId, disposalOn, { events, products, animals, moves, tallies }, new Set());
+  return mobWithdrawal(
+    mobId,
+    disposalOn,
+    { events, products, animals, moves, tallies, hydratedAnimalIds },
+    new Set(),
+  );
 }
 
 /** Everything the mob rule reads, threaded through the transfer chain unchanged. */
 interface MobWithdrawalContext {
-  readonly events: readonly StoredHealthEvent[];
+  readonly events: readonly WithholdDose[];
   readonly products: readonly StoredVetProduct[];
   readonly animals: readonly StoredAnimal[];
   readonly moves: readonly StoredMove[];
   readonly tallies: readonly ArrivedHead[];
+  readonly hydratedAnimalIds: ReadonlySet<string>;
 }
 
 /**
@@ -212,7 +291,7 @@ function mobWithdrawal(
   ctx: MobWithdrawalContext,
   visited: ReadonlySet<string>,
 ): WithdrawalStatus {
-  const { events, products, animals, moves } = ctx;
+  const { events, products, animals, moves, hydratedAnimalIds } = ctx;
   const seen = new Set(visited).add(mobId);
   // Every individually-registered animal STANDING IN this mob on the disposal day, with the mob
   // history that says which doses reached it. A tally takes head out without naming which, so any
@@ -220,10 +299,15 @@ function mobWithdrawal(
   // exactly the per-member question the server asks: this is `meatWithdrawalFor` run from the mob
   // side rather than a second, narrower rule.
   const members = animals
-    .map((animal) => ({ animal, wasIn: mobMembership(animal, moves) }))
-    .filter((m) => inMobOn(m.wasIn, mobId, disposalOn));
+    .map((animal) => ({ animal, wasIn: mobMembership(animal, moves, hydratedAnimalIds) }))
+    .filter((m) => inMobOn(m.wasIn.intervals, mobId, disposalOn));
+  // A member counted here by the FALLBACK interval `mobMembership` still computes for an ambiguous
+  // animal — see its "OWNER DECISION" note. The mob's disposal is judged on the same head this
+  // member's own individual disposal would be, so the same fail-closed answer applies: the mob
+  // cannot be cleared on the strength of a guessed membership.
+  const ambiguousMember = members.some((m) => m.wasIn.ambiguous);
 
-  const reaches = (event: StoredHealthEvent): boolean => {
+  const reaches = (event: WithholdDose): boolean => {
     // The COUNTED portion of the mob — head with no `animals` rows — is reached by the mob's own
     // doses. This is the only half that ever fires for a pure head-count flock.
     if ((event.mobId ?? null) === mobId) return true;
@@ -232,15 +316,15 @@ function mobWithdrawal(
     // blind to that second case — it returned false for every `animal_id = NULL` dose whose mob was
     // not this one, so a dipped ox walked into the sale mob CLEAR on the device while the server,
     // reconstructing per member, refused it days after the truck had left.
-    return members.some((m) => reachedAnimal(event, m.animal, m.wasIn));
+    return members.some((m) => reachedAnimal(event, m.animal, m.wasIn.intervals));
   };
   const dosed = latestClearAcross(events.filter(reaches), disposalOn, products);
   const arrived = latestArrivedWithhold(mobId, disposalOn, ctx, seen);
-  if (arrived === null) return dosed;
+  if (arrived === null) return ambiguousMember ? { ...dosed, blocked: true } : dosed;
 
   const clearFrom =
     dosed.clearFrom === null || arrived > dosed.clearFrom ? arrived : dosed.clearFrom;
-  return { clearFrom, blocked: isWithinWithdrawal(clearFrom, disposalOn) };
+  return { clearFrom, blocked: ambiguousMember || isWithinWithdrawal(clearFrom, disposalOn) };
 }
 
 /**
@@ -341,7 +425,11 @@ export function animalDisposalSubjects(
   animal: StoredAnimal,
   moves: readonly StoredMove[] = [],
 ): readonly string[] {
-  return [animal.id, ...mobMembership(animal, moves).map((interval) => interval.mobId)];
+  // No `hydratedAnimalIds` here, deliberately: this is the SEND-time taint set for an already-
+  // ACCEPTED capture, not the capture-time blocking decision — an ambiguous disposal never reaches
+  // the outbox in the first place, because `meatWithdrawalFor`/`meatWithdrawalForMob` (which DO
+  // read `hydratedAnimalIds`) refuse it at capture. See `mobMembership`'s "OWNER DECISION" note.
+  return [animal.id, ...mobMembership(animal, moves).intervals.map((interval) => interval.mobId)];
 }
 
 /**
@@ -404,7 +492,9 @@ function collectMobSubjects(
   out.add(mobId);
 
   for (const animal of ctx.animals) {
-    const intervals = mobMembership(animal, ctx.moves);
+    // No `hydratedAnimalIds` here, deliberately — see `animalDisposalSubjects`'s comment: this is
+    // the send-time taint set, and an ambiguous disposal never reaches it.
+    const { intervals } = mobMembership(animal, ctx.moves);
     if (inMobOn(intervals, mobId, disposalOn)) {
       out.add(animal.id);
       for (const interval of intervals) out.add(interval.mobId);
@@ -445,26 +535,71 @@ function collectMobSubjects(
  * dipped-and-sold on one day is a real residue question and a food-safety boundary fails toward
  * blocking. Identical to the server's comparison, deliberately.
  */
+/**
+ * ⭐ P1.3 (2026-08-14): the two ways a dose's clear date can come back UNRESOLVED are not the same
+ * fact, and collapsing them used to fail OPEN — the exact direction a food-safety boundary must
+ * not fail (`.claude/rules/frontend.md`'s "a food-safety boundary must fail toward BLOCKING").
+ *
+ *  - `known`: this device's cache holds the EXACT product version the dose was captured against
+ *    (`withdrawalDays.has(productId)`). If that version is registered with NO meat withdrawal,
+ *    `days` is `null` and the dose genuinely contributes nothing — a real, checkable fact.
+ *  - `unknown`: the cache does NOT hold that version at all — evicted, never synced, or a dose
+ *    hydrated from a device whose cache is ahead of this one's. This device cannot say whether the
+ *    animal is protected, and "cannot say" must never render as "clear".
+ */
+type ClearResult =
+  { readonly kind: 'known'; readonly clear: string | undefined } | { readonly kind: 'unknown' };
+
+/**
+ * The clear date for ONE dose. `meatWithholdUntil`, when present, is the server's own resolved
+ * answer (a hydrated dose) and wins outright — recomputing from a product register would be a
+ * second, narrower computation of the same regulated number. Only a LOCAL preview falls through to
+ * the register lookup, and only when the device recognises the product VERSION at all — see
+ * `ClearResult`.
+ */
+function clearDateFor(
+  event: WithholdDose,
+  withdrawalDays: ReadonlyMap<string, number | null>,
+): ClearResult {
+  if (event.meatWithholdUntil !== undefined)
+    return { kind: 'known', clear: event.meatWithholdUntil };
+  if (event.productId === undefined) return { kind: 'known', clear: undefined };
+  if (!withdrawalDays.has(event.productId)) {
+    // This EXACT version is missing from the cache — not "registered, no withdrawal", but "this
+    // device has no evidence either way". The server still holds the real registration and still
+    // refuses what it must; this device must refuse to vouch for it as clear.
+    return { kind: 'unknown' };
+  }
+  const days = withdrawalDays.get(event.productId)!;
+  // A KNOWN version with no meat withdrawal is a real, checkable fact — not a gap.
+  if (days === null) return { kind: 'known', clear: undefined };
+  return { kind: 'known', clear: withholdUntil(event.administeredOn, days) };
+}
+
 function latestClearAcross(
-  events: readonly StoredHealthEvent[],
+  events: readonly WithholdDose[],
   disposalOn: string,
   products: readonly StoredVetProduct[],
 ): WithdrawalStatus {
   const withdrawalDays = new Map(products.map((p) => [p.id, p.meatWithdrawalDays]));
 
   let latest: string | undefined;
+  let unresolved = false;
   for (const event of events) {
     // The day bound, before anything else: this is not about which product it was.
     if (event.administeredOn > disposalOn) continue;
-    const days = withdrawalDays.get(event.productId);
-    // A product the device does not know about contributes nothing. That is the honest answer —
-    // guessing a withdrawal would be inventing a regulated number — and the server still holds the
-    // real one, so the animal is protected even when this device cannot say so.
-    if (days === undefined || days === null) continue;
-    const clear = withholdUntil(event.administeredOn, days);
-    if (latest === undefined || clear > latest) latest = clear;
+    const result = clearDateFor(event, withdrawalDays);
+    if (result.kind === 'unknown') {
+      // Fail closed: a dose this device cannot resolve must block, never be silently excluded from
+      // the fold as if it never happened.
+      unresolved = true;
+      continue;
+    }
+    if (result.clear === undefined) continue;
+    if (latest === undefined || result.clear > latest) latest = result.clear;
   }
 
+  if (unresolved) return { clearFrom: latest ?? null, blocked: true };
   return {
     clearFrom: latest ?? null,
     blocked: isWithinWithdrawal(latest, disposalOn),

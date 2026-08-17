@@ -8,11 +8,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
+  authAuditLog,
   createAppDb,
   createElevatedDb,
   enterprises,
+  events,
   farmUsers,
   farms,
   userSessions,
@@ -54,7 +56,18 @@ class RecordingMailer implements Mailer {
 const BOOT_TIMEOUT_MS = 180_000;
 
 const registration = (label: string): schemas.RegisterRequest => ({
-  business: { name: `${label} Boerdery`, registrationNumber: null },
+  business: {
+    name: `${label} Boerdery`,
+    registrationNumber: null,
+    contact: { email: `${label.toLowerCase()}@example.test`, phone: null },
+    physicalAddress: {
+      line1: `${label} Plaas`,
+      line2: null,
+      locality: 'Bothaville',
+      province: 'Free State',
+      postalCode: '9660',
+    },
+  },
   farm: {
     name: `${label} Plaas`,
     province: 'Free State',
@@ -179,6 +192,50 @@ describe('farm management', () => {
         .where(eq(enterprises.farmId, second.id));
 
       expect(rows.map((r) => r.type).sort()).toEqual(['game', 'sheep']);
+    });
+
+    it('⭐ every farm lands in events_default, permanently (sync-auditor Finding 2, closed 2026-08-13)', async () => {
+      // packages/sync/scripts/derive-sync-streams.ts's PARTITIONED_SOURCE_TABLE hand-maps the
+      // `events` down-sync stream to the single `events_default` partition — see
+      // powersync-partitioned-table-gotcha. That mapping used to be correct only by accident
+      // (neither onboarding path called create_farm_partition, but nothing stopped a future one
+      // from doing so). STATUS.md §3's owner decision retired the ability outright: migration
+      // 0021 drops create_farm_partition, because PowerSync rejects publish_via_partition_root
+      // (PSYNC_S1143) and the sync config is a static file generated at build/deploy time, not
+      // regenerated per farm at signup — a farm given its own partition after the last deploy
+      // would down-sync nothing, silently, forever. This is now a PERMANENT invariant, not a
+      // tripwire on an open decision: both real onboarding paths still route to events_default,
+      // and the function they might have called no longer exists to call.
+      async function assertDefaultPartition(farmId: string): Promise<void> {
+        const [created] = await elevated.db
+          .insert(events)
+          .values({
+            farmId,
+            type: 'weight',
+            occurredAt: new Date('2026-07-20T06:00:00Z'),
+            payload: { kg: 400, method: 'scale' },
+          })
+          .returning();
+        const rows = await elevated.db.execute(
+          sql`SELECT tableoid::regclass::text AS partition FROM events WHERE id = ${created!.id}`,
+        );
+        expect((rows.rows[0] as { partition: string }).partition).toBe('events_default');
+      }
+
+      // Path 1: registration's own direct farm insert.
+      const a = await tenant('Alpha');
+      await assertDefaultPartition(a.farmId);
+
+      // Path 2: FarmsService.createFarm — a SEPARATE insert, not reachable from registration, and
+      // the exact function Finding 2's own text names.
+      const second = await service.createFarm(a.userId, {
+        businessId: a.businessId,
+        name: 'Kudu Ranch',
+        province: 'Northern Cape',
+        district: null,
+        enterpriseTypes: ['sheep'],
+      });
+      await assertDefaultPartition(second.id);
     });
 
     it('refuses to add a farm to somebody else’s business', async () => {
@@ -325,6 +382,19 @@ describe('farm management', () => {
         );
       expect(membership!.role).toBe('manager');
       expect(membership!.invitedAt).not.toBeNull();
+
+      const [event] = await elevated.db
+        .select()
+        .from(authAuditLog)
+        .where(eq(authAuditLog.event, 'invitation'));
+      expect(event).toMatchObject({
+        outcome: 'success',
+        actorUserId: a.userId,
+        subjectUserId: await inviteeId(SIPHO.email),
+        farmId: a.farmId,
+        metadata: { role: 'manager', reinvitation: false },
+      });
+      expect(JSON.stringify(event)).not.toContain(SIPHO.email);
     });
 
     it('grants nothing until the invitee accepts', async () => {
@@ -352,8 +422,11 @@ describe('farm management', () => {
       });
 
       // Alpha named an address belonging to someone in another tenant. Until that person
-      // accepts, Alpha must not be able to read anything about them (POPIA).
-      const visibleUsers = await app.asUser(a.userId, (tx) => tx.select().from(users));
+      // accepts, Alpha must not be able to read anything about them (POPIA). `id` only:
+      // `werf_app` holds column-level grants on `users` (0029), not `SELECT *`.
+      const visibleUsers = await app.asUser(a.userId, (tx) =>
+        tx.select({ id: users.id }).from(users),
+      );
 
       expect(visibleUsers.map((u) => u.id)).toEqual([a.userId]);
       expect(visibleUsers.map((u) => u.id)).not.toContain(b.userId);
@@ -458,6 +531,30 @@ describe('farm management', () => {
       expect(await service.listForUser(sipho)).toEqual([]);
       await service.acceptInvitation(sipho, a.farmId);
       expect(await service.listForUser(sipho)).toHaveLength(1);
+    });
+
+    it('does not resurrect a soft-deleted (erased) identity into a live membership', async () => {
+      const a = await tenant('Alpha');
+
+      // Simulates a POPIA erasure: the row exists, tombstoned, with no way back through
+      // login (which filters `deleted_at`) — the same shape `AuthService.register` already
+      // refuses to reuse.
+      const [erased] = await elevated.db
+        .insert(users)
+        .values({ email: SIPHO.email, fullName: 'Erased Person', deletedAt: new Date() })
+        .returning();
+
+      await expect(service.invite(a.userId, a.farmId, SIPHO)).rejects.toThrow(ConflictError);
+
+      // Nothing was created pointing at the erased row, and it was not revived either —
+      // the identity stays exactly as invisible as it was before the invite was attempted.
+      const memberships = await elevated.db
+        .select()
+        .from(farmUsers)
+        .where(eq(farmUsers.userId, erased!.id));
+      expect(memberships).toHaveLength(0);
+      const [row] = await elevated.db.select().from(users).where(eq(users.id, erased!.id));
+      expect(row!.deletedAt).not.toBeNull();
     });
 
     it('refuses an invitation to a farm the caller is not on', async () => {
@@ -635,6 +732,20 @@ describe('farm management', () => {
       expect(after!.activeFarmId).toBe(second.id);
       expect(after!.refreshTokenHash).toBe(before!.refreshTokenHash);
       expect(after!.revokedAt).toBeNull();
+
+      const [event] = await elevated.db
+        .select()
+        .from(authAuditLog)
+        .where(eq(authAuditLog.event, 'farm_switch'));
+      expect(event).toMatchObject({
+        outcome: 'success',
+        actorUserId: a.userId,
+        subjectUserId: a.userId,
+        farmId: second.id,
+        sessionId: before!.id,
+        sessionFamilyId: before!.familyId,
+        metadata: { fromFarmId: a.farmId },
+      });
     });
 
     it('refuses to switch to a farm the caller has no membership on', async () => {

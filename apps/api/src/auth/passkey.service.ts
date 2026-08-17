@@ -32,6 +32,7 @@ import {
 } from '@werf/core';
 import { APP_CONFIG, ELEVATED_DB } from '../db/db.module';
 import type { AppConfig } from '../config/config';
+import type { AuthAuditContext } from './auth-audit';
 import { SessionService, type IssuedSession } from './session.service';
 import { RecoveryCodeService } from './recovery-code.service';
 
@@ -270,6 +271,7 @@ export class PasskeyService {
    */
   async verifySecondFactor(
     input: schemas.PasskeyAuthenticationRequest,
+    context: AuthAuditContext = {},
   ): Promise<{ userId: string; session: IssuedSession }> {
     const pending = await this.sessions.findPendingSecondFactor(input.challengeToken);
     if (!pending) throw new SessionInvalidError('unknown');
@@ -355,12 +357,23 @@ export class PasskeyService {
         .where(eq(userPasskeys.id, credential.id));
     }
 
-    const session = await this.sessions.issue({
-      userId: pending.userId,
-      activeFarmId: pending.activeFarmId,
-      deviceLabel: pending.deviceLabel,
-      secondFactorSatisfied: true,
-    });
+    const session = await this.sessions.issue(
+      {
+        userId: pending.userId,
+        activeFarmId: pending.activeFarmId,
+        deviceLabel: pending.deviceLabel,
+        secondFactorSatisfied: true,
+      },
+      {
+        event: 'login',
+        outcome: 'success',
+        actorUserId: pending.userId,
+        subjectUserId: pending.userId,
+        farmId: pending.activeFarmId,
+        ...context,
+        metadata: { method: 'passkey' },
+      },
+    );
 
     return { userId: pending.userId, session };
   }

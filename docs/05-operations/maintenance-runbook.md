@@ -353,7 +353,7 @@ Patch and minor: batch weekly. Major: its own PR with its own testing. **Never b
 |---|---|
 | AWS Support | af-south-1, Business tier |
 | PowerSync | Support channel — **have this before you need it** |
-| Labour law | The practitioner who signed off Phase 3i |
+| Labour law | The practitioner who signs off the labour phase's final compliance slice |
 | Information Regulator | POPIA s22 notifications — **have the contact and the form template ready** |
 | Status page | status.werf.co.za |
 

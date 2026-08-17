@@ -18,8 +18,10 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { createCaptureStore, type CaptureStore } from '@werf/sync';
+import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
+import { getLocalDatabase } from '../sync/local-db';
+import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
 /** A walk, as held locally. `undefined` on a destination means that dimension was left alone. */
 export interface StoredMove {
@@ -32,6 +34,19 @@ export interface StoredMove {
   readonly toLandUnitId?: string | null;
   /** Destination mob. Absent = mob unchanged; null = unassigned from its mob. */
   readonly toMobId?: string | null;
+  /**
+   * The camp/mob the animal was in immediately BEFORE this move — present ONLY on a hydrated move
+   * (`HydratedLivestock.tsx`'s `mapHydratedMove`, reading `events.payload`'s own `fromLandUnitId`/
+   * `fromMobId`). A LOCAL capture never carries these: the app does not send them (the server
+   * derives the FROM side from the animal's own row at write time — `movement.ts`'s `recordMove`),
+   * so a local `StoredMove` genuinely does not know its own origin. `withdrawal.ts`'s
+   * `mobMembership` reads this off the FIRST move in an animal's log — the same rule
+   * `livestock.service.ts`'s server-side `mobMembership` uses — to seed the animal's TRUE opening
+   * mob, which a hydrated animal's own denormalised `mobId` cannot honestly provide (that field is
+   * the animal's CURRENT position, overwritten by every move that lands as the latest).
+   */
+  readonly fromLandUnitId?: string | null;
+  readonly fromMobId?: string | null;
   /** Ties one walk across many animals together as the single action it was (FR-112). */
   readonly batchId: string | null;
 }
@@ -40,7 +55,11 @@ export type MoveStore = CaptureStore<StoredMove>;
 export type MoveStoreFactory = (key: string) => MoveStore;
 
 const defaultFactory: MoveStoreFactory = (key) =>
-  createCaptureStore<StoredMove>({ storage: window.localStorage, key });
+  createSqliteCaptureStore<StoredMove>({
+    database: getLocalDatabase,
+    key,
+    legacyStorage: window.localStorage,
+  });
 
 const MoveStoreContext = createContext<MoveStore | null>(null);
 
@@ -56,6 +75,7 @@ export function LocalMovesProvider({
   const { activeFarm } = useAuth();
   const farmId = activeFarm?.id ?? 'none';
   const store = useMemo(() => factory(`werf-moves:${farmId}`), [factory, farmId]);
+  useCloseCaptureStore(store);
 
   return <MoveStoreContext.Provider value={store}>{children}</MoveStoreContext.Provider>;
 }
@@ -72,16 +92,31 @@ export function useMoves(): readonly StoredMove[] {
   return useSyncExternalStore(store.subscribe, store.all);
 }
 
+/** Whether this store's initial hydration attempt is over (`CaptureStore.settled()`) — the
+ *  Outbox flush must not act on `useMoves()` until this is true. */
+export function useMovesSettled(): boolean {
+  const store = useMoveStore();
+  return useSyncExternalStore(store.subscribe, store.settled);
+}
+
+/** Whether this store's hydration ATTEMPT ended in a genuine failure
+ *  (`CaptureStore.hydrationFailed()`) — the Outbox flush must hold, not treat `useMoves()` as
+ *  confirmed empty, when this is true. */
+export function useMovesHydrationFailed(): boolean {
+  const store = useMoveStore();
+  return useSyncExternalStore(store.subscribe, store.hydrationFailed);
+}
+
 /**
  * Record a walk for each animal in a group, under ONE batch id (FR-112). Synchronous; never awaits
  * the network (NFR-007). A farmer walks a mob, not an animal, so the group is the unit here and a
  * single-animal move is simply a group of one.
  */
-export function useRecordMoves(): (moves: readonly StoredMove[]) => void {
+export function useRecordMoves(): (moves: readonly StoredMove[]) => Promise<void> {
   const store = useMoveStore();
   return useCallback(
-    (moves) => {
-      for (const move of moves) store.append(move);
+    async (moves) => {
+      await Promise.all(moves.map((move) => store.append(move)));
     },
     [store],
   );

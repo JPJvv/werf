@@ -21,13 +21,14 @@
  * assertion written that way reds for two hours out of every twenty-four.
  */
 
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { projectDueDate } from '@werf/domain';
 import { App } from '../App';
 import { farmToday } from '../farmTime';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f2';
@@ -119,10 +120,8 @@ function seedHerd(rows: Array<Record<string, unknown>>): void {
   window.localStorage.setItem(HERD_KEY, JSON.stringify(rows));
 }
 
-function storedBreeding(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(BREEDING_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedBreeding(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(BREEDING_KEY);
 }
 
 beforeEach(() => {
@@ -151,8 +150,10 @@ describe('recording a service (FR-120)', () => {
     await user.type(screen.getByLabelText('Bull out'), '2026-02-16');
     await user.click(screen.getByRole('button', { name: 'Record the service' }));
 
-    const stored = storedBreeding();
-    expect(stored).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedBreeding()).toHaveLength(1);
+    });
+    const stored = await storedBreeding();
     expect(stored[0]).toMatchObject({
       kind: 'mating',
       animalId: cow.id,
@@ -179,7 +180,10 @@ describe('recording a service (FR-120)', () => {
     await user.type(screen.getByLabelText('Bull in'), '2026-03-01');
     await user.click(screen.getByRole('button', { name: 'Record the service' }));
 
-    const stored = storedBreeding();
+    await waitFor(async () => {
+      expect(await storedBreeding()).toHaveLength(1);
+    });
+    const stored = await storedBreeding();
     expect(stored[0]).toMatchObject({ bullInAt: '2026-03-01' });
     // Absent, not null: an omitted bound means "not closed yet", and a null would assert a date.
     expect(stored[0]).not.toHaveProperty('bullOutAt');
@@ -202,7 +206,7 @@ describe('recording a service (FR-120)', () => {
     expect(
       screen.getByRole('button', { name: 'Record the service' }).hasAttribute('disabled'),
     ).toBe(true);
-    expect(storedBreeding()).toHaveLength(0);
+    expect(await storedBreeding()).toHaveLength(0);
   });
 
   it('records an external sire by code, and never as a farm animal id', async () => {
@@ -219,7 +223,10 @@ describe('recording a service (FR-120)', () => {
     await user.type(screen.getByLabelText('Bull or straw code'), 'SA-BON-4471');
     await user.click(screen.getByRole('button', { name: 'Record the service' }));
 
-    const stored = storedBreeding();
+    await waitFor(async () => {
+      expect(await storedBreeding()).toHaveLength(1);
+    });
+    const stored = await storedBreeding();
     expect(stored[0]).toMatchObject({ method: 'ai', sireCode: 'SA-BON-4471' });
     expect(stored[0]).not.toHaveProperty('sireId');
     // Choosing AI moved the timing to a single day, because an insemination IS dated.
@@ -247,8 +254,10 @@ describe('recording a pregnancy diagnosis (FR-121)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Record the test' }));
 
-    const stored = storedBreeding();
-    expect(stored).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedBreeding()).toHaveLength(1);
+    });
+    const stored = await storedBreeding();
     expect(stored[0]).toMatchObject({
       kind: 'pregnancyTest',
       animalId: cow.id,
@@ -293,6 +302,44 @@ describe('recording a pregnancy diagnosis (FR-121)', () => {
     expect(screen.getByText(/Taken from the service you recorded/)).toBeTruthy();
   });
 
+  it('⭐ prefills the service date from a mating known only via HYDRATION (phase-checklists.md 3e)', async () => {
+    // The gap this closes: `breeding = useBreedingEvents()` read only `LocalBreeding` — a mating
+    // recorded on ANOTHER DEVICE for the same dam, once replicated down, was invisible here, so the
+    // service-date prefill silently fell back to blank for exactly the dam a co-worker's phone
+    // already has the service date for. This device never captures the mating itself.
+    const cow = animal({});
+    seedHerd([cow]);
+
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/pregnancy');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('events', {
+        id: '0190f3a0-0000-7000-8000-00000000br99',
+        farm_id: FARM_ID,
+        animal_id: cow.id,
+        type: 'mating',
+        occurred_at: '2026-01-05T12:00:00.000Z',
+        payload: JSON.stringify({
+          method: 'natural',
+          bullInAt: '2026-01-05',
+          bullOutAt: '2026-02-16',
+        }),
+      });
+    });
+
+    await user.selectOptions(await screen.findByLabelText('Which female'), cow.id as string);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('When was she served') as HTMLInputElement).value).toBe(
+        '2026-01-05',
+      );
+    });
+    expect(screen.getByText(/Taken from the service you recorded/)).toBeTruthy();
+  });
+
   it('records the test for a species with no gestation figure, and says why there is no date', async () => {
     const doe = animal({ species: 'game' });
     seedHerd([doe]);
@@ -313,8 +360,10 @@ describe('recording a pregnancy diagnosis (FR-121)', () => {
 
     // ⛔ The fact survives. Refusing the diagnosis would lose a real observation to protect a
     // projection that was never available.
-    const stored = storedBreeding();
-    expect(stored).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedBreeding()).toHaveLength(1);
+    });
+    const stored = await storedBreeding();
     expect(stored[0]).toMatchObject({ kind: 'pregnancyTest', result: 'pregnant' });
     expect(stored[0]).not.toHaveProperty('dueDate');
   });
@@ -354,7 +403,10 @@ describe('recording a pregnancy diagnosis (FR-121)', () => {
     await user.click(screen.getByRole('button', { name: 'Empty' }));
     await user.click(screen.getByRole('button', { name: 'Record the test' }));
 
-    const stored = storedBreeding();
+    await waitFor(async () => {
+      expect(await storedBreeding()).toHaveLength(1);
+    });
+    const stored = await storedBreeding();
     expect(stored[0]).toMatchObject({ result: 'open' });
     expect(stored[0]).not.toHaveProperty('matingDate');
   });

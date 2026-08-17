@@ -47,6 +47,7 @@ export function RecordRainfallScreen() {
   const [gauge, setGauge] = useState('');
   const [day, setDay] = useState(today);
   const [savedMm, setSavedMm] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
 
@@ -55,11 +56,13 @@ export function RecordRainfallScreen() {
   const parsed = typed === '' ? Number.NaN : Number(typed);
   const valid = Number.isFinite(parsed) && parsed >= 0;
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!valid) return;
+    if (!valid || saving) return;
+    setSaving(true);
 
-    recordRainfall({
+    // Not "saved" until the local write is durable (P1.1).
+    await recordRainfall({
       id: uuidv7(),
       farmId: activeFarm.id,
       occurredAt: readingInstant(day),
@@ -70,6 +73,7 @@ export function RecordRainfallScreen() {
     // Kept: the gauge and the day, because a farm with three gauges reads them in one round.
     setMm('');
     setSavedMm(parsed);
+    setSaving(false);
   };
 
   return (
@@ -144,7 +148,7 @@ export function RecordRainfallScreen() {
 
         <button
           type="submit"
-          disabled={!valid}
+          disabled={!valid || saving}
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
           {t('rain.save')}

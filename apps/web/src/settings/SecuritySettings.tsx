@@ -25,6 +25,7 @@ import { createPasskey, deviceLabel, passkeysAvailable } from '../auth/passkeys'
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { farmDateTime } from '../farmTime';
+import { SkeletonList } from '../components/SkeletonList';
 
 export function SecuritySettings() {
   const { t } = useTranslation();
@@ -137,7 +138,7 @@ export function SecuritySettings() {
       )}
 
       {keys === null ? (
-        <p className="mb-4 text-body text-soil-700">{t('settings.security.loading')}</p>
+        <SkeletonList label={t('settings.security.loading')} rows={2} />
       ) : keys.length === 0 ? (
         <p className="mb-4 text-body text-soil-700">{t('settings.security.none')}</p>
       ) : (

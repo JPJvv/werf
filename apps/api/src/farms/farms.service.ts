@@ -20,6 +20,7 @@ import { APP_DB, ELEVATED_DB } from '../db/db.module';
 import { MAILER, type Mailer } from '../mail/mailer';
 import { enterprisesByFarm } from '../common/session-farm';
 import { SessionService } from '../auth/session.service';
+import { type AuthAuditContext, writeAuthAudit } from '../auth/auth-audit';
 
 /** Default names for the enterprise row each chosen type creates. The farmer renames them. */
 const ENTERPRISE_DEFAULT_NAMES: Record<EnterpriseType, string> = {
@@ -55,6 +56,7 @@ export class FarmsService {
           businessId: farms.businessId,
           name: farms.name,
           enterpriseTypes: farms.enterpriseTypes,
+          eventRetentionMonths: farms.eventRetentionMonths,
           role: farmUsers.role,
         })
         .from(farmUsers)
@@ -118,6 +120,7 @@ export class FarmsService {
         businessId: farm!.businessId,
         name: farm!.name,
         enterpriseTypes: farm!.enterpriseTypes,
+        eventRetentionMonths: farm!.eventRetentionMonths,
         enterprises: created,
         role: 'owner',
       };
@@ -206,6 +209,7 @@ export class FarmsService {
         businessId: updated!.businessId,
         name: updated!.name,
         enterpriseTypes: updated!.enterpriseTypes,
+        eventRetentionMonths: updated!.eventRetentionMonths,
         enterprises: herds.get(farmId) ?? [],
         role: role!.role,
       };
@@ -247,6 +251,7 @@ export class FarmsService {
     userId: string,
     farmId: string,
     input: schemas.InviteUserRequest,
+    context: AuthAuditContext = {},
   ): Promise<{ status: 'pending'; role: string }> {
     await this.assertMembership(userId, farmId, ['owner']);
 
@@ -254,6 +259,19 @@ export class FarmsService {
       const existing = input.email
         ? await tx.select().from(users).where(eq(users.email, input.email))
         : await tx.select().from(users).where(eq(users.phone, input.phone!));
+
+      // A soft-deleted (POPIA-erased) identity is not resurrected by an invite, matching
+      // `AuthService.register`'s precedent for the same row: a tombstoned account is not a
+      // stranger's to reclaim. Without this check the row would be pulled back into a live
+      // `farm_users` membership and reappear in the `users_self_and_comembers` co-member
+      // list — that policy is keyed off `farm_users`, not `users.deleted_at` — while the
+      // account still cannot log in (`login` filters `deleted_at`). That is a disclosure
+      // with no matching capability, not an access hole, and closing it here rather than by
+      // reusing the row also avoids the alternative: falling through to the insert below and
+      // hitting `users.email`'s UNIQUE constraint, since erasure does not free the address.
+      if (existing[0]?.deletedAt) {
+        throw new ConflictError('That person cannot be invited');
+      }
 
       // Someone may already have an account from another farm — the same person managing
       // two neighbours' farms is normal. Reuse the identity; the ROLE is what is per-farm.
@@ -299,6 +317,16 @@ export class FarmsService {
           })
           .where(eq(farmUsers.id, priorMembership.id));
 
+        await writeAuthAudit(tx, {
+          event: 'invitation',
+          outcome: 'success',
+          actorUserId: userId,
+          subjectUserId: invitee.id,
+          farmId,
+          ...context,
+          metadata: { role: input.role, reinvitation: true },
+        });
+
         return { status: 'pending' as const, role: input.role };
       }
 
@@ -308,6 +336,16 @@ export class FarmsService {
         role: input.role,
         invitedAt: new Date(),
         acceptedAt: null,
+      });
+
+      await writeAuthAudit(tx, {
+        event: 'invitation',
+        outcome: 'success',
+        actorUserId: userId,
+        subjectUserId: invitee.id,
+        farmId,
+        ...context,
+        metadata: { role: input.role, reinvitation: false },
       });
 
       return { status: 'pending' as const, role: input.role };
@@ -384,9 +422,14 @@ export class FarmsService {
    * Points the current session at a different farm (FR-004) — no re-login, because a
    * session belongs to a person and roles belong to farms.
    */
-  async switchActiveFarm(userId: string, sessionId: string, farmId: string): Promise<void> {
+  async switchActiveFarm(
+    userId: string,
+    sessionId: string,
+    farmId: string,
+    context: AuthAuditContext = {},
+  ): Promise<void> {
     await this.assertMembership(userId, farmId, null);
-    await this.sessions.setActiveFarm(sessionId, userId, farmId);
+    await this.sessions.setActiveFarm(sessionId, userId, farmId, context);
   }
 
   /** Confirms membership (and optionally role) through the RLS-bound connection. */

@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -54,10 +55,8 @@ function cachedSession(): void {
 }
 
 /** What the store holds after a save. */
-function storedReadings(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(RAINFALL_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedReadings(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(RAINFALL_KEY);
 }
 
 beforeEach(() => {
@@ -94,14 +93,18 @@ describe('recording rainfall', () => {
     const announcements = screen.getAllByRole('status').map((el) => el.textContent ?? '');
     expect(announcements.some((text) => /18\.5\s*mm saved/i.test(text))).toBe(true);
 
-    const saved = storedReadings();
-    expect(saved).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedReadings()).toHaveLength(1);
+    });
+    const saved = await storedReadings();
     expect(saved[0]).toMatchObject({ farmId: FARM_ID, mm: 18.5, gauge: 'Homestead' });
 
     // Closed and reopened: the reading is read back off the device, no server involved.
     unmount();
     render(<App />);
-    expect(storedReadings()).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedReadings()).toHaveLength(1);
+    });
   });
 
   it('keeps a dry gauge as a real reading, but refuses an empty field', async () => {
@@ -120,8 +123,10 @@ describe('recording rainfall', () => {
     await user.type(screen.getByLabelText(/how much/i), '0');
     await user.click(screen.getByRole('button', { name: /save reading/i }));
 
-    expect(storedReadings()).toHaveLength(1);
-    expect(storedReadings()[0]).toMatchObject({ mm: 0 });
+    await waitFor(async () => {
+      expect(await storedReadings()).toHaveLength(1);
+    });
+    expect((await storedReadings())[0]).toMatchObject({ mm: 0 });
   });
 
   it('keeps the reading day the farmer gave, not the day it was captured', async () => {
@@ -138,7 +143,10 @@ describe('recording rainfall', () => {
     await user.type(screen.getByLabelText(/how much/i), '24');
     await user.click(screen.getByRole('button', { name: /save reading/i }));
 
-    const [reading] = storedReadings();
+    await waitFor(async () => {
+      expect(await storedReadings()).toHaveLength(1);
+    });
+    const [reading] = await storedReadings();
     expect(String(reading!['occurredAt'])).toContain('2026-03-01');
   });
 

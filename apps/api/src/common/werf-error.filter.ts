@@ -13,8 +13,10 @@ import {
   ConflictError,
   InvalidCredentialsError,
   NotFoundError,
+  QuotaExceededError,
   SecondFactorEnrolmentRequiredError,
   SessionInvalidError,
+  StepUpRequiredError,
   TenancyError,
   ValidationError,
   WerfError,
@@ -67,10 +69,28 @@ export class WerfErrorFilter implements ExceptionFilter {
         },
       };
     }
+    if (error instanceof StepUpRequiredError) {
+      return {
+        status: HttpStatus.FORBIDDEN,
+        body: {
+          code: 'STEP_UP_REQUIRED',
+          message: 'Sign in again before changing sign-in methods',
+        },
+      };
+    }
     if (error instanceof ConflictError) {
       return {
         status: HttpStatus.CONFLICT,
         body: { code: 'CONFLICT', message: error.message },
+      };
+    }
+    if (error instanceof QuotaExceededError) {
+      // A DISTINCT code from CONFLICT's, even though both map to 409: NotSentScreen.tsx
+      // translates a refusal from the server's stable CODE, and "already exists" is not what
+      // happened here — a farmer told that would be sent to fix something that was never wrong.
+      return {
+        status: HttpStatus.CONFLICT,
+        body: { code: 'QUOTA_EXCEEDED', message: error.message },
       };
     }
     if (error instanceof NotFoundError) {

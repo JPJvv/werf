@@ -29,7 +29,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveAnimals, useEffectiveMobs } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
-import { useVetProducts, type StoredVetProduct } from './LocalVetProducts';
+import { useVetProducts, inForceOn, type StoredVetProduct } from './LocalVetProducts';
 import {
   useRecordHealth,
   type DipMethod,
@@ -80,6 +80,7 @@ export function RecordHealthScreen() {
   const [route, setRoute] = useState<schemas.TreatmentRoute | ''>('');
   const [method, setMethod] = useState<DipMethod | ''>('');
   const [dosedCount, setDosedCount] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   // ⭐ ASKED, never assumed. A dose given on Tuesday and captured on Friday — the normal case for a
   // farm in a dead zone — must be dated Tuesday: the server resolves the product REGISTRATION in
   // force on this day (ADR-0005) and computes the withdrawal clock from it. Stamping it with the
@@ -95,14 +96,20 @@ export function RecordHealthScreen() {
     () => new Set(chosenMob ? [chosenMob.species] : chosen.map((a) => a.species)),
     [chosen, chosenMob],
   );
+  // ⭐ P1.3: filtered to the version IN FORCE ON THE DAY BEING CAPTURED — never today's, and never
+  // every version this device has ever cached. `products` now holds this farm's whole registration
+  // history (LocalVetProducts.tsx), so a farmer catching up after a fortnight offline and
+  // back-dating `administeredOn` across a re-registration boundary sees the version that was
+  // actually current on THAT day, not one superseded since or not yet in force.
+  const inForce = useMemo(() => inForceOn(products, administeredOn), [products, administeredOn]);
   const usable = useMemo(
     () =>
-      products.filter(
+      inForce.filter(
         (p) =>
           speciesInSelection.size === 0 ||
           [...speciesInSelection].every((s) => p.species.includes(s)),
       ),
-    [products, speciesInSelection],
+    [inForce, speciesInSelection],
   );
   const product = usable.find((p) => p.id === productId);
 
@@ -145,8 +152,9 @@ export function RecordHealthScreen() {
     administeredOn === '' ||
     (kind === 'treatment' && !doseIsValid(doseValue));
 
-  const save = () => {
-    if (blocked || !product) return;
+  const save = async () => {
+    if (blocked || !product || saving) return;
+    setSaving(true);
     // ONE batch id across the run: it was one action with one syringe and one product.
     const batchId = uuidv7();
     // The two clocks the schema keeps apart. `occurredAt` is when the dose was GIVEN: precise when
@@ -189,13 +197,15 @@ export function RecordHealthScreen() {
           mobId: null,
           ...common,
         }));
-    recordHealth(events);
+    // Not "saved" until every event in the batch is durable (P1.1) — a dosing run is one act.
+    await recordHealth(events);
 
     setDosedCount(chosenMob ? (chosenMob.headCount ?? 0) : events.length);
     setSelected(new Set());
     setSelectedMob(null);
     setReason('');
     setDoseValue('');
+    setSaving(false);
   };
 
   return (
@@ -316,7 +326,7 @@ export function RecordHealthScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             {/* Before the product, because the clear date below depends on it: a farmer changing
@@ -487,7 +497,7 @@ export function RecordHealthScreen() {
 
             <button
               type="submit"
-              disabled={blocked}
+              disabled={blocked || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {chosen.length > 0 ? `${t('health.save')} · ${chosen.length}` : t('health.save')}

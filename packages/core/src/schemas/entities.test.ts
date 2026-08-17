@@ -23,6 +23,13 @@ describe('businessSchema', () => {
       name: 'Rietfontein Boerdery',
       registrationNumber: null,
       vatNumber: null,
+      contactEmail: 'kantoor@rietfontein.test',
+      contactPhone: '+27 51 555 0100',
+      physicalAddressLine1: 'Plaas Rietfontein',
+      physicalAddressLine2: null,
+      physicalAddressLocality: 'Bothaville',
+      physicalAddressProvince: 'Free State',
+      physicalAddressPostalCode: '9660',
       createdAt: NOW,
       updatedAt: NOW,
       deletedAt: null,
@@ -35,6 +42,8 @@ describe('businessSchema', () => {
     const b = newBusinessSchema.parse({ id: ID, name: 'Rietfontein Boerdery' });
     expect(b.registrationNumber).toBeNull();
     expect(b.vatNumber).toBeNull();
+    expect(b.contactEmail).toBeNull();
+    expect(b.physicalAddressLine1).toBeNull();
   });
 });
 

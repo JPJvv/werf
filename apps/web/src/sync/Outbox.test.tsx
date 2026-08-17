@@ -12,11 +12,13 @@
  * nothing at all leaves the device while offline.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { schemas } from '@werf/core';
 import { App } from '../App';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
+import { getCurrentFakeBlobStore } from '../test-support/blob-store';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -27,6 +29,8 @@ const MOB_ID = '0190f3a0-0000-7000-8000-0000000000b1';
 const DIP_ID = '0190f3a0-0000-7000-8000-0000000000c1';
 const TALLY_ID = '0190f3a0-0000-7000-8000-0000000000c2';
 const MOVE_ID = '0190f3a0-0000-7000-8000-0000000000c3';
+const SALE_ID = '0190f3a0-0000-7000-8000-0000000000e3';
+const BRAND_ID = '0190f3a0-0000-7000-8000-0000000000b7';
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -97,6 +101,26 @@ function seedCaptures(): void {
   );
 }
 
+function seedBrandAndLinkedAnimal(): void {
+  const register = schemas.newBrandingRegisterSchema.parse({
+    id: BRAND_ID,
+    farmId: FARM_ID,
+    mark: 'AM7',
+    markType: 'hot_brand',
+    species: ['cattle'],
+  });
+  const animal = schemas.newAnimalSchema.parse({
+    id: ANIMAL_ID,
+    farmId: FARM_ID,
+    species: 'cattle',
+    sex: 'female',
+    brandId: BRAND_ID,
+    brandAppliedAt: '2026-07-01',
+  });
+  window.localStorage.setItem(`werf-branding:${FARM_ID}`, JSON.stringify([register]));
+  window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
+}
+
 /**
  * One offline window in which a flock is dipped, an animal is walked, and head is tallied OUT of
  * that flock to the abattoir — captured in the order a farmer does them, all still pending.
@@ -161,6 +185,18 @@ function seedDoseThenDisposal(): void {
   );
 }
 
+/**
+ * `capture_records` no longer lives in `window.localStorage` — captures persist through the
+ * SQLite-backed store (`packages/sync/src/sqlite-capture-store.ts`, phase-checklists.md 3c), via
+ * the fake `test-setup.ts` mocks `getLocalDatabase()` to. This reproduces the OLD
+ * `window.localStorage.getItem(key)` value exactly (the same JSON-array-of-records shape), so
+ * every `.toContain(id)` / `.toBe(before)` assertion below keeps its original meaning; only the
+ * source of the string changes, and every call site is now `await`ed.
+ */
+async function storedBlob(key: string): Promise<string> {
+  return JSON.stringify(await storedCaptures(key));
+}
+
 /** A fetch that always accepts (201). Returns the mock so a test can inspect the calls. */
 function acceptingFetch() {
   return vi.fn((_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -177,9 +213,13 @@ function acceptingFetch() {
  * the implementation rather than the behaviour.
  */
 function postedPaths(fetchMock: ReturnType<typeof vi.fn>): string[] {
-  return fetchMock.mock.calls
-    .filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
-    .map((call) => String(call[0]));
+  return (
+    fetchMock.mock.calls
+      .filter((call) => (call[1] as RequestInit | undefined)?.method === 'POST')
+      .map((call) => String(call[0]))
+      // Refresh is session maintenance, not a capture being re-sent.
+      .filter((path) => !path.endsWith('/auth/refresh'))
+  );
 }
 
 beforeEach(() => {
@@ -192,6 +232,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
   // Restore connectivity for the next test (one test forces it off).
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+  // Restore real timers unconditionally — a no-op if the test never faked them, but essential
+  // for the one that does (the retry-interval test below): leaked fake timers would otherwise
+  // silently break every subsequent test's own timing.
+  vi.useRealTimers();
 });
 
 describe('sending queued captures once there is a signal (FR-009)', () => {
@@ -222,6 +266,46 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     const init = fetchMock.mock.calls[0]![1]!;
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer access-token');
+  });
+
+  it('sends a newly recorded mark before the linked animal FK (FR-601/602)', async () => {
+    cachedSession();
+    seedBrandAndLinkedAnimal();
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+
+    const paths = postedPaths(fetchMock);
+    const brandAt = paths.findIndex((path) => path.endsWith('/livestock/branding-registers'));
+    const animalAt = paths.findIndex((path) => path.endsWith('/livestock/animals'));
+    expect(brandAt).toBeGreaterThanOrEqual(0);
+    expect(animalAt).toBeGreaterThanOrEqual(0);
+    expect(brandAt).toBeLessThan(animalAt);
+  });
+
+  it('holds a linked animal when its newly recorded mark is refused', async () => {
+    cachedSession();
+    seedBrandAndLinkedAnimal();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith('/livestock/branding-registers')) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: async () => ({ code: 'VALIDATION', message: 'Registered mark was not accepted' }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, status: 201, json: async () => ({}) } as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await waitFor(() => {
+      expect(postedPaths(fetchMock)).toContainEqual(expect.stringMatching(/branding-registers$/));
+    });
+    expect(postedPaths(fetchMock).some((path) => path.endsWith('/livestock/animals'))).toBe(false);
   });
 
   it('⭐ sends the DOSE and the MOVE before the disposal the server must judge against them', async () => {
@@ -261,6 +345,79 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(at('/livestock/animals')).toBeLessThan(at('/livestock/moves'));
   });
 
+  it('⭐ waits for a slow-hydrating store before flushing ANY store, not just the slow one', async () => {
+    // Pins the `allSettled` gate (Outbox.tsx) deterministically rather than relying on however
+    // the fake database's promises happen to interleave — the ORIGINAL regression this gate fixed
+    // (docs/04-delivery/phase-3-capture-migration-2026-08-09.md, "regression 1") was that `tallies`
+    // hydrated and made `pendingCount > 0` while `health` was still mid-hydration, so the tally
+    // posted BEFORE the dose it must be judged against, because an unhydrated store's empty
+    // `all()` reads as "this farm has none of these" rather than "still finding out". Without the
+    // gate, that same defect would resurface here: `health` is deliberately held open while every
+    // OTHER seeded store (tallies, mobs, moves, herd, weights, events) hydrates and settles for
+    // real — proven by reading `capture_records` back directly, not by trusting a UI label that
+    // can only ever say "Sending…" while ungated. If the gate is gone, the tally goes up in that
+    // window; if the gate holds, nothing does until `health` is released too.
+    cachedSession();
+    seedDoseThenDisposal();
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = await getCurrentFakeLocalDatabase();
+    const release = db.holdHydrationFor(`werf-health:${FARM_ID}`);
+
+    render(<App />);
+
+    // Every OTHER seeded store has actually finished hydrating and committed its migrated rows —
+    // not just "some time has passed" — while `health` is still held.
+    await waitFor(async () => {
+      expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+      expect(await storedBlob(`werf-moves:${FARM_ID}`)).toContain(MOVE_ID);
+    });
+    expect(postedPaths(fetchMock)).toEqual([]);
+    expect(screen.queryByText('Saved and sent')).toBeNull();
+
+    release();
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    const at = (suffix: string) => paths.findIndex((p) => p.endsWith(suffix));
+    expect(at('/livestock/dips')).toBeGreaterThanOrEqual(0);
+    expect(at('/livestock/dips')).toBeLessThan(at('/livestock/mob-tallies'));
+  });
+
+  it('⭐ holds EVERYTHING, not just its own captures, when a store fails to hydrate (sync-auditor Finding 1, 2026-08-09)', async () => {
+    // The FAILURE counterpart to the test above: `health` does not merely hydrate slowly here, it
+    // never hydrates at all — the fake database throws on every read for this one key, the way a
+    // corrupted OPFS file or a row a future schema version wrote would. `settled()` alone cannot
+    // tell this apart from "confirmed empty": the store still settles (on the failure), `all()`
+    // still reads `[]`. Before `hydrationFailed()` existed, the flush would have gone ahead
+    // believing no dose was outstanding — waving the tally through a guard that never actually
+    // ran, exactly the SEV-1 shape the FK/`guardedBy` ordering exists to prevent. `anyHydrationFailed`
+    // (Outbox.tsx) holds the WHOLE queue, not only what health's own captures would have been,
+    // because an unverifiable store poisons every guard that reads it, not just its own kind.
+    cachedSession();
+    seedDoseThenDisposal();
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const db = await getCurrentFakeLocalDatabase();
+    db.failHydrationFor(`werf-health:${FARM_ID}`);
+
+    render(<App />);
+
+    // Every OTHER seeded store hydrated and settled for real, not just "some time has passed".
+    await waitFor(async () => {
+      expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+      expect(await storedBlob(`werf-moves:${FARM_ID}`)).toContain(MOVE_ID);
+    });
+    // The strip tells the truth about a device that cannot currently verify what it holds — not
+    // "sent" (a lie), and not silently "N to send" either (an undercount: health's own dip is
+    // invisible to `pendingCount` too, same as everything else this store cannot confirm).
+    expect(await screen.findByText('Not sent — will retry')).toBeTruthy();
+    expect(screen.queryByText('Saved and sent')).toBeNull();
+    expect(postedPaths(fetchMock)).toEqual([]);
+  });
+
   it('⭐ holds the disposal back when the dose it is judged against is refused this round', async () => {
     // §2f SEV-2. Ordering evidence before the act only helps if the act waits for evidence that
     // DID NOT LAND. The dip is refused (409) and set aside — and the old flush then walked straight
@@ -293,7 +450,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     // Nothing discarded: the tally is still on the device and absent from the sent-log, so the next
     // reconnect sends it once the dose lands or the farmer clears the refusal.
-    expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+    expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(TALLY_ID);
     expect(sent).not.toContain(DIP_ID);
@@ -340,12 +497,15 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
       JSON.stringify([
         {
           id: '0190f3a0-0000-7000-8000-0000000000d1',
+          jurisdiction: 'ZA',
           name: 'Tickaway',
           registrationNumber: 'G4321 Act 36/1947',
           species: ['cattle'],
           meatWithdrawalDays: 28,
           milkWithdrawalHours: null,
           route: 'topical',
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
         },
       ]),
     );
@@ -494,7 +654,236 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(TALLY_ID);
     expect(sent).not.toContain(TRANSFER_ID);
     // And the capture is KEPT, never dropped: a 4xx sets it aside for a later round.
-    expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+    expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+  });
+
+  it('⭐ holds a slaughter when the transfer that withholds its flock is known only by HYDRATION', async () => {
+    // sync-auditor Finding 1 (2026-08-10), second call site. The test just above proves the taint
+    // chain-walk when THIS device captured the transfer_in itself and it was refused this round.
+    // The gap: a transfer another device captured, sent, and already landed — so it will never be
+    // refused, it is simply invisible to `mobDisposalSubjects` unless the raw local tally log is
+    // replaced with the local+hydrated fold. Here the SOURCE mob's own dip is what gets refused this
+    // round; the only thing connecting the sale mob to that dip is a transfer this device never
+    // captured. Without the fold, `mobDisposalSubjects` cannot walk from the sale mob to the dip
+    // camp, so the refused dip's taint never reaches the slaughter — 201 for meat behind a dipped
+    // transfer that arrived by down-sync rather than by this device's own capture.
+    const SOURCE = '0190f3a0-0000-7000-8000-0000000000b5';
+    const HYDRATED_TRANSFER_ID = '0190f3a0-0000-7000-8000-0000000000a8';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        { id: SOURCE, farmId: FARM_ID, name: 'Dip camp', species: 'sheep', headCount: 200 },
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Sale flock',
+          species: 'sheep',
+          headCount: 40,
+          initialHeadCount: 40,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-vet-products:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-0000000000d1',
+          jurisdiction: 'ZA',
+          name: 'Tickaway',
+          registrationNumber: 'G4321 Act 36/1947',
+          species: ['sheep'],
+          meatWithdrawalDays: 28,
+          milkWithdrawalHours: null,
+          route: 'topical',
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
+        },
+      ]),
+    );
+    // Local: the dip on the SOURCE mob (will be refused this round) and the slaughter on the SALE
+    // mob. Nothing local names the transfer between them — that fact lives ONLY in `events`, the way
+    // it would after arriving by down-sync rather than being captured on this device.
+    window.localStorage.setItem(
+      `werf-health:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: DIP_ID,
+          farmId: FARM_ID,
+          animalId: null,
+          mobId: SOURCE,
+          kind: 'dip',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+          productId: '0190f3a0-0000-7000-8000-0000000000d1',
+          method: 'plunge',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-tallies:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: TALLY_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          reason: 'slaughter',
+          count: 10,
+          delta: -10,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/dips') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // ⛔ Hydrated BEFORE the first render, not injected mid-test. The retry loop only re-flushes
+    // every `RETRY_INTERVAL_MS` (90s); once the slaughter has SENT in round one it cannot be
+    // un-sent, so the transfer must already be visible to `foldTallies` on that very first attempt —
+    // exactly the state a device boots into after PowerSync has replicated it before the device was
+    // ever opened, which is the ordinary case, not a race.
+    const fake = await getCurrentFakeLocalDatabase();
+    fake.hydrateRow('events', {
+      id: HYDRATED_TRANSFER_ID,
+      farm_id: FARM_ID,
+      mob_id: MOB_ID,
+      type: 'tally',
+      occurred_at: '2026-07-22T12:00:00.000Z',
+      payload: JSON.stringify({
+        reason: 'transfer_in',
+        delta: 40,
+        counterpartMobId: SOURCE,
+        carriedWithholdUntil: '2026-08-17',
+      }),
+    });
+
+    render(<App />);
+    // Held: the refused dip's taint must reach the slaughter through the hydrated transfer link.
+    expect(await screen.findByText(/1 not sent — needs your attention/)).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(TALLY_ID);
+    expect(await storedBlob(`werf-tallies:${FARM_ID}`)).toContain(TALLY_ID);
+  });
+
+  it('⭐ holds an individual sale when the animal AND its mob membership are known only via HYDRATION', async () => {
+    // The animals/moves/health hydration slice (phase-checklists.md 3e), the individual-animal
+    // counterpart of the transfer-chain test above. `guardedByFor` for a lifecycle disposal used to
+    // read `animals.find(...)` (local-only) to find `subject`, then `animalDisposalSubjects(subject,
+    // moves)` (also local-only) for the mob-history subject set. An animal registered on ANOTHER
+    // device — never captured here — made `subject` `undefined`, which fell through to
+    // `guardedBy: nonNull(event.animalId)`: the animal's own id, with NO mob history. A refused dip
+    // on a mob the animal stood in (known only because the hydrated animal row itself carries that
+    // mob) then held nothing, and the sale posted anyway — 201 for meat inside an active
+    // withholding, the one shape in this file where meat reaches a truck rather than a farmer being
+    // blocked.
+    cachedSession();
+    // LOCAL: the dip on the mob (refused this round) and the sale event, naming an animal id this
+    // device has no local herd row for at all.
+    window.localStorage.setItem(
+      `werf-vet-products:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-0000000000d2',
+          jurisdiction: 'ZA',
+          name: 'Tickaway',
+          registrationNumber: 'G4321 Act 36/1947',
+          species: ['cattle'],
+          meatWithdrawalDays: 28,
+          milkWithdrawalHours: null,
+          route: 'topical',
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-health:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: DIP_ID,
+          farmId: FARM_ID,
+          animalId: null,
+          mobId: MOB_ID,
+          kind: 'dip',
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          administeredOn: '2026-07-20',
+          productId: '0190f3a0-0000-7000-8000-0000000000d2',
+          method: 'plunge',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-events:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SALE_ID,
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          type: 'sale',
+          status: 'sold',
+          occurredAt: '2026-07-23T12:00:00.000Z',
+          counterparty: 'Vleissentraal',
+          priceCents: 500000,
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const refused = String(input).endsWith('/livestock/dips') && init?.method === 'POST';
+      return refused
+        ? ({
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    // HYDRATED before the first render, same reasoning as the transfer-chain test: this device
+    // boots into a world where the animal and its mob membership already arrived via down-sync.
+    const fake = await getCurrentFakeLocalDatabase();
+    fake.hydrateRow('animals', {
+      id: ANIMAL_ID,
+      farm_id: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+      breed: null,
+      status: 'alive',
+      dob: null,
+      dob_estimated: 0,
+      status_at: null,
+      dam_id: null,
+      sire_id: null,
+      // Standing in the dipped mob as first captured — the opening mob `mobMembership` reads,
+      // no move event needed to establish it.
+      mob_id: MOB_ID,
+      land_unit_id: null,
+      source: null,
+      acquired_at: null,
+      brand_id: null,
+      brand_applied_at: null,
+      attributes: '{}',
+      photo_key: null,
+      enterprise_id: null,
+    });
+
+    render(<App />);
+    // Held: the refused dip's taint must reach the sale through the hydrated animal's mob history.
+    expect(await screen.findByText(/1 not sent — needs your attention/)).toBeTruthy();
+
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(SALE_ID);
+    expect(await storedBlob(`werf-events:${FARM_ID}`)).toContain(SALE_ID);
   });
 
   it('⭐ holds the arrival — and the slaughter behind it — when the DEPARTURE was refused', async () => {
@@ -600,7 +989,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(TALLY_ID);
     // Every capture kept. A 4xx sets the departure aside for a later round; the two behind it are
     // simply still pending, and the next reconnect sends them once the source is repaired.
-    const stored = window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '';
+    const stored = await storedBlob(`werf-tallies:${FARM_ID}`);
     expect(stored).toContain(OUT_ID);
     expect(stored).toContain(IN_ID);
     expect(stored).toContain(TALLY_ID);
@@ -742,7 +1131,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(sent).not.toContain(IN_C);
 
     // And nothing was dropped — the queue keeps every capture for the next round.
-    const stored = window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '';
+    const stored = await storedBlob(`werf-tallies:${FARM_ID}`);
     for (const id of [OUT_A, IN_B, OUT_B, IN_C]) expect(stored).toContain(id);
   });
 
@@ -898,6 +1287,281 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(BOUGHT);
     expect(sent).not.toContain(DIED);
+  });
+
+  describe('tripwire 3e (issue #8): a hydrated tally from ANOTHER device', () => {
+    // ⛔ THE TENTH PASS'S TRIPWIRE, CLOSED. `landed()` used to be exactly `sentLog.has(id)` —
+    // "did THIS DEVICE send it" — which is the same claim as "does the server hold it" only while
+    // the device holds the whole log. Down-sync breaks that: an INCREASE another device captured
+    // and sent lands on the server, is replicated back to THIS device via PowerSync, and — before
+    // this fix — was invisible to `needsHead`'s fold. The fold then UNDER-counts the true head,
+    // and a decrease that the server would happily accept looks like it would underflow locally —
+    // held, every round, forever, with no refusal above it to ever clear it.
+    //
+    // The scenario below picks an INCREASE deliberately, not a decrease: a hidden DECREASE would
+    // make the naive fold over-permissive (the server's own guard still catches that), but a
+    // hidden INCREASE is what produces the silent, permanent, farmer-visible hold this tripwire
+    // names — "1 to send" that never becomes "Synced" no matter how long the phone sits in range.
+
+    const M = '0190f3a0-0000-7000-8000-0000000000e1';
+    /** Device A's birth — landed on the server, replicated down, NEVER captured on this device. */
+    const BIRTH = '0190f3a0-0000-7000-8000-0000000000e2';
+    /** This device's own decrease, valid once the birth is counted, still unsent. */
+    const DECREASE = '0190f3a0-0000-7000-8000-0000000000e3';
+
+    function seedMobAndDecrease(): void {
+      window.localStorage.setItem(
+        `werf-mobs:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: M,
+            farmId: FARM_ID,
+            name: 'Flock A',
+            species: 'sheep',
+            headCount: 260,
+            initialHeadCount: 260,
+          },
+        ]),
+      );
+      window.localStorage.setItem(
+        `werf-tallies:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: DECREASE,
+            farmId: FARM_ID,
+            mobId: M,
+            // After the birth, so the fold's `(occurredAt, id)` cut counts it — same shape every
+            // other head-arithmetic test in this file already relies on.
+            occurredAt: '2026-07-25T12:00:00.000Z',
+            reason: 'death',
+            count: 280,
+            delta: -280,
+          },
+        ]),
+      );
+    }
+
+    /** The birth as the canonical `events` row PowerSync would down-sync — the exact shape
+     *  `recordMobTally` (`@werf/domain`) writes, read back rather than re-invented. */
+    function hydratedBirthRow(farmId = FARM_ID) {
+      return {
+        id: BIRTH,
+        farm_id: farmId,
+        mob_id: M,
+        type: 'tally',
+        occurred_at: '2026-07-20T12:00:00.000Z',
+        payload: JSON.stringify({ reason: 'birth', delta: 40 }),
+      };
+    }
+
+    it('⭐⭐ sends the decrease once the hydrated birth funds it — not held forever', async () => {
+      cachedSession();
+      seedMobAndDecrease();
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+
+      // BEFORE hydration: the MOB row sends (it is a plain, unguarded FlushItem — a foreign key,
+      // not an arithmetic question), but 260 (baseline alone) cannot fund a 280 decrease, so the
+      // TALLY specifically is held rather than refused. Waited for via the strip settling on
+      // "pending" (proof the gate has run at least once), not by racing a timer.
+      await screen.findByText(/1 to send/);
+      expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(false);
+
+      // Device A's birth lands. Nothing on THIS device captured it, sent it, or restarted for it —
+      // it simply arrives, the way down-sync does.
+      const fake = await getCurrentFakeLocalDatabase();
+      act(() => {
+        fake.hydrateRow('events', hydratedBirthRow());
+      });
+
+      // ⭐ THE ASSERTION THIS TEST EXISTS FOR. The fold can now see the head the birth funded
+      // (260 + 40 − 280 = 20 ≥ 0), so the decrease sends on its own.
+      await waitFor(() => {
+        expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(true);
+      });
+      const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+      expect(sent).toContain(DECREASE);
+      // The hydrated birth itself is never POSTed — it is not this device's capture to send. Only
+      // ONE tally request should ever have gone out, however many times the flush retried.
+      expect(postedPaths(fetchMock).filter((path) => path.includes('/mob-tallies'))).toHaveLength(
+        1,
+      );
+    });
+
+    it('cross-farm hydrated rows never fund a decrease on this farm', async () => {
+      cachedSession();
+      seedMobAndDecrease();
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+      await screen.findByText(/1 to send/);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      act(() => {
+        // Same mob id, same delta — but a DIFFERENT farm. If farm-scoping ever slipped, this
+        // would fund the decrease exactly as the real birth does above.
+        fake.hydrateRow('events', hydratedBirthRow('0190f3a0-0000-7000-8000-0000000000ff'));
+      });
+
+      // Held, still — nothing to observe (a negative assertion), so give the (non-)event a real
+      // window rather than checking once immediately after the act().
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(false);
+    });
+
+    it('⭐ a hydrated RECOUNT still resets, and funds a decrease the created baseline alone could not', async () => {
+      // Test 6 of the required matrix. `projectHeadCount` (@werf/domain) has always reset on a
+      // recount — this is not new behaviour — but the merge feeding it hydrated rows must not
+      // treat a hydrated recount as just another delta added on top of the baseline.
+      const M2 = '0190f3a0-0000-7000-8000-0000000000e5';
+      const RECOUNT = '0190f3a0-0000-7000-8000-0000000000e6';
+      const DECREASE2 = '0190f3a0-0000-7000-8000-0000000000e7';
+      cachedSession();
+      window.localStorage.setItem(
+        `werf-mobs:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: M2,
+            farmId: FARM_ID,
+            name: 'Flock B',
+            species: 'sheep',
+            headCount: 260,
+            initialHeadCount: 260,
+          },
+        ]),
+      );
+      window.localStorage.setItem(
+        `werf-tallies:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: DECREASE2,
+            farmId: FARM_ID,
+            mobId: M2,
+            // The created baseline (260) alone cannot fund this; the recounted figure (500) can.
+            occurredAt: '2026-07-26T12:00:00.000Z',
+            reason: 'death',
+            count: 450,
+            delta: -450,
+          },
+        ]),
+      );
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+      await screen.findByText(/1 to send/);
+      expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(false);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      act(() => {
+        fake.hydrateRow('events', {
+          id: RECOUNT,
+          farm_id: FARM_ID,
+          mob_id: M2,
+          type: 'tally',
+          occurred_at: '2026-07-20T12:00:00.000Z',
+          payload: JSON.stringify({ reason: 'recount', countedHead: 500 }),
+        });
+      });
+
+      await waitFor(() => {
+        expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(true);
+      });
+      expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '').toContain(DECREASE2);
+    });
+
+    it('⭐ test 5 of the required matrix: hydration arriving OUT OF chronological order projects the same result', async () => {
+      const M3 = '0190f3a0-0000-7000-8000-0000000000e8';
+      const RECOUNT3 = '0190f3a0-0000-7000-8000-0000000000e9';
+      const BIRTH3 = '0190f3a0-0000-7000-8000-0000000000ea';
+      const DECREASE3 = '0190f3a0-0000-7000-8000-0000000000eb';
+      cachedSession();
+      window.localStorage.setItem(
+        `werf-mobs:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: M3,
+            farmId: FARM_ID,
+            name: 'Flock C',
+            species: 'sheep',
+            headCount: 260,
+            initialHeadCount: 260,
+          },
+        ]),
+      );
+      window.localStorage.setItem(
+        `werf-tallies:${FARM_ID}`,
+        JSON.stringify([
+          {
+            id: DECREASE3,
+            farmId: FARM_ID,
+            mobId: M3,
+            // Only funded once BOTH the recount (500, on the 18th) and the birth (+50, on the
+            // 19th) are counted: 550 total, 500 taken, 50 left.
+            occurredAt: '2026-07-26T12:00:00.000Z',
+            reason: 'death',
+            count: 500,
+            delta: -500,
+          },
+        ]),
+      );
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      render(<App />);
+      await screen.findByText(/1 to send/);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      // Delivered in REVERSE of the order they happened on the farm — the later birth arrives
+      // before the earlier recount. The total order the fold sorts by is `(occurredAt, id)`, not
+      // arrival order, so the result must not depend on which one this device heard about first.
+      act(() => {
+        fake.hydrateRow('events', {
+          id: BIRTH3,
+          farm_id: FARM_ID,
+          mob_id: M3,
+          type: 'tally',
+          occurred_at: '2026-07-19T12:00:00.000Z',
+          payload: JSON.stringify({ reason: 'birth', delta: 50 }),
+        });
+      });
+      act(() => {
+        fake.hydrateRow('events', {
+          id: RECOUNT3,
+          farm_id: FARM_ID,
+          mob_id: M3,
+          type: 'tally',
+          occurred_at: '2026-07-18T12:00:00.000Z',
+          payload: JSON.stringify({ reason: 'recount', countedHead: 500 }),
+        });
+      });
+
+      await waitFor(() => {
+        expect(postedPaths(fetchMock).some((path) => path.includes('/mob-tallies'))).toBe(true);
+      });
+      expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '').toContain(DECREASE3);
+    });
+
+    it('a genuine hydration failure holds the queue, never drops it (never a lost capture)', async () => {
+      cachedSession();
+      seedMobAndDecrease();
+      const fetchMock = acceptingFetch();
+      vi.stubGlobal('fetch', fetchMock);
+
+      const fake = await getCurrentFakeLocalDatabase();
+      fake.failWatch('events');
+
+      render(<App />);
+
+      expect(await screen.findByText('Not sent — will retry')).toBeTruthy();
+      expect(postedPaths(fetchMock)).toEqual([]);
+      // Still in the local store, untouched — a down-sync failure is never a discard.
+      const stillQueued = await storedCaptures<{ id: string }>(`werf-tallies:${FARM_ID}`);
+      expect(stillQueued.map((t) => t.id)).toContain(DECREASE);
+    });
   });
 
   it('⭐ NAMES the held capture on /not-sent, so a hold is a thing the farmer can see', async () => {
@@ -1172,7 +1836,12 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
         },
       ]),
     );
-    const before = window.localStorage.getItem(`werf-tallies:${FARM_ID}`);
+    // The seeded ground truth. What migrates into the SQLite-backed store below must match this
+    // structurally — window.localStorage itself is never touched again, so comparing against it
+    // directly after render would trivially always pass and stop testing anything.
+    const before = JSON.parse(
+      window.localStorage.getItem(`werf-tallies:${FARM_ID}`) ?? '[]',
+    ) as unknown[];
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const unauthorised = {
@@ -1188,10 +1857,10 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     render(<App />);
     await screen.findByText(/not sent|to send|sending/i);
 
-    // The capture store is byte-identical, nothing joined the sent-log, and the session was not
-    // cleared out from under the queue.
-    await waitFor(() => {
-      expect(window.localStorage.getItem(`werf-tallies:${FARM_ID}`)).toBe(before);
+    // The capture store is structurally identical, nothing joined the sent-log, and the session
+    // was not cleared out from under the queue.
+    await waitFor(async () => {
+      expect(await storedCaptures(`werf-tallies:${FARM_ID}`)).toEqual(before);
     });
     expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '').not.toContain(TALLY_ID);
     expect(window.localStorage.getItem('werf-session')).toBeTruthy();
@@ -1237,8 +1906,8 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     // The captures are untouched on the device, and NOTHING was recorded as sent — so the next
     // reconnect retries the lot. The queue is never discarded to make an error go away.
-    expect(window.localStorage.getItem(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
-    expect(window.localStorage.getItem(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
+    expect(await storedBlob(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
+    expect(await storedBlob(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
     expect(window.localStorage.getItem(`werf-sent:${FARM_ID}`)).toBeNull();
   });
 
@@ -1272,7 +1941,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
 
     // Nothing was discarded to achieve that: the refused weight is still on the device and still
     // absent from the sent-log, so it is re-tested on every future round.
-    expect(window.localStorage.getItem(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
+    expect(await storedBlob(`werf-weights:${FARM_ID}`)).toContain(WEIGHT_ID);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).toContain(ANIMAL_ID);
     expect(sent).toContain(DEATH_ID);
@@ -1322,7 +1991,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     expect(screen.getByText(/nothing here is lost/i)).toBeTruthy();
     // ⛔ The queue is never discarded — not by the system, and not by a farmer on a bad afternoon.
     expect(screen.queryByRole('button', { name: /delete|discard|remove/i })).toBeNull();
-    expect(window.localStorage.getItem(`werf-identifiers:${FARM_ID}`)).toContain('0417');
+    expect(await storedBlob(`werf-identifiers:${FARM_ID}`)).toContain('0417');
   });
 
   it('holds everything locally while offline and sends nothing', async () => {
@@ -1337,7 +2006,7 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     // The reassurance that keeps a farmer from reaching for a paper backup.
     expect(await screen.findByText('Offline — your work is saved')).toBeTruthy();
     expect(fetchMock.mock.calls.length).toBe(0);
-    expect(window.localStorage.getItem(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
+    expect(await storedBlob(`werf-herd:${FARM_ID}`)).toContain(ANIMAL_ID);
   });
 
   it('shows how many captures are still waiting to be sent', async () => {
@@ -1351,6 +2020,536 @@ describe('sending queued captures once there is a signal (FR-009)', () => {
     render(<App />);
 
     expect(await screen.findByText('3 to send')).toBeTruthy();
-    expect(fetchMock.mock.calls.length).toBe(0);
+    expect(postedPaths(fetchMock)).toHaveLength(0);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).endsWith('/auth/refresh'))).toBe(
+      true,
+    );
+  });
+
+  it('⭐ schedules a bounded retry after an aborted round, and the retry itself resumes the flush (sync-auditor Finding 2, 2026-08-09)', async () => {
+    // A round aborts as transient whenever the server refuses in a way `isRefusal` does not treat
+    // as a merits refusal — a 429 from the global per-IP throttle (app.module.ts's
+    // `ThrottlerModule`) is the realistic case a large offline backlog draining at once can hit,
+    // and db.md's "a 5xx is transient" rule is written to cover it too. Before this fix, NOTHING
+    // re-triggered a flush after that: `errored` only changes inside `flush()` itself, so the
+    // strip said "Not sent — will retry" with nothing actually scheduled to retry it, until the
+    // farmer captured something new or restarted the app.
+    //
+    // Real timers throughout — `vi.useFakeTimers()` was tried here first and made React's own
+    // scheduling hang under jsdom (no real `MessageChannel`/`requestIdleCallback` fallback to
+    // fake against), so instead of simulating 90 real seconds passing, this captures the EXACT
+    // callback `window.setInterval` was given and invokes it directly — proving both that a
+    // bounded retry is genuinely scheduled AND that firing it resumes the flush for real, without
+    // needing time itself to move.
+    cachedSession();
+    seedCaptures();
+    let throttled = true;
+    const fetchMock = vi.fn(async () =>
+      throttled
+        ? ({
+            ok: false,
+            status: 429,
+            json: async () => ({ code: 'THROTTLED', message: 'too many requests' }),
+          } as unknown as Response)
+        : ({ ok: true, status: 201, json: async () => ({}) } as unknown as Response),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+
+    render(<App />);
+
+    expect(await screen.findByText('Not sent — will retry')).toBeTruthy();
+    const attemptsBeforeRetry = fetchMock.mock.calls.length;
+    expect(attemptsBeforeRetry).toBeGreaterThan(0);
+
+    // A retry IS scheduled, at a bound (90s) that comfortably outlasts every `blockDuration` in
+    // app.module.ts's throttler config and security/rate-limits.ts, so a throttle block has
+    // always cleared server-side by the time a real device's timer fires.
+    await waitFor(() => {
+      expect(setIntervalSpy.mock.calls.some(([, delay]) => delay === 90_000)).toBe(true);
+    });
+    const scheduled = setIntervalSpy.mock.calls.find(([, delay]) => delay === 90_000);
+    const retryCallback = scheduled?.[0] as (() => void) | undefined;
+    expect(retryCallback).toBeDefined();
+
+    // The throttle has cleared server-side; firing the exact scheduled callback must resume the
+    // flush and actually send the backlog, with no new capture and no app restart in between.
+    throttled = false;
+    await act(async () => {
+      retryCallback?.();
+    });
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(attemptsBeforeRetry);
+  });
+});
+
+describe('sending an attachment (phase-checklists.md 3i(c))', () => {
+  const ATTACHMENT_ID = '0190f3a0-0000-7000-8000-0000000000f5';
+  const UPLOAD_URL = 'https://minio.test/bucket/attachment-key?sig=abc';
+
+  function seedAnimalAndAttachment(): void {
+    const animal = schemas.newAnimalSchema.parse({
+      id: ANIMAL_ID,
+      farmId: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+    });
+    window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
+    window.localStorage.setItem(
+      `werf-attachments:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: ATTACHMENT_ID,
+          farmId: FARM_ID,
+          subjectType: 'animal',
+          subjectId: ANIMAL_ID,
+          mimeType: 'image/jpeg',
+          sizeBytes: 4,
+          checksum: 'a'.repeat(64),
+          occurredAt: '2026-07-20T06:00:00.000Z',
+        },
+      ]),
+    );
+  }
+
+  /** A three-leg-aware fetch, so each test can choose how the ANIMAL leg and the FINALIZE leg
+   *  behave without repeating the URL-branching every time. `create`/PUT always accept — no test
+   *  below needs them to do otherwise. */
+  function attachmentFetchMock(
+    opts: {
+      animal?: 'accept' | 'refuse' | 'networkFail';
+      finalize?: 'accept' | 'networkFail';
+    } = {},
+  ) {
+    const { animal = 'accept', finalize = 'accept' } = opts;
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/livestock/animals') && method === 'POST') {
+        if (animal === 'networkFail') throw new TypeError('Failed to fetch');
+        if (animal === 'refuse') {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'already recorded' }),
+          } as unknown as Response;
+        }
+        return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+      }
+      if (url.endsWith('/attachments') && method === 'POST') {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            attachmentId: ATTACHMENT_ID,
+            uploadUrl: UPLOAD_URL,
+            checksumHeaderValue: 'YWJjZA==',
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          }),
+        } as unknown as Response;
+      }
+      if (url === UPLOAD_URL && method === 'PUT') {
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      }
+      if (url.endsWith('/attachments/finalize') && method === 'POST') {
+        if (finalize === 'networkFail') throw new TypeError('Failed to fetch');
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      }
+      // AuthProvider's boot effect refreshes on any mount whose in-memory session has no
+      // access token — the ordinary shape of a "cold start", which the interruption test below
+      // deliberately re-renders through. A generic `{}` fallback fails `adopt()`'s own shape
+      // check and leaves the flush with no token to send anything, forever — this branch is what
+      // every OTHER `acceptingFetch()`-style mock in this file gets for free by accepting
+      // everything blindly, which this mock cannot do since it must also branch on the presigned
+      // PUT going to a non-API host.
+      if (url.endsWith('/auth/refresh') && method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            accessToken: 'refreshed-access-token',
+            expiresIn: 900,
+            user: SESSION_USER,
+            farms: [
+              { id: FARM_ID, name: 'Rietfontein', enterpriseTypes: ['beef_cattle'], role: 'owner' },
+            ],
+            activeFarmId: FARM_ID,
+            secondFactor: 'complete',
+          }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+  }
+
+  it('⭐ holds a photo behind a refused animal, and never attempts the upload', async () => {
+    // The `animalrow:` subject (phase-checklists.md 3i(c)), the same taint shape `mobrow:` already
+    // proves for a tally on a mob the server has not accepted: a refused animal must hold the
+    // photo behind it rather than let it 404 individually for the same one cause.
+    cachedSession();
+    seedAnimalAndAttachment();
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock({ animal: 'refuse' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/livestock/animals'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/attachments'))).toBe(false);
+    // Held, not lost: the blob is untouched and the attachment never joined the sent-log.
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(true);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(ATTACHMENT_ID);
+  });
+
+  it('never attempts a photo when the animal ahead of it in the queue aborts the round', async () => {
+    // FK ordering, not the taint mechanism this time: a transient failure on the animal aborts the
+    // WHOLE round, so the attachment queued behind it (send order, `Outbox.tsx`'s FK comment) is
+    // never even attempted this round — proving where the queue construction actually placed it.
+    cachedSession();
+    seedAnimalAndAttachment();
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock({ animal: 'networkFail' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/livestock/animals'))).toBe(
+        true,
+      );
+    });
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/attachments'))).toBe(false);
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(true);
+  });
+
+  it('⭐ sends the whole three-leg upload once its animal has landed, and releases the blob', async () => {
+    cachedSession();
+    seedAnimalAndAttachment();
+    // The animal is ALREADY sent — this device's own earlier round — so this round never attempts
+    // it again; the attachment's `guardedBy` subject was simply never tainted.
+    window.localStorage.setItem(`werf-sent:${FARM_ID}`, JSON.stringify([ANIMAL_ID]));
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    const calls = fetchMock.mock.calls.map(
+      (c) => [String(c[0]), (c[1] as RequestInit | undefined)?.method] as const,
+    );
+    expect(calls.some(([u, m]) => u.endsWith('/attachments') && m === 'POST')).toBe(true);
+    expect(calls.some(([u, m]) => u === UPLOAD_URL && m === 'PUT')).toBe(true);
+    expect(calls.some(([u, m]) => u.endsWith('/attachments/finalize') && m === 'POST')).toBe(true);
+    expect(calls.some(([u]) => u.endsWith('/livestock/animals'))).toBe(false);
+    // Finalize genuinely returned, so the local blob is gone.
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).toContain(ATTACHMENT_ID);
+  });
+
+  it('⭐ keeps the blob through an interruption between a successful PUT and finalize, and completes on retry', async () => {
+    // Design note (c), phase-checklists.md 3i(c): the local blob is released ONLY once finalize
+    // returns, never on the PUT's own success — because a PUT can land while the app is killed
+    // before finalize runs, and the retry needs the bytes still there to attempt that leg again.
+    cachedSession();
+    seedAnimalAndAttachment();
+    window.localStorage.setItem(`werf-sent:${FARM_ID}`, JSON.stringify([ANIMAL_ID]));
+    await getCurrentFakeBlobStore().put(ATTACHMENT_ID, new Blob(['fake-jpeg']));
+    const fetchMock = attachmentFetchMock({ finalize: 'networkFail' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { unmount } = render(<App />);
+
+    // The PUT reached the object store; finalize's response never arrived (a network failure
+    // aborts the round rather than refusing it). Waited out to the FINALIZE attempt, not just the
+    // PUT — unmounting the instant the PUT call is observed would race the still-in-flight
+    // `sendAttachment` continuation against the teardown below. The property under test: the blob
+    // is STILL there once the whole interrupted attempt has genuinely settled.
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls.map(
+        (c) => [String(c[0]), (c[1] as RequestInit | undefined)?.method] as const,
+      );
+      expect(calls.some(([u, m]) => u.endsWith('/attachments/finalize') && m === 'POST')).toBe(
+        true,
+      );
+    });
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(true);
+
+    // The app restarts — unmounted, then a fresh render against the SAME fake blob store (this
+    // module's memoized-per-test singleton), the way `getCurrentFakeLocalDatabase` already models
+    // a cold start elsewhere in this file.
+    unmount();
+    const resumedFetch = attachmentFetchMock();
+    vi.stubGlobal('fetch', resumedFetch);
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    expect(getCurrentFakeBlobStore().has(ATTACHMENT_ID)).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).toContain(ATTACHMENT_ID);
+  });
+});
+
+describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue tracked in STATUS.md)', () => {
+  const LAND_UNIT_ID = '0190f3a0-0000-7000-8000-0000000000f9';
+  const WALK_ID = '0190f3a0-0000-7000-8000-0000000000fa';
+  const MOVE2_ID = '0190f3a0-0000-7000-8000-0000000000fb';
+  const THEFT_ID = '0190f3a0-0000-7000-8000-0000000000fc';
+
+  function seedLandUnit(): void {
+    window.localStorage.setItem(
+      `werf-land:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LAND_UNIT_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: null,
+          kind: 'camp',
+          code: 'Camp 3',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+      ]),
+    );
+  }
+
+  /** Refuses land-unit creation, accepts everything else (201) — the shape every held-behind-camp
+   *  test needs, since a held item must never itself be attempted. */
+  function landRefusingFetch() {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/land-units') && method === 'POST') {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ code: 'CONFLICT', message: 'a camp with this code exists' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+  }
+
+  it('⭐ holds a boundary walk behind a refused camp — the unconditional guard', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-boundary-walks:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: WALK_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-07-20T06:00:00.000Z',
+          corners: [{ lon: 26.21, lat: -29.12, accuracyM: 5 }],
+          boundaryGeojson: '{"type":"Polygon","coordinates":[[]]}',
+          areaHectares: 12,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/land-units'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/land-units/boundary-walks'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(WALK_ID);
+  });
+
+  it('⭐ holds a mob created in a refused camp — the conditional guard on an optional field', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Flock A',
+          species: 'cattle',
+          landUnitId: LAND_UNIT_ID,
+          enterpriseId: null,
+          headCount: 300,
+          initialHeadCount: 300,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mobs'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(MOB_ID);
+  });
+
+  it('⭐ holds a move INTO a refused camp, but not a move that only changes mob', async () => {
+    cachedSession();
+    seedLandUnit();
+    const animal = schemas.newAnimalSchema.parse({
+      id: ANIMAL_ID,
+      farmId: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+    });
+    window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
+    window.localStorage.setItem(
+      `werf-moves:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOVE2_ID,
+          farmId: FARM_ID,
+          animalId: ANIMAL_ID,
+          occurredAt: '2026-07-20T08:00:00.000Z',
+          toLandUnitId: LAND_UNIT_ID,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/moves'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(MOVE2_ID);
+  });
+
+  it('⭐ holds a theft incident behind BOTH a refused camp and a refused named animal', async () => {
+    // The two dependency kinds a theft incident carries (Outbox.tsx's own header on the loop),
+    // proven together: `landUnitId` from the camp picker AND `animalIds` from the ownership
+    // chain — `createTheftIncident` (livestock.service.ts) checks both, and until P2.7 neither
+    // was guarded, so either 404'd the incident with no held/refused signal to show for it.
+    cachedSession();
+    seedLandUnit();
+    const animal = schemas.newAnimalSchema.parse({
+      id: ANIMAL_ID,
+      farmId: FARM_ID,
+      species: 'cattle',
+      sex: 'female',
+    });
+    window.localStorage.setItem(`werf-herd:${FARM_ID}`, JSON.stringify([animal]));
+    window.localStorage.setItem(
+      `werf-theft:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: THEFT_ID,
+          farmId: FARM_ID,
+          discoveredAt: '2026-07-20T10:00:00.000Z',
+          lastSeenAt: null,
+          lastSeenLocationGeojson: null,
+          landUnitId: LAND_UNIT_ID,
+          headCount: 1,
+          caseNumber: null,
+          reportingStation: null,
+          observations: null,
+          animalIds: [ANIMAL_ID],
+        },
+      ]),
+    );
+    // The camp is refused; the animal is accepted (a distinct, independent cause to prove BOTH
+    // guardedBy subjects hold the incident, not only whichever one happens to run first).
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/livestock/animals'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/livestock/theft-incidents'))).toBe(false);
+  });
+
+  it('⭐ recovers on the NEXT round once the camp lands — the same taint mechanism as mobrow:/animalrow:', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOB_ID,
+          farmId: FARM_ID,
+          name: 'Flock A',
+          species: 'cattle',
+          landUnitId: LAND_UNIT_ID,
+          enterpriseId: null,
+          headCount: 300,
+          initialHeadCount: 300,
+        },
+      ]),
+    );
+    // The camp is transiently refused this round (a network hiccup, modelled as a genuine
+    // refusal so the item is set aside rather than aborting the whole round), then accepted the
+    // next time the farmer opens the app with a signal — the ordinary "resolve and retry" path.
+    let campAccepted = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/land-units') && method === 'POST') {
+        if (!campAccepted) {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({ code: 'CONFLICT', message: 'a camp with this code exists' }),
+          } as unknown as Response;
+        }
+        return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+      }
+      // The second render is a fresh app instance — AuthProvider's boot effect refreshes on any
+      // mount whose in-memory session has no access token, which every cold start is (this
+      // file's attachment tests hit the same thing on their own remount). A generic `{}` fallback
+      // fails `adopt()`'s shape check and leaves the flush with no token to send anything, ever.
+      if (url.endsWith('/auth/refresh') && method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            accessToken: 'refreshed-access-token',
+            expiresIn: 900,
+            user: SESSION_USER,
+            farms: [
+              { id: FARM_ID, name: 'Rietfontein', enterpriseTypes: ['beef_cattle'], role: 'owner' },
+            ],
+            activeFarmId: FARM_ID,
+            secondFactor: 'complete',
+          }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { unmount } = render(<App />);
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mobs'))).toBe(false);
+
+    // The farmer edits the camp code and tries again — a fresh app instance, the way a farmer
+    // actually gets a second attempt (this file's own cold-start convention elsewhere).
+    unmount();
+    campAccepted = true;
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).toContain(LAND_UNIT_ID);
+    expect(sent).toContain(MOB_ID);
   });
 });

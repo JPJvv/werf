@@ -11,16 +11,18 @@
  * Offline-first: `save` commits locally and instantly with no network in the path (NFR-007).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { uuidv7 } from '@werf/core';
 import { calendarDaysBetween } from '@werf/domain';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { farmDay } from '../farmTime';
-import { useEffectiveAnimals } from './herd';
+import { useEffectiveAnimals, useEffectiveAnimalsSettled } from './herd';
 import { useLifecycleEvents, useRecordWeaning } from './LocalLifecycle';
+import { useHydratedLifecycleEvents, useHydratedLifecycleEventsSettled } from './HydratedLivestock';
 import { useAnimalLabels } from './LocalIdentifiers';
+import type { StoredAnimal } from './LocalHerd';
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 export function WeaningSessionScreen() {
@@ -28,24 +30,55 @@ export function WeaningSessionScreen() {
   const { activeFarm } = useAuth();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
   const events = useLifecycleEvents();
+  const hydratedEvents = useHydratedLifecycleEvents();
   const labels = useAnimalLabels();
   const record = useRecordWeaning();
+  // Both called unconditionally, one per line — `useX() && useY()` inline would short-circuit and
+  // skip calling useY() whenever useX() is false, breaking the Rules of Hooks (TagSessionScreen.tsx
+  // has the same discipline for the same reason).
+  const animalsSettled = useEffectiveAnimalsSettled();
+  const hydratedEventsSettled = useHydratedLifecycleEventsSettled();
+  const readyToOpen = animalsSettled && hydratedEventsSettled;
 
-  const alreadyWeaned = useMemo(
-    () => new Set(events.filter((e) => e.type === 'weaning').map((e) => e.animalId)),
-    [events],
-  );
+  // ⭐ Merged with hydrated lifecycle events (phase-checklists.md 3e) — without this, a weaning
+  // another device already sent, once replicated down, was invisible here, so the queue offered an
+  // animal a co-worker had already weaned and let this device record it a second time.
+  const alreadyWeaned = useMemo(() => {
+    const local = events.filter((e) => e.type === 'weaning').map((e) => e.animalId);
+    const hydrated = hydratedEvents.filter((e) => e.type === 'weaning').map((e) => e.animalId);
+    return new Set([...local, ...hydrated]);
+  }, [events, hydratedEvents]);
 
-  // Fixed when the session opens, like the tagging session: a queue that shrank under the farmer's
-  // thumb after each save would make working down a race impossible to follow.
-  const [queue] = useState(() => live.filter((a) => a.damId !== null && !alreadyWeaned.has(a.id)));
+  // Fixed once every store it is built from has hydrated, like the tagging session: a queue that
+  // shrank under the farmer's thumb after each save would make working down a race impossible to
+  // follow. Captured on the first render `readyToOpen` is true, not at mount — see
+  // TagSessionScreen.tsx's identical fix for why a mount-time snapshot froze on an empty herd on
+  // every cold start once the capture stores began hydrating asynchronously (phase-checklists.md 3c).
+  const [queue, setQueue] = useState<readonly StoredAnimal[] | null>(null);
+  useEffect(() => {
+    if (readyToOpen && queue === null) {
+      setQueue(live.filter((a) => a.damId !== null && !alreadyWeaned.has(a.id)));
+    }
+    // Deliberately NOT depending on `live`/`alreadyWeaned`: this must run exactly once, the first
+    // time `readyToOpen` becomes true, and never again — see the comment above.
+  }, [readyToOpen]);
 
   const [index, setIndex] = useState(0);
   const [kg, setKg] = useState('');
   const [savedCount, setSavedCount] = useState(0);
   const [lastSaved, setLastSaved] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (!activeFarm) return null;
+
+  if (queue === null) {
+    return (
+      <section className="mx-auto w-full max-w-3xl p-4">
+        <h1 className="mb-4 font-ui text-h1 text-soil-900">{t('wean.title')}</h1>
+        <p className="mb-6 text-body text-soil-700">{t('wean.loading')}</p>
+      </section>
+    );
+  }
 
   const animal = queue[index];
   const value = Number(kg);
@@ -69,12 +102,14 @@ export function WeaningSessionScreen() {
     setIndex((i) => i + 1);
   };
 
-  const save = () => {
-    if (!animal || !canSave) return;
+  const save = async () => {
+    if (!animal || !canSave || saving) return;
+    setSaving(true);
     const occurredAt = new Date();
     const age = ageDays(animal.dob, occurredAt);
 
-    record({
+    // Not "saved" until the local write is durable (P1.1).
+    await record({
       id: uuidv7(),
       farmId: activeFarm.id,
       animalId: animal.id,
@@ -86,6 +121,7 @@ export function WeaningSessionScreen() {
 
     setLastSaved(value);
     setSavedCount((n) => n + 1);
+    setSaving(false);
     advance();
   };
 
@@ -130,7 +166,7 @@ export function WeaningSessionScreen() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              save();
+              void save();
             }}
           >
             <div className="mb-6 flex flex-col">
@@ -151,7 +187,7 @@ export function WeaningSessionScreen() {
 
             <button
               type="submit"
-              disabled={!canSave}
+              disabled={!canSave || saving}
               className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
             >
               {t('weigh.save')}

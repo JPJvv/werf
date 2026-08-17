@@ -11,12 +11,12 @@
  */
 
 import { z } from 'zod';
-import { uuidSchema, timestampSchema } from './primitives';
+import { uuidSchema, uuidV7Schema, timestampSchema } from './primitives';
 import { rainfallPayloadSchema } from './events';
 
 export const recordRainfallRequestSchema = z.object({
   /** Client-generated UUIDv7 for the event row. */
-  id: uuidSchema,
+  id: uuidV7Schema,
   farmId: uuidSchema,
   /** When the gauge was READ on the farm. Not `created_at` (set on write) — a gauge read on Sunday
    *  and captured on Wednesday belongs to Sunday in every report. */

@@ -68,9 +68,11 @@ Phase 3 on 2026-08-08.
 
 ## Phase 3 — Offline sync
 
-**Ships:** the architecture ADR-0003 promises: React reads and writes local SQLite through the sync
-adapter; PowerSync moves deltas to Postgres; RLS and sync rules agree; the outbox survives old
-clients, retries and long offline periods without data loss. The same phase adds the approved shared
+**Ships:** the architecture ADR-0003/[ADR-0012](../03-architecture/adr/ADR-0012-upload-topology.md)
+promise: React reads and writes local SQLite through the sync adapter; `Outbox.tsx` moves deltas UP
+to Postgres via REST, PowerSync moves deltas DOWN from Postgres; RLS and sync rules agree; the
+outbox survives old clients, retries and long offline periods without data loss. The same phase adds
+the approved shared
 attachment foundation: OPFS blobs, synced metadata, deferred S3-compatible uploads and tenant-safe
 reads, with MinIO in development/tests and S3 in `af-south-1` in production.
 
@@ -82,7 +84,7 @@ reads, with MinIO in development/tests and S3 in `af-south-1` in production.
 | 3d | Durable upload queue: idempotency, 4xx quarantine, 5xx abort, refresh hold | offline matrix |
 | 3e | Conflict rules and append-only projections ordered by `(occurred_at, id)` | two-device tests |
 | 3f | Retention/read-set degradation; queue never evicted | quota test |
-| 3g | Old-client compatibility and additive migrations | 12-month client-window test |
+| 3g | Old-client compatibility and additive migrations | 24-month client-window test |
 | 3h | Sync health/observability without PII | per-farm diagnostics |
 | 3i | Shared local-first attachment queue and S3-compatible object boundary | offline/restart/quota, checksum, idempotency and cross-farm tests |
 
@@ -97,17 +99,25 @@ the owner triggers the relevant reviewer/sync-auditor. Do not batch a Phase 3 te
 
 **Ships:** crop blocks, plantings, fertiliser, spray capture, product reference data, PHI enforced at
 capture, harvest, grazing/feed and the crop-facing home metrics—on the real Phase 3 sync layer.
+Full slice detail (schema/API/screen/projection/tests per slice, and the corrected FR bucketing
+below) is in `phase-checklists.md`'s Phase 4 section — authored at the start of this phase, not
+speculatively.
 
 | Slice | Content | Evidence |
 |---|---|---|
-| 4a | Blocks and plantings | FR-201…204 |
-| 4b | Fertiliser and harvest | FR-205…207 |
-| 4c | Chemical reference data and sprays | FR-208…212 |
-| 4d | PHI/re-entry enforcement on device and server | US-030 offline |
-| 4e | Grazing, feed and inventory links | FR-150…153, 501…503 |
+| 4a | Blocks and plantings | FR-201, FR-202, FR-203 |
+| 4b | Fertiliser (no compliance gate) | FR-206 |
+| 4c | Chemical reference data, sprays, spray-history report | FR-508, FR-204, FR-211 |
+| 4d | Harvest + PHI/re-entry guard — ONE slice, never split (Phase 2's treatment/sale lesson) | FR-205, FR-207, US-030 offline |
+| 4e | Grazing, feed and inventory (new schema) | FR-150…153, 501…503 |
+
+Deferred (priority-2, not in this phase's "Ships" line): FR-208/209/210/212 (soil/leaf/fruit
+analysis, scouting, rotation history, weather). The GlobalGAP checklist *engine* is Phase 6.
 
 **Gate:** crop P1 requirements and US-030 pass offline; no regulated interval is hardcoded; a crop
-farmer can complete a spray-to-harvest record with no network.
+farmer can complete a spray-to-harvest record with no network. ⛔ Production `chemical_products`
+seeding is blocked on JP naming a maintained Act 36/1947 source (same class as Phase 5's B-1/B-2) —
+does not block development.
 
 ## Phase 5 — Labour & wages
 

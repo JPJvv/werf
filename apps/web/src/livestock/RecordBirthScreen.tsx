@@ -87,6 +87,7 @@ export function RecordBirthScreen() {
   const [easeScore, setEaseScore] = useState<EaseScore>(1);
   const [calves, setCalves] = useState<readonly CalfDraft[]>([BLANK_CALF]);
   const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const dam = useMemo(() => dams.find((a) => a.id === damId), [dams, damId]);
 
@@ -104,15 +105,18 @@ export function RecordBirthScreen() {
     setCalves((previous) => previous.map((c, i) => (i === index ? { ...c, ...change } : c)));
   };
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (blocked || !dam) return;
+    if (blocked || !dam || saving) return;
+    setSaving(true);
 
     // One instant for the whole calving: twins are born minutes apart and recorded together, and
     // two births of the same litter that disagree about the day would be worse than a shared one.
     const occurredAt = new Date();
     const dob = farmDay(occurredAt);
+    const batchId = uuidv7();
 
+    const writes: Promise<void>[] = [];
     for (const calf of calves) {
       const calfId = uuidv7();
       const weight = optionalWeight(calf.weightText);
@@ -120,43 +124,53 @@ export function RecordBirthScreen() {
       // The calf, as a herd row. It inherits the dam's species and herd — a Bonsmara cow does not
       // calve a sheep, and a calf filed under a different enterprise from its mother is a reporting
       // error waiting to happen (FR-113).
-      recordAnimal(
-        schemas.newAnimalSchema.parse({
-          id: calfId,
-          farmId: activeFarm.id,
-          enterpriseId: dam.enterpriseId,
-          species: dam.species,
-          sex: calf.sex,
-          damId: dam.id,
-          // Born today on this farm — the one case where the date of birth is known exactly rather
-          // than estimated, which is the whole reason a birth capture beats a headcount.
-          dob,
-          dobEstimated: false,
-          // It is where its mother is.
-          landUnitId: dam.landUnitId,
-          mobId: dam.mobId,
-        }),
+      writes.push(
+        recordAnimal(
+          schemas.newAnimalSchema.parse({
+            id: calfId,
+            farmId: activeFarm.id,
+            enterpriseId: dam.enterpriseId,
+            species: dam.species,
+            sex: calf.sex,
+            damId: dam.id,
+            // Born today on this farm — the one case where the date of birth is known exactly
+            // rather than estimated, which is the whole reason a birth capture beats a headcount.
+            dob,
+            dobEstimated: false,
+            // It is where its mother is.
+            landUnitId: dam.landUnitId,
+            mobId: dam.mobId,
+          }),
+        ),
       );
 
       // The calving, against the dam — one per calf, each carrying the multiple count, so the
       // herd rows and the events agree about how many were born. See the module header.
-      recordBirth({
-        id: uuidv7(),
-        farmId: activeFarm.id,
-        animalId: dam.id,
-        occurredAt,
-        currentStatus: 'alive',
-        calfId,
-        easeScore,
-        multiples,
-        ...(weight === null ? {} : { birthWeightKg: weight }),
-      });
+      writes.push(
+        recordBirth({
+          id: uuidv7(),
+          farmId: activeFarm.id,
+          animalId: dam.id,
+          occurredAt,
+          currentStatus: 'alive',
+          batchId,
+          calfId,
+          easeScore,
+          multiples,
+          ...(weight === null ? {} : { birthWeightKg: weight }),
+        }),
+      );
     }
+
+    // Not "saved" until every calf's herd row AND its birth event are durable (P1.1) — a twin
+    // birth is one act, and the confirmation must not appear while half of it is still in flight.
+    await Promise.all(writes);
 
     setJustSaved(labels.get(dam.id) ?? speciesLabel(t, dam.species));
     setCalves([BLANK_CALF]);
     setDamId('');
     setEaseScore(1);
+    setSaving(false);
   };
 
   return (
@@ -303,7 +317,7 @@ export function RecordBirthScreen() {
 
           <button
             type="submit"
-            disabled={blocked}
+            disabled={blocked || saving}
             className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
           >
             {t('birth.save')}

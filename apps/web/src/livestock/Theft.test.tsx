@@ -10,11 +10,12 @@
  * that genuinely needs it, and the point of the test is that the screen says so honestly.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { uuidv7, type schemas } from '@werf/core';
 import { App } from '../App';
+import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -89,10 +90,8 @@ function markSent(id: string): void {
   window.localStorage.setItem(SENT_KEY, JSON.stringify([id]));
 }
 
-function storedIncidents(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(THEFT_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedIncidents(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(THEFT_KEY);
 }
 
 /** A phone that gives a fix, or refuses to. */
@@ -136,8 +135,8 @@ describe('filing a stock-theft incident (FR-603)', () => {
     await user.type(screen.getByLabelText(/what did you find/i), 'Fence cut on the east boundary');
     await user.click(screen.getByRole('button', { name: /file this incident/i }));
 
-    await waitFor(() => expect(storedIncidents()).toHaveLength(1));
-    const [incident] = storedIncidents();
+    await waitFor(async () => expect(await storedIncidents()).toHaveLength(1));
+    const [incident] = await storedIncidents();
     expect(incident).toMatchObject({
       farmId: FARM_ID,
       headCount: 12,
@@ -174,7 +173,7 @@ describe('filing a stock-theft incident (FR-603)', () => {
 
     // Nothing filed, and the reason is named — "denied" and "no sky" need different actions from
     // the person holding the phone.
-    expect(storedIncidents()).toHaveLength(0);
+    expect(await storedIncidents()).toHaveLength(0);
     expect(screen.getByText(/not allowing the app to use its location/i)).toBeTruthy();
   });
 
@@ -189,8 +188,11 @@ describe('filing a stock-theft incident (FR-603)', () => {
     await user.click(screen.getByRole('button', { name: /file this incident/i }));
     await user.click(screen.getByRole('button', { name: /file it without a gps point/i }));
 
-    await waitFor(() => expect(storedIncidents()).toHaveLength(1));
-    expect(storedIncidents()[0]).toMatchObject({ headCount: 3, lastSeenLocationGeojson: null });
+    await waitFor(async () => expect(await storedIncidents()).toHaveLength(1));
+    expect((await storedIncidents())[0]).toMatchObject({
+      headCount: 3,
+      lastSeenLocationGeojson: null,
+    });
   });
 
   it('offers no way to name a suspect, and warns against it in the one box that could', async () => {
@@ -222,16 +224,16 @@ describe('filing a stock-theft incident (FR-603)', () => {
     render(<App />);
 
     await user.type(screen.getByLabelText(/how many are gone/i), '2');
-    await user.click(screen.getByRole('button', { name: /0417/ }));
+    await user.click(await screen.findByRole('button', { name: /0417/ }));
     await user.click(screen.getByRole('button', { name: /file this incident/i }));
 
-    await waitFor(() => expect(storedIncidents()).toHaveLength(1));
-    expect(storedIncidents()[0]!['animalIds']).toEqual([a1]);
+    await waitFor(async () => expect(await storedIncidents()).toHaveLength(1));
+    expect((await storedIncidents())[0]!['animalIds']).toEqual([a1]);
   });
 });
 
 describe('the evidence pack (FR-603)', () => {
-  it('does not offer a pack for an incident the server has never seen, and says why', () => {
+  it('does not offer a pack for an incident the server has never seen, and says why', async () => {
     cachedSession();
     seedIncident();
     window.history.pushState({}, '', '/animals/theft');
@@ -239,18 +241,50 @@ describe('the evidence pack (FR-603)', () => {
 
     // The incident IS saved, and the copy says so rather than reading as a failure. What has not
     // happened is the part that genuinely needs a signal.
-    expect(screen.getByText(/saved on this phone/i)).toBeTruthy();
+    expect(await screen.findByText(/saved on this phone/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /get the evidence pack/i })).toBeNull();
   });
 
-  it('offers the pack once the incident has been sent', () => {
+  it('offers the pack once the incident has been sent', async () => {
     cachedSession();
     const id = seedIncident();
     markSent(id);
     window.history.pushState({}, '', '/animals/theft');
     render(<App />);
 
-    expect(screen.getByRole('button', { name: /get the evidence pack/i })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /get the evidence pack/i })).toBeTruthy();
+  });
+
+  it('⭐ shows and offers a pack for an incident filed on ANOTHER DEVICE, known only via hydration (phase-checklists.md 3e)', async () => {
+    // The gap this closes: this screen read only local `useTheftIncidents()` — an incident a
+    // co-worker filed and the server has already replicated down was invisible here entirely, and
+    // (separately) `isSent` read only this device's own local `sentLog`, which a hydrated incident
+    // — by construction already on the server — could never be in. This device never files or
+    // seeds anything locally: the incident arrives purely through down-sync.
+    cachedSession();
+    window.history.pushState({}, '', '/animals/theft');
+    render(<App />);
+
+    const fake = await getCurrentFakeLocalDatabase();
+    act(() => {
+      fake.hydrateRow('theft_incidents', {
+        id: '0190f3a0-0000-7000-8000-00000000t099',
+        farm_id: FARM_ID,
+        discovered_at: '2026-07-20T10:00:00.000Z',
+        last_seen_at: '2026-07-18T10:00:00.000Z',
+        last_seen_location_geojson: '{"type":"Point","coordinates":[26.21,-29.12]}',
+        land_unit_id: null,
+        head_count: 12,
+        case_number: null,
+        reporting_station: null,
+        observations: 'Fence cut on the eastern boundary',
+      });
+    });
+
+    // Visible at all — the read gap.
+    expect(await screen.findByText('12')).toBeTruthy();
+    // And ready — the "already on the server" gap, since this device never sent it itself.
+    expect(await screen.findByRole('button', { name: /get the evidence pack/i })).toBeTruthy();
   });
 
   it('says the connection failed without blaming the record, when there is no signal', async () => {
@@ -264,31 +298,31 @@ describe('the evidence pack (FR-603)', () => {
     window.history.pushState({}, '', '/animals/theft');
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: /get the evidence pack/i }));
+    await user.click(await screen.findByRole('button', { name: /get the evidence pack/i }));
 
     expect(await screen.findByText(/there is no connection right now/i)).toBeTruthy();
     expect(screen.getByText(/the incident is safe/i)).toBeTruthy();
   });
 
-  it('shows the incident’s own facts — head taken, when found, the case number', () => {
+  it('shows the incident’s own facts — head taken, when found, the case number', async () => {
     cachedSession();
     seedIncident({ caseNumber: 'CAS 114/07/2026' });
     window.history.pushState({}, '', '/animals/theft');
     render(<App />);
 
-    expect(screen.getByText('12')).toBeTruthy();
+    expect(await screen.findByText('12')).toBeTruthy();
     expect(screen.getByText('CAS 114/07/2026')).toBeTruthy();
     // The farm's day, not the device's or UTC's: `toISOString().slice(0,10)` is wrong for two
     // hours out of every twenty-four in South Africa.
     expect(screen.getByText('2026-07-20')).toBeTruthy();
   });
 
-  it('names an incident that has no GPS point rather than letting it look complete', () => {
+  it('names an incident that has no GPS point rather than letting it look complete', async () => {
     cachedSession();
     seedIncident({ lastSeenLocationGeojson: null });
     window.history.pushState({}, '', '/animals/theft');
     render(<App />);
 
-    expect(screen.getByText(/no gps point on this one/i)).toBeTruthy();
+    expect(await screen.findByText(/no gps point on this one/i)).toBeTruthy();
   });
 });

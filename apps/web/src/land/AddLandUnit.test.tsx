@@ -10,11 +10,12 @@
  * rendering two different farms rather than by calling `landTerm` directly.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
+import { storedCaptures } from '../test-support/local-db';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -58,10 +59,8 @@ function cachedSession(enterpriseTypes: string[] = ['beef_cattle']): void {
 }
 
 /** What the local land register holds after a save. */
-function storedUnits(): Array<Record<string, unknown>> {
-  return JSON.parse(window.localStorage.getItem(LAND_KEY) ?? '[]') as Array<
-    Record<string, unknown>
-  >;
+function storedUnits(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(LAND_KEY);
 }
 
 beforeEach(() => {
@@ -100,8 +99,12 @@ describe('adding a camp (FR-150)', () => {
     const announcements = screen.getAllByRole('status').map((el) => el.textContent ?? '');
     expect(announcements.some((text) => /Camp 3 saved/i.test(text))).toBe(true);
 
-    const saved = storedUnits();
-    expect(saved).toHaveLength(1);
+    // append() commits to the in-memory snapshot synchronously (NFR-007), but persistence to the
+    // SQLite-backed store is fire-and-forget — wait for it to land before reading it back.
+    await waitFor(async () => {
+      expect(await storedUnits()).toHaveLength(1);
+    });
+    const saved = await storedUnits();
     expect(saved[0]).toMatchObject({
       farmId: FARM_ID,
       kind: 'camp',
@@ -112,10 +115,12 @@ describe('adding a camp (FR-150)', () => {
     });
 
     // Closed and reopened: the camp is read back off the device, no server involved.
+    // findByText rather than getByText: a fresh render's capture store starts empty and
+    // hydrates asynchronously — even against the same in-memory fake database.
     unmount();
     window.history.pushState({}, '', '/land');
     render(<App />);
-    expect(screen.getByText('Camp 3')).toBeTruthy();
+    expect(await screen.findByText('Camp 3')).toBeTruthy();
   });
 
   it('speaks the farm’s own word for a piece of ground, and asks a vineyard nothing about grazing', async () => {
@@ -131,7 +136,10 @@ describe('adding a camp (FR-150)', () => {
     await user.type(screen.getByLabelText(/block name or number/i), 'B12');
     await user.click(screen.getByRole('button', { name: /save block/i }));
 
-    expect(storedUnits()[0]).toMatchObject({ kind: 'block', code: 'B12' });
+    await waitFor(async () => {
+      expect(await storedUnits()).toHaveLength(1);
+    });
+    expect((await storedUnits())[0]).toMatchObject({ kind: 'block', code: 'B12' });
   });
 
   it('refuses a name the farm already uses, and says what to do instead', async () => {
@@ -149,7 +157,9 @@ describe('adding a camp (FR-150)', () => {
     expect(screen.getByText(/already has a camp with that name/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /save camp/i }).hasAttribute('disabled')).toBe(true);
 
-    expect(storedUnits()).toHaveLength(1);
+    await waitFor(async () => {
+      expect(await storedUnits()).toHaveLength(1);
+    });
   });
 
   it('will not save nothing, and will not save a measurement that is not a number', async () => {
@@ -165,6 +175,6 @@ describe('adding a camp (FR-150)', () => {
     await user.type(screen.getByLabelText(/hectares/i), 'about forty');
     expect(screen.getByRole('button', { name: /save camp/i }).hasAttribute('disabled')).toBe(true);
 
-    expect(storedUnits()).toHaveLength(0);
+    expect(await storedUnits()).toHaveLength(0);
   });
 });

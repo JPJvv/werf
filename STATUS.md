@@ -3,11 +3,10 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-17 (seventeenth session). **Phase 3 is APPROVABLE for merge, PR #11 open,
-all 3 CI lanes green** (`93ff171`→`c77debb`, JP said push). Punch list fully closed; whole-branch
-`reviewer`+`sync-auditor`+`compliance-checker` pass found one SEV-2 and two LOW (16th session, both
-fixed); a SECOND SEV-2 (17th session, below) was found from real CI evidence, not an agent pass —
-see §3. Do not re-run P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
+**Last updated:** 2026-08-17 (eighteenth session). ✅ **Phase 3 MERGED to `main` as `6823858`
+(PR #11, merge commit, all 3 CI lanes green at merge).** `phase-4/crops-fields` branched off the
+updated `main` same session — Phase 4 (crops & fields) is now open. Do not re-run P1/P2.5–P2.10,
+conflict audit, P3.11–P3.15 or P3.16.
 
 ✅ **SEV-2 #2 found and fixed this session (17th), from PR #11's own CI, not a review agent:**
 `sqlite-capture-store.ts`'s `append()` buffered a capture ONLY in memory
@@ -43,11 +42,10 @@ OPFS `QuotaExceededError` propagate uncaught — a photo lost under device stora
 A narrow follow-up pass (§6 clause 1) found nothing new: APPROVABLE. Owner-triggered
 `compliance-checker`, three earlier passes through `ec8336e`: all CLEARED. Full account in §3.
 
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; head `c77debb` (SEV-2 #2
-fix). Pushed; **PR #11 open, all CI lanes green** — merge is JP's call.
+**Active branch:** `phase-4/crops-fields`, off `main` @ `6823858` (Phase 3 merge commit).
 
-**Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
-Phase 3's PR #11: 3/3 CI lanes green as of `c77debb` (2026-08-17).
+**Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`). Phase 3 merged to `main` via
+PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fixes needed.
 
 ## 1. Delivery position
 
@@ -56,8 +54,8 @@ Phase 3's PR #11: 3/3 CI lanes green as of `c77debb` (2026-08-17).
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | ✅ **APPROVABLE for merge, PR #11 open** — every phase-checklist box `☑`, the punch list fully closed, whole-branch review-agent pass cleared after one fix round | §5 has the full item list; §3 has the review-agent account. Check CI on PR #11 before merging |
-| 4 — Crops & fields | Not started — planned in detail | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan; no code written yet |
+| 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
+| 4 — Crops & fields | 🔶 **In progress**, `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |

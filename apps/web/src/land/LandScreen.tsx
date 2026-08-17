@@ -23,6 +23,7 @@ import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology'
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
 import { useCurrentPlanting } from '../crops/LocalPlantings';
+import { useLatestFertiliser } from '../crops/LocalFertiliser';
 import { useCurrentBoundary, useEffectiveLandUnits, type StoredLandUnit } from './LocalLand';
 import { landKey } from './AddLandUnitScreen';
 
@@ -113,6 +114,9 @@ export function LandScreen() {
                 {/* A camp is never planted (FR-203) — gated on the unit's own `kind`, not the farm's
                     vocabulary, so a mixed farm's camps still show only the boundary row above. */}
                 {unit.kind === 'block' && <PlantingRow landUnitId={unit.id} />}
+                {/* FR-206: a camp is never fertilised in this product's model — gated on `kind`
+                    exactly as the planting row above, for the same "camps ask neither" reasoning. */}
+                {unit.kind === 'block' && <FertiliserRow landUnitId={unit.id} />}
                 {/* FR-202: splitting is a block action, mirroring the planting gate above. */}
                 {unit.kind === 'block' && (
                   <SplitRow landUnitId={unit.id} childUnits={childrenOf.get(unit.id) ?? []} />
@@ -210,6 +214,38 @@ function PlantingRow({ landUnitId }: { landUnitId: string }) {
         className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
       >
         {t('crops.recordPlanting')}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * The most recent fertiliser application on this block (FR-206), and the way in to recording one.
+ *
+ * Display only, unlike `PlantingRow`'s "currently planted" — a fertiliser application has no
+ * ongoing state to project (`LocalFertiliser.tsx`'s module note): "last applied" is a convenience
+ * for the farmer, never a safety or compliance read.
+ */
+function FertiliserRow({ landUnitId }: { landUnitId: string }) {
+  const { t } = useTranslation();
+  const latest = useLatestFertiliser(landUnitId);
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-body text-soil-700">
+        {latest === undefined ? (
+          t('crops.fertilise.none')
+        ) : (
+          <>
+            <span className="text-soil-900">{latest.product}</span> {t('crops.fertilise.applied')}
+          </>
+        )}
+      </span>
+      <Link
+        to={`/crops/fertilise?block=${landUnitId}`}
+        className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
+      >
+        {t('crops.fertilise.record')}
       </Link>
     </div>
   );

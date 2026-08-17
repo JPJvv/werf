@@ -10,6 +10,8 @@ import { LocalLandProvider } from '../land/LocalLand';
 import { HydratedLandProvider } from '../land/HydratedLand';
 import { LocalPlantingsProvider } from '../crops/LocalPlantings';
 import { HydratedCropsProvider } from '../crops/HydratedCrops';
+import { LocalFertiliserProvider } from '../crops/LocalFertiliser';
+import { HydratedFertiliserProvider } from '../crops/HydratedFertiliser';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
 import { LocalTalliesProvider } from '../livestock/LocalTallies';
@@ -59,6 +61,10 @@ const CAPTURE_STORES = [
   // `useEffectivePlantings` reads it, so it has to sit above `LocalPlantingsProvider`, same as
   // `HydratedLandProvider` above.
   HydratedCropsProvider,
+  LocalFertiliserProvider,
+  // Also not a capture store — the DOWN-SYNC half of fertiliser applications (FR-206), the
+  // identical shape as `HydratedCropsProvider` above it.
+  HydratedFertiliserProvider,
   LocalMobsProvider,
   LocalTalliesProvider,
   LocalBrandingProvider,

@@ -2302,6 +2302,7 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
   const THEFT_ID = '0190f3a0-0000-7000-8000-0000000000fc';
   const PLANTING_ID = '0190f3a0-0000-7000-8000-0000000000fd';
   const CHILD_BLOCK_ID = '0190f3a0-0000-7000-8000-0000000000fe';
+  const FERTILISER_ID = '0190f3a0-0000-7000-8000-0000000000ff';
 
   function seedLandUnit(): void {
     window.localStorage.setItem(
@@ -2399,6 +2400,35 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(paths.some((p) => p.endsWith('/crops/plantings'))).toBe(false);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(PLANTING_ID);
+  });
+
+  it('⭐ holds a fertiliser application behind a refused block — the same FK-only guard as a planting', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-fertiliser:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: FERTILISER_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-20T06:15:00.000Z',
+          product: 'LAN 28%',
+          method: 'broadcast',
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/land-units'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/fertiliser-applications'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(FERTILISER_ID);
   });
 
   it('⭐ holds a SPLIT CHILD behind its refused parent (FR-202, 4a·2) — a land unit can both provide and be guarded by a landrow:', async () => {

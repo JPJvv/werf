@@ -30,6 +30,7 @@ import { AddLandUnitScreen } from './land/AddLandUnitScreen';
 import { WalkBoundaryScreen } from './land/WalkBoundaryScreen';
 import { SplitBlockScreen } from './land/SplitBlockScreen';
 import { RecordPlantingScreen } from './crops/RecordPlantingScreen';
+import { RecordFertiliserScreen } from './crops/RecordFertiliserScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
 import { NotSentScreen } from './sync/NotSentScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
@@ -95,6 +96,7 @@ export function App() {
                 <Route path="land/walk" element={<WalkBoundaryScreen />} />
                 <Route path="land/split" element={<SplitBlockScreen />} />
                 <Route path="crops/plant" element={<RecordPlantingScreen />} />
+                <Route path="crops/fertilise" element={<RecordFertiliserScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
                 {/* Reached from the sync strip when the server has refused something (FR-009). */}

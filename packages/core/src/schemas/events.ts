@@ -526,6 +526,27 @@ export const plantingPayloadSchema = z.object({
 });
 export type PlantingPayload = z.infer<typeof plantingPayloadSchema>;
 
+/**
+ * A fertiliser application (FR-206), including fertigation. `method` is not optional — it is the
+ * field FR-206 itself names as the thing that distinguishes fertigation (through the irrigation
+ * system) from broadcast/band (spread or placed on the ground), and a record that does not say
+ * which is not the record FR-206 asks for. `rate` mirrors `planting.density`'s generic
+ * `{ value, unit }` shape for the identical reason: kg/ha for a broadcast application and L/ha for
+ * a fertigation run are both real, and a closed unit set would refuse one of them.
+ */
+export const fertiliserPayloadSchema = z.object({
+  product: z.string().min(1),
+  method: z.enum(['broadcast', 'band', 'fertigation', 'foliar']),
+  rate: z
+    .object({
+      value: z.number().positive().finite(),
+      unit: z.string().min(1),
+    })
+    .optional(),
+  operator: z.string().min(1).optional(),
+});
+export type FertiliserPayload = z.infer<typeof fertiliserPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -546,6 +567,7 @@ const CONCRETE_PAYLOADS = {
   tally: tallyPayloadSchema,
   boundary_walk: boundaryWalkPayloadSchema,
   planting: plantingPayloadSchema,
+  fertiliser: fertiliserPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

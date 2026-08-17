@@ -26,4 +26,18 @@ export class CropsController {
   ): Promise<CapturedEvent> {
     return this.crops.recordPlanting(auth.userId, body);
   }
+
+  /**
+   * Record a fertiliser application (FR-206), including fertigation. Same idempotency and
+   * authorship discipline as a planting; no compliance gate on this one (see the service).
+   */
+  @Post('fertiliser-applications')
+  @HttpCode(HttpStatus.CREATED)
+  async recordFertiliser(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordFertiliserRequestSchema))
+    body: schemas.RecordFertiliserRequest,
+  ): Promise<CapturedEvent> {
+    return this.crops.recordFertiliser(auth.userId, body);
+  }
 }

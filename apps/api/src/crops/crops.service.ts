@@ -15,7 +15,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { AppDb } from '@werf/db';
 import type { schemas } from '@werf/core';
-import { recordPlanting } from '@werf/domain';
+import { recordFertiliser, recordPlanting } from '@werf/domain';
 import { APP_DB } from '../db/db.module';
 import { assertCanCapture, insertEvent, type CapturedEvent } from '../common/event-capture';
 
@@ -50,6 +50,35 @@ export class CropsService {
         ...(input.expectedHarvestDate === undefined
           ? {}
           : { expectedHarvestDate: input.expectedHarvestDate }),
+      });
+
+      return insertEvent(tx, event);
+    });
+  }
+
+  /**
+   * Records a fertiliser application (FR-206), including fertigation. No compliance gate applies —
+   * unlike a spray, FR-206 names no reference product or withholding period, so this resolves
+   * nothing server-side beyond the ordinary tenancy/FK checks every capture gets.
+   */
+  async recordFertiliser(
+    userId: string,
+    input: schemas.RecordFertiliserRequest,
+  ): Promise<CapturedEvent> {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+
+      const event = recordFertiliser({
+        id: input.id,
+        farmId: input.farmId,
+        landUnitId: input.landUnitId,
+        occurredAt: input.occurredAt,
+        product: input.product,
+        method: input.method,
+        notes: input.notes,
+        createdBy: userId,
+        ...(input.rate === undefined ? {} : { rate: input.rate }),
+        ...(input.operator === undefined ? {} : { operator: input.operator }),
       });
 
       return insertEvent(tx, event);

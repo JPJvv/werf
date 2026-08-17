@@ -99,6 +99,14 @@ export const FARM_SCOPED_EVENT_TYPES = [
   // `assertHerdScoped` with behaviour identical to this one, for a distinction (shape of the ground
   // vs. what's on it) that FR-113's guard has no reason to care about.
   'planting',
+  // FR-206: a fertiliser application is filed the identical way `planting` is, for the identical
+  // reason — a block's own `enterpriseId` (when it has one at all; the column is nullable and 4a·1
+  // never asks for it at block creation) was considered as the filing instead and rejected, because
+  // it would give `planting` and `fertiliser` two different filing strategies for the same "fact
+  // about what's in or on the ground" family depending on which one happened to be built first. One
+  // rule for the whole family, named once, here. (4c's `spray` will join this same list for the
+  // identical reason when it lands.)
+  'fertiliser',
 ] as const satisfies readonly EventType[];
 export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
 

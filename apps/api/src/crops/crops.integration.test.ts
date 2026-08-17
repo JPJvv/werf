@@ -89,6 +89,21 @@ const plantingBody = (
     ...over,
   });
 
+/** A minimal valid fertiliser body; overlay the fields a test cares about. */
+const fertiliserBody = (
+  over: Partial<ZodInput<typeof schemas.recordFertiliserRequestSchema>> & {
+    farmId: string;
+    landUnitId: string;
+  },
+): schemas.RecordFertiliserRequest =>
+  schemas.recordFertiliserRequestSchema.parse({
+    id: uuidv7(),
+    occurredAt: '2026-09-20T06:15:00.000Z',
+    product: 'LAN 28%',
+    method: 'broadcast',
+    ...over,
+  });
+
 describe('planting capture (FR-203)', () => {
   let pg: WerfTestDatabase;
   let app: AppDb;
@@ -268,5 +283,95 @@ describe('planting capture (FR-203)', () => {
 
     const rows = await elevated.db.select().from(events);
     expect(rows).toHaveLength(0);
+  });
+
+  describe('fertiliser capture (FR-206)', () => {
+    it('records a fertiliser application as an append-only event scoped to the BLOCK, not a herd', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+
+      const captured = await service.recordFertiliser(
+        a.userId,
+        fertiliserBody({ farmId: a.farmId, landUnitId, operator: 'Sipho' }),
+      );
+
+      expect(captured.type).toBe('fertiliser');
+      expect(captured.payload).toEqual({
+        product: 'LAN 28%',
+        method: 'broadcast',
+        operator: 'Sipho',
+      });
+      expect(captured.landUnitId).toBe(landUnitId);
+      expect(captured.createdBy).toBe(a.userId);
+      expect(captured.enterpriseId).toBeNull();
+      expect(captured.animalId).toBeNull();
+      expect(captured.mobId).toBeNull();
+
+      const seen = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(seen.map((e) => e.id)).toContain(captured.id);
+    });
+
+    it('carries fertigation as a real method, with its rate, not a note bolted onto broadcast', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+
+      const captured = await service.recordFertiliser(
+        a.userId,
+        fertiliserBody({
+          farmId: a.farmId,
+          landUnitId,
+          method: 'fertigation',
+          rate: { value: 12, unit: 'L/ha' },
+        }),
+      );
+
+      expect(captured.payload).toMatchObject({
+        method: 'fertigation',
+        rate: { value: 12, unit: 'L/ha' },
+      });
+    });
+
+    it('is idempotent on the client id, so a re-flush does not create a second application', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const body = fertiliserBody({ farmId: a.farmId, landUnitId });
+
+      const first = await service.recordFertiliser(a.userId, body);
+      const again = await service.recordFertiliser(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(rows).toHaveLength(1);
+    });
+
+    it('refuses a fertiliser application against a block that does not exist on this farm', async () => {
+      const a = await tenant('Crop');
+
+      await expect(
+        service.recordFertiliser(
+          a.userId,
+          fertiliserBody({ farmId: a.farmId, landUnitId: uuidv7() }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await elevated.db.select().from(events);
+      expect(rows).toHaveLength(0);
+    });
+
+    it("refuses a fertiliser application against ANOTHER farm's block — a cross-tenant reference", async () => {
+      const a = await tenant('Crop');
+      const b = await tenant('Other');
+      const othersBlock = await block(b);
+
+      await expect(
+        service.recordFertiliser(
+          a.userId,
+          fertiliserBody({ farmId: a.farmId, landUnitId: othersBlock }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await elevated.db.select().from(events);
+      expect(rows).toHaveLength(0);
+    });
   });
 });

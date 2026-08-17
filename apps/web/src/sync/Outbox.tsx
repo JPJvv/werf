@@ -60,6 +60,12 @@ import {
 } from '../crops/LocalPlantings';
 import { cropsApi } from '../crops/plantingApi';
 import {
+  useFertiliserApplications,
+  useFertiliserHydrationFailed,
+  useFertiliserSettled,
+} from '../crops/LocalFertiliser';
+import { fertiliserApi } from '../crops/fertiliserApi';
+import {
   useAttachments,
   useAttachmentsHydrationFailed,
   useAttachmentsSettled,
@@ -232,6 +238,7 @@ export type CaptureKind =
   | 'landUnit'
   | 'boundaryWalk'
   | 'planting'
+  | 'fertiliser'
   | 'mob'
   | 'tally'
   | 'branding'
@@ -454,6 +461,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const landUnits = useLandUnits();
   const boundaryWalks = useBoundaryWalks();
   const plantings = usePlantings();
+  const fertiliserApplications = useFertiliserApplications();
   // ⭐ The down-sync half of land (phase-checklists.md 3e, land hydration — closed 2026-08-14) — a
   // camp another device created, already replicated to this one. Read ONLY for `landUnitCodes`
   // below (display), never for the send-queue loops above: those stay on the raw local `landUnits`
@@ -517,6 +525,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const landUnitsSettled = useLandUnitsSettled();
   const boundaryWalksSettled = useBoundaryWalksSettled();
   const plantingsSettled = usePlantingsSettled();
+  const fertiliserSettled = useFertiliserSettled();
   const mobsSettled = useMobsSettled();
   const talliesSettled = useTalliesSettled();
   // Same "not yet trustworthy" gate as every local store above, for the down-sync sources —
@@ -541,6 +550,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     landUnitsSettled &&
     boundaryWalksSettled &&
     plantingsSettled &&
+    fertiliserSettled &&
     mobsSettled &&
     talliesSettled &&
     hydratedMobsSettled &&
@@ -572,6 +582,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const landUnitsHydrationFailed = useLandUnitsHydrationFailed();
   const boundaryWalksHydrationFailed = useBoundaryWalksHydrationFailed();
   const plantingsHydrationFailed = usePlantingsHydrationFailed();
+  const fertiliserHydrationFailed = useFertiliserHydrationFailed();
   const mobsHydrationFailed = useMobsHydrationFailed();
   const talliesHydrationFailed = useTalliesHydrationFailed();
   const hydratedMobsHydrationFailed = useHydratedMobsHydrationFailed();
@@ -593,6 +604,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     landUnitsHydrationFailed ||
     boundaryWalksHydrationFailed ||
     plantingsHydrationFailed ||
+    fertiliserHydrationFailed ||
     mobsHydrationFailed ||
     talliesHydrationFailed ||
     hydratedMobsHydrationFailed ||
@@ -746,6 +758,19 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           detail: landUnitCodes.get(planting.landUnitId) ?? null,
           send: (token) => cropsApi.recordPlanting(planting, token),
           guardedBy: [`landrow:${planting.landUnitId}`],
+        });
+      }
+    }
+    // A fertiliser application is the identical FK-only shape as a planting, and for the identical
+    // reason: FR-206 carries no compliance gate, so `guardedBy` alone, no safety ordering.
+    for (const application of fertiliserApplications) {
+      if (!sent.has(application.id)) {
+        items.push({
+          id: application.id,
+          kind: 'fertiliser',
+          detail: landUnitCodes.get(application.landUnitId) ?? null,
+          send: (token) => fertiliserApi.recordFertiliser(application, token),
+          guardedBy: [`landrow:${application.landUnitId}`],
         });
       }
     }
@@ -1163,6 +1188,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     landUnitCodes,
     boundaryWalks,
     plantings,
+    fertiliserApplications,
     mobs,
     brandingRegisters,
     tallies,

@@ -42,6 +42,7 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   landUnit: 'notSent.kind.landUnit',
   boundaryWalk: 'notSent.kind.boundaryWalk',
   planting: 'notSent.kind.planting',
+  fertiliser: 'notSent.kind.fertiliser',
   mob: 'notSent.kind.mob',
   tally: 'notSent.kind.tally',
   branding: 'notSent.kind.branding',

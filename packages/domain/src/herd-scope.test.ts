@@ -27,6 +27,9 @@ const cases: ReadonlyArray<readonly [string, HerdScopable, boolean]> = [
   ['a treatment with no subject at all', { type: 'treatment' }, false],
   // The closed exception list: a fact about the farm, not a herd.
   ['rainfall, which falls on the whole farm', { type: 'rainfall' }, true],
+  ['a planting, which happens on a block, not a herd', { type: 'planting' }, true],
+  ['a fertiliser application, which happens on a block', { type: 'fertiliser' }, true],
+  ['a spray, which happens on a block', { type: 'spray' }, true],
 ];
 
 describe('herd scoping (FR-113)', () => {

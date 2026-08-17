@@ -178,7 +178,7 @@ export class CropsService {
         })
         .from(events)
         .where(and(...conditions))
-        .orderBy(desc(events.occurredAt));
+        .orderBy(desc(events.occurredAt), desc(events.id));
 
       const sprays = rows
         .map((row) => toSprayHistoryFacts(row))

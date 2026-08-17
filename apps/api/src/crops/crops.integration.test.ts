@@ -652,5 +652,44 @@ describe('planting capture (FR-203)', () => {
 
       await expect(service.listSprayHistory(b.userId, a.farmId, {})).rejects.toThrow(NotFoundError);
     });
+
+    it('⭐ breaks a same-day tie by id, never leaving two same-occurredAt sprays in query-plan order', async () => {
+      // Two back-dated captures land on the SAME day, so RecordSprayScreen stamps them both at the
+      // identical noon instant (`sprayedInstant`) — an ordinary case, not a contrived one.
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({});
+      const [lowerId, higherId] = [uuidv7(), uuidv7()].sort() as [string, string];
+
+      // Inserted in ASCENDING id order deliberately — so a naive scan-order/insertion-order result
+      // (what the pre-fix `.orderBy(desc(occurredAt))` alone actually returns) disagrees with the
+      // expected DESCENDING-by-id order below, and this test cannot pass by accident.
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          id: lowerId,
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-10-05',
+          occurredAt: '2026-10-05T12:00:00.000Z',
+        }),
+      );
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          id: higherId,
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-10-05',
+          occurredAt: '2026-10-05T12:00:00.000Z',
+        }),
+      );
+
+      const report = await service.listSprayHistory(a.userId, a.farmId, {});
+
+      expect(report.map((r) => r.id)).toEqual([higherId, lowerId]);
+    });
   });
 });

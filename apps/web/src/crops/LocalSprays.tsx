@@ -31,9 +31,14 @@ import { useHydratedSprays } from './HydratedSprays';
  * A spray as held locally. The three REGULATED fields — `activeIngredients`, `phiDays`,
  * `earliestHarvestDate` — are never SET by a local capture (see the module note); they exist here
  * only so the identical shape can carry them once THIS device's own write round-trips back down as
- * a hydrated echo with the same id (`HydratedSprays.tsx`'s `mergeByIdPreferHydrated` merge). A row
- * with them undefined is a spray whose server-resolved facts have not reached this device yet, not
- * a spray that was recorded without them.
+ * a hydrated echo with the same id (`HydratedSprays.tsx`'s `mergeByIdPreferHydrated` merge).
+ *
+ * `activeIngredients` is the discriminator for "has this spray been resolved by the server yet":
+ * the wire schema requires it non-empty, so it is ALWAYS present on a hydrated echo and NEVER on a
+ * local-only capture. `phiDays`/`earliestHarvestDate` are independently optional even once
+ * resolved — omitted, together, exactly when the registered product carries no PHI on record. A
+ * consumer that reads `phiDays === undefined` alone cannot tell "not yet synced" from "synced, no
+ * PHI restriction" apart; check `activeIngredients` first.
  */
 export interface StoredSpray {
   readonly id: string;

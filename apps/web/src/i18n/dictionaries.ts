@@ -455,6 +455,7 @@ const en = {
   'crops.sprays.none': 'No sprays recorded yet.',
   'crops.sprays.unknownProduct': 'Product not yet synced',
   'crops.sprays.phiPending': 'PHI not yet confirmed by the server',
+  'crops.sprays.harvestDateUnknown': 'Earliest harvest date unknown — do not rely on this record',
   // Animals module (FR-101, FR-705). Captured offline; "head" is the count word a farmer uses.
   'animals.title': 'Animals',
   'animals.head': 'head',
@@ -1386,6 +1387,8 @@ const af: Record<TranslationKey, string> = {
   'crops.sprays.none': 'Nog geen bespuitings aangeteken nie.',
   'crops.sprays.unknownProduct': 'Produk nog nie gesinkroniseer nie',
   'crops.sprays.phiPending': 'Voor-oes-tydperk nog nie deur die bediener bevestig nie',
+  'crops.sprays.harvestDateUnknown':
+    'Vroegste oesdatum onbekend — moenie op hierdie rekord staatmaak nie',
   'animals.title': 'Diere',
   'animals.head': 'stuks',
   'animals.allHerds': 'Alle troppe',

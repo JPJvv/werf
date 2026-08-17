@@ -117,14 +117,16 @@ export function SpraysScreen() {
                 {productNames.get(spray.productId) ?? t('crops.sprays.unknownProduct')}
               </span>
               <span className="text-body text-soil-700">
-                {spray.phiDays === undefined ? (
+                {spray.activeIngredients === undefined ? (
                   t('crops.sprays.phiPending')
+                ) : spray.phiDays === undefined ? (
+                  t('crops.spray.noPhi')
+                ) : spray.earliestHarvestDate === undefined ? (
+                  t('crops.sprays.harvestDateUnknown')
                 ) : (
                   <>
                     {t('crops.spray.harvestFrom')}{' '}
-                    <span className="font-data tabular-nums">
-                      {spray.earliestHarvestDate ?? spray.sprayedOn}
-                    </span>
+                    <span className="font-data tabular-nums">{spray.earliestHarvestDate}</span>
                   </>
                 )}
               </span>

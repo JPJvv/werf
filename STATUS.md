@@ -3,12 +3,26 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-17 (seventeenth session). **Phase 3 is APPROVABLE for merge — re-confirmed
-this session** (`pnpm verify` fully uncached, exit 0, reproduces 117 files/1283 tests/168.80 KB gz
-exactly). **Pushed and PR #11 opened this session (JP said push).** CI running at push time; check
-before merging. Punch list fully closed; whole-branch
-`reviewer`+`sync-auditor`+`compliance-checker` pass found one SEV-2 and two LOW, both fixed and
-re-verified — see below and §3. Do not re-run P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
+**Last updated:** 2026-08-17 (seventeenth session). **Phase 3 is APPROVABLE for merge, PR #11 open,
+all 3 CI lanes green** (`93ff171`→`c77debb`, JP said push). Punch list fully closed; whole-branch
+`reviewer`+`sync-auditor`+`compliance-checker` pass found one SEV-2 and two LOW (16th session, both
+fixed); a SECOND SEV-2 (17th session, below) was found from real CI evidence, not an agent pass —
+see §3. Do not re-run P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
+
+✅ **SEV-2 #2 found and fixed this session (17th), from PR #11's own CI, not a review agent:**
+`sqlite-capture-store.ts`'s `append()` buffered a capture ONLY in memory
+(`pendingAppends`) until the store's first async hydration completed; a page reload or app close in
+that window silently and permanently lost the capture — same class as the 16th session's OPFS SEV-2.
+CI's E2E lane caught it: `offline-capture.spec.ts` failed deterministically twice on GitHub's
+runner, never once locally (3/3 clean, even under matched `CI=1`/worker/order conditions) — a loaded
+CI runner widens exactly the race a fast local machine closes before it can be observed. Root cause
+confirmed from the actual Playwright trace (downloaded via a new failure-only CI artifact upload,
+`df56a5f`): the weight capture's POST was never even attempted, meaning the record never reached the
+local store at all. Fixed as `c77debb`: `append()` now also writes synchronously to a
+localStorage-backed write-ahead buffer before anything async happens; hydration recovers any entry
+`capture_records` lacks and clears the buffer once durable. New regression test abandons a store
+before its `database()` promise ever resolves, confirmed to fail against the prior code with the
+exact CI symptom and pass with the fix. CI re-run after the fix: all 3 lanes green.
 
 ✅ **Phase 4 planned in detail this session (17th), before any code.** Full slice plan (4a–4e,
 schema/API/screen/projection/tests per slice) is in `phase-checklists.md`'s Phase 4 section — read
@@ -21,27 +35,19 @@ never split (roadmap had them sequential — Phase 2's treatment/sale mistake, r
 blocker, B-1/B-2 class: production `chemical_products` needs JP to name a maintained Act 36/1947
 source; does not block writing 4a–4e.
 
-✅ **Whole-branch review-agent pass (sixteenth session, JP-requested), `main...HEAD`: APPROVABLE
-after one fix round.** `compliance-checker` CLEARED outright. `sync-auditor` found two LOW
-(`conflict_reviews`/`attachments` grant `werf_app` whole-row UPDATE, same class 0029 closed for
-`users`) — fixed as `47c0ffe` (migration 0031), qualifies for §6 clause 3, no second pass needed.
-`reviewer` found one **SEV-2**: `opfs-blob-store.ts`'s `put()` let a real OPFS `QuotaExceededError`
-propagate straight out, uncaught anywhere in the chain up to `RecordPhotoScreen.tsx`'s save
-handler — a photo taken while device storage was full was silently lost, contradicting the Phase 3
-exit gate's own words. Fixed as `c45cd01`: `put()` now retries indefinitely via a new
-`retryDurably` helper, the same never-reject guarantee `sqlite-capture-store.ts` already gives the
-metadata half (P1.1). A **narrow follow-up `reviewer` pass, scoped to `71f3804..HEAD` only** (§6
-clause 1), confirmed the fix closes the exact path traced end-to-end and found nothing new:
-**APPROVABLE.** Full account in §3.
+✅ **Whole-branch review-agent pass (16th session): APPROVABLE after one fix round.**
+`compliance-checker` CLEARED outright. `sync-auditor` found two LOW (grant scoping, `47c0ffe`,
+qualifies for §6 clause 3). `reviewer` found **SEV-2 #1**: `opfs-blob-store.ts`'s `put()` let a real
+OPFS `QuotaExceededError` propagate uncaught — a photo lost under device storage pressure. Fixed as
+`c45cd01` (`retryDurably`, the same never-reject guarantee SEV-2 #2 above now also gives captures).
+A narrow follow-up pass (§6 clause 1) found nothing new: APPROVABLE. Owner-triggered
+`compliance-checker`, three earlier passes through `ec8336e`: all CLEARED. Full account in §3.
 
-✅ **Owner-triggered `compliance-checker`, three passes through `ec8336e` (sessions 4/12/14): all
-CLEARED, no SEV-1/SEV-2, one LOW fixed same-session (`c12fbfc`).** Full account in §3.
-
-**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; head `93ff171` (Phase 4
-planning docs). Pushed; **PR #11 open** — merge when CI is green and JP is ready.
+**Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; head `c77debb` (SEV-2 #2
+fix). Pushed; **PR #11 open, all CI lanes green** — merge is JP's call.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
-Phase 3's PR #11 CI was still running at push time (2026-08-17) — check before merging.
+Phase 3's PR #11: 3/3 CI lanes green as of `c77debb` (2026-08-17).
 
 ## 1. Delivery position
 
@@ -82,13 +88,11 @@ every write site runs on the elevated connection, none on the scoped one; no sec
 logged row (checked every `metadata:` object, all controlled enums/ids). The 0029 column-grant SQL
 was cross-checked against the real 15-column `users` table — the SELECT list names exactly the 10
 non-credential columns, no omission, no accidental credential inclusion. The 0030 quota charge was
-re-derived from the code (not the commit message): a single conditional `UPDATE ... WHERE
-attachment_bytes_used + n <= CAP RETURNING id` inside the same transaction as the row
-insert/revival, the same TOCTOU-closing idiom `finalizeAttachment` already uses elsewhere in this
-file — genuinely race-safe, not merely asserted to be. Sync/RLS agreement for the new
-`farms.attachment_bytes_used` column was verified against the actual `TENANCY` registry and a grep
-for any client-writable path to it (none), not taken on trust. ⛔ New scope opens from `ec8336e`
-forward.
+re-derived from the code: a single conditional `UPDATE ... WHERE attachment_bytes_used + n <= CAP
+RETURNING id` inside the same transaction as the row insert/revival, the same TOCTOU-closing idiom
+`finalizeAttachment` already uses — genuinely race-safe, not merely asserted to be. Sync/RLS
+agreement for `farms.attachment_bytes_used` verified against the actual `TENANCY` registry, not
+taken on trust. ⛔ New scope opens from `ec8336e` forward.
 
 ✅ **CLOSED 2026-08-16 (fourteenth session) — three P3.16 decisions JP made when asked directly:**
 attachment size cap is **25 MB** per attachment; per-farm **quota tracking is IN SCOPE** for the
@@ -97,19 +101,14 @@ infrastructure); registration-enumeration hardening (email verification on `/aut
 **DEFERRED to Phase 7 hardening** — rate limiting narrows the gap meanwhile. The attachment
 MIME/size/quota sub-item landed the same session as `49677b4` — P3.16 is now 6/7, see item 37.
 
-✅ **Compliance-pass scope `428200a..45775ea` — CLOSED 2026-08-15 (twelfth session,
-owner-triggered).** 18 commits: P2.10, the conflict audit/review feature (migration 0026),
-P3.11–P3.15, P3.16's first two sub-items. **CLEARED, no SEV-1/SEV-2/MED/LOW** — no hardcoded
-regulated numbers, `parseRandsToCents` float-safe at all three replaced call sites, P3.13's new
-columns excluded from every Sync Stream, `audit_log` immutability proven by a real UPDATE/DELETE
-attempt, P3.16's invite fix proven to refuse-and-not-revive. ⛔ New scope from `45775ea` forward.
+✅ **Compliance-pass scope `428200a..45775ea` — CLOSED 2026-08-15 (twelfth session).** 18 commits:
+P2.10, conflict audit/review (migration 0026), P3.11–P3.15, P3.16's first two sub-items. **CLEARED,
+no SEV-1/SEV-2/MED/LOW** — no hardcoded regulated numbers, `audit_log` immutability proven by a real
+UPDATE/DELETE attempt. ⛔ New scope from `45775ea` forward.
 
-✅ **CLOSED 2026-08-15 — owner chose A: implement conflict audit/review now.** Migration 0026 adds
-immutable server-only `audit_log` evidence plus a separate review queue; both facts, rule, winner,
-actor/session and timestamps are retained, and events are never rewritten. Movement uses
-`(occurred_at,id)` LWW; death outranks sale; separate similar birth batches are flagged while one
-shared batch protects legitimate multiples. RLS-scoped API/cache/UI and owner/manager review are
-built. O-6/O-7/O-8/NFR-211 have real-Postgres coverage; full detail is in §5 item 31.
+✅ **CLOSED 2026-08-15 — owner chose A: implement conflict audit/review now** (migration 0026,
+immutable `audit_log` + review queue, `(occurred_at,id)` LWW, O-6/O-7/O-8/NFR-211 real-Postgres
+coverage) — full detail in §5 item 31.
 
 ✅ **CLOSED 2026-08-14/15 (sessions one/three/four), condensed — full detail in git history:**
 back-dated-move fail-closed; 3e land hydration; 3i(c) attachment deferred queue; 3i(b) residuals;
@@ -252,13 +251,13 @@ proof, undetected because the spec is `WERF_REAL_STACK`-gated and nothing had ru
 — itself a tenancy gap, in test tooling rather than product code — so rerunning the gated spec
 against a persistent local dev Postgres accumulated same-named mobs across different test farms and
 broke the next query's SQL string once a second row existed. Both fail-first verified, both fixed
-mechanically, confined to the two files named. `pnpm lint` clean after. No SEV-1/SEV-2 outstanding
-from any authorized compliance/review pass (§3); MED/LOW from every closed pass fixed or filed.
-STATUS.md and `phase-checklists.md` agree (Q17's reconciliation still holds; nothing drifted since).
+mechanically, confined to the two files named. No SEV-1/SEV-2 outstanding from any authorized
+compliance/review pass (§3); MED/LOW from every closed pass fixed or filed. STATUS.md and
+`phase-checklists.md` agree (Q17's reconciliation still holds; nothing drifted since).
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 
-Decision state, not session narrative — restored once already after a compaction deleted it. **Do not delete it again; a rule nobody can find is not a rule.**
+Decision state, not narrative — restored once already after a compaction deleted it. **Do not delete it again.**
 
 | # | Clause |
 |---|---|

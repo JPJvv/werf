@@ -35,6 +35,11 @@ streams:
       SELECT created_at, deleted_at, id, name, registration_number, updated_at, vat_number FROM businesses
       WHERE id IN (SELECT business_id FROM farms WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL))
     auto_subscribe: true
+  chemical_products:
+    query: |
+      SELECT active_ingredients, created_at, crop, effective_from, effective_to, id, jurisdiction, name, phi_days, reentry_hours, registration_number, version FROM chemical_products
+      WHERE jurisdiction IN (SELECT jurisdiction FROM farms WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL))
+    auto_subscribe: true
   enterprises:
     query: |
       SELECT active, created_at, deleted_at, farm_id, id, name, type, updated_at FROM enterprises

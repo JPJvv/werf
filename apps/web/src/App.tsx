@@ -31,6 +31,8 @@ import { WalkBoundaryScreen } from './land/WalkBoundaryScreen';
 import { SplitBlockScreen } from './land/SplitBlockScreen';
 import { RecordPlantingScreen } from './crops/RecordPlantingScreen';
 import { RecordFertiliserScreen } from './crops/RecordFertiliserScreen';
+import { RecordSprayScreen } from './crops/RecordSprayScreen';
+import { SpraysScreen } from './crops/SpraysScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
 import { NotSentScreen } from './sync/NotSentScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
@@ -97,6 +99,10 @@ export function App() {
                 <Route path="land/split" element={<SplitBlockScreen />} />
                 <Route path="crops/plant" element={<RecordPlantingScreen />} />
                 <Route path="crops/fertilise" element={<RecordFertiliserScreen />} />
+                <Route path="crops/spray" element={<RecordSprayScreen />} />
+                {/* The home grid's "Sprays" tile (`home/tiles.ts`) — registered before the
+                    `:module` catch-all so it stops falling through to `ModulePlaceholder`. */}
+                <Route path="sprays" element={<SpraysScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
                 {/* Reached from the sync strip when the server has refused something (FR-009). */}

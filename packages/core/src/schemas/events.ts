@@ -547,6 +547,47 @@ export const fertiliserPayloadSchema = z.object({
 });
 export type FertiliserPayload = z.infer<typeof fertiliserPayloadSchema>;
 
+/**
+ * A spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED (legal-compliance.md § 4,
+ * .claude/rules/domain.md). The registered product, active ingredients, rate, water volume,
+ * operator, equipment and weather at application, plus the pre-harvest interval computed AT
+ * CAPTURE and stored (ADR-0005) — the exact discipline `dosingFields` below already proves for a
+ * treatment's withdrawal, one field over.
+ *
+ * `productId` is stored, not a bare PHI number: the server resolves BOTH `activeIngredients` and
+ * `phiDays` from the registered `chemical_products` row in force on `sprayedOn` and writes them
+ * here, so a client can never claim a shorter PHI, or a different active ingredient, by relabelling
+ * (the same property `treatmentPayloadSchema`'s `product` name-snapshot protects, applied here to
+ * the FK itself so 4c·4's report and 4d's future guard can both resolve back to the exact
+ * registration version that applied).
+ *
+ * `phiDays`/`earliestHarvestDate` are OPTIONAL and OMITTED — never zero — when the resolved
+ * product carries no PHI on record. A null `phi_days` and a zero-day PHI are different facts
+ * (`chemical_products.ts`'s module note), and the same "omit, don't zero" discipline
+ * `attachDosing` already applies to a zero-withdrawal vaccine.
+ */
+export const sprayPayloadSchema = z.object({
+  productId: uuidSchema,
+  activeIngredients: z.array(z.string().min(1)).min(1),
+  /** The farm-local day the spray was applied (YYYY-MM-DD) — the base for the PHI arithmetic, the
+   *  same role `administeredOn` plays for a treatment (`dosingFields` below). */
+  sprayedOn: dateSchema,
+  rateLPerHa: z.number().positive().finite().optional(),
+  waterLPerHa: z.number().positive().finite().optional(),
+  operator: z.string().min(1).optional(),
+  equipment: z.string().min(1).optional(),
+  windKph: z.number().nonnegative().finite().optional(),
+  tempC: z.number().finite().optional(),
+  targetPest: z.string().min(1).optional(),
+  /** Pre-harvest interval in whole days, resolved server-side. Absent = the registered product
+   *  carries no PHI on record — never stored as 0. */
+  phiDays: z.number().int().nonnegative().optional(),
+  /** `sprayedOn` + `phiDays`, computed server-side and stored — never recomputed on read. Absent
+   *  exactly when `phiDays` is absent. */
+  earliestHarvestDate: dateSchema.optional(),
+});
+export type SprayPayload = z.infer<typeof sprayPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -568,6 +609,7 @@ const CONCRETE_PAYLOADS = {
   boundary_walk: boundaryWalkPayloadSchema,
   planting: plantingPayloadSchema,
   fertiliser: fertiliserPayloadSchema,
+  spray: sprayPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

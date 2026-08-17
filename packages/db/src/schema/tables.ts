@@ -21,6 +21,7 @@ import * as auth from './auth';
 import * as authAudit from './auth-audit';
 import * as branding from './branding';
 import * as breeding from './breeding';
+import * as chemical from './chemical';
 import * as core from './core';
 import * as conflicts from './conflicts';
 import * as events from './events';
@@ -35,6 +36,7 @@ const modules = [
   authAudit,
   branding,
   breeding,
+  chemical,
   core,
   conflicts,
   events,

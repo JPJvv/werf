@@ -100,6 +100,22 @@ export const LOCAL_SCHEMA_TABLES: readonly LocalTableDef[] = [
     ],
   },
   {
+    name: 'chemical_products',
+    columns: [
+      { name: 'active_ingredients', type: 'TEXT' },
+      { name: 'created_at', type: 'TEXT' },
+      { name: 'crop', type: 'TEXT' },
+      { name: 'effective_from', type: 'TEXT' },
+      { name: 'effective_to', type: 'TEXT' },
+      { name: 'jurisdiction', type: 'TEXT' },
+      { name: 'name', type: 'TEXT' },
+      { name: 'phi_days', type: 'INTEGER' },
+      { name: 'reentry_hours', type: 'INTEGER' },
+      { name: 'registration_number', type: 'TEXT' },
+      { name: 'version', type: 'INTEGER' },
+    ],
+  },
+  {
     name: 'enterprises',
     columns: [
       { name: 'active', type: 'INTEGER' },

@@ -28,7 +28,13 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, gt, isNull, lte, or } from 'drizzle-orm';
-import { farms, speciesGestation, veterinaryProducts, type AppDb } from '@werf/db';
+import {
+  chemicalProducts,
+  farms,
+  speciesGestation,
+  veterinaryProducts,
+  type AppDb,
+} from '@werf/db';
 import { NotFoundError } from '@werf/core';
 import { APP_DB } from '../db/db.module';
 import { assertCanCapture, type CaptureTx } from '../common/event-capture';
@@ -64,6 +70,23 @@ const gestationProjection = {
 
 export type ReferenceSpeciesGestation = {
   [K in keyof typeof gestationProjection]: (typeof speciesGestation.$inferSelect)[K];
+};
+
+/** What the client is given to select a chemical product and preview a PHI clear date (FR-204). */
+const chemicalProductProjection = {
+  id: chemicalProducts.id,
+  jurisdiction: chemicalProducts.jurisdiction,
+  name: chemicalProducts.name,
+  registrationNumber: chemicalProducts.registrationNumber,
+  crop: chemicalProducts.crop,
+  phiDays: chemicalProducts.phiDays,
+  reentryHours: chemicalProducts.reentryHours,
+  effectiveFrom: chemicalProducts.effectiveFrom,
+  effectiveTo: chemicalProducts.effectiveTo,
+} as const;
+
+export type ReferenceChemicalProduct = {
+  [K in keyof typeof chemicalProductProjection]: (typeof chemicalProducts.$inferSelect)[K];
 };
 
 @Injectable()
@@ -129,6 +152,39 @@ export class ReferenceService {
         .select(gestationProjection)
         .from(speciesGestation)
         .orderBy(asc(speciesGestation.species));
+    });
+  }
+
+  /**
+   * The chemical products a farm may resolve a spray against (FR-204/FR-508), for the farm's
+   * jurisdiction — every version ever registered when `onDay` is omitted, or only the one in force
+   * on `onDay` when it is given. Same P1.3 discipline as `listVeterinaryProducts` (this class's
+   * header) and for the identical reason: a spray captured against a since-superseded registration
+   * must still resolve the PHI that applied on the day it happened, not today's.
+   */
+  async listChemicalProducts(
+    userId: string,
+    farmId: string,
+    onDay?: string,
+  ): Promise<ReferenceChemicalProduct[]> {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, farmId);
+      const jurisdiction = await farmJurisdiction(tx, farmId);
+      const jurisdictionFilter = eq(chemicalProducts.jurisdiction, jurisdiction);
+      const where =
+        onDay === undefined
+          ? jurisdictionFilter
+          : and(
+              jurisdictionFilter,
+              lte(chemicalProducts.effectiveFrom, onDay),
+              or(isNull(chemicalProducts.effectiveTo), gt(chemicalProducts.effectiveTo, onDay)),
+            );
+
+      return tx
+        .select(chemicalProductProjection)
+        .from(chemicalProducts)
+        .where(where)
+        .orderBy(chemicalProducts.name, chemicalProducts.effectiveFrom);
     });
   }
 }

@@ -65,6 +65,8 @@ import {
   useFertiliserSettled,
 } from '../crops/LocalFertiliser';
 import { fertiliserApi } from '../crops/fertiliserApi';
+import { useSprays, useSpraysHydrationFailed, useSpraysSettled } from '../crops/LocalSprays';
+import { sprayApi } from '../crops/sprayApi';
 import {
   useAttachments,
   useAttachmentsHydrationFailed,
@@ -239,6 +241,7 @@ export type CaptureKind =
   | 'boundaryWalk'
   | 'planting'
   | 'fertiliser'
+  | 'spray'
   | 'mob'
   | 'tally'
   | 'branding'
@@ -462,6 +465,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const boundaryWalks = useBoundaryWalks();
   const plantings = usePlantings();
   const fertiliserApplications = useFertiliserApplications();
+  const sprays = useSprays();
   // ⭐ The down-sync half of land (phase-checklists.md 3e, land hydration — closed 2026-08-14) — a
   // camp another device created, already replicated to this one. Read ONLY for `landUnitCodes`
   // below (display), never for the send-queue loops above: those stay on the raw local `landUnits`
@@ -526,6 +530,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const boundaryWalksSettled = useBoundaryWalksSettled();
   const plantingsSettled = usePlantingsSettled();
   const fertiliserSettled = useFertiliserSettled();
+  const spraysSettled = useSpraysSettled();
   const mobsSettled = useMobsSettled();
   const talliesSettled = useTalliesSettled();
   // Same "not yet trustworthy" gate as every local store above, for the down-sync sources —
@@ -551,6 +556,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     boundaryWalksSettled &&
     plantingsSettled &&
     fertiliserSettled &&
+    spraysSettled &&
     mobsSettled &&
     talliesSettled &&
     hydratedMobsSettled &&
@@ -583,6 +589,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const boundaryWalksHydrationFailed = useBoundaryWalksHydrationFailed();
   const plantingsHydrationFailed = usePlantingsHydrationFailed();
   const fertiliserHydrationFailed = useFertiliserHydrationFailed();
+  const spraysHydrationFailed = useSpraysHydrationFailed();
   const mobsHydrationFailed = useMobsHydrationFailed();
   const talliesHydrationFailed = useTalliesHydrationFailed();
   const hydratedMobsHydrationFailed = useHydratedMobsHydrationFailed();
@@ -605,6 +612,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     boundaryWalksHydrationFailed ||
     plantingsHydrationFailed ||
     fertiliserHydrationFailed ||
+    spraysHydrationFailed ||
     mobsHydrationFailed ||
     talliesHydrationFailed ||
     hydratedMobsHydrationFailed ||
@@ -771,6 +779,22 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           detail: landUnitCodes.get(application.landUnitId) ?? null,
           send: (token) => fertiliserApi.recordFertiliser(application, token),
           guardedBy: [`landrow:${application.landUnitId}`],
+        });
+      }
+    }
+    // A spray is COMPLIANCE-GATED (FR-204) but the guard it feeds (4d's future harvest guard) is
+    // not built yet — there is no harvest capture in this queue for it to precede. `guardedBy`
+    // alone, the identical FK-only shape as fertiliser, one line up: when 4d lands, harvest items
+    // must be placed AFTER this loop for the safety-ordering reason `Outbox.tsx`'s own header
+    // documents (moves/health precede disposals) — named here so that constraint is not missed.
+    for (const spray of sprays) {
+      if (!sent.has(spray.id)) {
+        items.push({
+          id: spray.id,
+          kind: 'spray',
+          detail: landUnitCodes.get(spray.landUnitId) ?? null,
+          send: (token) => sprayApi.recordSpray(spray, token),
+          guardedBy: [`landrow:${spray.landUnitId}`],
         });
       }
     }
@@ -1189,6 +1213,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     boundaryWalks,
     plantings,
     fertiliserApplications,
+    sprays,
     mobs,
     brandingRegisters,
     tallies,

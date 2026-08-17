@@ -15,6 +15,7 @@ import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { eq } from 'drizzle-orm';
 import {
+  chemicalProducts,
   createAppDb,
   createElevatedDb,
   events,
@@ -104,6 +105,22 @@ const fertiliserBody = (
     ...over,
   });
 
+/** A minimal valid spray body; overlay the fields a test cares about. `productId` has no default —
+ *  every test creates its own `chemical_products` row and must name it. */
+const sprayBody = (
+  over: Partial<ZodInput<typeof schemas.recordSprayRequestSchema>> & {
+    farmId: string;
+    landUnitId: string;
+    productId: string;
+  },
+): schemas.RecordSprayRequest =>
+  schemas.recordSprayRequestSchema.parse({
+    id: uuidv7(),
+    occurredAt: '2026-10-05T05:00:00.000Z',
+    sprayedOn: '2026-10-05',
+    ...over,
+  });
+
 describe('planting capture (FR-203)', () => {
   let pg: WerfTestDatabase;
   let app: AppDb;
@@ -172,6 +189,24 @@ describe('planting capture (FR-203)', () => {
   async function block(a: { userId: string; farmId: string }) {
     const created = await land.createLandUnit(a.userId, blockBody({ farmId: a.farmId }));
     return created.id;
+  }
+
+  /** Reference data is written by the elevated admin path, never by a farmer. */
+  async function aChemicalProduct(over: Partial<typeof chemicalProducts.$inferInsert> = {}) {
+    const [row] = await elevated.db
+      .insert(chemicalProducts)
+      .values({
+        jurisdiction: 'ZA',
+        name: 'Cyprodinex 50 WG',
+        registrationNumber: 'L1234',
+        activeIngredients: ['cyprodinil'],
+        crop: 'grapes',
+        phiDays: 7,
+        effectiveFrom: '2020-01-01',
+        ...over,
+      })
+      .returning();
+    return row!;
   }
 
   it('records a planting as an append-only event scoped to the BLOCK, not a herd', async () => {
@@ -372,6 +407,250 @@ describe('planting capture (FR-203)', () => {
 
       const rows = await elevated.db.select().from(events);
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe('spray capture (FR-204) — COMPLIANCE-GATED', () => {
+    it('resolves the PHI from the registered product and stores the earliest harvest date (ADR-0005)', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: 7 });
+
+      const captured = await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
+      );
+
+      expect(captured.type).toBe('spray');
+      expect(captured.payload).toMatchObject({
+        productId: product.id,
+        activeIngredients: ['cyprodinil'],
+        sprayedOn: '2026-10-05',
+        phiDays: 7,
+        earliestHarvestDate: '2026-10-12',
+      });
+      expect(captured.landUnitId).toBe(landUnitId);
+      expect(captured.enterpriseId).toBeNull();
+      expect(captured.animalId).toBeNull();
+      expect(captured.mobId).toBeNull();
+    });
+
+    it('⭐ OMITS phiDays/earliestHarvestDate, never zero, when the product carries no PHI on record', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: null });
+
+      const captured = await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
+      );
+
+      expect(Object.keys(captured.payload as object)).not.toContain('phiDays');
+      expect(Object.keys(captured.payload as object)).not.toContain('earliestHarvestDate');
+    });
+
+    it('never trusts a client-sent PHI or active ingredients — the server always resolves its own', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: 7, activeIngredients: ['cyprodinil'] });
+
+      // The wire schema itself has no phiDays/activeIngredients fields to smuggle through — this
+      // proves the RESOLVED figure is what lands, not a coincidence of the schema shape.
+      const captured = await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
+      );
+
+      expect(captured.payload).toMatchObject({ phiDays: 7, activeIngredients: ['cyprodinil'] });
+    });
+
+    it('resolves the registration IN FORCE ON THE SPRAY DAY, not today’s', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const oldVersion = await aChemicalProduct({
+        effectiveFrom: '2020-01-01',
+        effectiveTo: '2026-04-01',
+        phiDays: 14,
+      });
+
+      const captured = await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: oldVersion.id,
+          sprayedOn: '2026-02-01',
+        }),
+      );
+
+      expect(captured.payload).toMatchObject({ phiDays: 14 });
+    });
+
+    it('refuses a spray against a version no longer in force on the spray day — a stale cached row', async () => {
+      // The device's cache may hold a superseded registration; the server is the one that decides
+      // whether it was still current on the day being captured (ADR-0005, same discipline
+      // `resolveVetProduct` proves for a treatment).
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const supersededVersion = await aChemicalProduct({
+        effectiveFrom: '2020-01-01',
+        effectiveTo: '2026-04-01',
+        phiDays: 14,
+      });
+
+      await expect(
+        service.recordSpray(
+          a.userId,
+          sprayBody({
+            farmId: a.farmId,
+            landUnitId,
+            productId: supersededVersion.id,
+            sprayedOn: '2026-10-05',
+          }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('refuses a spray against a product not registered in this farm’s jurisdiction', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const naProduct = await aChemicalProduct({ jurisdiction: 'NA' });
+
+      await expect(
+        service.recordSpray(
+          a.userId,
+          sprayBody({ farmId: a.farmId, landUnitId, productId: naProduct.id }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('refuses a spray against a block that does not exist on this farm', async () => {
+      const a = await tenant('Crop');
+      const product = await aChemicalProduct({});
+
+      await expect(
+        service.recordSpray(
+          a.userId,
+          sprayBody({ farmId: a.farmId, landUnitId: uuidv7(), productId: product.id }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('is idempotent on the client id, so a re-flush does not create a second spray', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({});
+      const body = sprayBody({ farmId: a.farmId, landUnitId, productId: product.id });
+
+      const first = await service.recordSpray(a.userId, body);
+      const again = await service.recordSpray(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) => tx.select().from(events));
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  describe('spray history report (FR-211)', () => {
+    it('lists sprays for the farm, newest first, with the registered product name resolved', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 7 });
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-10-01',
+          occurredAt: '2026-10-01T05:00:00.000Z',
+        }),
+      );
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-10-10',
+          occurredAt: '2026-10-10T05:00:00.000Z',
+        }),
+      );
+
+      const report = await service.listSprayHistory(a.userId, a.farmId, {});
+
+      expect(report.map((r) => r.sprayedOn)).toEqual(['2026-10-10', '2026-10-01']);
+      expect(report[0]!.productName).toBe('Cyprodinex 50 WG');
+      expect(report[0]!.phiDays).toBe(7);
+    });
+
+    it('narrows to one block', async () => {
+      const a = await tenant('Crop');
+      const blockA = await block(a);
+      const blockB = await land.createLandUnit(
+        a.userId,
+        blockBody({ farmId: a.farmId, code: 'B13' }),
+      );
+      const product = await aChemicalProduct({});
+      await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId: blockA, productId: product.id }),
+      );
+      await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId: blockB.id, productId: product.id }),
+      );
+
+      const report = await service.listSprayHistory(a.userId, a.farmId, { landUnitId: blockA });
+
+      expect(report).toHaveLength(1);
+      expect(report[0]!.landUnitId).toBe(blockA);
+    });
+
+    it('narrows to a date range on the spray day, not the row-written day', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({});
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-09-01',
+          occurredAt: '2026-09-01T05:00:00.000Z',
+        }),
+      );
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-10-01',
+          occurredAt: '2026-10-01T05:00:00.000Z',
+        }),
+      );
+
+      const report = await service.listSprayHistory(a.userId, a.farmId, {
+        from: '2026-09-15',
+        to: '2026-10-15',
+      });
+
+      expect(report.map((r) => r.sprayedOn)).toEqual(['2026-10-01']);
+    });
+
+    it('never leaks another farm’s sprays', async () => {
+      const a = await tenant('Crop');
+      const b = await tenant('Other');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({});
+      await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
+      );
+
+      await expect(service.listSprayHistory(b.userId, a.farmId, {})).rejects.toThrow(NotFoundError);
     });
   });
 });

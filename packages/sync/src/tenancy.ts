@@ -187,6 +187,15 @@ export const TENANCY = {
     classification: 'reference',
     scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
   },
+  // Chemical products — the pre-harvest-interval source (Phase 4, FR-204/FR-508). Reference data,
+  // filtered by the FARM's jurisdiction so the PHI check works offline at the spray tank — the
+  // identical shape and reasoning as `veterinary_products` immediately above, one enterprise over.
+  // Read-only on the device; the registration is authored by the elevated admin path, never a
+  // farmer.
+  chemical_products: {
+    classification: 'reference',
+    scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
+  },
   // Species gestation — the source a due-date projection is injected from (Phase 2, FR-121).
   // Reference data like the two above, but GLOBAL rather than jurisdiction-filtered: a withdrawal
   // period is a registration and stops at the border, a gestation period is biology and does not.

@@ -1,10 +1,19 @@
-import { Body, Controller, HttpCode, HttpStatus, Inject, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Inject, Post, Query } from '@nestjs/common';
 import { schemas } from '@werf/core';
+import { z } from 'zod';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { CapturedEvent } from '../common/event-capture';
 import type { AuthContext } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { CropsService } from './crops.service';
+import { CropsService, type SprayHistoryRow } from './crops.service';
+
+/** `landUnitId`/`from`/`to` narrow the report; `farmId` proves membership (FR-211). */
+const sprayHistoryQuerySchema = z.object({
+  farmId: schemas.uuidSchema,
+  landUnitId: schemas.uuidSchema.optional(),
+  from: schemas.dateSchema.optional(),
+  to: schemas.dateSchema.optional(),
+});
 
 // No @UseGuards: AuthGuard is registered globally, so every route here is guarded by default.
 @Controller('crops')
@@ -39,5 +48,38 @@ export class CropsController {
     body: schemas.RecordFertiliserRequest,
   ): Promise<CapturedEvent> {
     return this.crops.recordFertiliser(auth.userId, body);
+  }
+
+  /**
+   * Record a spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED. The body carries the client's
+   * own event id, the block sprayed, the day sprayed, and the selected product id; the PHI and the
+   * active ingredients are resolved server-side (see the service), never sent by the client.
+   */
+  @Post('sprays')
+  @HttpCode(HttpStatus.CREATED)
+  async recordSpray(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordSprayRequestSchema))
+    body: schemas.RecordSprayRequest,
+  ): Promise<CapturedEvent> {
+    return this.crops.recordSpray(auth.userId, body);
+  }
+
+  /**
+   * Auditor-ready spray history (FR-211): every spray this farm recorded, optionally narrowed to
+   * one block and/or a date range. One report, not the GlobalGAP checklist engine — see the
+   * service for what that distinction means.
+   */
+  @Get('sprays')
+  async listSprayHistory(
+    @CurrentUser() auth: AuthContext,
+    @Query(new ZodValidationPipe(sprayHistoryQuerySchema))
+    query: z.infer<typeof sprayHistoryQuerySchema>,
+  ): Promise<SprayHistoryRow[]> {
+    return this.crops.listSprayHistory(auth.userId, query.farmId, {
+      ...(query.landUnitId === undefined ? {} : { landUnitId: query.landUnitId }),
+      ...(query.from === undefined ? {} : { from: query.from }),
+      ...(query.to === undefined ? {} : { to: query.to }),
+    });
   }
 }

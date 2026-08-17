@@ -104,9 +104,13 @@ export const FARM_SCOPED_EVENT_TYPES = [
   // never asks for it at block creation) was considered as the filing instead and rejected, because
   // it would give `planting` and `fertiliser` two different filing strategies for the same "fact
   // about what's in or on the ground" family depending on which one happened to be built first. One
-  // rule for the whole family, named once, here. (4c's `spray` will join this same list for the
-  // identical reason when it lands.)
+  // rule for the whole family, named once, here.
   'fertiliser',
+  // FR-204/211: a spray is the same family again — see the `fertiliser` note directly above. It
+  // also carries the PHI figure the future harvest guard (4d) reads, but that guard reads a
+  // block's own spray HISTORY directly (by `land_unit_id`), never through an enterprise join, so
+  // filing under the enterprise would buy that guard nothing either.
+  'spray',
 ] as const satisfies readonly EventType[];
 export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
 

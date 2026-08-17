@@ -225,6 +225,13 @@
       "when": 1786946378142,
       "tag": "0031_conflict_reviews_attachments_column_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786985636772,
+      "tag": "0032_chemical_products",
+      "breakpoints": true
     }
   ]
 }

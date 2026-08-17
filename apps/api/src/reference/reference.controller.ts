@@ -6,6 +6,7 @@ import type { AuthContext } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
   ReferenceService,
+  type ReferenceChemicalProduct,
   type ReferenceSpeciesGestation,
   type ReferenceVetProduct,
 } from './reference.service';
@@ -56,5 +57,18 @@ export class ReferenceController {
     @Query(new ZodValidationPipe(gestationQuerySchema)) query: z.infer<typeof gestationQuerySchema>,
   ): Promise<ReferenceSpeciesGestation[]> {
     return this.reference.listSpeciesGestation(auth.userId, query.farmId);
+  }
+
+  /**
+   * The chemical products this farm may record a spray against (FR-204/FR-508), resolved by the
+   * FARM's jurisdiction and in force on `onDay`. The client caches the result so product selection
+   * — and the PHI clear date it shows the farmer — works at the spray tank with no signal.
+   */
+  @Get('chemical-products')
+  async listChemicalProducts(
+    @CurrentUser() auth: AuthContext,
+    @Query(new ZodValidationPipe(productQuerySchema)) query: z.infer<typeof productQuerySchema>,
+  ): Promise<ReferenceChemicalProduct[]> {
+    return this.reference.listChemicalProducts(auth.userId, query.farmId, query.onDay);
   }
 }

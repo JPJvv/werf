@@ -7,6 +7,7 @@ export * from './branding';
 export * from './animals';
 export * from './events';
 export * from './veterinary';
+export * from './chemical';
 export * from './breeding';
 export * from './theft';
 export * from './attachments';

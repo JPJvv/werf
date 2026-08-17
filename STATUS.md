@@ -111,7 +111,8 @@ worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-17, sixteenth session, fully uncached, AFTER the SEV-2/LOW fixes) | ✅ **117 test files / 1283 tests, 7/7 builds, 168.80 KB gz** |
+| `pnpm verify` (2026-08-17, eighteenth session, after 4a·1 — full run, not `FULL TURBO` cache) | ✅ **117 test files / 1287 tests, 7/7 builds, 169.36 KB gz** |
+| `pnpm verify` (2026-08-17, sixteenth session, fully uncached, AFTER the Phase 3 SEV-2/LOW fixes) | ✅ 117 test files / 1283 tests, 7/7 builds, 168.80 KB gz |
 | Earlier same-session/prior baselines (attachment quota, users-column grants, auth audit) | Condensed — see item 37 |
 | `pnpm test:e2e` default lane (2026-08-17, sixteenth session, after the SEV-2 fix — real OPFS `put()` still works) | ✅ 31 passed / 5 skipped |
 | `WERF_REAL_STACK=1`, all 5 gated tests, each run isolated (2026-08-17, sixteenth session) | ✅ All pass — two real test-tooling defects found and fixed as `dd1fac8`; full account in §5 item 41 |

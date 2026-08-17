@@ -1388,20 +1388,212 @@ lost on retry, refusal, refresh expiry, schema upgrade, browser restart or quota
 
 ## Phase 4 — Crops & fields
 
-Goal: ship the crop notebook replacement on the real Phase 3 sync layer.
+Goal: a farmer on a crop or mixed farm can define blocks, record a planting, spray to GlobalGAP
+standard with the pre-harvest interval enforced *at capture*, fertilise, harvest, and see the
+crop-facing home metrics — all with the network off. Written now, at the start of the phase, per
+this file's own §"Phases 6–7" rule (write each phase's checklist when you reach it) — not
+pre-written speculatively; Phase 4 is the phase this session is opening.
+
+**FR bucketing correction.** Both this file and `roadmap.md`'s Phase 4 table previously grouped
+`4c` as "FR-208…212" — wrong on inspection: FR-508 is the `chemical_products` reference table,
+FR-204 is the spray record, and FR-208/209/210/212 (soil/leaf/fruit analysis, scouting, rotation
+history, weather) are **not** in `roadmap.md`'s own Phase 4 "Ships" line and are priority-2 —
+deferred, named below rather than silently dropped. This is the "two incompatible phase maps"
+defect class (STATUS.md §2) eaten once already; both files are corrected in the same commit.
+
+**Reuse map — read before designing anything, most of the substrate already exists.**
+- **Blocks are `land_units` with `kind='block'`.** The table, `parent_id` (FR-202 splitting),
+  `soil_type`, `irrigation`, PostGIS geometry + synced GeoJSON, and the terminology layer
+  ("block" for vines) are ALL already built (Phase 2, migration 0008). FR-201 is mostly a new
+  capture path through existing infrastructure, not new schema.
+- **`chemical_products` is already fully specified** (`database-schema.md:562`) as a sibling of
+  `veterinary_products` — same shape (jurisdiction, registration_number, active_ingredients,
+  versioned by `effective_from`/`effective_to`). `ReferenceService.listVeterinaryProducts`
+  (`apps/api/src/reference/reference.service.ts`) is the pattern to copy for
+  `listChemicalProducts`, **including the P1.3 every-version-when-`onDay`-omitted semantics** — a
+  device must resolve the PHI in force on the *spray* day, and must tell "registered, no PHI"
+  apart from "never heard of this product," for the identical reason P1.3 exists for withdrawal.
+- **`spray`, `harvest`, `fertiliser`, `planting`, `irrigation`, `scouting`, `soil_test` are
+  already `event_type` enum values** (migration 0010, day one — no `ALTER TYPE` needed) and the
+  `spray`/`harvest` payload shapes are already sketched (`database-schema.md:356-359`):
+  `spray: { productId, activeIngredients, rateLPerHa, waterLPerHa, operator, equipment, windKph?,
+  tempC?, targetPest, phiDays, earliestHarvestDate }` — `phiDays`/`earliestHarvestDate` computed
+  at capture and stored, the exact discipline `treatment`'s `meatClearDate`/`milkClearDate`
+  already proved (ADR-0005).
+- **There is no `plantings` table, and none is needed.** "What's planted in block B12" is a
+  PROJECTION over `planting` events, the same shape as `land_units.boundary` over
+  `boundary_walk` and `mobs.head_count` over `tally` — see 4a below for the specific rule.
+- **No crop code exists yet** (confirmed by search) — 4a–4e below is a clean start, not a rewrite.
+
+**Slice order corrects the roadmap's.** `roadmap.md` sequenced 4b (harvest) before 4d (the PHI
+guard). Phase 2's tenth review pass found exactly this mistake for treatment/sale — a capture
+screen shipped before its guard is a live unsafe path, not a partial feature ("refusing to
+half-build is a decision, not a delay" — STATUS.md's promoted lesson). **Harvest capture and the
+PHI guard are ONE slice below (4d), never split**, mirroring how Phase 2's health slice shipped
+the withdrawal guard together with treatment capture, not after it. Fertiliser has no such gate
+and can ship independently (4b).
 
 ```
-☐ 4a Blocks and plantings (FR-201…204), with canonical PostGIS geometry plus synced GeoJSON text
-☐ 4b Fertiliser and harvest capture (FR-205…207), fully offline
-☐ 4c Versioned chemical-product reference data (FR-208…212), available on the device
-☐ 4d PHI and re-entry rules enforced at capture and at the server boundary; regulated intervals
-  come from dated reference data, never constants
-☐ 4d US-030 passes with the network off, including the explicit override/reason audit path
-☐ 4e Grazing, feed and inventory links (FR-150…153, FR-501…503)
-☐ Crop home metrics are derived from local data and never require signal to render
-☐ `pnpm verify` and `pnpm test:e2e` green; regulated crop logic waits on the owner-triggered
-  compliance pass before merge-ready
+Land — blocks & plantings
+□ 4a·1 FR-201 Define a block: capture screen reusing AddLandUnitScreen's `kind='block'` path —
+  schema, RLS, TENANCY, geometry trigger are ALL already built (Phase 2). This is a UI/routing
+  slice, not a schema slice.
+□ 4a·2 FR-202 Split a block into sub-blocks without losing history — `parent_id` already exists;
+  new is the split ACTION (a screen + server endpoint that creates children referencing the
+  parent, closes nothing on the parent — closing loses history, which is the FR's own words).
+  ⚠️ SAFETY EDGE, decide now: a spray recorded against the parent BEFORE the split still applies
+  to every resulting child (the same soil and plants received it) — the harvest/PHI guard (4d)
+  for a child block MUST walk `parent_id` for spray events dated before the split's own
+  `occurred_at`, not just query the child's own `land_unit_id`. Undecided until 4d, but the
+  guard's query shape has to know this on day one or splitting silently launders a PHI.
+□ 4a·3 FR-203 Record a planting: crop, cultivar, planted date, density, seed source, expected
+  harvest — new `planting` event payload (Zod, @werf/core), capture screen `/crops/plant`,
+  server write through the shared `insertEvent`/`assertHerdScoped`-equivalent path (crop events
+  are land-scoped, not herd-scoped — `FARM_SCOPED_EVENT_TYPES`-style exception or a new
+  `LAND_SCOPED_EVENT_TYPES` list; decide which, name it in the domain layer).
+  ⭐ DESIGN DECISION — the "current planting" READ PROJECTION: latest `planting` event per
+  `land_unit_id`, ordered `(occurred_at, id)`, no status machine, no closing event. An annual
+  crop gets a fresh `planting` event every season; a vineyard gets ONE that persists for years
+  with harvests filed against the block underneath it. This is intentionally the SIMPLEST rule
+  that fits both cases — it is a UX/reporting decision (what a screen shows as "currently
+  planted"), NOT a safety dependency: the PHI guard (4d) reads the block's SPRAY HISTORY
+  directly and never needs to know what's currently planted, so getting this wrong is a wrong
+  label on a screen, not a compliance defect. Revisit if a real crop-rotation case breaks it
+  (FR-210, deferred, would need this same log).
+
+Reference data & spray capture
+□ 4c·1 FR-508 `chemical_products` migration + RLS (world-readable, `reference-sync`, filtered by
+  jurisdiction, NOT farm-scoped — same class as `veterinary_products`/`species_gestation`) +
+  TENANCY classification `reference-sync` (`database-schema.md:740` already names it) + seed rows
+  marked EXPLICITLY unverified for dev/test (see the ⛔ blocker below — mirrors `regulatory_rates`
+  dev placeholders).
+□ 4c·2 `ReferenceService.listChemicalProducts` — copy `listVeterinaryProducts` exactly, jurisdiction
+  filter, `onDay` optional, every version when omitted. `GET /reference/chemical-products`.
+  Client `createReferenceCache` sibling entry (same cache primitive Phase 2 already built).
+□ 4c·3 FR-204 Record a spray to GlobalGAP standard: registered product, active ingredient(s),
+  rate, water volume, operator, equipment, weather at application, target pest — capture screen
+  `/crops/spray`, `phiDays`/`earliestHarvestDate` resolved from the chemical_products registration
+  IN FORCE ON THE SPRAY DAY and stored ON THE EVENT (never recomputed on read — ADR-0005). What is
+  STORED is a `productId`, never a bare PHI number — the server resolves it, exactly as treatment
+  never stores a bare withdrawal period.
+□ 4c·4 FR-211 🇿🇦 Auditor-ready spray history report per block, per season — a read endpoint/screen
+  over `spray` events filtered by `land_unit_id` + season, NOT the full GlobalGAP checklist engine
+  (control points, non-conformances, corrective actions — that is `legal-compliance.md` §4.1's
+  Phase 6 build requirement, named here so it is not smuggled in). This is one report, not an
+  audit product.
+
+PHI guard + harvest — ONE slice, never split (see the note above)
+□ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
+  client-side (device has the cached chemical_products + this block's own local spray events —
+  O-12: blocked locally, no server round trip) AND server-side (a server-only rule arrives after
+  the truck has left). Message names the product, the spray date, and the earliest safe harvest
+  date (US-030's own gherkin — this is the acceptance test, use it verbatim).
+□ 4d·2 The override path: a written reason, audited, never silent (FR-205's own words) — mirrors
+  the sale-guard override PATTERN but is NOT the same mechanism as the cross-device race case
+  below; keep them distinct or 4d conflates a deliberate human override with an automatic flag.
+□ 4d·3 FR-207 Record a harvest: quantity, unit, grade, destination, date — the payload shape is
+  already sketched (`database-schema.md:359`) including `phiOverride?: { reason, by }`. Screen and
+  guard ship together (see slice-order note above).
+□ 4d·4 Both routes a PHI check must read, mirroring the dose-reaches-an-animal defect
+  (`713634b`, Phase 2): a block's own spray AND (per 4a·2) an ancestor's pre-split spray. A guard
+  reading only the child's own events is the same class of bug, just in the crop domain.
+□ 4d·5 Flush ordering: sprays flush before harvests, same reasoning as `16fbb6a` — a point-in-time
+  guard cannot refuse a harvest against a spray that has not arrived yet.
+□ 4d·6 Cross-device race (device A sprays, device B — never having seen it — harvests before
+  either syncs): apply the Phase 2 resolution VERBATIM — **FLAG, NEVER REFUSE** a disposal already
+  recorded; a retroactive compliance flag is DERIVED on read (order-independent) and surfaced on
+  `/attention`, the same screen the meat-withdrawal flag already uses. This is NOT the FR-205
+  override path (4d·2), which is a deliberate in-the-moment human decision — say which mechanism
+  covers which case so a reviewer doesn't conflate them.
+□ 4d·7 Idempotency checked BEFORE validation for a re-flushed harvest, same reasoning as the move
+  fix (`findEvent` pattern) — a harvest that already landed must not re-validate against the state
+  its own first flush wrote and refuse itself.
+□ 4d·8 A PHI refusal on flush is a 4xx: set the capture ASIDE, continue the round, never `return`.
+□ 4d·9 Day arithmetic through `farmLocalDay`, not `toISOString().slice(0,10)` — third recurrence
+  of this exact gotcha in this repo (STATUS.md memory), check it explicitly in review.
+□ 4d·10 Compliance-gated (FR-205/US-030, food-safety/export). No hardcoded PHI anywhere —
+  resolved by `(jurisdiction, productId, occurred_at)` through the reference cache, never a
+  literal in the domain function.
+
+Fertiliser (no compliance gate — ships independently of 4c/4d)
+□ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, method
+  field distinguishes fertigation from broadcast/band, capture screen `/crops/fertilise`. Feeds
+  the GlobalGAP evidence requirement (§4.1) as a record, nothing more, in this phase.
+
+Grazing, feed & inventory — the one slice with real new schema
+□ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — a PURE projection over existing
+  `move` + `boundary_walk` events (no new event type): days between arrival and departure ×
+  hectares (from the boundary projection, 4a is not needed for this — land_units already has it)
+  gives grazing days; LSU-on-camp over that window gives stocking rate. Table-driven domain fn,
+  no I/O, same discipline as `averageDailyGain`.
+□ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — the rest-period NUMBER is
+  agronomic, not legal: it does not belong in `regulatory_rates` (that seam is for LAW, not
+  veld-management best practice — ADR-0006's own boundary). It is a per-camp or per-farm SETTING
+  the owner sets, never a literal in code, for the same "never hardcode a number the farmer might
+  reasonably disagree with" reasoning `CLAUDE.md` applies to regulated numbers, extended here on
+  product-design grounds rather than legal ones.
+□ 4e·3 FR-501 `inventory_items`/`inventory_lots` migration + RLS + TENANCY (farm-scoped, new
+  schema — chemicals, fertiliser, feed, medicine; batch, expiry, location). ⭐ Stock ON HAND is a
+  PROJECTION over an append-only movement log (received/consumed/adjusted/counted), the identical
+  pattern `mobs.head_count` already proved for exactly the same reason: two people recording
+  consumption on two phones in a dead zone must COMPOSE, and a stock count is an ABSOLUTE THAT
+  RESETS, never an edited field. Do not build a directly-edited `quantity_on_hand` column.
+□ 4e·4 FR-502 Inventory auto-decrements on use — spray (4c) and fertiliser (4b) capture gain an
+  OPTIONAL inventory-lot reference (additive to the schema already shipped in 4b/4c, no rework):
+  a farm without inventory tracking on can still spray/fertilise; one that does emits a
+  `consumed` movement. The chemical_products reference row (what the product IS, national,
+  read-only) and an inventory lot (how much of it THIS FARM has, farm-owned, mutable) are
+  deliberately two different tables — conflating them would make a farm's stock count sync-scoped
+  by jurisdiction instead of by farm.
+□ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
+  candidate Sprays/crop tile badge (see the home-metrics note below).
+□ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —
+  depends on 4e·3 existing; a `feed` consumption movement against a `land_unit_id`/`mob_id`, Money
+  in integer cents for the cost side.
+
+Crop-facing home metrics (FR-017's discipline: carry a number ONLY if it is true and computable)
+□ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks
+  currently inside an active pre-harvest interval, computed directly from spray events +
+  chemical_products.phi_days, the exact "N withholding" precedent the Health tile already set
+  (never the "N due" mistake that tile avoided for want of a schedule this domain doesn't have).
+□ Crop home metrics are derived from local cached data and never require signal to render.
+
+⛔ External blocker — production data source, same class as Phase 5's B-1/B-2. Do not seed
+production `chemical_products` from a fabricated or guessed table: `legal-compliance.md` §4.3
+requires "synced from a maintained source" for Act 36 of 1947 registrations, and nobody has named
+who provides it yet. Dev/test rows are explicitly marked unverified (mirrors the `regulatory_rates`
+placeholder discipline); production seeding is BLOCKED until JP names a source, and this can run
+in parallel with 4a–4c build — it blocks DEPLOYMENT, not development, the same shape as B-1/B-2.
+
+Quality gates
+□ Every write path works with the network off — no `if (!navigator.onLine) throw`
+□ Domain logic (grazing days, stocking rate, PHI resolution) pure, unit-tested, table-driven
+□ testing-strategy.md O-12 (PHI check offline, blocked locally, no server round trip) and the
+  "Spray → PHI → blocked harvest, Offline" journey row are the REQUIRED matrix for this phase —
+  O-12's `⛔ Phase 4 — PHI does not exist yet` marker clears when 4d lands
+□ Both derived artifacts regenerated in the SAME commit as any synced-table change
+  (`generate:schema` + `generate:sync-rules`) — verify fails on drift otherwise
+□ TENANCY classification written in the same commit as its table, every time
+□ `pnpm verify` and `pnpm test:e2e` green
+□ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
+  slice (the labour phase alone gets per-slice review). Say out loud when 4c/4d reach
+  merge-ready so JP decides when to trigger the pass — regulated code is not merge-ready until
+  it has happened (`CLAUDE.md`)
 ```
+
+**Deferred — not in Phase 4, named so they are not mistaken for a miss (all priority-2 in the FR
+catalogue and absent from `roadmap.md`'s own Phase 4 "Ships" line):** FR-208 (soil/leaf/fruit
+analysis), FR-209 (pest/disease scouting), FR-210 (crop rotation history + rotation-rule warning —
+would reuse the 4a·3 planting log once it exists), FR-212 (weather integration). The GlobalGAP
+checklist ENGINE (control points, non-conformances, corrective actions, evidence completeness —
+`legal-compliance.md` §4.1) is Phase 6, not this phase; FR-211's spray-history report (4c·4) is
+real Phase 4 scope and is not the same deliverable.
+
+**Exit gate:** `pnpm verify` exits 0; `pnpm test:e2e` green including O-12 and the spray→PHI→
+harvest journey; every checklist line ☑ or ◐ with its remainder named; `reviewer` +
+`sync-auditor` + `compliance-checker` all pass (owner-triggered, batched); a crop farmer can
+define a block, plant, spray, and be blocked from harvesting inside the PHI, with the network off,
+and can override with a reason when they choose to.
 
 ---
 

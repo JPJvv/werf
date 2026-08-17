@@ -3,10 +3,22 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-17 (sixteenth session). **Phase 3 is APPROVABLE for merge.** Punch list
-fully closed; whole-branch `reviewer`+`sync-auditor`+`compliance-checker` pass found one SEV-2 and
-two LOW, both fixed and re-verified — see below and §3. Do not re-run P1/P2.5–P2.10, conflict
-audit, P3.11–P3.15 or P3.16.
+**Last updated:** 2026-08-17 (seventeenth session). **Phase 3 is APPROVABLE for merge — re-confirmed
+this session** (`pnpm verify` fully uncached, exit 0, reproduces 117 files/1283 tests/168.80 KB gz
+exactly). **Still not pushed — JP has not yet said push.** Punch list fully closed; whole-branch
+`reviewer`+`sync-auditor`+`compliance-checker` pass found one SEV-2 and two LOW, both fixed and
+re-verified — see below and §3. Do not re-run P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
+
+✅ **Phase 4 planned in detail this session (17th), before any code.** Full slice plan (4a–4e,
+schema/API/screen/projection/tests per slice) is in `phase-checklists.md`'s Phase 4 section — read
+it first, do not re-derive. Fixed a wrong FR bucketing shared by that file and `roadmap.md` (both
+together — "two incompatible phase maps" is a defect class already paid for once). Key findings:
+`chemical_products` schema + the `listVeterinaryProducts` pattern it mirrors already exist; no
+`plantings` table needed (current planting = latest `planting` event per block — a UX call, not a
+PHI dependency, since PHI reads spray history directly); harvest + the PHI guard ship as ONE slice,
+never split (roadmap had them sequential — Phase 2's treatment/sale mistake, repeated). ⛔ New
+blocker, B-1/B-2 class: production `chemical_products` needs JP to name a maintained Act 36/1947
+source; does not block writing 4a–4e.
 
 ✅ **Whole-branch review-agent pass (sixteenth session, JP-requested), `main...HEAD`: APPROVABLE
 after one fix round.** `compliance-checker` CLEARED outright. `sync-auditor` found two LOW
@@ -38,7 +50,7 @@ chain is in git history. Not pushed — local commits only. **Ready to push and 
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **APPROVABLE for merge** — every phase-checklist box `☑`, the punch list fully closed, whole-branch review-agent pass cleared after one fix round | §5 has the full item list; §3 has the review-agent account. Not yet pushed — ask JP before pushing/opening the PR |
-| 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
+| 4 — Crops & fields | Not started — planned in detail | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan; no code written yet |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -98,28 +110,17 @@ actor/session and timestamps are retained, and events are never rewritten. Movem
 shared batch protects legitimate multiples. RLS-scoped API/cache/UI and owner/manager review are
 built. O-6/O-7/O-8/NFR-211 have real-Postgres coverage; full detail is in §5 item 31.
 
-✅ **CLOSED 2026-08-14 (first session) — condensed, matches §5 items 21–30's `1b429d5`/`8dcdaf5`
-entries; full detail in git history:** back-dated-move fail-closed; 3e land hydration; 3i(c)
-attachment deferred queue (real-OPFS e2e proof, FR-131-adjacent — compliance-pass scope); 3i(b)
-residuals (AWS SDK retry, `AttachmentOrphanSweepService`, quota pressure deliberately not built);
-O-3 real-stack sweep (`real-offline-matrix.spec.ts`, `WERF_REAL_STACK`-gated, twice clean).
-
-✅ **Compliance-pass scope through `baf4b4d` — CLOSED 2026-08-14 (third session, top-of-file
-note).** Covered `9b7fa2e..3a1993c`: back-dated-move fail-closed, land hydration, 3i(c)'s
-`animalrow:` guard, `c2cc48a`, `422e09d`, P2.6's `6820a21`/`9e1b402`, P2.7's `256d06a`.
-
-✅ **Review scope `baf4b4d..428200a` — CLOSED 2026-08-15 (fourth session, owner-triggered).**
-Covered `a6b0c1a` (P2.8 bootstrap repair) + P2.9's UUIDv7 tightening. All three agents CLEARED, no
-SEV-1/SEV-2/MED. `reviewer`'s one LOW (a claimed `auth.service.ts` citation) was checked and
-REFUTED — the comment exists verbatim; nothing changed. ⛔ New scope opens from `428200a` forward.
+✅ **CLOSED 2026-08-14/15 (sessions one/three/four), condensed — full detail in git history:**
+back-dated-move fail-closed; 3e land hydration; 3i(c) attachment deferred queue; 3i(b) residuals;
+O-3 real-stack sweep; P2.6/P2.7/P2.8/P2.9 fixes. Three review passes (`baf4b4d..428200a` incl.)
+all CLEARED, no SEV-1/SEV-2/MED; one claimed LOW REFUTED with evidence (comment existed verbatim).
 
 **Condensed, full detail in git history / `phase-checklists.md` 3b–3i (2026-08-13):** three
 `compliance-checker` passes over the animals/moves/health hydration diff → APPROVABLE (`ba7f680`);
-an owner-triggered `compliance-checker` pass over the whole branch (CLEARED) and a `sync-auditor`
-pass over attachments (2 MEDIUM + 1 LOW, fixed under §6 clause 3); 3f closed (retry coordinator;
-24-month event retention); `drizzle-kit` snapshot gap reconciled (migrations 0023/0024); per-farm
-events partitioning retired outright (migration 0021) after "wire it up properly" was found to
-hide a worse defect for any farm signing up post-deploy.
+a whole-branch `compliance-checker` pass (CLEARED) and a `sync-auditor` pass over attachments (2
+MEDIUM + 1 LOW, fixed under §6 clause 3); 3f closed; `drizzle-kit` snapshot gap reconciled
+(0023/0024); per-farm events partitioning retired (migration 0021) — "wire it up properly" hid a
+worse defect for any farm signing up post-deploy.
 
 ## 4. Verification
 
@@ -257,8 +258,7 @@ STATUS.md and `phase-checklists.md` agree (Q17's reconciliation still holds; not
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 
-Decision state, not session narrative — restored once already after a compaction deleted it. **Do
-not delete it again; a rule nobody can find is not a rule.**
+Decision state, not session narrative — restored once already after a compaction deleted it. **Do not delete it again; a rule nobody can find is not a rule.**
 
 | # | Clause |
 |---|---|

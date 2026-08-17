@@ -99,17 +99,25 @@ the owner triggers the relevant reviewer/sync-auditor. Do not batch a Phase 3 te
 
 **Ships:** crop blocks, plantings, fertiliser, spray capture, product reference data, PHI enforced at
 capture, harvest, grazing/feed and the crop-facing home metrics—on the real Phase 3 sync layer.
+Full slice detail (schema/API/screen/projection/tests per slice, and the corrected FR bucketing
+below) is in `phase-checklists.md`'s Phase 4 section — authored at the start of this phase, not
+speculatively.
 
 | Slice | Content | Evidence |
 |---|---|---|
-| 4a | Blocks and plantings | FR-201…204 |
-| 4b | Fertiliser and harvest | FR-205…207 |
-| 4c | Chemical reference data and sprays | FR-208…212 |
-| 4d | PHI/re-entry enforcement on device and server | US-030 offline |
-| 4e | Grazing, feed and inventory links | FR-150…153, 501…503 |
+| 4a | Blocks and plantings | FR-201, FR-202, FR-203 |
+| 4b | Fertiliser (no compliance gate) | FR-206 |
+| 4c | Chemical reference data, sprays, spray-history report | FR-508, FR-204, FR-211 |
+| 4d | Harvest + PHI/re-entry guard — ONE slice, never split (Phase 2's treatment/sale lesson) | FR-205, FR-207, US-030 offline |
+| 4e | Grazing, feed and inventory (new schema) | FR-150…153, 501…503 |
+
+Deferred (priority-2, not in this phase's "Ships" line): FR-208/209/210/212 (soil/leaf/fruit
+analysis, scouting, rotation history, weather). The GlobalGAP checklist *engine* is Phase 6.
 
 **Gate:** crop P1 requirements and US-030 pass offline; no regulated interval is hardcoded; a crop
-farmer can complete a spray-to-harvest record with no network.
+farmer can complete a spray-to-harvest record with no network. ⛔ Production `chemical_products`
+seeding is blocked on JP naming a maintained Act 36/1947 source (same class as Phase 5's B-1/B-2) —
+does not block development.
 
 ## Phase 5 — Labour & wages
 

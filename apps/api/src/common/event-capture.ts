@@ -17,6 +17,7 @@ import {
   brandingRegisters,
   enterprises,
   events,
+  farms,
   farmUsers,
   landUnits,
   mobs,
@@ -336,4 +337,14 @@ export async function assertCanCapture(
   if (!CAPTURE_ROLES.includes(membership.role)) {
     throw new TenancyError(`Role ${membership.role} may not capture farm events`);
   }
+}
+
+/** The law this farm operates under, through the RLS-bound connection. */
+export async function farmJurisdiction(tx: CaptureTx, farmId: string): Promise<string> {
+  const [row] = await tx
+    .select({ jurisdiction: farms.jurisdiction })
+    .from(farms)
+    .where(eq(farms.id, farmId));
+  if (!row) throw new NotFoundError('Farm not found');
+  return row.jurisdiction;
 }

@@ -137,24 +137,20 @@ MIME/size/quota sub-item landed the same session as `49677b4` — P3.16 is now 6
 
 ✅ **Compliance-pass scope `428200a..45775ea` — CLOSED 2026-08-15 (twelfth session).** 18 commits:
 P2.10, conflict audit/review (migration 0026), P3.11–P3.15, P3.16's first two sub-items. **CLEARED,
-no SEV-1/SEV-2/MED/LOW** — no hardcoded regulated numbers, `audit_log` immutability proven by a real
-UPDATE/DELETE attempt. ⛔ New scope from `45775ea` forward.
+no SEV-1/SEV-2/MED/LOW.** ⛔ New scope from `45775ea` forward.
 
-✅ **CLOSED 2026-08-15 — owner chose A: implement conflict audit/review now** (migration 0026,
-immutable `audit_log` + review queue, `(occurred_at,id)` LWW, O-6/O-7/O-8/NFR-211 real-Postgres
-coverage) — full detail in §5 item 31.
-
-✅ **CLOSED 2026-08-14/15 (sessions one/three/four), condensed — full detail in git history:**
-back-dated-move fail-closed; 3e land hydration; 3i(c) attachment deferred queue; 3i(b) residuals;
-O-3 real-stack sweep; P2.6/P2.7/P2.8/P2.9 fixes. Three review passes (`baf4b4d..428200a` incl.)
-all CLEARED, no SEV-1/SEV-2/MED; one claimed LOW REFUTED with evidence (comment existed verbatim).
+✅ **CLOSED 2026-08-14/15 (sessions one/three/four/twelfth), condensed — full detail in git
+history:** back-dated-move fail-closed; 3e land hydration; 3i(c) attachment deferred queue; 3i(b)
+residuals; O-3 real-stack sweep; P2.6/P2.7/P2.8/P2.9 fixes; conflict audit/review (migration 0026,
+immutable `audit_log` + review queue, `(occurred_at,id)` LWW, O-6/O-7/O-8/NFR-211 — §5 item 21-41).
+Four review passes (`baf4b4d..428200a` incl.) all CLEARED, no SEV-1/SEV-2/MED; one claimed LOW
+REFUTED with evidence (comment existed verbatim).
 
 **Condensed, full detail in git history / `phase-checklists.md` 3b–3i (2026-08-13):** three
 `compliance-checker` passes over the animals/moves/health hydration diff → APPROVABLE (`ba7f680`);
 a whole-branch `compliance-checker` pass (CLEARED) and a `sync-auditor` pass over attachments (2
-MEDIUM + 1 LOW, fixed under §6 clause 3); 3f closed; `drizzle-kit` snapshot gap reconciled
-(0023/0024); per-farm events partitioning retired (migration 0021) — "wire it up properly" hid a
-worse defect for any farm signing up post-deploy.
+MEDIUM + 1 LOW, fixed under §6 clause 3); `drizzle-kit` snapshot gap reconciled (0023/0024);
+per-farm events partitioning retired (migration 0021).
 
 ## 4. Verification
 
@@ -182,113 +178,26 @@ narrative in git history and `phase-checklists.md`.** Do not begin payroll on lo
 large implementation-and-closure pass, three priority bands plus a doc/quality band, one item (or a
 tightly related pair) per session. Ran second through sixteenth sessions; every item below closed.
 
-✅ 21–30. Done 2026-08-14/15 (first–fifth sessions), condensed — full detail in git history:
-back-dated-move fail-closed + land hydration + 3i(c) attachment queue + 3i(b) residuals + O-3
-real-stack sweep (session 1, `1b429d5`/`8dcdaf5`); **P1** data-loss/safety blockers — SQLite
-durability, attachment orphan race, withdrawal fail-closed, production CSP/CORS (session 2,
-`c2cc48a`); **P2.5** secure attachment reads + FR-603 evidence-pack photos (session 2, `422e09d`);
-**P2.6** `theft_incident_animals` surrogate id + audit columns — found an undocumented SECOND
-`NO_SURROGATE_ID` copy in `derive-sync-streams.ts` the design note missed (session 3,
-`6820a21`/`9e1b402`); **P2.7** `landrow:` dependency guards, went wider than its own design note,
-which had missed a move's `toLandUnitId` and a theft incident's `landUnitId` (session 3,
-`256d06a`); **P2.8** a true two-browser O-3 scenario — the earlier blocked run's root cause was
-reproducibility (stray per-shell secrets), not the rate limiter, fixed via `pnpm setup:local` /
-`pnpm real-stack:up` (session 5, `38268b5`); **P2.9** schema-boundary UUIDv7 enforcement — caught
-three real-stack e2e specs minting v4 ids by mistake; DB-default removal deliberately deferred (87
-test call sites rely on it as fixture convenience) (session 4); **P2.10** adversarial tenancy
-verification with three reversible RLS/Sync-Stream mutants (session 5, `b88b29b`). Every
-**phase-checklist** box is `☑`; this punch list is a stricter pass on top of that, not a reopening.
-
-✅ **31–36. Done 2026-08-15 (sixth–eleventh sessions), condensed — full detail in git history:**
-**31** conflict audit/review (O-6/O-7/O-8) — migration `0026_conflict_audit`'s immutable `audit_log`
-+ `conflict_reviews`, deterministic idempotent conflict keys, `(occurred_at,id)` LWW for movement,
-sale-outranks-death-outranks-sale-etc. projection, legitimate-twin-batch handling, `GET/POST
-/conflicts` and cached offline review UI (`b88b29b`-adjacent, 113 files/1210 tests). **32** P3.11 —
-recent step-up (≤10 min) before starting TOTP/passkey enrolment; a stale caller gets 403
-`STEP_UP_REQUIRED` and a full re-login. **33** P3.12, `cd0d3c0` — Google-first OIDC/cookie-BFF
-migration phasing across seven additive slices; no email-equality linking or farm authority. **34**
-P3.13, `144e7bc` — FR-001 business contact/address fields (migration 0027); all seven fields
-excluded from every Sync Stream. ⛔ Was POPIA-adjacent-unreviewed until the twelfth-session
-compliance pass cleared it (§3). **35** P3.14, `764c53e` — branding-register create/list/link
-(FR-601/602); real-Postgres tenancy/authorship/idempotency/species-safe-linking coverage; the
-unmarked-past-window alert stays deferred (no verified prescribed-window data to compute it from).
-**36** P3.15, `aa2b023` — one shared `parseRandsToCents` in `@werf/core/money.ts` replacing three
-hand-rolled, float-crossing `Math.round(Number(rands)*100)` duplicates in AddAnimal/AdjustMob/
-RecordLoss; refuses a third decimal digit as a likely typo. Verification baselines climbed from 113
-files/1210 tests through 114 files/1245 tests across these six items — each had its own green
-`pnpm verify` at the time; see §4 for the current number.
-
-**37. P3.16 — auth hardening batch. 6/7 sub-items done, 2026-08-15/16 (thirteenth–fourteenth
-sessions), condensed — full detail in git history.** All seven sub-items are pre-scoped in
-`docs/05-operations/security.md` §10.2, which names the exact fix for each, not just the gap.
-✅ Invitation reuse of soft-deleted identities (`06ca3d6`) — `FarmsService.invite` now refuses an
-address belonging to a POPIA-erased row outright, instead of pulling it back into a live
-membership and the co-member RLS policy's visibility. ✅ WebAuthn challenge cleanup (`e24a281`) —
-`WebauthnChallengeSweepService` hard-deletes consumed/expired `webauthn_challenges` rows hourly
-(no `deleted_at`, exempt from soft-delete like `user_sessions`). ✅ Production WebAuthn config
-(`c7358b0`) — `loadConfig` refuses to boot in production with `WEBAUTHN_RP_ID`/`WEBAUTHN_ORIGIN`
-unset, checked against raw env values so a coincidental `localhost` default can't mask the gap.
-✅ Immutable auth audit (`016fb5d`) — migration 0028's account-global, append-only
-`auth_audit_log`; zero `werf_app` grants, forced zero-policy RLS, a rejecting UPDATE/DELETE
-trigger. ✅ Users-table column grants (`fc5759d`) — migration 0029
-narrows `werf_app`'s table-wide grant on `users` to non-credential columns only; an audit found
-**zero production paths** touching `users` via the scoped connection at all, so only the grant
-changed, no application code. Fail-first proven against real Postgres both ways. All four fixes
-had their own green `pnpm verify` at the time; see §4 for the current number.
-✅ **Attachment MIME/size/quota, commit `49677b4` (2026-08-16, fourteenth session).** Three owner
-decisions unblocked this: 25MB per-attachment ceiling, a 5GB per-farm quota built now rather than
-deferred, and a five-type photo whitelist (JPEG/PNG/WebP/HEIC/HEIF). Size and MIME are enforced in
-the shared `@werf/core` Zod schema, so `RecordPhotoScreen.tsx` refuses an over-limit or
-unsupported file AT THE PICKER, before it ever reaches OPFS or the queue. Quota is a running total
-on `farms.attachment_bytes_used` (migration 0030), charged atomically against the quota the moment
-`createAttachment` decides a row will occupy real storage (a fresh insert or a revival), and
-released by `AttachmentOrphanSweepService` when it reclaims an abandoned upload — a new
-`QuotaExceededError`/`QUOTA_EXCEEDED` code keeps the refusal distinct from `CONFLICT` in
-`NotSentScreen.tsx`. Fail-first verified against real Postgres and in `RecordPhoto.test.tsx`.
-Regenerated both derived-artifact freshness gates (local SQLite schema, PowerSync
-`sync-config.yaml`) for the new `farms` column. ✅ **Compliance-checked `45775ea..ec8336e`
-(fourteenth session): CLEARED, one LOW — `image/jpg` (a real Android MIME alias) was refused by
-the exact-match whitelist; fixed as `c12fbfc` via a shared `normalizeAttachmentMimeType`, merged
-under §6 clause 3, no second pass.** `pnpm verify`: **116 files / 1278 tests, 7/7 builds, 168.78
-KB gz**.
-
-**Remaining: registration-enumeration hardening — CLOSED as a decision, not open work.** JP
-deferred it to Phase 7 hardening (2026-08-16): rate limiting narrows the gap meanwhile, and the
-"needs delivery infra" framing in security.md was stale (the `Mailer`/SMTP port already exists,
-built for invitations) — this is a scheduling choice, not a blocker.
-
-✅ **38. Q17 — CLOSED, `f875dcc`** — full account in the top-of-file note.
-
-✅ **39. Q18 — CLOSED, `1b036bf`** — full account in the top-of-file note.
-
-✅ **40. Q19 — CLOSED.** Added `testing-strategy.md` §7a: five Phase-3-specific field-evidence rows
-(dead-zone reconnect behaviour, low-end-device OPFS storage pressure, two-real-workers conflict-
-queue legibility, big-attachment-over-bad-signal upload, real-authenticator WebAuthn/passkey
-recovery) that Phase 7's generic three-farm pilot does not name on its own — recorded so they aren't
-discovered under pilot pressure. None have been run; this is a record, not a clearance. Also fixed
-three stale Phase numbers in §7's original table found while editing it (bookkeeper/legal-review
-said `3`, should be `5`; auditor/SAPS said `4`, should be `6` — same renumbering `roadmap.md`
-already reflects).
-
-✅ **41. Final — definition-of-done sweep. CLOSED, 2026-08-17 (sixteenth session).**
-`pnpm verify` fully uncached: **116 files / 1278 tests, 7/7 builds, 168.78 KB gz.**
-`pnpm test:e2e` default lane: **31 passed / 5 skipped.** `WERF_REAL_STACK=1`: all 5 gated tests
-(`deployed-connectivity` ×2, `real-offline-matrix` ×2, `real-sync-hydration` ×1) pass — run each in
-isolation with a fresh `apps/api` process between them, not as one batch; the in-memory auth
-Throttler's register-burst limit (2/min, `rate-limits.ts`) is real and correctly strict, and five
-real registrations inside one Playwright worker's run window trips it. Verified this is throttling,
-not a defect: the SAME test passes clean immediately after an API restart clears its in-memory
-bucket. ⭐ **Two real defects surfaced and fixed as `dd1fac8`, both in real-stack e2e test tooling,
-neither in application code:** `deployed-connectivity.spec.ts` sent `mimeType: 'text/plain'`,
-predating P3.16's MIME whitelist (`49677b4`) — that commit silently broke this spec's presigned-PUT
-proof, undetected because the spec is `WERF_REAL_STACK`-gated and nothing had run it since.
-`real-offline-matrix.spec.ts`'s P2.8 test looked up its test mob by `name` with no `farm_id` scope
-— itself a tenancy gap, in test tooling rather than product code — so rerunning the gated spec
-against a persistent local dev Postgres accumulated same-named mobs across different test farms and
-broke the next query's SQL string once a second row existed. Both fail-first verified, both fixed
-mechanically, confined to the two files named. No SEV-1/SEV-2 outstanding from any authorized
-compliance/review pass (§3); MED/LOW from every closed pass fixed or filed. STATUS.md and
-`phase-checklists.md` agree (Q17's reconciliation still holds; nothing drifted since).
+✅ **21–41. Done 2026-08-14 through 2026-08-17 (first–sixteenth sessions), fully closed — condensed,
+full detail in git history.** P1 data-loss/safety blockers (SQLite durability, attachment orphan
+race, withdrawal fail-closed, prod CSP/CORS, `c2cc48a`); P2.5–P2.10 (secure attachment reads,
+`theft_incident_animals` surrogate id, `landrow:` dependency guards, a true two-browser O-3 run,
+UUIDv7 schema-boundary enforcement, adversarial tenancy mutants — `422e09d`/`6820a21`/`256d06a`/
+`38268b5`/`b88b29b`); conflict audit/review, O-6/O-7/O-8 (migration 0026, immutable `audit_log` +
+`conflict_reviews`, `(occurred_at,id)` LWW); P3.11–P3.15 (step-up re-auth, Google-first OIDC/
+cookie-BFF, FR-001 business fields, branding register FR-601/602, one shared `parseRandsToCents`);
+P3.16 auth-hardening batch, 7/7 (invitation reuse of soft-deleted identities `06ca3d6`, WebAuthn
+challenge cleanup `e24a281`, production WebAuthn config `c7358b0`, immutable auth audit `016fb5d`,
+users-table column grants `fc5759d`, attachment MIME/size/quota `49677b4` — 25MB/attachment, 5GB/
+farm running quota on `farms.attachment_bytes_used`, five-type photo whitelist; registration-
+enumeration hardening deferred to Phase 7 as an owner decision, not a gap). Q17/Q18/Q19 closed
+(`f875dcc`/`1b036bf`/`testing-strategy.md` §7a's five Phase-3 field-evidence rows). Final
+definition-of-done sweep (sixteenth session): `pnpm verify` **116 files/1278 tests, 7/7 builds,
+168.78 KB gz**; `pnpm test:e2e` 31/5 skipped; `WERF_REAL_STACK=1` all 5 gated specs pass in
+isolation — two real defects found and fixed in test tooling only, `dd1fac8` (a stale MIME literal
+predating the P3.16 whitelist, and an unscoped-by-`farm_id` fixture lookup that collided against a
+persistent dev Postgres). Every **phase-checklist** box is `☑`; this punch list was a stricter pass
+on top of that, not a reopening.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

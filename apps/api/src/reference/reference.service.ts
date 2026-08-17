@@ -28,16 +28,9 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, gt, isNull, lte, or } from 'drizzle-orm';
-import {
-  chemicalProducts,
-  farms,
-  speciesGestation,
-  veterinaryProducts,
-  type AppDb,
-} from '@werf/db';
-import { NotFoundError } from '@werf/core';
+import { chemicalProducts, speciesGestation, veterinaryProducts, type AppDb } from '@werf/db';
 import { APP_DB } from '../db/db.module';
-import { assertCanCapture, type CaptureTx } from '../common/event-capture';
+import { assertCanCapture, farmJurisdiction } from '../common/event-capture';
 
 /** What the client is given: everything it needs to select a product and show a clear date. */
 const productProjection = {
@@ -187,14 +180,4 @@ export class ReferenceService {
         .orderBy(chemicalProducts.name, chemicalProducts.effectiveFrom);
     });
   }
-}
-
-/** The law this farm operates under, through the RLS-bound connection. */
-async function farmJurisdiction(tx: CaptureTx, farmId: string): Promise<string> {
-  const [row] = await tx
-    .select({ jurisdiction: farms.jurisdiction })
-    .from(farms)
-    .where(eq(farms.id, farmId));
-  if (!row) throw new NotFoundError('Farm not found');
-  return row.jurisdiction;
 }

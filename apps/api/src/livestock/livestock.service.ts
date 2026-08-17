@@ -64,6 +64,7 @@ import { APP_DB } from '../db/db.module';
 import {
   assertCanCapture,
   assertOwnedReferences,
+  farmJurisdiction,
   findEvent,
   herdOfSubject,
   insertEvent,
@@ -1783,17 +1784,6 @@ async function deriveHeadCount(
       };
     }),
   );
-}
-
-/** The law this farm operates under, through the RLS-bound connection. Jurisdiction is the FARM's,
- *  never the user's or the browser's (.claude/rules/domain.md, FR-019). */
-async function farmJurisdiction(tx: CaptureTx, farmId: string): Promise<string> {
-  const [row] = await tx
-    .select({ jurisdiction: farms.jurisdiction })
-    .from(farms)
-    .where(eq(farms.id, farmId));
-  if (!row) throw new NotFoundError('Farm not found');
-  return row.jurisdiction;
 }
 
 /**

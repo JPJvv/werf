@@ -14,12 +14,13 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
-import { chemicalProducts, events, farms, type AppDb } from '@werf/db';
+import { chemicalProducts, events, type AppDb } from '@werf/db';
 import { NotFoundError, type schemas } from '@werf/core';
 import { recordFertiliser, recordPlanting, recordSpray } from '@werf/domain';
 import { APP_DB } from '../db/db.module';
 import {
   assertCanCapture,
+  farmJurisdiction,
   insertEvent,
   type CaptureTx,
   type CapturedEvent,
@@ -308,14 +309,4 @@ async function resolveChemicalProduct(
     );
   if (!row) throw new NotFoundError('Chemical product not found');
   return row;
-}
-
-/** The law this farm operates under, through the RLS-bound connection. */
-async function farmJurisdiction(tx: CaptureTx, farmId: string): Promise<string> {
-  const [row] = await tx
-    .select({ jurisdiction: farms.jurisdiction })
-    .from(farms)
-    .where(eq(farms.id, farmId));
-  if (!row) throw new NotFoundError('Farm not found');
-  return row.jurisdiction;
 }

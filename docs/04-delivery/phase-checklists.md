@@ -1367,6 +1367,17 @@ only; full detail is in STATUS.md §5 items 32–37, not duplicated here.**
   `pnpm test:e2e` 31/5 skipped; all 5 `WERF_REAL_STACK=1` specs pass in isolation. Two real defects
   in real-stack e2e test tooling found and fixed (`dd1fac8`): a stale `mimeType` literal P3.16's
   MIME whitelist broke unnoticed, and an unscoped-by-`farm_id` test lookup query.
+☑ Whole-branch `reviewer`+`sync-auditor`+`compliance-checker` pass (2026-08-17): APPROVABLE after
+  one fix round. `compliance-checker` CLEARED outright. `sync-auditor` found two LOW (grant scoping
+  on `conflict_reviews`/`attachments`, same class 0029 closed for `users`), fixed as migration 0031
+  (`47c0ffe`). `reviewer` found one SEV-2 — `opfs-blob-store.ts`'s `put()` let a real OPFS
+  `QuotaExceededError` propagate uncaught to `RecordPhotoScreen.tsx`'s save handler, silently
+  losing an attachment under device storage pressure and contradicting this phase's own exit gate
+  — fixed as `c45cd01` (a `retryDurably` wrapper giving the blob write the same never-reject
+  durability guarantee `sqlite-capture-store.ts` already gives the metadata half). A narrow
+  follow-up `reviewer` pass scoped to the fix diff alone confirmed it closes the path and found
+  nothing new. `pnpm verify` after both fixes: 117 files/1283 tests/168.80 KB gz. **Phase 3 is
+  APPROVABLE for merge** — not yet pushed; ask JP before pushing or opening the PR.
 ```
 
 **Exit gate:** six weeks of offline captures reach another device with every `occurred_at` intact;

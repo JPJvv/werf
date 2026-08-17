@@ -3,10 +3,9 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-16 (fifteenth session). Continuing JP's Phase 3 punch-list closure.
-**P3.11–P3.15 and the conflict-audit gate are closed; P2.9's schema half is closed; P3.16 is
-6/7 sub-items closed; Q17 and Q18 are closed** (see §5). **Q19 plus the final sweep remain.**
-Do not re-run P1/P2.5–P2.10, conflict audit or P3.11–P3.15.
+**Last updated:** 2026-08-17 (sixteenth session). **The punch list is now fully closed — Q19 and
+the final definition-of-done sweep (§5 items 40–41) both closed this session.** Do not re-run
+P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
 
 ✅ **Q17 (doc reconciliation) — CLOSED, `f875dcc`.** Fixed five contradictions, worst being
 `phase-checklists.md`+`testing-strategy.md` both still claiming the O-6/O-7/O-8 conflict
@@ -20,19 +19,14 @@ phase that hasn't started. Everything still unimplemented (Lighthouse, coverage 
 regulated-constant lint, per-chunk budgets, file-length limits) is now marked ❌, not falsely
 claimed.
 
-✅ **Owner-triggered `compliance-checker` over `45775ea..ec8336e` (fourteenth session,
-2026-08-16): CLEARED, one LOW.** Covered `c7358b0`/`016fb5d`/`fc5759d`/`49677b4` (P3.16's
-third–sixth sub-items). No SEV-1/SEV-2/MED. The one LOW — `image/jpg`, a real non-standard MIME
-alias some Android WebViews report for a camera JPEG, would have been falsely refused by the
-exact-match whitelist check — was fixed under §6 clause 3 (mechanical, confined to the files
-named, fail-first tested) as `c12fbfc`, no second pass needed. Full account in §3. Earlier:
-`compliance-checker` over `428200a..45775ea` (18 commits, P2.10 through P3.16's first two
-sub-items) and `reviewer`+`sync-auditor`+`compliance-checker` over `baf4b4d..428200a`, also ALL
-CLEARED. ⛔ New scope opens from `ec8336e` forward — nothing outstanding right now.
+✅ **Owner-triggered `compliance-checker`, three passes through `ec8336e` (sessions 4/12/14): all
+CLEARED, no SEV-1/SEV-2, one LOW fixed same-session (`c12fbfc`).** Full account in §3.
+⛔ New scope from `ec8336e` forward — covers Q17/Q18/Q19 docs (`2ffb139`) and the two test-tooling
+fixes in `dd1fac8` (§5 item 41) — not yet reviewed, see below for this session's pass.
 
 **Active branch:** `phase-3/powersync-foundation`, off `main` @ `13a0d46`; committed work through
-`1b036bf` (Q18 NFR gates) ← `f875dcc` (Q17 doc reconciliation) ← `c12fbfc` (P3.16 image/jpg alias
-fix). Older chain is in git history. Not pushed — local commits only.
+`dd1fac8` (final-sweep e2e fixes) ← `2ffb139` (Q19) ← `1b036bf` (Q18). Older chain is in git
+history. Not pushed — local commits only.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`); both CI lanes were green at merge.
 
@@ -43,7 +37,7 @@ fix). Older chain is in git history. Not pushed — local commits only.
 | 0 — Scaffold | Merged | `main` |
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
-| 3 — Offline sync | 🔶 Every phase-checklist box `☑`; a SEPARATE punch list of P1/P2/P3/quality items (opened 2026-08-14) sits on top of the checklist and is ~20/~21 done | 3a–3i all CLOSED (§3, historical): 3e in full, 3i(b)/3i(c), O-3. **Punch list (not phase-checklist items, a stricter closure pass JP asked for on top of the checklist):** P1.1–P1.4, P2.5–P2.10, conflict audit and P3.11–P3.15 are done; P3.16 is 6/7 sub-items done, the 7th deferred to Phase 7 by owner decision. Q17–Q19 remain — full sliced list in §5 |
+| 3 — Offline sync | ✅ Every phase-checklist box `☑`; the separate stricter punch list JP asked for on top of it (opened 2026-08-14) is now fully closed | §5 has the full item list. Not yet asked to be merge-ready — awaiting this session's review-agent pass (below) before that word is used |
 | 4 — Crops & fields | Not started | Blocks, plantings, sprays, PHI and harvest move here |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
@@ -103,26 +97,11 @@ actor/session and timestamps are retained, and events are never rewritten. Movem
 shared batch protects legitimate multiples. RLS-scoped API/cache/UI and owner/manager review are
 built. O-6/O-7/O-8/NFR-211 have real-Postgres coverage; full detail is in §5 item 31.
 
-✅ **CLOSED 2026-08-14 (first session), condensed — full detail in git history:**
-- Back-dated local move, fail-closed (JP's choice): `withdrawal.ts`'s `mobMembership` refuses
-  (`blocked: true`) rather than trust the fallback interval when an animal's earliest known move is
-  LOCAL and it's known off-device. Commit `1b429d5`.
-- 3e's land hydration (last open two-device conflict case): `HydratedLand.tsx` +
-  `LocalLand.tsx`'s merge, same shape as livestock's. Boundaries now share the tally's
-  absolute-reset/arrival-order guarantees. Commit `8dcdaf5`.
-- 3i(c), the attachment deferred queue: `BlobStore` port + OPFS adapter, one `FlushItem` per
-  attachment (create→PUT→finalize in one `send()`), `animalrow:` guard, blob released only once
-  `finalize` returns (proven via an interruption test). `RecordPhotoScreen.tsx` is the one capture
-  UI. Real-OPFS e2e proof. 161.37 KB gz. Touches FR-131-adjacent code — compliance-pass scope.
-- 3i(b) residuals: retry is the AWS SDK's own (documented, not hand-rolled);
-  `AttachmentOrphanSweepService` sweeps stale `pending` rows via a symmetric conditional claim, safe
-  against a device genuinely offline for a week (proven directly). Quota pressure deliberately
-  NOT built (no meaningful way to simulate S3 capacity refusal without new MinIO admin-API infra).
-- O-3, the offline matrix's real-stack sweep: `real-offline-matrix.spec.ts`
-  (`WERF_REAL_STACK`-gated) proves `occurred_at` survives Postgres + PowerSync + a second device's
-  fold, against the real stack, twice clean. `testing-strategy.md` §4 now carries a per-row
-  coverage column instead of reading as blanket coverage. O-6/O-7/O-8 NOT built (see the audit-row
-  owner decision above); O-4/O-5/O-9/O-10 partial; O-12/O-15 belong to phases 4/5.
+✅ **CLOSED 2026-08-14 (first session) — condensed, matches §5 items 21–30's `1b429d5`/`8dcdaf5`
+entries; full detail in git history:** back-dated-move fail-closed; 3e land hydration; 3i(c)
+attachment deferred queue (real-OPFS e2e proof, FR-131-adjacent — compliance-pass scope); 3i(b)
+residuals (AWS SDK retry, `AttachmentOrphanSweepService`, quota pressure deliberately not built);
+O-3 real-stack sweep (`real-offline-matrix.spec.ts`, `WERF_REAL_STACK`-gated, twice clean).
 
 ✅ **Compliance-pass scope through `baf4b4d` — CLOSED 2026-08-14 (third session, top-of-file
 note).** Covered `9b7fa2e..3a1993c`: back-dated-move fail-closed, land hydration, 3i(c)'s
@@ -147,10 +126,10 @@ hide a worse defect for any farm signing up post-deploy.
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-16, fourteenth session, fully uncached, after the `image/jpg` alias fix) | ✅ **116 test files / 1278 tests, 7/7 builds, 168.78 KB gz** |
+| `pnpm verify` (2026-08-17, sixteenth session, fully uncached, definition-of-done sweep) | ✅ **116 test files / 1278 tests, 7/7 builds, 168.78 KB gz** — unchanged from the fourteenth-session baseline; no regression |
 | Earlier same-session/prior baselines (attachment quota, users-column grants, auth audit) | Condensed — see item 37 |
-| `pnpm test:e2e` (2026-08-15, tenth session, default lane, after P3.14) | ✅ 31 passed / 5 skipped — light/dark capture-screen a11y includes `/animals/brands`; the 3 `WERF_REAL_STACK`-gated specs still require the final live-stack sweep |
-| `WERF_REAL_STACK=1` P2.8 e2e + deployed-connectivity (2026-08-14/15) | ✅ Both passed as of P2.8; superseded rows condensed — full detail in git history |
+| `pnpm test:e2e` default lane (2026-08-17, sixteenth session) | ✅ 31 passed / 5 skipped |
+| `WERF_REAL_STACK=1`, all 5 gated tests, each run isolated (2026-08-17, sixteenth session) | ✅ All pass — two real test-tooling defects found and fixed as `dd1fac8`; full account in §5 item 41 |
 | `compliance-checker` `45775ea..ec8336e` (2026-08-16, fourteenth session) | ✅ CLEARED, one LOW fixed same session — full account in §3 |
 | `compliance-checker` `428200a..45775ea` (2026-08-15, twelfth session) | ✅ CLEARED, no SEV-1/SEV-2/MED/LOW — full account in §3 |
 | Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
@@ -162,14 +141,10 @@ hide a worse defect for any farm signing up post-deploy.
 narrative in git history and `phase-checklists.md`.** Do not begin payroll on local adapters.
 `docs/phase-3-6-scope` still needs rebasing onto `main` before any Phase 3–6 scope-doc work.
 
-**Origin of this list:** JP asked (2026-08-14, second session) for a large implementation-and-
-closure pass over a specific punch list, in three priority bands plus a doc/quality band, with an
-owner-decision gate partway through. **Second–sixth sessions: P1/P2 through conflict audit closed
-(10.5/~21). Seventh–tenth: P3.11–P3.14 closed (14.5/~21). Eleventh: P3.15 closed (15.5/~21);
-P2.9's DB-default half remains separate.** ⭐ **Budget one
-session per item, or at most a tightly related pair (e.g. P2.9+P2.10) — do not batch a whole band.**
-Each item is independently scoped and verifiable (own tests, own `pnpm verify`, own commit) — that is
-what makes slicing safe.
+**Origin of this list, condensed — now fully closed:** JP asked (2026-08-14, second session) for a
+large implementation-and-closure pass over a specific punch list, in three priority bands plus a
+doc/quality band, sliced one item (or a tightly related pair) per session. Ran second through
+sixteenth sessions; every item below closed.
 
 ✅ 21–30. Done 2026-08-14/15 (first–fifth sessions), condensed — full detail in git history:
 back-dated-move fail-closed + land hydration + 3i(c) attachment queue + 3i(b) residuals + O-3
@@ -259,10 +234,25 @@ three stale Phase numbers in §7's original table found while editing it (bookke
 said `3`, should be `5`; auditor/SAPS said `4`, should be `6` — same renumbering `roadmap.md`
 already reflects).
 
-**41. Final — definition-of-done sweep.** `pnpm verify` fully uncached; `pnpm test:e2e` full lane
-including `WERF_REAL_STACK=1`; confirm no SEV-1/SEV-2 outstanding from any authorized pass; MED/LOW
-fixed or filed; STATUS.md and `phase-checklists.md` tell the same truthful story; do not call Phase
-3 (or this punch list) merge-ready until every clause above is evidenced, not asserted.
+✅ **41. Final — definition-of-done sweep. CLOSED, 2026-08-17 (sixteenth session).**
+`pnpm verify` fully uncached: **116 files / 1278 tests, 7/7 builds, 168.78 KB gz.**
+`pnpm test:e2e` default lane: **31 passed / 5 skipped.** `WERF_REAL_STACK=1`: all 5 gated tests
+(`deployed-connectivity` ×2, `real-offline-matrix` ×2, `real-sync-hydration` ×1) pass — run each in
+isolation with a fresh `apps/api` process between them, not as one batch; the in-memory auth
+Throttler's register-burst limit (2/min, `rate-limits.ts`) is real and correctly strict, and five
+real registrations inside one Playwright worker's run window trips it. Verified this is throttling,
+not a defect: the SAME test passes clean immediately after an API restart clears its in-memory
+bucket. ⭐ **Two real defects surfaced and fixed as `dd1fac8`, both in real-stack e2e test tooling,
+neither in application code:** `deployed-connectivity.spec.ts` sent `mimeType: 'text/plain'`,
+predating P3.16's MIME whitelist (`49677b4`) — that commit silently broke this spec's presigned-PUT
+proof, undetected because the spec is `WERF_REAL_STACK`-gated and nothing had run it since.
+`real-offline-matrix.spec.ts`'s P2.8 test looked up its test mob by `name` with no `farm_id` scope
+— itself a tenancy gap, in test tooling rather than product code — so rerunning the gated spec
+against a persistent local dev Postgres accumulated same-named mobs across different test farms and
+broke the next query's SQL string once a second row existed. Both fail-first verified, both fixed
+mechanically, confined to the two files named. `pnpm lint` clean after. No SEV-1/SEV-2 outstanding
+from any authorized compliance/review pass (§3); MED/LOW from every closed pass fixed or filed.
+STATUS.md and `phase-checklists.md` agree (Q17's reconciliation still holds; nothing drifted since).
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

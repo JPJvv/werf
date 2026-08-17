@@ -1361,6 +1361,12 @@ only; full detail is in STATUS.md §5 items 32–37, not duplicated here.**
   attachment MIME/size/per-farm-quota (migration 0030). Registration-enumeration hardening (the
   7th sub-item) is deferred to Phase 7 by owner decision, not open work — see `security.md`'s
   register-oracle row.
+☑ Q17 doc reconciliation (`f875dcc`); Q18 NFR gates implemented or honestly labelled (`1b036bf`);
+  Q19 Phase-3 real-device field-evidence needs recorded, `testing-strategy.md` §7a (`2ffb139`).
+☑ Final definition-of-done sweep (2026-08-17): `pnpm verify` 116 files/1278 tests/168.78 KB gz;
+  `pnpm test:e2e` 31/5 skipped; all 5 `WERF_REAL_STACK=1` specs pass in isolation. Two real defects
+  in real-stack e2e test tooling found and fixed (`dd1fac8`): a stale `mimeType` literal P3.16's
+  MIME whitelist broke unnoticed, and an unscoped-by-`farm_id` test lookup query.
 ```
 
 **Exit gate:** six weeks of offline captures reach another device with every `occurred_at` intact;

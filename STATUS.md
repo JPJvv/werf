@@ -8,39 +8,25 @@
 updated `main` same session — Phase 4 (crops & fields) is now open. Do not re-run P1/P2.5–P2.10,
 conflict audit, P3.11–P3.15 or P3.16.
 
-✅ **SEV-2 #2 found and fixed this session (17th), from PR #11's own CI, not a review agent:**
-`sqlite-capture-store.ts`'s `append()` buffered a capture ONLY in memory
-(`pendingAppends`) until the store's first async hydration completed; a page reload or app close in
-that window silently and permanently lost the capture — same class as the 16th session's OPFS SEV-2.
-CI's E2E lane caught it: `offline-capture.spec.ts` failed deterministically twice on GitHub's
-runner, never once locally (3/3 clean, even under matched `CI=1`/worker/order conditions) — a loaded
-CI runner widens exactly the race a fast local machine closes before it can be observed. Root cause
-confirmed from the actual Playwright trace (downloaded via a new failure-only CI artifact upload,
-`df56a5f`): the weight capture's POST was never even attempted, meaning the record never reached the
-local store at all. Fixed as `c77debb`: `append()` now also writes synchronously to a
-localStorage-backed write-ahead buffer before anything async happens; hydration recovers any entry
-`capture_records` lacks and clears the buffer once durable. New regression test abandons a store
-before its `database()` promise ever resolves, confirmed to fail against the prior code with the
-exact CI symptom and pass with the fix. CI re-run after the fix: all 3 lanes green.
+✅ **Phase 3 closed clean.** Two SEV-2s found and fixed before merge: OPFS quota loss under device
+storage pressure (16th session, `c45cd01`) and a capture buffered only in memory losing a record to
+a reload before hydration landed (17th session, `c77debb` — found from a real CI failure on
+`offline-capture.spec.ts`, not a review agent; a loaded CI runner widened a race a fast local
+machine closed before it could be observed). Whole-branch `reviewer`+`sync-auditor`+
+`compliance-checker` pass: APPROVABLE after one fix round. Full account in §3 — do not re-litigate.
 
-✅ **Phase 4 planned in detail this session (17th), before any code.** Full slice plan (4a–4e,
+🔶 **Open decision — chemical_products production data source, asked 2026-08-17 (18th session).**
+JP: not decided yet, flag and move on. Dev/test `chemical_products` rows ship as explicitly
+unverified placeholders (mirrors `regulatory_rates`); this blocks production seeding/deployment
+only, not 4a–4e development. Revisit before any production deploy that includes spray capture.
+
+✅ **Phase 4 planned in detail (17th session), before any code.** Full slice plan (4a–4e,
 schema/API/screen/projection/tests per slice) is in `phase-checklists.md`'s Phase 4 section — read
-it first, do not re-derive. Fixed a wrong FR bucketing shared by that file and `roadmap.md` (both
-together — "two incompatible phase maps" is a defect class already paid for once). Key findings:
-`chemical_products` schema + the `listVeterinaryProducts` pattern it mirrors already exist; no
-`plantings` table needed (current planting = latest `planting` event per block — a UX call, not a
-PHI dependency, since PHI reads spray history directly); harvest + the PHI guard ship as ONE slice,
-never split (roadmap had them sequential — Phase 2's treatment/sale mistake, repeated). ⛔ New
-blocker, B-1/B-2 class: production `chemical_products` needs JP to name a maintained Act 36/1947
-source; does not block writing 4a–4e.
+it first, do not re-derive. Fixed a wrong FR bucketing shared by that file and `roadmap.md` (the
+"two incompatible phase maps" defect class, already paid for once).
 
-✅ **Whole-branch review-agent pass (16th session): APPROVABLE after one fix round.**
-`compliance-checker` CLEARED outright. `sync-auditor` found two LOW (grant scoping, `47c0ffe`,
-qualifies for §6 clause 3). `reviewer` found **SEV-2 #1**: `opfs-blob-store.ts`'s `put()` let a real
-OPFS `QuotaExceededError` propagate uncaught — a photo lost under device storage pressure. Fixed as
-`c45cd01` (`retryDurably`, the same never-reject guarantee SEV-2 #2 above now also gives captures).
-A narrow follow-up pass (§6 clause 1) found nothing new: APPROVABLE. Owner-triggered
-`compliance-checker`, three earlier passes through `ec8336e`: all CLEARED. Full account in §3.
+✅ **4a·1 (FR-201, define a block) done, 18th session.** Full account in `phase-checklists.md`'s
+Phase 4 section next to the box. Next up: 4a·2 (split) or 4a·3 (record a planting).
 
 **Active branch:** `phase-4/crops-fields`, off `main` @ `6823858` (Phase 3 merge commit).
 
@@ -55,7 +41,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress**, `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev |
+| 4 — Crops & fields | 🔶 **In progress** (4a·1 ☑), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |

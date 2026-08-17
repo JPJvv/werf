@@ -306,6 +306,17 @@ const en = {
   // sheep — this counts groups as well as individual animals.
   'land.headUnit': 'head',
   'land.capacity': 'Grazing capacity (LSU, optional)',
+  // FR-201, block only: soil type is free text (descriptions vary too widely for a closed set);
+  // irrigation is a tap-not-type choice from a fixed vocabulary (@werf/core IRRIGATION_TYPES).
+  'land.soilType': 'Soil type (optional)',
+  'land.irrigation': 'Irrigation (optional)',
+  'land.irrigation.none': 'Not specified',
+  'land.irrigation.dryland': 'Dryland — no irrigation',
+  'land.irrigation.flood': 'Flood',
+  'land.irrigation.drip': 'Drip',
+  'land.irrigation.micro': 'Micro-sprinkler',
+  'land.irrigation.sprinkler': 'Sprinkler',
+  'land.irrigation.pivot': 'Centre pivot',
   'land.done': 'Done',
   // Walking a boundary by GPS (FR-150). The copy says "walk" everywhere and never "map" or
   // "survey": walking the fence is literally the action, and it is the one a farmer already does.
@@ -1148,6 +1159,15 @@ const af: Record<TranslationKey, string> = {
   'land.hectaresUnit': 'ha',
   'land.headUnit': 'stuks',
   'land.capacity': 'Weidingskapasiteit (GVE, opsioneel)',
+  'land.soilType': 'Grondtipe (opsioneel)',
+  'land.irrigation': 'Besproeiing (opsioneel)',
+  'land.irrigation.none': 'Nie gespesifiseer nie',
+  'land.irrigation.dryland': 'Droëland — geen besproeiing',
+  'land.irrigation.flood': 'Vloed',
+  'land.irrigation.drip': 'Drup',
+  'land.irrigation.micro': 'Mikrosproei',
+  'land.irrigation.sprinkler': 'Sproei',
+  'land.irrigation.pivot': 'Spilpunt',
   'land.done': 'Klaar',
   'land.walk.camp': 'Loop ’n kamp se draad',
   'land.walk.block': 'Loop ’n blok se rand',

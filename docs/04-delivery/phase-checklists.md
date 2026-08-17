@@ -1435,9 +1435,18 @@ and can ship independently (4b).
 
 ```
 Land — blocks & plantings
-□ 4a·1 FR-201 Define a block: capture screen reusing AddLandUnitScreen's `kind='block'` path —
+☑ 4a·1 FR-201 Define a block: capture screen reusing AddLandUnitScreen's `kind='block'` path —
   schema, RLS, TENANCY, geometry trigger are ALL already built (Phase 2). This is a UI/routing
-  slice, not a schema slice.
+  slice, not a schema slice. **Done (18th session).** GPS boundary is `WalkBoundaryScreen`
+  (already worked pre-Phase-4); the actual gap was soil type + irrigation, both already columns on
+  `landUnitSchema`/the server insert/both derived sync artifacts but never asked for on the form.
+  Added: soil type (free text — descriptions vary too widely for a closed set) and irrigation (a
+  new closed set, `@werf/core` `IRRIGATION_TYPES`/`irrigationTypeSchema` — FR-201 says "irrigation
+  *type*", and a gloved farmer taps a choice rather than types one; no migration, same `text`
+  column). Both gated to `term === 'block'`, mirroring the existing camp-only `capacity` gate — a
+  camp is asked neither. `HydratedLand.tsx`'s tolerant row mapper validates the closed set on
+  read (a value outside it is dropped to `null`, not force-cast) rather than trusting raw SQLite
+  text, the same "tolerant per row" discipline the file already documents for `kind`.
 □ 4a·2 FR-202 Split a block into sub-blocks without losing history — `parent_id` already exists;
   new is the split ACTION (a screen + server endpoint that creates children referencing the
   parent, closes nothing on the parent — closing loses history, which is the FR's own words).

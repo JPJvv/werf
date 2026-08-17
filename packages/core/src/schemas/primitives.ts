@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { SUPPORTED_JURISDICTIONS } from '../jurisdiction';
 import { ENTERPRISE_TYPES } from '../enterprise';
 import { USER_ROLES } from '../roles';
-import { LAND_UNIT_KINDS } from '../land';
+import { IRRIGATION_TYPES, LAND_UNIT_KINDS } from '../land';
 import { ANIMAL_SEXES, ANIMAL_STATUSES, IDENTIFIER_TYPES, SPECIES } from '../animals';
 import { EVENT_TYPES } from '../events';
 import { ATTACHMENT_STATUSES, ATTACHMENT_SUBJECT_TYPES } from '../attachments';
@@ -42,6 +42,8 @@ export const enterpriseTypeSchema = z.enum(ENTERPRISE_TYPES);
 export const userRoleSchema = z.enum(USER_ROLES);
 
 export const landUnitKindSchema = z.enum(LAND_UNIT_KINDS);
+
+export const irrigationTypeSchema = z.enum(IRRIGATION_TYPES);
 
 export const animalStatusSchema = z.enum(ANIMAL_STATUSES);
 

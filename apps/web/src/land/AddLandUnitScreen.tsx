@@ -1,6 +1,7 @@
 /**
  * Create a camp or a block (FR-150) — the first thing the guided first run asks a farmer to do,
- * and until now the one it could not actually do.
+ * and until now the one it could not actually do. A block also asks soil type and irrigation
+ * (FR-201) — a camp is not asked either, since neither question is a grazing one.
  *
  * ⭐ The word is not chosen here. `vocabularyFor()` decides whether this farm calls a piece of
  * ground a camp or a block, and the dictionary holds the word for that term — so a vineyard is
@@ -26,7 +27,13 @@
 
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { schemas, uuidv7, type EnterpriseType } from '@werf/core';
+import {
+  IRRIGATION_TYPES,
+  schemas,
+  uuidv7,
+  type EnterpriseType,
+  type IrrigationType,
+} from '@werf/core';
 import { useTranslation } from '../i18n/LocaleProvider';
 import type { TranslationKey } from '../i18n/dictionaries';
 import { vocabularyFor, type LandTerm } from '../i18n/terminology';
@@ -66,6 +73,8 @@ export function AddLandUnitScreen() {
   const [name, setName] = useState('');
   const [hectares, setHectares] = useState('');
   const [capacity, setCapacity] = useState('');
+  const [soilType, setSoilType] = useState('');
+  const [irrigation, setIrrigation] = useState<IrrigationType | ''>('');
   const [justSaved, setJustSaved] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -90,6 +99,10 @@ export function AddLandUnitScreen() {
       hectares: optionalNumber(hectares),
       // Carrying capacity is a grazing number; a block does not have one.
       carryingCapacityLsu: term === 'camp' ? optionalNumber(capacity) : null,
+      // FR-201's soil type/irrigation are a block's own questions — a camp is not asked either,
+      // mirroring capacity's camp-only gate above.
+      soilType: term === 'block' ? soilType.trim() || null : null,
+      irrigation: term === 'block' && irrigation !== '' ? irrigation : null,
     });
     // Not "saved" until the local write is durable (P1.1).
     await recordLandUnit(unit);
@@ -99,6 +112,8 @@ export function AddLandUnitScreen() {
     setName('');
     setHectares('');
     setCapacity('');
+    setSoilType('');
+    setIrrigation('');
     setSaving(false);
   };
 
@@ -195,6 +210,50 @@ export function AddLandUnitScreen() {
               className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
             />
           </div>
+        )}
+
+        {/* FR-201: soil type and irrigation are a block's own questions — a camp is not asked
+            either, mirroring the grazing-capacity gate above. */}
+        {term === 'block' && (
+          <>
+            <div className="mb-4 flex flex-col">
+              <label htmlFor="soil-type" className="mb-1 text-label uppercase text-soil-700">
+                {t('land.soilType')}
+              </label>
+              <input
+                id="soil-type"
+                name="soil-type"
+                type="text"
+                autoComplete="off"
+                value={soilType}
+                onChange={(e) => edit(setSoilType)(e.target.value)}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              />
+            </div>
+
+            <div className="mb-6 flex flex-col">
+              <label htmlFor="irrigation" className="mb-1 text-label uppercase text-soil-700">
+                {t('land.irrigation')}
+              </label>
+              <select
+                id="irrigation"
+                name="irrigation"
+                value={irrigation}
+                onChange={(e) => {
+                  setJustSaved(null);
+                  setIrrigation(e.target.value as IrrigationType | '');
+                }}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              >
+                <option value="">{t('land.irrigation.none')}</option>
+                {IRRIGATION_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {t(`land.irrigation.${type}` as const)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
 
         <button

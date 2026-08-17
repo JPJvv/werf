@@ -69,7 +69,11 @@ describe('the SQLite-backed capture store', () => {
     });
     await waitForHydration(first);
     expect(first.all()).toEqual([{ id: '1', species: 'cattle' }]);
-    expect(getItemSpy).toHaveBeenCalledTimes(1);
+    // Scoped to the LEGACY key specifically — hydration also reads the write-ahead buffer's own
+    // key (`herd:farm-a::wal`) every attempt, which is a different read for a different reason
+    // and must not be conflated with "read the legacy array again" here.
+    const legacyCalls = () => getItemSpy.mock.calls.filter(([k]) => k === 'herd:farm-a');
+    expect(legacyCalls()).toHaveLength(1);
 
     getItemSpy.mockClear();
     const second = createSqliteCaptureStore<Animal>({
@@ -80,7 +84,7 @@ describe('the SQLite-backed capture store', () => {
     await waitForHydration(second);
 
     expect(second.all()).toEqual([{ id: '1', species: 'cattle' }]);
-    expect(getItemSpy).not.toHaveBeenCalled(); // marker present — legacy storage never consulted again
+    expect(legacyCalls()).toHaveLength(0); // marker present — legacy storage never consulted again
   });
 
   it('does not lose or reorder an append() made during the hydration window', async () => {
@@ -119,6 +123,59 @@ describe('the SQLite-backed capture store', () => {
       'legacy-1',
       'live-1',
     ]);
+  });
+
+  it('recovers a capture whose store was abandoned before hydration ever resolved (the reload race)', async () => {
+    // The bug this proves: `append()` called before `resolvedDb` is set buffers into an
+    // IN-MEMORY array (`pendingAppends`). If the page reloads — or, as here, the store is simply
+    // abandoned — before hydration ever gets to flush that buffer, the capture was never durably
+    // written anywhere, despite the caller's `append()` promise having been issued. Found
+    // diagnosing a CI-only failure of `offline-capture.spec.ts` that never reproduced locally: a
+    // weight capture reached `append()` and the screen advanced, but the record never reached
+    // `capture_records`, because the store's `database()` promise had not resolved yet and the
+    // page reloaded moments later. This test never lets THAT store's `database()` resolve at
+    // all — the strongest version of "the page is gone before hydration finishes".
+    const db = createFakeLocalDatabase() as unknown as LocalDatabase;
+    // A REAL shared map, not two separate instances — this is what makes it stand in for
+    // `window.localStorage` surviving a reload rather than each store getting a fresh one.
+    const legacyStorage = memoryStorage();
+    const neverResolves = new Promise<LocalDatabase>(() => {});
+
+    const abandoned = createSqliteCaptureStore<Animal>({
+      database: () => neverResolves,
+      key: 'herd:farm-a',
+      legacyStorage,
+    });
+    const lostForever = abandoned.append({ id: 'lost-1', species: 'goat' });
+    expect(abandoned.all()).toEqual([{ id: 'lost-1', species: 'goat' }]);
+    // `lostForever` is intentionally never awaited — that promise is exactly the one this bug
+    // left permanently pending. Nothing in this test relies on it settling.
+    void lostForever;
+
+    // ── The reload. `abandoned` is simply never touched again — the same as a page navigating
+    // away. A fresh store opens the SAME database and the SAME legacyStorage. ──
+    const recovered = createSqliteCaptureStore<Animal>({
+      database: () => Promise.resolve(db),
+      key: 'herd:farm-a',
+      legacyStorage,
+    });
+    await waitForHydration(recovered);
+
+    expect(recovered.all()).toEqual([{ id: 'lost-1', species: 'goat' }]);
+
+    // The load-bearing assertion: not just back in an in-memory snapshot, but actually reached
+    // `capture_records` — the row an Outbox flush reads to send it on.
+    await Promise.resolve();
+    await Promise.resolve();
+    const rows = await db.getAll<{ payload_json: string }>(
+      'SELECT payload_json FROM capture_records WHERE store_key = ? ORDER BY seq ASC',
+      ['herd:farm-a'],
+    );
+    expect(rows.map((row) => (JSON.parse(row.payload_json) as Animal).id)).toEqual(['lost-1']);
+
+    // And the write-ahead buffer cleared itself once the record was truly durable — it is not a
+    // second permanent copy of the store's data, only a bridge across the one gap.
+    expect(legacyStorage.getItem('herd:farm-a::wal')).toBeNull();
   });
 
   it('continues appending in order after hydration completes', async () => {

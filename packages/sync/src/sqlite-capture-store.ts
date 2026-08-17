@@ -200,6 +200,58 @@ function parseLegacyArray<T>(raw: string | null): readonly T[] {
 }
 
 /**
+ * The write-ahead buffer that closes the reload-before-hydration data-loss window.
+ *
+ * ⛔ FOUND diagnosing a CI-only failure of `offline-capture.spec.ts` (never reproduced locally):
+ * `append()`'s `pendingAppends` array (below) lives ONLY in memory. Before this store's first
+ * `tryOpenAndHydrate()` succeeds — real wall-clock time, this file's own header says so — a
+ * capture sits in `pendingAppends` with nothing durable behind it yet. If the PAGE ITSELF reloads
+ * or the tab is closed in that window, `pendingAppends` dies with it: the capture was already
+ * shown as "saved" (the calling screen correctly awaits `append()`'s promise before saying so —
+ * this is not that bug), but the promise resolves only via a flush this now-gone page will never
+ * run, so `capture_records` never receives the row. Nothing about this is `offline-capture.spec.ts`
+ * being flaky; a slower device (a loaded CI runner, or a real low-end phone on a cold boot with
+ * several capture stores all racing to open the same database) makes the window wide enough to
+ * lose a genuine capture — the exact class already fixed once this phase for OPFS blob writes.
+ *
+ * The fix: every `append()` ALSO writes here, synchronously, to `legacyStorage` (localStorage,
+ * durable across a reload the way the in-memory array is not) BEFORE anything async happens.
+ * Hydration reads it back and recovers any entry `capture_records` does not yet have — the same
+ * "merge, never replace" discipline this file's header already states for `pendingAppends` itself,
+ * extended to survive the one thing `pendingAppends` cannot. An entry is removed only once its
+ * OWN `capture_records` INSERT has actually succeeded (`persist()`, below), never on send or on
+ * being read back — this is a pre-durability buffer, not a second copy of the store's data.
+ */
+// A plain suffix, not the `\u0000` separator `persist()`'s in-memory retry-map key uses below —
+// this one is an ACTUAL localStorage key, and NUL-safety in a real DOMString storage key is not a
+// guarantee worth relying on across browsers when a readable suffix costs nothing.
+const walKeyFor = (key: string): string => `${key}::wal`;
+
+function readWal<T extends { id: string }>(storage: SessionStorageLike, key: string): readonly T[] {
+  return parseLegacyArray<T>(storage.getItem(walKeyFor(key)));
+}
+
+function writeWal<T extends { id: string }>(
+  storage: SessionStorageLike,
+  key: string,
+  records: readonly T[],
+): void {
+  try {
+    if (records.length === 0) {
+      storage.removeItem(walKeyFor(key));
+    } else {
+      storage.setItem(walKeyFor(key), JSON.stringify(records));
+    }
+  } catch {
+    // Quota exceeded, or storage disabled (private browsing) — the same tolerance
+    // `capture-store.ts`'s own `persist()` already applies to the primary data. The record stays
+    // live in `snapshot` and is still on its way to `capture_records` via `pendingAppends`; this
+    // buffer is a second line of defence for the reload window, not the only one, so losing it
+    // narrows safety back to today's behaviour rather than losing the capture outright.
+  }
+}
+
+/**
  * Migrates one store_key's legacy localStorage array into `capture_records`, once. Guarded by a
  * row in `capture_migrations` whose PRESENCE is the marker — no boolean column, so "already
  * migrated" is one indexed lookup. Every migrated row AND the marker commit inside a single
@@ -293,6 +345,15 @@ export function createSqliteCaptureStore<T extends { id: string }>(
     for (const listener of listeners) listener();
   };
 
+  // Clears one record's WAL entry -- never the whole buffer, so a concurrent append for a
+  // DIFFERENT record is not discarded. Read-filter-write rather than a per-id delete because the
+  // buffer's shape is one JSON array (matching `capture-store.ts`'s own primary-data format), not
+  // a value per key.
+  const clearFromWal = (id: string): void => {
+    const remaining = readWal<T>(legacyStorage, key).filter((r) => r.id !== id);
+    writeWal(legacyStorage, key, remaining);
+  };
+
   const persist = (db: LocalDatabase, record: T, seq: number): Promise<void> =>
     persistDurably(db, `${key}\u0000${record.id}`, [
       record.id,
@@ -300,7 +361,7 @@ export function createSqliteCaptureStore<T extends { id: string }>(
       farmId,
       seq,
       JSON.stringify(record),
-    ]);
+    ]).then(() => clearFromWal(record.id));
 
   /** One open-and-hydrate attempt. Returns whether it succeeded; never throws. */
   const tryOpenAndHydrate = async (): Promise<boolean> => {
@@ -326,8 +387,27 @@ export function createSqliteCaptureStore<T extends { id: string }>(
       // many) — merge, never replace. Snap the array before iterating so an append() arriving
       // WHILE this flush is in flight is not silently included twice.
       const flushed = pendingAppends.splice(0, pendingAppends.length);
-      snapshot = [...fromDb, ...flushed.map((p) => p.record)];
+      const flushedIds = new Set(flushed.map((p) => p.record.id));
+      const fromDbIds = new Set(fromDb.map((r) => r.id));
+
+      // The write-ahead buffer's own recovery pass (see its header, above `parseLegacyArray`).
+      // An entry already in `capture_records` is a stale leftover from a WAL-clear that did not
+      // land — pruned here so the buffer self-heals rather than re-attempting a persist that has
+      // nothing left to do. An entry already in `flushed` was appended THIS session and is about
+      // to be persisted by the loop below anyway; recovering it a second time here would attempt
+      // the same INSERT twice (harmless — `INSERT OR REPLACE` — but pointless). What remains is
+      // exactly the set `pendingAppends` lost to a reload in an EARLIER session: this store's own
+      // `all()` never reflected them this boot until now, so they join `snapshot` for the first
+      // time here, oldest first (the buffer's own append order).
+      const wal = readWal<T>(legacyStorage, key);
+      const recovered = wal.filter((r) => !fromDbIds.has(r.id) && !flushedIds.has(r.id));
+      if (wal.length !== recovered.length) writeWal(legacyStorage, key, recovered);
+
+      snapshot = [...fromDb, ...recovered, ...flushed.map((p) => p.record)];
       nextSeq = fromDb.length;
+      for (const record of recovered) {
+        void persist(db, record, nextSeq++);
+      }
       for (const { record, resolve } of flushed) {
         const seq = nextSeq++;
         void persist(db, record, seq).then(resolve);
@@ -364,6 +444,9 @@ export function createSqliteCaptureStore<T extends { id: string }>(
     },
 
     append(record: T): Promise<void> {
+      // Synchronous, and FIRST — before `snapshot` even updates. This is what survives a reload
+      // that lands before hydration resolves the promise below; see the WAL header, above.
+      writeWal(legacyStorage, key, [...readWal<T>(legacyStorage, key), record]);
       snapshot = [...snapshot, record];
       notify();
       if (resolvedDb !== null) {

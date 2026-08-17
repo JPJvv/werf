@@ -28,6 +28,7 @@ import { ReportTheftScreen } from './livestock/ReportTheftScreen';
 import { LandScreen } from './land/LandScreen';
 import { AddLandUnitScreen } from './land/AddLandUnitScreen';
 import { WalkBoundaryScreen } from './land/WalkBoundaryScreen';
+import { SplitBlockScreen } from './land/SplitBlockScreen';
 import { RecordPlantingScreen } from './crops/RecordPlantingScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
 import { NotSentScreen } from './sync/NotSentScreen';
@@ -92,6 +93,7 @@ export function App() {
                 {/* Walking a fence with a GPS (FR-150). `?camp=<id>` when reached from one row of
                     the land list; the screen still lets the farmer change which one. */}
                 <Route path="land/walk" element={<WalkBoundaryScreen />} />
+                <Route path="land/split" element={<SplitBlockScreen />} />
                 <Route path="crops/plant" element={<RecordPlantingScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />

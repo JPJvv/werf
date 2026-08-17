@@ -1447,14 +1447,70 @@ Land — blocks & plantings
   camp is asked neither. `HydratedLand.tsx`'s tolerant row mapper validates the closed set on
   read (a value outside it is dropped to `null`, not force-cast) rather than trusting raw SQLite
   text, the same "tolerant per row" discipline the file already documents for `kind`.
-□ 4a·2 FR-202 Split a block into sub-blocks without losing history — `parent_id` already exists;
+☑ 4a·2 FR-202 Split a block into sub-blocks without losing history — `parent_id` already exists;
   new is the split ACTION (a screen + server endpoint that creates children referencing the
   parent, closes nothing on the parent — closing loses history, which is the FR's own words).
-  ⚠️ SAFETY EDGE, decide now: a spray recorded against the parent BEFORE the split still applies
-  to every resulting child (the same soil and plants received it) — the harvest/PHI guard (4d)
-  for a child block MUST walk `parent_id` for spray events dated before the split's own
-  `occurred_at`, not just query the child's own `land_unit_id`. Undecided until 4d, but the
-  guard's query shape has to know this on day one or splitting silently launders a PHI.
+  **Done (20th session).** No new server endpoint was needed: `POST /land-units` already accepts
+  an optional `parentId`, farm-scoped and validated (`assertOwnedReferences`'s `parentLandUnitId`
+  check), since Phase 2 — a split child is an ordinary land unit that happens to carry one, and
+  `SplitBlockScreen.tsx` (`/land/split?block=`) is a bulk-creation UI over the existing write path,
+  not a new mutation. Each child inherits the parent's `soilType`/`irrigation`/`enterpriseId`
+  automatically (no per-child override in this slice — no land-unit EDIT screen exists yet either
+  way, a pre-existing gap named rather than worked around) and asks fresh only for `code`/`name`/
+  `hectares`. Gated to `kind === 'block'` at the screen, same as `RecordPlantingScreen` — the
+  schema/service layer stays kind-agnostic, only the door is narrowed. `LandScreen.tsx` shows a
+  parent's own history (boundary, current planting) untouched after a split, and replaces its
+  "Split this block" action with "Split into: …" once children exist, so a farmer cannot
+  accidentally start a second split of ground already divided.
+  ⭐ **Found and fixed the same session: a genuinely live P2.7-class Outbox gap.** Land-unit
+  creation had never carried a `guardedBy` on its own `parentId` — harmless until this slice,
+  because nothing had ever set `parentId` on a real capture before. A split child sent ahead of a
+  parent this device has not yet had accepted would 404 for a cause a farmer cannot see; fixed by
+  guarding a land unit's own queue item on `landrow:${parentId}` when non-null, the same axis a
+  land unit's `provides: [landrow:${id}]` already sits on — proven fail-first (`Outbox.test.tsx`,
+  "holds a SPLIT CHILD behind its refused parent").
+  ✅ **The planting-inheritance question below is ANSWERED, not deferred**: YES, unbounded. New
+  shared `@werf/domain` primitive `ancestorChainOf` (`land/ancestry.ts`) walks `parent_id` to the
+  root; `LocalPlantings.tsx`'s `useCurrentPlanting`/`latestPlantingFor` now fold over a block AND
+  every ancestor's plantings, so a split vineyard block's children read as carrying the vines that
+  were always there, not "never planted". The total order `(occurred_at, id)` already makes a
+  later event win, so this costs nothing going forward — a fresh planting on the child supersedes
+  the inherited one automatically. `ancestorChainOf` is deliberately the SHARED graph walk only;
+  each caller applies its own temporal bound on top (see the next paragraph for why the PHI guard's
+  bound must differ from planting's unbounded one). Proven end-to-end in `SplitBlock.test.tsx`
+  ("a child shows the PARENT's planting as its own current one").
+  ⚠️ SAFETY EDGE, still decided but not yet BUILT (4d's job): a spray recorded against the parent
+  BEFORE the split still applies to every resulting child (the same soil and plants received it) —
+  the harvest/PHI guard (4d) for a child block MUST walk `parent_id` (now `ancestorChainOf`,
+  reused rather than re-invented) for spray events dated STRICTLY BEFORE the child's own
+  `createdAt`, unlike planting's unbounded walk — a spray filed against the parent AFTER the split
+  is not a fact about a child that by then existed as its own capturable unit, and an unbounded
+  walk would let a farmer file against "the old block" to dodge a guard the child's own history
+  would otherwise trigger. The guard's query shape now has a real, tested graph-walk to call; 4d
+  still has to add its own bound and wire it in.
+  ⭐ **ONE GENERATION ONLY, enforced by the picker, not just the LandScreen link.** An external
+  review of this slice caught that the picker's `blocks` list was every `kind === 'block'` unit,
+  with no children-check — so a farmer arriving at `/land/split` from a bookmark, the FirstRunGuide,
+  or the dropdown itself could pick an ALREADY-SPLIT block and create grandchildren, even though the
+  LandScreen link was deliberately withheld from that same block for exactly this reason. The
+  suppression was UI-only and the screen's own picker bypassed it. Fixed: `blocks` now excludes any
+  unit that is itself another unit's `parentId` (a leaf-only filter), so an already-split block is
+  unreachable from the picker too, not just from the row link — and a `?block=<already-split-id>`
+  query param no longer honours the request either, falling back to the first real leaf. This
+  matters beyond tidiness: the SAFETY EDGE above reasoned the PHI guard's bound for exactly ONE hop
+  (parent → child); a grandchild would need that bound re-derived per hop before 4d could trust it.
+  Proven fail-first (`SplitBlock.test.tsx`, "will not offer an ALREADY-SPLIT block as something to
+  split again"). If a real need for re-splitting shows up later, lift this restriction and revisit
+  4d's bound in the same change — never lift one without the other.
+  ⭐ Same review also caught the headline inheritance test (`SplitBlock.test.tsx`, "a child shows
+  the PARENT's planting as its own current one") asserting a raw count
+  (`findAllByText('Cabernet Sauvignon').length === 3`) rather than which rows carried it — a count
+  that would pass even if one child never rendered it at all, as long as the total came out right.
+  Fixed to scope the assertion to each unit's own `<li>` (parent, child A, child B individually) —
+  the same `within(row)` pattern already used elsewhere in this file. Fail-first proven separately:
+  temporarily reverting the ancestor walk to a single-id filter turned this specific test red (the
+  child row read "not planted yet"), confirming the assertion actually exercises the fold it claims
+  to.
 ☑ 4a·3 FR-203 Record a planting: crop, cultivar, planted date, density, seed source, expected
   harvest — new `planting` event payload (Zod, @werf/core), capture screen `/crops/plant`,
   server write through the shared `insertEvent`/`assertHerdScoped`-equivalent path (crop events
@@ -1491,9 +1547,8 @@ Land — blocks & plantings
   (FR-210, deferred, would need this same log). Implemented as `latestPlantingFor`/`isLater` in
   `apps/web/src/crops/LocalPlantings.tsx`, mirroring `LocalLand.tsx`'s `latestWalkFor` exactly —
   NOT in `@werf/domain`, matching that precedent (the fold lives beside the store that reads it).
-  ⛔ NAMED, NOT SOLVED: whether a split block (4a·2) inherits its parent's most recent planting —
-  the projection has no opinion yet, and 4a·2 needs to decide it the same way 4d·4 decided the
-  ancestor-spray question for PHI.
+  ✅ **RESOLVED in 4a·2 (20th session): YES, unbounded ancestor walk.** See that box for the
+  reasoning and the shared `ancestorChainOf` primitive it introduced.
 
 Reference data & spray capture
 □ 4c·1 FR-508 `chemical_products` migration + RLS (world-readable, `reference-sync`, filtered by

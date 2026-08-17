@@ -701,6 +701,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // `animalrow:`). Refused or held, everything naming this camp must wait rather than
           // each earning its own 404 for the same one cause.
           provides: [`landrow:${unit.id}`],
+          // ⭐ FR-202 (split, 4a·2): a child created by a split names its PARENT camp/block via
+          // `parentId`, and that reference is checked by the server the same way any other FK is
+          // (`assertOwnedReferences`) — a child sent ahead of a parent this device has not yet had
+          // accepted 404s for a cause a farmer cannot see. `landUnits` is the one store where a row
+          // can BOTH provide a `landrow:` and be guarded by one — the split screen never creates a
+          // parent and a child in the same save, so this cannot cycle on itself.
+          guardedBy: unit.parentId === null ? [] : [`landrow:${unit.parentId}`],
         });
       }
     }

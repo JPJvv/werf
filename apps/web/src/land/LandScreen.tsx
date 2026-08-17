@@ -23,7 +23,7 @@ import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology'
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
 import { useCurrentPlanting } from '../crops/LocalPlantings';
-import { useCurrentBoundary, useEffectiveLandUnits } from './LocalLand';
+import { useCurrentBoundary, useEffectiveLandUnits, type StoredLandUnit } from './LocalLand';
 import { landKey } from './AddLandUnitScreen';
 
 export function LandScreen() {
@@ -39,6 +39,22 @@ export function LandScreen() {
     () => vocabularyFor((activeFarm?.enterpriseTypes as EnterpriseType[]) ?? []).land,
     [activeFarm],
   );
+
+  // FR-202: which blocks a split has already produced children for. Derived from the graph itself
+  // rather than a status column — the same "project it, don't store it" discipline every other
+  // aggregate here follows. A block with children is shown what it split into rather than offered
+  // "Split this block" again; the parent's own history (boundary, plantings) stays fully visible,
+  // it just stops being the door TO a new split.
+  const childrenOf = useMemo(() => {
+    const map = new Map<string, StoredLandUnit[]>();
+    for (const unit of units) {
+      if (unit.parentId === null) continue;
+      const siblings = map.get(unit.parentId) ?? [];
+      siblings.push(unit);
+      map.set(unit.parentId, siblings);
+    }
+    return map;
+  }, [units]);
 
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
@@ -97,6 +113,10 @@ export function LandScreen() {
                 {/* A camp is never planted (FR-203) — gated on the unit's own `kind`, not the farm's
                     vocabulary, so a mixed farm's camps still show only the boundary row above. */}
                 {unit.kind === 'block' && <PlantingRow landUnitId={unit.id} />}
+                {/* FR-202: splitting is a block action, mirroring the planting gate above. */}
+                {unit.kind === 'block' && (
+                  <SplitRow landUnitId={unit.id} childUnits={childrenOf.get(unit.id) ?? []} />
+                )}
               </li>
             );
           })}
@@ -190,6 +210,42 @@ function PlantingRow({ landUnitId }: { landUnitId: string }) {
         className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
       >
         {t('crops.recordPlanting')}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * FR-202: either the way in to splitting a block, or — once it has been — what it was split into.
+ *
+ * A parent is never closed by a split, so its own boundary/planting rows above stay exactly as
+ * useful as they were; this row only stops offering "Split this block" again once children exist,
+ * so a farmer does not accidentally start a second split of ground already divided.
+ */
+function SplitRow({
+  landUnitId,
+  childUnits,
+}: {
+  landUnitId: string;
+  childUnits: readonly StoredLandUnit[];
+}) {
+  const { t } = useTranslation();
+
+  if (childUnits.length > 0) {
+    return (
+      <p className="text-body text-soil-700">
+        {t('land.split.into')} {childUnits.map((c) => c.code).join(', ')}
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Link
+        to={`/land/split?block=${landUnitId}`}
+        className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
+      >
+        {t('land.split.action')}
       </Link>
     </div>
   );

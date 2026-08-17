@@ -2301,6 +2301,7 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
   const MOVE2_ID = '0190f3a0-0000-7000-8000-0000000000fb';
   const THEFT_ID = '0190f3a0-0000-7000-8000-0000000000fc';
   const PLANTING_ID = '0190f3a0-0000-7000-8000-0000000000fd';
+  const CHILD_BLOCK_ID = '0190f3a0-0000-7000-8000-0000000000fe';
 
   function seedLandUnit(): void {
     window.localStorage.setItem(
@@ -2398,6 +2399,60 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(paths.some((p) => p.endsWith('/crops/plantings'))).toBe(false);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(PLANTING_ID);
+  });
+
+  it('⭐ holds a SPLIT CHILD behind its refused parent (FR-202, 4a·2) — a land unit can both provide and be guarded by a landrow:', async () => {
+    cachedSession();
+    // The parent AND its child are both still pending — the ordinary case for a split done and
+    // synced in one offline session. Seeded directly (not via `seedLandUnit`) because this is the
+    // one land-unit shape with a non-null `parentId`.
+    window.localStorage.setItem(
+      `werf-land:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LAND_UNIT_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: null,
+          kind: 'block',
+          code: 'B12',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+        {
+          id: CHILD_BLOCK_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: LAND_UNIT_ID,
+          kind: 'block',
+          code: 'B12-A',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    // Only the PARENT was ever attempted — the child, held behind it, never reached `fetch` at all,
+    // which is what proves it was held rather than sent-and-independently-refused.
+    const landUnitPosts = postedPaths(fetchMock).filter((p) => p.endsWith('/land-units'));
+    expect(landUnitPosts).toHaveLength(1);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(CHILD_BLOCK_ID);
   });
 
   it('⭐ holds a mob created in a refused camp — the conditional guard on an optional field', async () => {

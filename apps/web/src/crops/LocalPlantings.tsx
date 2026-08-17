@@ -19,11 +19,12 @@ import {
   type ReactNode,
 } from 'react';
 import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
-import { recordPlanting } from '@werf/domain';
+import { ancestorChainOf, recordPlanting } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
 import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 import { mergeById } from '../livestock/HydratedLivestock';
+import { useEffectiveLandUnits } from '../land/LocalLand';
 import { useHydratedPlantings } from './HydratedCrops';
 
 /**
@@ -178,20 +179,31 @@ export function useEffectivePlantings(): readonly StoredPlanting[] {
  *
  * Reads `useEffectivePlantings` (local+hydrated merged), so a planting another device recorded is
  * not invisible here.
+ *
+ * ⭐ FR-202 (split, 4a·2): also walks `parent_id` via `@werf/domain`'s `ancestorChainOf`, UNBOUNDED —
+ * a block split off another still carries whatever was last planted on the ground it came from,
+ * because the split closes nothing (`land/split`'s own module note). See `ancestry.ts`'s header for
+ * why this projection is unbounded while the future PHI guard's ancestor walk (4d·4) will not be.
  */
 export function useCurrentPlanting(landUnitId: string): StoredPlanting | undefined {
   const plantings = useEffectivePlantings();
-  return useMemo(() => latestPlantingFor(plantings, landUnitId), [plantings, landUnitId]);
+  const units = useEffectiveLandUnits();
+  return useMemo(
+    () => latestPlantingFor(plantings, ancestorChainOf(landUnitId, units)),
+    [plantings, units, landUnitId],
+  );
 }
 
-/** The latest planting for a block by the total order, or undefined when it has never been planted. */
+/** The latest planting across a set of land units (a block and, per FR-202, its ancestors) by the
+ *  total order, or undefined when none of them has ever been planted. */
 export function latestPlantingFor(
   plantings: readonly StoredPlanting[],
-  landUnitId: string,
+  landUnitIds: readonly string[],
 ): StoredPlanting | undefined {
+  const ids = new Set(landUnitIds);
   let latest: StoredPlanting | undefined;
   for (const planting of plantings) {
-    if (planting.landUnitId !== landUnitId) continue;
+    if (!ids.has(planting.landUnitId)) continue;
     if (latest === undefined || isLater(planting, latest)) latest = planting;
   }
   return latest;

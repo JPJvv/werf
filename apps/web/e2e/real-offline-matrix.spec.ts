@@ -449,7 +449,7 @@ test.describe('offline matrix O-3 — six weeks offline, sync, occurred_at intac
         'werf',
         '-tA',
         '-c',
-        `SELECT id FROM mobs WHERE name = 'O-3b Mob' AND deleted_at IS NULL;`,
+        `SELECT id FROM mobs WHERE name = 'O-3b Mob' AND farm_id = '${deviceA.activeFarmId}' AND deleted_at IS NULL;`,
       ],
       { encoding: 'utf8' },
     ).trim();

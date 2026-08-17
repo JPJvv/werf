@@ -259,7 +259,7 @@ test.describe('deployed-browser connectivity — real CSP, real PowerSync, real 
         farmId,
         subjectType: 'animal',
         subjectId: animalId,
-        mimeType: 'text/plain',
+        mimeType: 'image/png',
         sizeBytes: bytes.length,
         checksum: checksumHex,
         occurredAt: new Date().toISOString(),
@@ -277,7 +277,7 @@ test.describe('deployed-browser connectivity — real CSP, real PowerSync, real 
           const res = await fetch(url as string, {
             method: 'PUT',
             headers: {
-              'Content-Type': 'text/plain',
+              'Content-Type': 'image/png',
               'x-amz-checksum-sha256': checksumHeader as string,
             },
             body: body as string,

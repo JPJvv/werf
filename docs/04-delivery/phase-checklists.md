@@ -1551,25 +1551,55 @@ Land — blocks & plantings
   reasoning and the shared `ancestorChainOf` primitive it introduced.
 
 Reference data & spray capture
-□ 4c·1 FR-508 `chemical_products` migration + RLS (world-readable, `reference-sync`, filtered by
-  jurisdiction, NOT farm-scoped — same class as `veterinary_products`/`species_gestation`) +
-  TENANCY classification `reference-sync` (`database-schema.md:740` already names it) + seed rows
-  marked EXPLICITLY unverified for dev/test (see the ⛔ blocker below — mirrors `regulatory_rates`
-  dev placeholders).
-□ 4c·2 `ReferenceService.listChemicalProducts` — copy `listVeterinaryProducts` exactly, jurisdiction
-  filter, `onDay` optional, every version when omitted. `GET /reference/chemical-products`.
-  Client `createReferenceCache` sibling entry (same cache primitive Phase 2 already built).
-□ 4c·3 FR-204 Record a spray to GlobalGAP standard: registered product, active ingredient(s),
-  rate, water volume, operator, equipment, weather at application, target pest — capture screen
-  `/crops/spray`, `phiDays`/`earliestHarvestDate` resolved from the chemical_products registration
-  IN FORCE ON THE SPRAY DAY and stored ON THE EVENT (never recomputed on read — ADR-0005). What is
-  STORED is a `productId`, never a bare PHI number — the server resolves it, exactly as treatment
-  never stores a bare withdrawal period.
-□ 4c·4 FR-211 🇿🇦 Auditor-ready spray history report per block, per season — a read endpoint/screen
-  over `spray` events filtered by `land_unit_id` + season, NOT the full GlobalGAP checklist engine
-  (control points, non-conformances, corrective actions — that is `legal-compliance.md` §4.1's
-  Phase 6 build requirement, named here so it is not smuggled in). This is one report, not an
-  audit product.
+☑ 4c·1 FR-508 `chemical_products` migration (0032) + RLS (world-readable, `reference` classified
+  `reference-jurisdiction`, NOT farm-scoped — same class as `veterinary_products`) + TENANCY entry
+  + seed rows marked `(synthetic)` for dev/test (mirrors `VET_PRODUCTS`' discipline — see the ⛔
+  blocker below). **Done (21st session).** `registration_number` is NOT NULL here, unlike
+  `veterinary_products`' nullable one — every real Act 36/1947 registration carries one
+  (`chemical.ts`'s own module note). Both derived artifacts (`generate:schema`/`generate:sync-rules`)
+  regenerated in the same commit; `packages/db/src/schema/tables.ts`'s hand-maintained MODULE list
+  (not the table list, which is derived) needed the new `chemical.ts` import added by hand — missing
+  it fails `tenancy.spec.ts`'s classification-vocabulary test, the fail-first signal that caught it.
+  ⭐ Also found and fixed: `packages/db/src/testing.ts`'s real-Postgres test-reset `TRUNCATE` list
+  predates this table and is hand-maintained too — a fresh `chemical_products` row leaked across
+  tests (accumulating rows) until added, caught by the reference-register integration tests going
+  red on the second test in the file, not the first.
+☑ 4c·2 `ReferenceService.listChemicalProducts` — copies `listVeterinaryProducts` exactly (P1.3:
+  every version when `onDay` omitted), `GET /reference/chemical-products`. Client
+  `LocalChemicalProducts.tsx` is a `createReferenceCache` sibling to `LocalVetProducts.tsx`. **Done
+  (21st session).**
+☑ 4c·3 FR-204 Record a spray to GlobalGAP standard — `/crops/spray`. **Done (21st session).**
+  `phiDays`/`earliestHarvestDate` resolved from the chemical_products registration IN FORCE ON THE
+  SPRAY DAY and stored ON THE EVENT (ADR-0005); `productId` is what's stored, never a bare PHI
+  number (`crops.service.ts`'s `resolveChemicalProduct`, mirroring `resolveVetProduct`). ⭐
+  `sprayPayloadSchema` lives in the payload schema (mirroring `dosingFields`'s placement), but
+  `recordSprayRequestSchema` (the WIRE contract) enumerates fields one at a time rather than
+  spreading the payload shape — unlike `recordPlantingRequestSchema`/`recordFertiliserRequestSchema`
+  (no compliance gate, so the spread is safe there), spreading here would let a client dictate
+  `activeIngredients`/`phiDays` merely because the payload schema happens to carry those keys. ⭐ A
+  null `phi_days` is OMITTED from the event, never stored as 0 — a registered zero-day PHI and "no
+  PHI on record" are different facts, the same P1.3 lesson `attachDosing`'s `meatWithdrawalDays`
+  omission already proved for a zero-withdrawal vaccine; `earliestHarvestDateFor` (mirrors
+  `withholdUntil`) is the shared pure fn both the server and `RecordSprayScreen`'s PHI preview call.
+  ⭐ `LocalSprays.tsx` does NOT call the `@werf/domain` `recordSpray` builder locally, unlike
+  planting/fertiliser — that builder needs the resolved PHI as an INPUT this device does not have,
+  mirroring `LocalHealth.tsx`'s identical choice for treatment/vaccination/dip. `StoredSpray` carries
+  optional `activeIngredients`/`phiDays`/`earliestHarvestDate` fields a purely local capture never
+  sets, populated only once this device's own write round-trips down as a hydrated echo with the
+  same id (`HydratedSprays.tsx`, `mergeByIdPreferHydrated` — hydrated wins on a shared id, the same
+  choice `HydratedLivestock.tsx` makes for a move).
+☑ 4c·4 FR-211 🇿🇦 Auditor-ready spray history — `CropsService.listSprayHistory` +
+  `GET /crops/sprays`, filtered by block and/or a `from`/`to` date range on the spray day. **Done
+  (21st session).** No "season" filter: grepped first, and this codebase's one existing season
+  concept (`useSeasonRainfall`, calendar-year-to-date) is a rainfall-specific convenience, not a
+  general crop-season boundary (a real season varies by crop/region — FR-210's deferred rotation
+  work would need to name one properly). `SpraysScreen.tsx` (the home grid's `Sprays` tile
+  destination, wired for real from this slice) is built ENTIRELY from local cached data
+  (`useEffectiveSprays()` joined against the local chemical-product reference cache for the product
+  name) rather than calling the server report endpoint — "auditor-ready" does not mean "online-only"
+  in this product, and the server endpoint exists for future non-device consumers (a printed pack, a
+  desktop export). Not the GlobalGAP checklist engine (control points, non-conformances, evidence
+  completeness) — that is `legal-compliance.md` §4.1's Phase 6 build requirement.
 
 PHI guard + harvest — ONE slice, never split (see the note above)
 □ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
@@ -1605,9 +1635,15 @@ PHI guard + harvest — ONE slice, never split (see the note above)
   literal in the domain function.
 
 Fertiliser (no compliance gate — ships independently of 4c/4d)
-□ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, method
-  field distinguishes fertigation from broadcast/band, capture screen `/crops/fertilise`. Feeds
-  the GlobalGAP evidence requirement (§4.1) as a record, nothing more, in this phase.
+☑ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, `method`
+  field (broadcast/band/fertigation/foliar) distinguishes fertigation from the rest, capture screen
+  `/crops/fertilise`. **Done (21st session), committed and verified before 4c started.** Filed
+  under `FARM_SCOPED_EVENT_TYPES` the identical way `planting` is (a block's `enterpriseId` is
+  nullable and 4a·1 never asks for one at block creation; a second filing strategy for the same
+  "fact about the ground" family was considered and rejected — one rule, named once). `rate` mirrors
+  `planting.density`'s generic `{ value, unit }` shape (kg/ha broadcast, L/ha fertigation, no closed
+  unit set). No reference product, no compliance gate, no PHI — `CropsService.recordFertiliser`
+  resolves nothing server-side beyond the ordinary tenancy/FK checks every capture gets.
 
 Grazing, feed & inventory — the one slice with real new schema
 □ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — a PURE projection over existing
@@ -1645,6 +1681,11 @@ Crop-facing home metrics (FR-017's discipline: carry a number ONLY if it is true
   currently inside an active pre-harvest interval, computed directly from spray events +
   chemical_products.phi_days, the exact "N withholding" precedent the Health tile already set
   (never the "N due" mistake that tile avoided for want of a schedule this domain doesn't have).
+  **Deliberately deferred past 4c (21st session)**: the tile now routes to a real `SpraysScreen`
+  (4c·4) instead of the placeholder, but still carries no badge — this line sits under its own
+  heading, not under 4b/4c/4d, and a "within PHI" badge is the kind of thing worth building
+  alongside the 4d harvest guard that gives the same computation a second, safety-critical consumer,
+  rather than twice.
 □ Crop home metrics are derived from local cached data and never require signal to render.
 
 ⛔ External blocker — production data source, same class as Phase 5's B-1/B-2. Do not seed

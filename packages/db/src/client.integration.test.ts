@@ -13,7 +13,9 @@ import { eq } from 'drizzle-orm';
 import { startWerfTestDatabase, type WerfTestDatabase } from './testing';
 import { createAppDb, createElevatedDb, type AppDb, type ElevatedDb } from './client';
 import {
+  attachments,
   businesses,
+  conflictReviews,
   enterprises,
   farmUsers,
   farms,
@@ -206,6 +208,100 @@ describe('RLS tenancy boundary', () => {
           expiresAt: new Date(Date.now() + 5 * 60 * 1000),
         }),
       ).rejects.toThrow(/webauthn_challenges_ceremony_v1|violates check constraint/i);
+    });
+  });
+
+  describe('conflict_reviews column grants (0031)', () => {
+    it('refuses to rewrite the evidence columns through the scoped connection', async () => {
+      const [row] = await elevated.db
+        .insert(conflictReviews)
+        .values({
+          farmId: fx.farmAId,
+          conflictKey: `test:${crypto.randomUUID()}`,
+          kind: 'field_lww',
+          subjectId: crypto.randomUUID(),
+          factAEventId: crypto.randomUUID(),
+          factBEventId: crypto.randomUUID(),
+          rule: 'later occurred_at wins',
+        })
+        .returning();
+
+      // `recordConflict` writes these once, at creation — never again. Without 0031's REVOKE,
+      // `werf_app` could rewrite "which rule decided" after the fact through this exact shape.
+      await expect(
+        app.asUser(fx.userAId, (tx) =>
+          tx
+            .update(conflictReviews)
+            .set({ rule: 'a different story' })
+            .where(eq(conflictReviews.id, row!.id)),
+        ),
+      ).rejects.toThrow(/permission denied/i);
+
+      // Column-level, not table-wide: the review workflow's own columns stay writable — the
+      // full set `markReviewed` actually sets, satisfying `conflict_reviews_review_state_check`.
+      await app.asUser(fx.userAId, (tx) =>
+        tx
+          .update(conflictReviews)
+          .set({
+            status: 'reviewed',
+            reviewNote: 'checked',
+            reviewedBy: fx.userAId,
+            reviewedAt: new Date(),
+          })
+          .where(eq(conflictReviews.id, row!.id)),
+      );
+      const [after] = await elevated.db
+        .select({ status: conflictReviews.status })
+        .from(conflictReviews)
+        .where(eq(conflictReviews.id, row!.id));
+      expect(after?.status).toBe('reviewed');
+    });
+  });
+
+  describe('attachments column grants (0031)', () => {
+    it('refuses to rewrite object_key or checksum through the scoped connection', async () => {
+      const [row] = await elevated.db
+        .insert(attachments)
+        .values({
+          farmId: fx.farmAId,
+          subjectType: 'animal',
+          subjectId: crypto.randomUUID(),
+          mimeType: 'image/jpeg',
+          sizeBytes: 1024,
+          checksum: 'a'.repeat(64),
+          occurredAt: new Date(),
+        })
+        .returning();
+
+      // `finalizeAttachment` re-derives these from a real headObject call and never trusts a
+      // client claim — a column grant that let a later scoped UPDATE overwrite them would reopen
+      // exactly what that check exists to close.
+      await expect(
+        app.asUser(fx.userAId, (tx) =>
+          tx
+            .update(attachments)
+            .set({ objectKey: 'attacker-chosen-key' })
+            .where(eq(attachments.id, row!.id)),
+        ),
+      ).rejects.toThrow(/permission denied/i);
+      await expect(
+        app.asUser(fx.userAId, (tx) =>
+          tx
+            .update(attachments)
+            .set({ checksum: 'b'.repeat(64) })
+            .where(eq(attachments.id, row!.id)),
+        ),
+      ).rejects.toThrow(/permission denied/i);
+
+      // Column-level, not table-wide: the status transition real code performs stays writable.
+      await app.asUser(fx.userAId, (tx) =>
+        tx.update(attachments).set({ status: 'finalised' }).where(eq(attachments.id, row!.id)),
+      );
+      const [after] = await elevated.db
+        .select({ status: attachments.status })
+        .from(attachments)
+        .where(eq(attachments.id, row!.id));
+      expect(after?.status).toBe('finalised');
     });
   });
 });

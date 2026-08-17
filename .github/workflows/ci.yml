@@ -79,6 +79,18 @@ jobs:
       - name: E2E and accessibility
         run: pnpm test:e2e
 
+      # A red run with no trace is a red run diagnosed by guesswork (playwright.config.ts's own
+      # A8/A9 lesson). `retain-on-failure` already writes the trace/screenshot locally; nothing
+      # was ever uploading them off the runner, so every CI-only failure had to be reproduced
+      # blind. Failure-only and 7-day retention: this is a debugging aid, not an audit trail.
+      - name: Upload Playwright trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
   dependency-audit:
     name: Dependency audit (NFR-208)
     runs-on: ubuntu-latest

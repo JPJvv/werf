@@ -18,6 +18,8 @@ import { LocalHarvestProvider } from '../crops/LocalHarvest';
 import { HydratedHarvestProvider } from '../crops/HydratedHarvest';
 import { LocalPhiRegisterProvider } from '../crops/LocalPhiRegister';
 import { LocalChemicalProductsProvider } from '../crops/LocalChemicalProducts';
+import { LocalInventoryProvider } from '../inventory/LocalInventory';
+import { HydratedInventoryProvider } from '../inventory/HydratedInventory';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
 import { LocalTalliesProvider } from '../livestock/LocalTallies';
@@ -82,6 +84,12 @@ const CAPTURE_STORES = [
   // `HydratedSpraysProvider` above it: the hydrated copy WINS on a shared id (`useEffectiveHarvests`'s
   // own doc) because it carries the server-resolved `phiOverride.by` a local capture never can.
   HydratedHarvestProvider,
+  // Phase 4e, FR-501: items, lots and stock movements. Composes three stores in one provider (see
+  // its own header for why) — items/lots have no server-resolved field a local capture lacks, so
+  // `mergeById` (local-wins) is the right merge, the identical posture `HydratedFertiliserProvider`
+  // takes for the same reason.
+  LocalInventoryProvider,
+  HydratedInventoryProvider,
   // Not a capture store — an INBOUND cache, the identical kind of thing as `LocalResidueRegisterProvider`
   // below, one food-safety register over: the cross-device PHI race (4d·6), reached from `/attention`
   // rather than a tile — the grid's tile set is fixed and generated from the enterprise types.

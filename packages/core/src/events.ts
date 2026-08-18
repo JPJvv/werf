@@ -62,6 +62,12 @@ export const EVENT_TYPES = [
   // one next month. `land_units.boundary` is the denormalised CURRENT value of this log — the same
   // relationship `mobs.head_count` has to `tally`, and `animals.land_unit_id` has to `move`.
   'boundary_walk',
+  // A change to an inventory lot's quantity on hand, and why (Phase 4e, FR-501). Appended last
+  // for the same `ALTER TYPE … ADD VALUE` reason as the three above: stock (chemicals, fertiliser,
+  // feed, medicine) was not foreseen when the enum was created. The same relationship `tally` has
+  // to `mobs.head_count` — the quantity is a PROJECTION of this append-only log, never an edited
+  // column (`inventory_lots.quantity_on_hand`).
+  'inventory_movement',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -115,6 +121,12 @@ export const FARM_SCOPED_EVENT_TYPES = [
   // the ACT the PHI guard judges, the same way `spray` is the guard's EVIDENCE; both read a block's
   // own history directly by `land_unit_id`, so both file the identical way for the identical reason.
   'harvest',
+  // Phase 4e, FR-501: a stock movement belongs to the SHED, not a herd. A farm's chemical/
+  // fertiliser/feed/medicine lots are not owned by one enterprise — a mixed farm sprays chemicals
+  // on the crop side and doses medicine on the livestock side out of the same store room — so
+  // filing a movement under one enterprise would hide it from the other, the identical reasoning
+  // `rainfall` and `boundary_walk` already establish for a farm-level fact.
+  'inventory_movement',
 ] as const satisfies readonly EventType[];
 export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
 

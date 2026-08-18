@@ -92,6 +92,7 @@ export function recordMove(input: MoveInput): MoveCapture {
     landUnitId: toLandUnitId,
     employeeId: null,
     batchId: input.batchId ?? null,
+    inventoryLotId: null,
     locationGeojson: input.locationGeojson ?? null,
     notes: input.notes ?? null,
     createdBy: input.createdBy ?? null,

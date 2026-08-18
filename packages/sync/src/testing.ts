@@ -88,7 +88,9 @@ export type CanonicalTable =
   | 'theft_incidents'
   | 'theft_incident_animals'
   | 'branding_registers'
-  | 'land_units';
+  | 'land_units'
+  | 'inventory_items'
+  | 'inventory_lots';
 
 export interface FakeLocalDatabase {
   init(): Promise<void>;
@@ -234,6 +236,8 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
     theft_incident_animals: new Map(),
     branding_registers: new Map(),
     land_units: new Map(),
+    inventory_items: new Map(),
+    inventory_lots: new Map(),
   };
   const canonicalTable = (table: CanonicalTable) => canonicalTables[table];
   const watchers: CanonicalWatcher[] = [];
@@ -368,7 +372,11 @@ export function createFakeLocalDatabase(): FakeLocalDatabase {
                     ? 'branding_registers'
                     : sql.includes('FROM land_units')
                       ? 'land_units'
-                      : undefined;
+                      : sql.includes('FROM inventory_items')
+                        ? 'inventory_items'
+                        : sql.includes('FROM inventory_lots')
+                          ? 'inventory_lots'
+                          : undefined;
       if (table === undefined) {
         throw new Error(`fake database: unrecognized watch() — ${sql}`);
       }

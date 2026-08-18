@@ -1703,23 +1703,42 @@ Fertiliser (no compliance gate — ships independently of 4c/4d)
   resolves nothing server-side beyond the ordinary tenancy/FK checks every capture gets.
 
 Grazing, feed & inventory — the one slice with real new schema
-□ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — a PURE projection over existing
-  `move` + `boundary_walk` events (no new event type): days between arrival and departure ×
-  hectares (from the boundary projection, 4a is not needed for this — land_units already has it)
-  gives grazing days; LSU-on-camp over that window gives stocking rate. Table-driven domain fn,
-  no I/O, same discipline as `averageDailyGain`.
+⛔ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — BLOCKED, not merely unbuilt.
+  This item's own text said "a PURE projection over existing `move` + `boundary_walk` events" and
+  that premise does not hold: `recordMove` (`@werf/domain/livestock/movement.ts`) requires an
+  `animalId` and mob-only stock (FR-102's own words — "the model most South African smallholders
+  actually run") has NO capture path that moves a mob between camps at all — `mobs.land_unit_id`
+  is written once, at `recordMob`, and never again. So "grazing days per camp" is computable today
+  only for individually-tracked animals, the INVERSE of the product's stated primary user. Closing
+  this needs an owner decision, not a design choice made silently: does FR-151 get a NEW mob-move
+  capture (reusing `type: 'move'` with `animalId: null`, verified in the 23rd session not to
+  poison `positionBefore`'s existing per-animal queries — they filter by `animalId`, so a null one
+  is invisible to them, not corrupting) — asked, not yet answered.
 □ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — the rest-period NUMBER is
   agronomic, not legal: it does not belong in `regulatory_rates` (that seam is for LAW, not
   veld-management best practice — ADR-0006's own boundary). It is a per-camp or per-farm SETTING
   the owner sets, never a literal in code, for the same "never hardcode a number the farmer might
   reasonably disagree with" reasoning `CLAUDE.md` applies to regulated numbers, extended here on
-  product-design grounds rather than legal ones.
-□ 4e·3 FR-501 `inventory_items`/`inventory_lots` migration + RLS + TENANCY (farm-scoped, new
-  schema — chemicals, fertiliser, feed, medicine; batch, expiry, location). ⭐ Stock ON HAND is a
-  PROJECTION over an append-only movement log (received/consumed/adjusted/counted), the identical
-  pattern `mobs.head_count` already proved for exactly the same reason: two people recording
-  consumption on two phones in a dead zone must COMPOSE, and a stock count is an ABSOLUTE THAT
-  RESETS, never an edited field. Do not build a directly-edited `quantity_on_hand` column.
+  product-design grounds rather than legal ones. Blocked on the same 4e·1 mob-move decision for the
+  camp-departure half of "premature return".
+☑ 4e·3 FR-501 `inventory_items`/`inventory_lots` (migration 0033) + RLS + TENANCY (farm-scoped;
+  chemicals, fertiliser, feed, medicine; batch, expiry, location) — closed 23rd session. Stock ON
+  HAND is a PROJECTION over an append-only `inventory_movement` log (received/consumed/counted,
+  `events.inventory_lot_id`), the identical pattern `mobs.head_count` proved for exactly the same
+  reason: two people recording consumption on two phones in a dead zone must COMPOSE, and a stock
+  count is an ABSOLUTE THAT RESETS, never an edited field. No directly-edited `quantity_on_hand`
+  column. ⭐ Deliberately NOT cloned from `recordMobTally`: a `consumed` movement larger than the
+  recorded quantity is RECORDED, never refused — the spray happened whether or not the shed card
+  was accurate; the domain floors at zero and reports a `shortfall` a caller may act on. Client
+  route shipped with it (a server capability with no route is the half-built shape CLAUDE.md rules
+  against): `/inventory` (stock list, quantity re-projected client-side from local+hydrated
+  movements — never trusted off either copy of the lot row, same reasoning) and
+  `/inventory/receive`, reached from a secondary Home link (no tile — belongs to no one enterprise,
+  the same posture rainfall's link takes). `adjusted` (a free-sign correction reason) and lot
+  transfers are NOT built — YAGNI, nothing in this session's scope needed them; add additively.
+  `'adjusted'` deferred but `'counted'`/`'received'`/`'consumed'` are real, tested, and wired
+  through the outbox (three FK-only tiers — item → lot → movement — no `needsHead`-shaped
+  arithmetic guard needed, because a shortfall is never refused).
 □ 4e·4 FR-502 Inventory auto-decrements on use — spray (4c) and fertiliser (4b) capture gain an
   OPTIONAL inventory-lot reference (additive to the schema already shipped in 4b/4c, no rework):
   a farm without inventory tracking on can still spray/fertilise; one that does emits a

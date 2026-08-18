@@ -83,6 +83,8 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
     subject_type: 'animal',
     subject_id: 'animal-b',
   },
+  inventory_items: { id: 'item-b', farm_id: FARM_B },
+  inventory_lots: { id: 'lot-b', farm_id: FARM_B, inventory_item_id: 'item-b' },
 };
 
 const userAFarms = [FARM_A];

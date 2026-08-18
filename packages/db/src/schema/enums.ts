@@ -13,6 +13,7 @@ import {
   ENTERPRISE_TYPES,
   EVENT_TYPES,
   IDENTIFIER_TYPES,
+  INVENTORY_ITEM_CATEGORIES,
   LAND_UNIT_KINDS,
   USER_ROLES,
 } from '@werf/core';
@@ -29,3 +30,7 @@ export const attachmentSubjectTypeEnum = pgEnum(
   ATTACHMENT_SUBJECT_TYPES,
 );
 export const attachmentStatusEnum = pgEnum('attachment_status', ATTACHMENT_STATUSES);
+export const inventoryItemCategoryEnum = pgEnum(
+  'inventory_item_category',
+  INVENTORY_ITEM_CATEGORIES,
+);

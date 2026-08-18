@@ -6,6 +6,7 @@ export * from './land';
 export * from './branding';
 export * from './animals';
 export * from './events';
+export * from './inventory';
 export * from './veterinary';
 export * from './chemical';
 export * from './breeding';

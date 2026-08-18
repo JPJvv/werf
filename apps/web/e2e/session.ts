@@ -78,6 +78,10 @@ export const FIXTURE = {
   chemicalProductId: '0190f3a0-0000-7000-8000-0000000000d2',
   sprayId: '0190f3a0-0000-7000-8000-0000000000f3',
   overriddenHarvestId: '0190f3a0-0000-7000-8000-0000000000f4',
+  // Phase 4e (FR-501): a received lot, so `/inventory` renders a row rather than its empty state.
+  inventoryItemId: '0190f3a0-0000-7000-8000-0000000000g1',
+  inventoryLotId: '0190f3a0-0000-7000-8000-0000000000g2',
+  inventoryMovementId: '0190f3a0-0000-7000-8000-0000000000g3',
 } as const;
 
 /** localStorage entries that put a farm's worth of stock on the device. */
@@ -119,6 +123,9 @@ export function populatedStores(): Record<string, unknown> {
       FIXTURE.blockId,
       FIXTURE.sprayId,
       FIXTURE.overriddenHarvestId,
+      FIXTURE.inventoryItemId,
+      FIXTURE.inventoryLotId,
+      FIXTURE.inventoryMovementId,
     ],
     [`werf-land:${FARM_ID}`]: [
       {
@@ -273,6 +280,39 @@ export function populatedStores(): Record<string, unknown> {
         reason: 'death',
         count: 3,
         delta: -3,
+      },
+    ],
+    // Phase 4e (FR-501): an item, an empty lot, and a `received` movement into it — so `/inventory`
+    // renders the stock row (name, quantity, batch/location) its empty state would otherwise hide.
+    [`werf-inventory-items:${FARM_ID}`]: [
+      {
+        id: FIXTURE.inventoryItemId,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'fertiliser',
+        name: 'Urea 46%',
+        unit: 'kg',
+      },
+    ],
+    [`werf-inventory-lots:${FARM_ID}`]: [
+      {
+        id: FIXTURE.inventoryLotId,
+        farmId: FARM_ID,
+        inventoryItemId: FIXTURE.inventoryItemId,
+        batch: 'B-2026-01',
+        expiryDate: null,
+        location: 'Main store',
+      },
+    ],
+    [`werf-inventory-movements:${FARM_ID}`]: [
+      {
+        id: FIXTURE.inventoryMovementId,
+        farmId: FARM_ID,
+        inventoryLotId: FIXTURE.inventoryLotId,
+        occurredAt: new Date().toISOString(),
+        reason: 'received',
+        quantity: 40,
+        delta: 40,
       },
     ],
   };

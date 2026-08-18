@@ -30,6 +30,7 @@ import { eventTypeEnum } from './enums';
 import { enterprises, farms, users } from './core';
 import { landUnits } from './land';
 import { animals, mobs } from './animals';
+import { inventoryLots } from './inventory';
 
 export const events = pgTable(
   'events',
@@ -53,6 +54,8 @@ export const events = pgTable(
     employeeId: uuid('employee_id'),
     /** Groups one action (a dosing run, a weigh session) across many animals (FR-112). */
     batchId: uuid('batch_id'),
+    /** The inventory lot an `inventory_movement` concerns (Phase 4e, FR-501). Null otherwise. */
+    inventoryLotId: uuid('inventory_lot_id').references(() => inventoryLots.id),
     /** Server-authored device/session provenance. Never synced to farm devices. */
     sourceSessionId: uuid('source_session_id'),
     payload: jsonb('payload').notNull(),

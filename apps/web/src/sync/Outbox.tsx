@@ -147,6 +147,18 @@ import {
   useRainfallSettled,
 } from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
+import {
+  useInventoryItems,
+  useInventoryItemsHydrationFailed,
+  useInventoryItemsSettled,
+  useInventoryLots,
+  useInventoryLotsHydrationFailed,
+  useInventoryLotsSettled,
+  useInventoryMovements,
+  useInventoryMovementsHydrationFailed,
+  useInventoryMovementsSettled,
+} from '../inventory/LocalInventory';
+import { inventoryApi } from '../inventory/inventoryApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
 import { deriveSyncHealth, type SyncHealth } from './syncHealth';
 
@@ -257,7 +269,10 @@ export type CaptureKind =
   | 'breeding'
   | 'theft'
   | 'rainfall'
-  | 'attachment';
+  | 'attachment'
+  | 'inventoryItem'
+  | 'inventoryLot'
+  | 'inventoryMovement';
 
 /** One queued capture: its id (for the sent-log), what it is, and how to send it. */
 interface FlushItem {
@@ -508,6 +523,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
   const rainfall = useRainfall();
+  const inventoryItems = useInventoryItems();
+  const inventoryLots = useInventoryLots();
+  const inventoryMovements = useInventoryMovements();
   const attachments = useAttachments();
   // Never a `FlushItem` field, never read outside `sendAttachment` — the outbox holds no blob
   // itself, only the handle to where the local capture store already keeps them.
@@ -555,6 +573,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breedingSettled = useBreedingEventsSettled();
   const theftSettled = useTheftIncidentsSettled();
   const rainfallSettled = useRainfallSettled();
+  const inventoryItemsSettled = useInventoryItemsSettled();
+  const inventoryLotsSettled = useInventoryLotsSettled();
+  const inventoryMovementsSettled = useInventoryMovementsSettled();
   const attachmentsSettled = useAttachmentsSettled();
   const allSettled =
     landUnitsSettled &&
@@ -579,6 +600,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     breedingSettled &&
     theftSettled &&
     rainfallSettled &&
+    inventoryItemsSettled &&
+    inventoryLotsSettled &&
+    inventoryMovementsSettled &&
     attachmentsSettled;
 
   // ⭐ FINDING 1 (sync-auditor, 2026-08-09): `settled()` flips true on EITHER outcome, by design
@@ -613,6 +637,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const breedingHydrationFailed = useBreedingEventsHydrationFailed();
   const theftHydrationFailed = useTheftIncidentsHydrationFailed();
   const rainfallHydrationFailed = useRainfallHydrationFailed();
+  const inventoryItemsHydrationFailed = useInventoryItemsHydrationFailed();
+  const inventoryLotsHydrationFailed = useInventoryLotsHydrationFailed();
+  const inventoryMovementsHydrationFailed = useInventoryMovementsHydrationFailed();
   const attachmentsHydrationFailed = useAttachmentsHydrationFailed();
   const anyHydrationFailed =
     landUnitsHydrationFailed ||
@@ -637,6 +664,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     breedingHydrationFailed ||
     theftHydrationFailed ||
     rainfallHydrationFailed ||
+    inventoryItemsHydrationFailed ||
+    inventoryLotsHydrationFailed ||
+    inventoryMovementsHydrationFailed ||
     attachmentsHydrationFailed;
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
@@ -1236,6 +1266,46 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
+    // Inventory (Phase 4e, FR-501) references no animal or camp either, so it has no place in the
+    // ordering above and no SAFETY ordering applies (unlike a tally, `consumed` is never refused on
+    // its merits — `recordInventoryMovement`'s own module note — so there is no `needsHead`
+    // equivalent here to ask). Three FK-only tiers: item, then a lot of it, then a movement against
+    // that lot — each `guardedBy` the row directly above it, the identical shape a mob's tally is
+    // held behind `mobrow:`.
+    for (const item of inventoryItems) {
+      if (!sent.has(item.id)) {
+        items.push({
+          id: item.id,
+          kind: 'inventoryItem',
+          detail: item.name,
+          send: (token) => inventoryApi.recordItem(item, token),
+          provides: [`inventoryitemrow:${item.id}`],
+        });
+      }
+    }
+    for (const lot of inventoryLots) {
+      if (!sent.has(lot.id)) {
+        items.push({
+          id: lot.id,
+          kind: 'inventoryLot',
+          detail: lot.batch,
+          send: (token) => inventoryApi.recordLot(lot, token),
+          guardedBy: [`inventoryitemrow:${lot.inventoryItemId}`],
+          provides: [`inventorylotrow:${lot.id}`],
+        });
+      }
+    }
+    for (const movement of inventoryMovements) {
+      if (!sent.has(movement.id)) {
+        items.push({
+          id: movement.id,
+          kind: 'inventoryMovement',
+          detail: null,
+          send: (token) => inventoryApi.recordMovement(movement, token),
+          guardedBy: [`inventorylotrow:${movement.inventoryLotId}`],
+        });
+      }
+    }
     return items;
   }, [
     landUnits,
@@ -1261,6 +1331,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     breeding,
     theftIncidents,
     rainfall,
+    inventoryItems,
+    inventoryLots,
+    inventoryMovements,
     attachments,
     attachmentBlobStore,
     sent,

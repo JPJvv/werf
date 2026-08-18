@@ -100,6 +100,7 @@ export function recordPlanting(input: PlantingInput): schemas.NewEvent {
     landUnitId: input.landUnitId,
     employeeId: null,
     batchId: null,
+    inventoryLotId: null,
     locationGeojson: null,
     notes: input.notes ?? null,
     createdBy: input.createdBy ?? null,

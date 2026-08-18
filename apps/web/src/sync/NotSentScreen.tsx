@@ -58,6 +58,9 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   theft: 'notSent.kind.theft',
   rainfall: 'notSent.kind.rainfall',
   attachment: 'notSent.kind.attachment',
+  inventoryItem: 'notSent.kind.inventoryItem',
+  inventoryLot: 'notSent.kind.inventoryLot',
+  inventoryMovement: 'notSent.kind.inventoryMovement',
 };
 
 /**

@@ -230,6 +230,18 @@ export const TENANCY = {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },
+  // Inventory items and lots (Phase 4e, FR-501). Farm-scoped and bidirectional: a farmer records
+  // stock received or used offline, in the shed or at the spray tank, with no signal. No secrets
+  // and no PostGIS, so nothing is stripped — a lot's batch/expiry/location is exactly the kind of
+  // thing a co-member is entitled to see, the same posture `mobs` takes.
+  inventory_items: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  inventory_lots: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
 } as const satisfies Record<string, TenancyEntry>;
 
 export type SyncedTable = keyof typeof TENANCY;

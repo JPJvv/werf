@@ -3,26 +3,32 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-18 (twenty-second session). ✅ **4d closed — PHI guard + harvest, all ten
-checklist items, one slice.** `pnpm verify` forced-cold clean (typecheck 12/12, 137 files/1468
-tests, build 7/7, 181.82 KB gz) + `pnpm test:e2e` 31/5 skipped, no regression. ⛔ **Compliance-gated
-(FR-205, food-safety/export) — NOT merge-ready until JP triggers a `compliance-checker` pass**, same
-gate 4c already went through; ask before merging. Full account: phase-checklists.md's 4d section.
+**Last updated:** 2026-08-18 (twenty-third session). ✅ **4e·3 closed — inventory items/lots/
+movements (FR-501), one slice, deliberately narrowed from 4e's full six-item scope on `advisor()`
+guidance (see §3).** `pnpm verify` forced-cold clean: 1053/1053 unit tests (incl. 23 new domain +
+13 new API-integration + 9 new web-component tests), lint clean, typecheck 12/12, build 7/7,
+185.89 KB gz (+4.07 KB over 4d's 181.82). `pnpm test:e2e` 31/5 skipped, incl. `/inventory` +
+`/inventory/receive` now in `a11y.spec.ts` (18/18, 0 violations). New migration `0033_inventory`.
+⛔ **4e·1 (FR-151 grazing days/stocking rate) is BLOCKED, not merely next** — its own checklist text
+assumed a mob-move capture that does not exist; see §3's owner question, asked, not yet answered.
 Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1/P2.5–P2.10, conflict audit,
-P3.11–P3.15, P3.16, or 4a/4b/4c's own closed work. **Next: 4e (grazing/feed/inventory — the one
-slice with real new schema), or ask for the 4d compliance-checker pass first.**
+P3.11–P3.15, P3.16, or 4a/4b/4c/4d/4e·3's own closed work. **Next: answer the 4e·1 mob-move
+question, or ask for the 4d/4e·3 compliance-checker pass first (4d is FR-205-gated and still
+pending; 4e·3 carries no compliance gate of its own — no reference product, no regulated figure —
+so it would ride along in the same batched pass, not trigger a second one).**
 
-✅ **4a/4b/4c condensed (18th–21st sessions) — fully closed, full accounts in `phase-checklists.md`'s
-Phase 4 section, not repeated here.** 4a: blocks + plantings, `ancestorChainOf` (`@werf/domain`)
-walks `parent_id` unbounded for the planting projection. 4b: fertiliser, no compliance gate. 4c:
-chemical-products reference (migration 0032) + spray capture (PHI/active-ingredients resolved
-server-side, ADR-0005) + FR-211 spray-history report. **4c's whole-branch
-`reviewer`+`sync-auditor`+`compliance-checker` pass CLEARED** (21st session, commit `3d10103`) — two
-MED fixed fail-first (spray-history tie-order, a permanent-vs-pending PHI-label conflation), one
-LOW-MED filed as unreachable. ⭐ **That pass caught a stale Turbo cache hit masking a real
-`exactOptionalPropertyTypes` compile error behind two earlier "green" `pnpm verify` runs the same
-session** — a `cache hit, replaying logs` line on a package just touched proves nothing changed,
-not that nothing is broken.
+✅ **4a/4b/4c/4d condensed (18th–22nd sessions) — fully closed, full accounts in
+`phase-checklists.md`'s Phase 4 section, not repeated here.** 4a: blocks + plantings,
+`ancestorChainOf` (`@werf/domain`) walks `parent_id` unbounded for the planting projection. 4b:
+fertiliser, no compliance gate. 4c: chemical-products reference (migration 0032) + spray capture
+(PHI/active-ingredients resolved server-side, ADR-0005) + FR-211 spray-history report. **4c's
+whole-branch `reviewer`+`sync-auditor`+`compliance-checker` pass CLEARED** (21st session, commit
+`3d10103`). 4d: PHI guard (`phiGuardFor`, shared client+server) + harvest capture + FR-205 override
++ 4d·6 cross-device PHI race register — built and verified 22nd session, `pnpm verify` 137
+files/1468 tests, **still ⛔ compliance-gated (FR-205), not yet triggered**. ⭐ **The 21st-session
+pass caught a stale Turbo cache hit masking a real `exactOptionalPropertyTypes` compile error behind
+two earlier "green" `pnpm verify` runs the same session** — a `cache hit, replaying logs` line on a
+package just touched proves nothing changed, not that nothing is broken.
 
 🔶 **Open decision — chemical_products production data source, asked 2026-08-17 (18th session).**
 JP: not decided yet, flag and move on. Dev/test rows ship as explicitly unverified placeholders
@@ -41,7 +47,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ built — ⛔ compliance pass not yet triggered; 4e open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev. ✅ 4c's compliance-checker pass CLEARED (21st session). 4d (PHI guard + harvest) closed 22nd session, `pnpm verify`/`test:e2e` green — say so before merge, compliance pass not yet asked for |
+| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ built — ⛔ compliance pass not yet triggered; 4e·3 ☑, 4e·1 ⛔ blocked on owner question, 4e·2/4e·4/4e·5/4e·6 open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev. ✅ 4c's compliance-checker pass CLEARED (21st session). 4d (PHI guard + harvest) closed 22nd session, compliance pass not yet asked for. 4e·3 (inventory) closed 23rd session, `pnpm verify`/`test:e2e` green, no compliance gate of its own. 4e·1 blocked — see §3 |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -54,6 +60,45 @@ noisy accessibility fixture, human-gated regulated verification, a false uncache
 missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+🔶 **Open question — 4e·1's mob-move gap, asked 2026-08-18 (23rd session).** FR-151 (grazing days /
+stocking rate) needs to know which camp a mob is IN over time, and there is no capture for that
+today: `mobs.land_unit_id` is written once at creation (`recordMob`) and never again — a group-only
+flock (FR-102's stated primary user) cannot be moved between camps by any path in the product. The
+individual-animal `move` event exists but is the minority case. Closing FR-151 needs one of these,
+picked by JP, not guessed: **(a)** add a mob-move capture reusing `type: 'move'` with `animalId:
+null, mobId: <mob>` — verified this session that the server's per-animal projections
+(`positionBefore`/`mobMembership` in `livestock.service.ts`) are scoped by `eq(events.animalId, …)`
+and so are structurally blind to a null-`animalId` row, not corrupted by one; **(b)** scope FR-151 to
+individually-tracked herds only for now, disclosed as a gap on the eventual screen; **(c)** something
+else. Flag and move on — do not build (a) silently, since it is new capture surface with its own
+outbox/schema/RLS cost, the same size of decision 4e·2's rest-period setting already is.
+
+✅ **4e·3 closed (23rd session) — inventory items/lots/movements (FR-501), narrowed from 4e's full
+six-item scope on `advisor()` guidance before writing code.** The cut: build 4e·3's schema/RLS/
+domain/API completely (the other five sub-items all either depend on 4e·3's tables or are blocked —
+see 4e·1 above), plus a real client route, since "a server capability with no client route" is the
+half-built shape CLAUDE.md rules against. Migration `0033_inventory` — new `inventory_items`/
+`inventory_lots` tables, `'inventory_movement'` appended to the `event_type` enum and to
+`FARM_SCOPED_EVENT_TYPES` (stock belongs to the shed, not a herd — the identical `rainfall`/
+`boundary_walk` reasoning), `events.inventory_lot_id` column. Domain: `recordInventoryMovement` +
+`projectQuantityOnHand` (`packages/domain/src/inventory/stock.ts`) mirror `recordMobTally`/
+`projectHeadCount` exactly EXCEPT one deliberate divergence — a `consumed` movement larger than the
+recorded quantity is RECORDED, never refused, because a wrong stock figure is not a reason to lose
+the record of a real farm event (the spray happened regardless); the projection floors at zero and
+reports a `shortfall` flag. Client: `/inventory` (stock list) + `/inventory/receive`, wired through
+the SAME local-capture-store/hydration/outbox architecture every other domain uses — the effective
+quantity is PROJECTED client-side from the merged local+hydrated movement log, never trusted off
+either copy of the lot row (`stock.ts`'s own module note), which matters because a lot's quantity
+changes on every movement while its other fields (batch/location) do not. Outbox gained three
+FK-only tiers (item → lot → movement, each `guardedBy`/`provides` the row above it) — no
+`needsHead`-shaped arithmetic guard needed, unlike a tally, because a shortfall is never refused.
+⭐ Two mechanical gotchas closed the same session: `packages/db/src/testing.ts`'s `reset()` TRUNCATE
+list needed the two new tables by hand (confirmed `tables.ts`'s own module list is ALSO hand-edited,
+contra one Explore-agent claim it was derived — only `SCHEMA_TABLE_NAMES` itself is); and the
+`packages/sync/src/testing.ts` fake local database's `watch()` recognizer needed the two new
+canonical tables registered by hand or every test mounting `<App/>` threw an unhandled rejection
+from `HydratedInventoryProvider`'s always-mounted watch, not just inventory's own tests.
 
 ⛔ **4d built and verified (22nd session), COMPLIANCE PASS NOT YET TRIGGERED.** PHI guard
 (`packages/domain/src/crops/phi-guard.ts`, shared by client + server — deliberately NOT the
@@ -150,7 +195,9 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify`, forced/cold — 4d (2026-08-18, twenty-second session, the number to trust) | ✅ **137 test files / 1468 tests, 12/12 typecheck, 7/7 builds, 181.82 KB gz** |
+| `pnpm verify`, forced/cold — 4e·3 (2026-08-18, twenty-third session, the number to trust) | ✅ **1053/1053 unit tests (incl. 13 new API-integration against real Postgres), lint clean, 12/12 typecheck, 7/7 builds, 185.89 KB gz** |
+| `pnpm test:e2e` default lane (2026-08-18, twenty-third session, after 4e·3) | ✅ 31 passed / 5 skipped, incl. `/inventory` + `/inventory/receive` now in `a11y.spec.ts` (18/18, 0 violations) |
+| `pnpm verify`, forced/cold — 4d (2026-08-18, twenty-second session) | ✅ 137 test files / 1468 tests, 12/12 typecheck, 7/7 builds, 181.82 KB gz |
 | `pnpm test:e2e` default lane (2026-08-18, twenty-second session, after 4d) | ✅ 31 passed / 5 skipped |
 | `npx vitest run` + `npx playwright test`, after the self-review fixes above (same day) | ✅ 137 files / 1470 tests; e2e 31 passed / 5 skipped, incl. `/crops/harvest` + `/harvest` now in `a11y.spec.ts` (18/18, 0 violations) |
 | `pnpm verify`, forced/uncached typecheck+build (2026-08-17, twenty-first session, after the review-pass fixes) | ✅ 131 test files / 1409 tests, 12/12 typecheck, 7/7 builds, 177.66 KB gz |

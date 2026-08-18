@@ -99,6 +99,15 @@ export function HomeScreen() {
         )}
       </p>
 
+      {/* Inventory (Phase 4e, FR-501) is reached from here, the identical posture rainfall's link
+          takes: it belongs to no single enterprise (a mixed farm sprays chemicals on the crop side
+          and doses medicine on the livestock side out of the same shed), so it has no tile. */}
+      <p className="px-4 pb-2">
+        <Link to="/inventory" className="text-body text-dam-700">
+          {t('inventory.link')}
+        </Link>
+      </p>
+
       {/* Shown ONLY when there is something on it. A permanent link reading "Needs your attention"
           next to a zero teaches people it never means anything, and then the one week it does mean
           something they walk past it. Absent is the honest state for an empty register. */}

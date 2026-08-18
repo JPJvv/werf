@@ -47,7 +47,7 @@ streams:
     auto_subscribe: true
   events:
     query: |
-      SELECT animal_id, batch_id, created_at, created_by, deleted_at, employee_id, enterprise_id, farm_id, id, land_unit_id, location_geojson, mob_id, notes, occurred_at, payload, synced_at, type, updated_at FROM events_default AS events
+      SELECT animal_id, batch_id, created_at, created_by, deleted_at, employee_id, enterprise_id, farm_id, id, inventory_lot_id, land_unit_id, location_geojson, mob_id, notes, occurred_at, payload, synced_at, type, updated_at FROM events_default AS events
       WHERE farm_id = subscription.parameter('farm_id') AND substring(occurred_at, 1, 7) = subscription.parameter('month') AND farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: false
     accept_potentially_dangerous_queries: true
@@ -60,6 +60,16 @@ streams:
     query: |
       SELECT attachment_bytes_used, business_id, created_at, deleted_at, district, enterprise_types, event_retention_months, hectares, id, jurisdiction, name, province, timezone, updated_at FROM farms
       WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
+  inventory_items:
+    query: |
+      SELECT category, created_at, created_by, deleted_at, enterprise_id, farm_id, id, name, unit, updated_at, updated_by FROM inventory_items
+      WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
+    auto_subscribe: true
+  inventory_lots:
+    query: |
+      SELECT batch, created_at, created_by, deleted_at, expiry_date, farm_id, id, inventory_item_id, location, quantity_on_hand, updated_at, updated_by FROM inventory_lots
+      WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: true
   land_units:
     query: |

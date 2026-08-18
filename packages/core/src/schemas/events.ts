@@ -500,6 +500,109 @@ export const boundaryWalkPayloadSchema = z.object({
 export type BoundaryWalkPayload = z.infer<typeof boundaryWalkPayloadSchema>;
 
 /**
+ * Why an inventory lot's quantity on hand changed (Phase 4e, FR-501). The identical shape as
+ * `tallyPayloadSchema`, one field over: `received` and `consumed` carry a signed `delta` because
+ * deltas COMPOSE (two people recording stock use on two phones in a dead zone must land on the
+ * same total), and `counted` is absolute and RESETS the running total, because "I counted the
+ * shelf and there are 40kg left" supersedes whatever the log believed.
+ *
+ * ⛔ Unlike a tally, a `consumed` movement that would take the quantity below zero is NEVER
+ * refused (`recordInventoryMovement`, @werf/domain): a stock figure that is wrong is not a reason
+ * to block the capture of a real farm event (a spray that happened), it is a reason to recount.
+ * The projection floors at zero and the capture reports the shortfall for the caller to surface.
+ */
+export const INVENTORY_MOVEMENT_INCREASES = ['received'] as const;
+export const INVENTORY_MOVEMENT_DECREASES = ['consumed'] as const;
+export const INVENTORY_MOVEMENT_REASONS = [
+  ...INVENTORY_MOVEMENT_INCREASES,
+  ...INVENTORY_MOVEMENT_DECREASES,
+  'counted',
+] as const;
+export const inventoryMovementReasonSchema = z.enum(INVENTORY_MOVEMENT_REASONS);
+export type InventoryMovementReason = z.infer<typeof inventoryMovementReasonSchema>;
+
+export const inventoryMovementPayloadSchema = z
+  .object({
+    reason: inventoryMovementReasonSchema,
+    /** Signed change in quantity. Present for every reason EXCEPT `counted`; never zero. */
+    delta: z.number().finite().optional(),
+    /** The quantity physically counted. Present ONLY for `counted`; the projection resets to it. */
+    countedQuantity: z.number().nonnegative().finite().optional(),
+    /** Money as integer cents, never a float. What the delivery cost — only a receipt carries one. */
+    unitCostCents: moneySchema.nonnegative().optional(),
+  })
+  .superRefine((payload, ctx) => {
+    const isCounted = payload.reason === 'counted';
+    if (isCounted) {
+      if (payload.countedQuantity === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['countedQuantity'],
+          message: 'A stock count must carry the quantity actually counted',
+        });
+      }
+      if (payload.delta !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['delta'],
+          message: 'A stock count is absolute and carries no delta',
+        });
+      }
+      if (payload.unitCostCents !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['unitCostCents'],
+          message: 'Only a receipt carries a cost',
+        });
+      }
+      return;
+    }
+    if (payload.countedQuantity !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['countedQuantity'],
+        message: 'Only a stock count carries a counted quantity',
+      });
+    }
+    if (payload.delta === undefined || payload.delta === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: 'A movement must change the quantity on hand',
+      });
+      return;
+    }
+    if (payload.reason !== 'received' && payload.unitCostCents !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['unitCostCents'],
+        message: 'Only a receipt carries a cost',
+      });
+    }
+    const shouldIncrease = (INVENTORY_MOVEMENT_INCREASES as readonly string[]).includes(
+      payload.reason,
+    );
+    const shouldDecrease = (INVENTORY_MOVEMENT_DECREASES as readonly string[]).includes(
+      payload.reason,
+    );
+    if (shouldIncrease && !(payload.delta > 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: `A '${payload.reason}' movement must increase the quantity on hand`,
+      });
+    }
+    if (shouldDecrease && !(payload.delta < 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: `A '${payload.reason}' movement must decrease the quantity on hand`,
+      });
+    }
+  });
+export type InventoryMovementPayload = z.infer<typeof inventoryMovementPayloadSchema>;
+
+/**
  * A crop planted in a block (FR-203): what, from what seed, and how thick. `landUnitId` is not part
  * of this payload — like every event, it is a field on the envelope (`eventObjectSchema`), never
  * duplicated into the type-specific shape.
@@ -645,6 +748,7 @@ const CONCRETE_PAYLOADS = {
   fertiliser: fertiliserPayloadSchema,
   spray: sprayPayloadSchema,
   harvest: harvestPayloadSchema,
+  inventory_movement: inventoryMovementPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**
@@ -682,6 +786,8 @@ const eventObjectSchema = z.object({
   employeeId: uuidSchema.nullable(),
   /** Groups one action (a dosing run, a weigh session) across many animals (FR-112). */
   batchId: uuidSchema.nullable(),
+  /** The inventory lot an `inventory_movement` concerns (Phase 4e, FR-501). Null on every other type. */
+  inventoryLotId: uuidSchema.nullable(),
   payload: z.record(z.string(), z.unknown()),
   /** GPS where it happened. Crosses the wire as GeoJSON, never PostGIS (like land boundaries). */
   locationGeojson: geoJsonStringSchema.nullable(),
@@ -716,6 +822,7 @@ export const newEventSchema = eventObjectSchema
     landUnitId: eventObjectSchema.shape.landUnitId.default(null),
     employeeId: eventObjectSchema.shape.employeeId.default(null),
     batchId: eventObjectSchema.shape.batchId.default(null),
+    inventoryLotId: eventObjectSchema.shape.inventoryLotId.default(null),
     locationGeojson: eventObjectSchema.shape.locationGeojson.default(null),
     notes: eventObjectSchema.shape.notes.default(null),
     createdBy: eventObjectSchema.shape.createdBy.default(null),

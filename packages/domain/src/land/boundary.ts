@@ -268,6 +268,7 @@ export function recordBoundaryWalk(input: BoundaryWalkInput): schemas.NewEvent {
     landUnitId: input.landUnitId,
     employeeId: null,
     batchId: null,
+    inventoryLotId: null,
     // The walk IS the location; a single point would be a worse copy of the ring.
     locationGeojson: null,
     notes: input.notes ?? null,

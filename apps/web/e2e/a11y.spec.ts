@@ -217,6 +217,10 @@ const CAPTURE_SCREENS = [
   // because that is where the compliance-relevant markup actually is.
   { path: '/crops/harvest', heading: /record a harvest/i },
   { path: '/harvest', heading: /harvest history/i },
+  // Phase 4e (FR-501). The seed has no stock yet, so this audits the empty state; the populated
+  // state (the item/lot form fields) is audited below, because that is where the controls are.
+  { path: '/inventory', heading: /^stock$/i },
+  { path: '/inventory/receive', heading: /receive stock/i },
 ] as const;
 
 /**
@@ -358,6 +362,15 @@ const POPULATED_SCREENS = [
     heading: /harvest history/i,
     act: async (page: Page) => {
       await expect(page.getByText(/overridden/i)).toBeVisible();
+    },
+  },
+  {
+    // Phase 4e (FR-501): a lot with stock on it — the quantity projected from the movement log,
+    // not the empty state.
+    path: '/inventory',
+    heading: /^stock$/i,
+    act: async (page: Page) => {
+      await expect(page.getByText(/urea 46%/i)).toBeVisible();
     },
   },
 ] as const;

@@ -36,6 +36,8 @@ import { SpraysScreen } from './crops/SpraysScreen';
 import { RecordHarvestScreen } from './crops/RecordHarvestScreen';
 import { HarvestScreen } from './crops/HarvestScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
+import { StockScreen } from './inventory/StockScreen';
+import { ReceiveStockScreen } from './inventory/ReceiveStockScreen';
 import { NotSentScreen } from './sync/NotSentScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
 import { SettingsLayout } from './settings/SettingsLayout';
@@ -112,6 +114,11 @@ export function App() {
                 <Route path="harvest" element={<HarvestScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
+                {/* Inventory is farm-level, not enterprise-level (Phase 4e, FR-501): a mixed farm's
+                    chemical/fertiliser/feed/medicine stock is one shed, not two — see
+                    `HomeScreen.tsx`'s secondary link, the same posture rainfall's link takes. */}
+                <Route path="inventory" element={<StockScreen />} />
+                <Route path="inventory/receive" element={<ReceiveStockScreen />} />
                 {/* Reached from the sync strip when the server has refused something (FR-009). */}
                 <Route path="not-sent" element={<NotSentScreen />} />
                 {/* The residue register (FR-131). Farm-level, not livestock-level: it answers for

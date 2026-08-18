@@ -120,6 +120,7 @@ export async function bootWerfTestDatabase(): Promise<WerfTestDatabase> {
           auth_audit_log, audit_log, conflict_reviews, webauthn_challenges, user_sessions,
           user_passkeys,
           theft_incident_animals, theft_incidents,
+          inventory_lots, inventory_items,
           events, animal_identifiers, animals, branding_registers, mobs, land_units, farm_users,
           enterprises, farms, businesses, users, regulatory_rates, veterinary_products,
           chemical_products

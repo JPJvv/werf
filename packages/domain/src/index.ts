@@ -34,6 +34,7 @@ export * from './crops/fertiliser';
 export * from './crops/spray';
 export * from './crops/harvest';
 export * from './crops/phi-guard';
+export * from './inventory/stock';
 export * from './rainfall';
 export * from './herd-scope';
 export * from './dates';

@@ -19,6 +19,8 @@ import {
   events,
   farms,
   farmUsers,
+  inventoryItems,
+  inventoryLots,
   landUnits,
   mobs,
   theftIncidents,
@@ -51,6 +53,7 @@ export const eventProjection = {
   landUnitId: events.landUnitId,
   employeeId: events.employeeId,
   batchId: events.batchId,
+  inventoryLotId: events.inventoryLotId,
   payload: events.payload,
   locationGeojson: events.locationGeojson,
   notes: events.notes,
@@ -88,6 +91,7 @@ export async function insertEvent(
   await assertOwnedReferences(tx, event.farmId, {
     enterpriseId: event.enterpriseId,
     landUnitId: event.landUnitId,
+    inventoryLotId: event.inventoryLotId,
   });
 
   const [row] = await tx
@@ -104,6 +108,7 @@ export async function insertEvent(
       landUnitId: event.landUnitId,
       employeeId: event.employeeId,
       batchId: event.batchId,
+      inventoryLotId: event.inventoryLotId,
       sourceSessionId: context.sourceSessionId,
       payload: event.payload,
       locationGeojson: event.locationGeojson,
@@ -230,6 +235,10 @@ export async function assertOwnedReferences(
     parentLandUnitId?: string | null | undefined;
     /** The theft incident an animal link belongs to. */
     incidentId?: string | null | undefined;
+    /** The inventory lot an `inventory_movement` concerns (Phase 4e, FR-501). */
+    inventoryLotId?: string | null | undefined;
+    /** The item a new lot is a batch of (Phase 4e, FR-501). */
+    inventoryItemId?: string | null | undefined;
   },
 ): Promise<void> {
   const landUnitOnFarm = (id: string) =>
@@ -297,6 +306,36 @@ export async function assertOwnedReferences(
             ),
           ),
       'Incident not found',
+    ],
+    [
+      refs.inventoryLotId,
+      (id) =>
+        tx
+          .select({ id: inventoryLots.id })
+          .from(inventoryLots)
+          .where(
+            and(
+              eq(inventoryLots.id, id),
+              eq(inventoryLots.farmId, farmId),
+              isNull(inventoryLots.deletedAt),
+            ),
+          ),
+      'Inventory lot not found',
+    ],
+    [
+      refs.inventoryItemId,
+      (id) =>
+        tx
+          .select({ id: inventoryItems.id })
+          .from(inventoryItems)
+          .where(
+            and(
+              eq(inventoryItems.id, id),
+              eq(inventoryItems.farmId, farmId),
+              isNull(inventoryItems.deletedAt),
+            ),
+          ),
+      'Inventory item not found',
     ],
   ];
 

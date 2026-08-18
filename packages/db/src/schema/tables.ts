@@ -25,6 +25,7 @@ import * as chemical from './chemical';
 import * as core from './core';
 import * as conflicts from './conflicts';
 import * as events from './events';
+import * as inventory from './inventory';
 import * as land from './land';
 import * as theft from './theft';
 import * as veterinary from './veterinary';
@@ -40,6 +41,7 @@ const modules = [
   core,
   conflicts,
   events,
+  inventory,
   land,
   theft,
   veterinary,

@@ -15,11 +15,13 @@ import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { eq } from 'drizzle-orm';
 import {
+  auditLog,
   chemicalProducts,
   createAppDb,
   createElevatedDb,
   events,
   farmUsers,
+  landUnits,
   users,
   type AppDb,
   type ElevatedDb,
@@ -118,6 +120,22 @@ const sprayBody = (
     id: uuidv7(),
     occurredAt: '2026-10-05T05:00:00.000Z',
     sprayedOn: '2026-10-05',
+    ...over,
+  });
+
+/** A minimal valid harvest body; overlay the fields a test cares about. */
+const harvestBody = (
+  over: Partial<ZodInput<typeof schemas.recordHarvestRequestSchema>> & {
+    farmId: string;
+    landUnitId: string;
+  },
+): schemas.RecordHarvestRequest =>
+  schemas.recordHarvestRequestSchema.parse({
+    id: uuidv7(),
+    occurredAt: '2026-11-01T06:00:00.000Z',
+    harvestedOn: '2026-11-01',
+    quantity: 12.5,
+    unit: 'ton',
     ...over,
   });
 
@@ -690,6 +708,354 @@ describe('planting capture (FR-203)', () => {
       const report = await service.listSprayHistory(a.userId, a.farmId, {});
 
       expect(report.map((r) => r.id)).toEqual([higherId, lowerId]);
+    });
+  });
+
+  describe('harvest capture (FR-207) — COMPLIANCE-GATED (US-030)', () => {
+    it('records a harvest as an append-only event scoped to the BLOCK, not a herd', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({ farmId: a.farmId, landUnitId, grade: 'Class 1', destination: 'Pack shed A' }),
+      );
+
+      expect(captured.type).toBe('harvest');
+      expect(captured.payload).toEqual({
+        harvestedOn: '2026-11-01',
+        quantity: 12.5,
+        unit: 'ton',
+        grade: 'Class 1',
+        destination: 'Pack shed A',
+      });
+      expect(captured.landUnitId).toBe(landUnitId);
+      expect(captured.createdBy).toBe(a.userId);
+      expect(captured.enterpriseId).toBeNull();
+      expect(captured.animalId).toBeNull();
+      expect(captured.mobId).toBeNull();
+    });
+
+    it('proceeds with no warning when the block has never been sprayed', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({ farmId: a.farmId, landUnitId }),
+      );
+
+      expect(captured.payload).not.toHaveProperty('phiOverride');
+    });
+
+    it("US-030's own gherkin: blocks a harvest inside a spray's PHI, naming the product/date/earliest date", async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-03-01',
+          occurredAt: '2026-03-01T08:00:00.000Z',
+        }),
+      );
+
+      await expect(
+        service.recordHarvest(
+          a.userId,
+          harvestBody({ farmId: a.farmId, landUnitId, harvestedOn: '2026-03-15' }),
+        ),
+      ).rejects.toThrow(/Cyprodinex 50 WG.*2026-03-01.*2026-03-22/s);
+
+      const rows = await elevated.db.select().from(events).where(eq(events.type, 'harvest'));
+      expect(rows).toHaveLength(0);
+    });
+
+    it('US-030: proceeds normally once the PHI clears', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: 21 });
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-03-01',
+          occurredAt: '2026-03-01T08:00:00.000Z',
+        }),
+      );
+
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({ farmId: a.farmId, landUnitId, harvestedOn: '2026-03-23' }),
+      );
+
+      expect(captured.payload).not.toHaveProperty('phiOverride');
+    });
+
+    it('a spray with no PHI on record blocks nothing', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: null });
+      await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId, productId: product.id, sprayedOn: '2026-03-01' }),
+      );
+
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({ farmId: a.farmId, landUnitId, harvestedOn: '2026-03-02' }),
+      );
+
+      expect(captured.payload).not.toHaveProperty('phiOverride');
+    });
+
+    it('ignores a spray on an unrelated block', async () => {
+      const a = await tenant('Crop');
+      const sprayedBlock = await block(a);
+      const harvestedBlock = await land.createLandUnit(
+        a.userId,
+        blockBody({ farmId: a.farmId, code: 'B13' }),
+      );
+      const product = await aChemicalProduct({ phiDays: 21 });
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId: sprayedBlock,
+          productId: product.id,
+          sprayedOn: '2026-03-01',
+        }),
+      );
+
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({ farmId: a.farmId, landUnitId: harvestedBlock.id, harvestedOn: '2026-03-05' }),
+      );
+
+      expect(captured.payload).not.toHaveProperty('phiOverride');
+    });
+
+    it("4d·4: blocks on an ancestor block's pre-split spray history, not just the leaf's own", async () => {
+      const a = await tenant('Crop');
+      const parentId = await block(a);
+      const child = await land.createLandUnit(
+        a.userId,
+        blockBody({ farmId: a.farmId, code: 'B12-A', parentId }),
+      );
+      // The exact instant the child became its own capturable unit — queried rather than assumed,
+      // so this test is not fragile against wall-clock skew between fixture dates and test runtime.
+      const [childRow] = await elevated.db
+        .select({ createdAt: landUnits.createdAt })
+        .from(landUnits)
+        .where(eq(landUnits.id, child.id));
+      const splitAt = childRow!.createdAt;
+      const sprayedOn = new Date(splitAt.getTime() - 24 * 60 * 60 * 1000);
+      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
+      // Sprayed on the PARENT, before the split.
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId: parentId,
+          productId: product.id,
+          sprayedOn: sprayedOn.toISOString().slice(0, 10),
+          occurredAt: sprayedOn.toISOString(),
+        }),
+      );
+
+      await expect(
+        service.recordHarvest(
+          a.userId,
+          harvestBody({
+            farmId: a.farmId,
+            landUnitId: child.id,
+            harvestedOn: sprayedOn.toISOString().slice(0, 10),
+          }),
+        ),
+      ).rejects.toThrow(/Cyprodinex 50 WG/);
+    });
+
+    it('FR-205: an override is accepted, stores the reason and audits it — never silent', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-03-01',
+          occurredAt: '2026-03-01T08:00:00.000Z',
+        }),
+      );
+
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({
+          farmId: a.farmId,
+          landUnitId,
+          harvestedOn: '2026-03-15',
+          phiOverride: { reason: 'Export deadline — buyer contract on file' },
+        }),
+      );
+
+      expect(captured.payload).toMatchObject({
+        phiOverride: { reason: 'Export deadline — buyer contract on file', by: a.userId },
+      });
+
+      const audit = await elevated.db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.recordId, captured.id));
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.action).toBe('phi_override');
+      expect(audit[0]!.userId).toBe(a.userId);
+    });
+
+    it('never carries an override for a harvest the guard did not actually block', async () => {
+      // A client that sent a reason speculatively (its own local preview disagreed with the
+      // server) must not get a false "overridden" audit trail for a block that was never blocked.
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({
+          farmId: a.farmId,
+          landUnitId,
+          phiOverride: { reason: 'Just in case' },
+        }),
+      );
+
+      expect(captured.payload).not.toHaveProperty('phiOverride');
+      const audit = await elevated.db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.recordId, captured.id));
+      expect(audit).toHaveLength(0);
+    });
+
+    it('is idempotent BEFORE validation: a re-flushed harvest does not re-run the guard or double-audit', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: 21 });
+      await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-03-01',
+          occurredAt: '2026-03-01T08:00:00.000Z',
+        }),
+      );
+      const body = harvestBody({
+        farmId: a.farmId,
+        landUnitId,
+        harvestedOn: '2026-03-15',
+        phiOverride: { reason: 'Export deadline' },
+      });
+
+      const first = await service.recordHarvest(a.userId, body);
+      const again = await service.recordHarvest(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.type, 'harvest')),
+      );
+      expect(rows).toHaveLength(1);
+      const audit = await elevated.db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.recordId, first.id));
+      expect(audit).toHaveLength(1);
+    });
+
+    it('refuses a harvest against a block that does not exist on this farm', async () => {
+      const a = await tenant('Crop');
+
+      await expect(
+        service.recordHarvest(a.userId, harvestBody({ farmId: a.farmId, landUnitId: uuidv7() })),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await elevated.db.select().from(events).where(eq(events.type, 'harvest'));
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe('harvest history report (FR-207)', () => {
+    it('lists harvests for the farm, newest first', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      await service.recordHarvest(
+        a.userId,
+        harvestBody({
+          farmId: a.farmId,
+          landUnitId,
+          harvestedOn: '2026-11-01',
+          occurredAt: '2026-11-01T06:00:00.000Z',
+        }),
+      );
+      await service.recordHarvest(
+        a.userId,
+        harvestBody({
+          farmId: a.farmId,
+          landUnitId,
+          harvestedOn: '2026-11-10',
+          occurredAt: '2026-11-10T06:00:00.000Z',
+        }),
+      );
+
+      const report = await service.listHarvestHistory(a.userId, a.farmId, {});
+
+      expect(report.map((r) => r.harvestedOn)).toEqual(['2026-11-10', '2026-11-01']);
+    });
+
+    it('narrows to a date range on the harvest day', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      await service.recordHarvest(
+        a.userId,
+        harvestBody({
+          farmId: a.farmId,
+          landUnitId,
+          harvestedOn: '2026-09-01',
+          occurredAt: '2026-09-01T06:00:00.000Z',
+        }),
+      );
+      await service.recordHarvest(
+        a.userId,
+        harvestBody({
+          farmId: a.farmId,
+          landUnitId,
+          harvestedOn: '2026-11-01',
+          occurredAt: '2026-11-01T06:00:00.000Z',
+        }),
+      );
+
+      const report = await service.listHarvestHistory(a.userId, a.farmId, {
+        from: '2026-10-15',
+        to: '2026-11-15',
+      });
+
+      expect(report.map((r) => r.harvestedOn)).toEqual(['2026-11-01']);
+    });
+
+    it('never leaks another farm’s harvests', async () => {
+      const a = await tenant('Crop');
+      const b = await tenant('Other');
+      const landUnitId = await block(a);
+      await service.recordHarvest(a.userId, harvestBody({ farmId: a.farmId, landUnitId }));
+
+      await expect(service.listHarvestHistory(b.userId, a.farmId, {})).rejects.toThrow(
+        NotFoundError,
+      );
     });
   });
 });

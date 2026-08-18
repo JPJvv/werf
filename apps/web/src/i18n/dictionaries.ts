@@ -110,6 +110,7 @@ const en = {
   'notSent.kind.planting': 'A planting',
   'notSent.kind.fertiliser': 'A fertiliser application',
   'notSent.kind.spray': 'A spray',
+  'notSent.kind.harvest': 'A harvest',
   'notSent.kind.mob': 'A group',
   'notSent.kind.animal': 'An animal',
   'notSent.kind.identifier': 'Tag number',
@@ -456,6 +457,45 @@ const en = {
   'crops.sprays.unknownProduct': 'Product not yet synced',
   'crops.sprays.phiPending': 'PHI not yet confirmed by the server',
   'crops.sprays.harvestDateUnknown': 'Earliest harvest date unknown — do not rely on this record',
+  // Harvest capture + guard (FR-207, FR-205, US-030) — COMPLIANCE-GATED.
+  'crops.harvest.title': 'Record a harvest',
+  'crops.harvest.noBlocks': 'No blocks yet. Add your first one — it saves with no signal.',
+  'crops.harvest.saved': 'Saved — your work is saved',
+  'crops.harvest.which': 'Which block?',
+  'crops.harvest.splitBlockWarning':
+    'This block was split from another. This device cannot confirm its full spray history offline — sync before harvesting a recently split block, or check the parent block’s own records.',
+  'crops.harvest.day': 'Day harvested',
+  'crops.harvest.blockedTitle': 'This harvest is inside a pre-harvest interval',
+  'crops.harvest.blockedProductUnknown': 'A product on this block',
+  'crops.harvest.blockedSprayedOn': 'was sprayed on',
+  'crops.harvest.blockedEarliest': 'The earliest safe harvest date is',
+  'crops.harvest.override': 'Override',
+  'crops.harvest.overrideReasonLabel': 'Reason',
+  'crops.harvest.overrideReasonChoose': 'Choose a reason',
+  'crops.harvest.overrideReason.export_deadline': 'Export or buyer deadline',
+  'crops.harvest.overrideReason.spoilage_risk': 'Crop spoilage risk',
+  'crops.harvest.overrideReason.misrecorded_spray': 'Spray record was incorrect',
+  'crops.harvest.overrideReason.other': 'Other',
+  'crops.harvest.overrideTextLabel': 'Details',
+  'crops.harvest.overrideAudited':
+    'This override is recorded with your name and the time, and cannot be edited or removed.',
+  'crops.harvest.unresolved':
+    'This device cannot confirm this block is clear for harvest yet. Sync and try again.',
+  'crops.harvest.quantity': 'Quantity',
+  'crops.harvest.unit': 'Unit',
+  'crops.harvest.grade': 'Grade (optional)',
+  'crops.harvest.destination': 'Destination (optional)',
+  'crops.harvest.save': 'Save harvest',
+  'crops.harvest.saveOverride': 'Save harvest with override',
+  'crops.harvest.back': 'Back to land',
+  'crops.harvests.title': 'Harvest history',
+  'crops.harvests.record': 'Record a harvest',
+  'crops.harvests.filterBlock': 'Filter by block',
+  'crops.harvests.allBlocks': 'All blocks',
+  'crops.harvests.filterFrom': 'From',
+  'crops.harvests.filterTo': 'To',
+  'crops.harvests.none': 'No harvests recorded yet.',
+  'crops.harvests.overridden': 'Overridden —',
   // Animals module (FR-101, FR-705). Captured offline; "head" is the count word a farmer uses.
   'animals.title': 'Animals',
   'animals.head': 'head',
@@ -1010,6 +1050,16 @@ const en = {
   // Anything that left the herd for a reason this screen has no noun for. Neutral on purpose: a
   // fallback that guesses a noun eventually guesses 'Died' for a camp move.
   'residue.type.left': 'Left the herd',
+  // The PHI compliance register (4d·6) — the cross-device race, mirrored one field over from the
+  // residue register just above.
+  'phi.sectionTitle': 'Harvest PHI compliance',
+  'phi.intro':
+    'A harvest that, once every device’s spray records had arrived, fell inside a pre-harvest interval neither phone could have checked at the time.',
+  'phi.blocked': 'This harvest falls within the pre-harvest interval —',
+  'phi.lateDiscovery':
+    'This was only found later, when a spray recorded on another phone reached us. Nothing on your phone could have known at the time.',
+  'phi.notSentYet': 'Saved on this phone. Not sent yet.',
+  'phi.sentNotFlagged': 'Sent. This phone flagged it from the records it holds.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -1081,6 +1131,7 @@ const af: Record<TranslationKey, string> = {
   'notSent.kind.planting': '’n Aanplanting',
   'notSent.kind.fertiliser': '’n Bemestingstoediening',
   'notSent.kind.spray': '’n Bespuiting',
+  'notSent.kind.harvest': '’n Oes',
   'notSent.kind.mob': '’n Groep',
   'notSent.kind.animal': '’n Dier',
   'notSent.kind.identifier': 'Nommer',
@@ -1389,6 +1440,44 @@ const af: Record<TranslationKey, string> = {
   'crops.sprays.phiPending': 'Voor-oes-tydperk nog nie deur die bediener bevestig nie',
   'crops.sprays.harvestDateUnknown':
     'Vroegste oesdatum onbekend — moenie op hierdie rekord staatmaak nie',
+  'crops.harvest.title': 'Teken ’n oes aan',
+  'crops.harvest.noBlocks': 'Nog geen blokke nie. Voeg jou eerste een by — dit stoor sonder sein.',
+  'crops.harvest.saved': 'Gestoor — jou werk is gestoor',
+  'crops.harvest.which': 'Watter blok?',
+  'crops.harvest.splitBlockWarning':
+    'Hierdie blok is van ’n ander een afgesplit. Hierdie toestel kan nie sy volle bespuitingsgeskiedenis sonder sein bevestig nie — sinkroniseer voor jy ’n onlangs-gesplitste blok oes, of gaan die ouer-blok se eie rekords na.',
+  'crops.harvest.day': 'Dag geoes',
+  'crops.harvest.blockedTitle': 'Hierdie oes val binne ’n voor-oes-tydperk',
+  'crops.harvest.blockedProductUnknown': '’n Produk op hierdie blok',
+  'crops.harvest.blockedSprayedOn': 'is bespuit op',
+  'crops.harvest.blockedEarliest': 'Die vroegste veilige oesdatum is',
+  'crops.harvest.override': 'Oorskryf',
+  'crops.harvest.overrideReasonLabel': 'Rede',
+  'crops.harvest.overrideReasonChoose': 'Kies ’n rede',
+  'crops.harvest.overrideReason.export_deadline': 'Uitvoer- of koperspertydperk',
+  'crops.harvest.overrideReason.spoilage_risk': 'Risiko dat oes sal bederf',
+  'crops.harvest.overrideReason.misrecorded_spray': 'Bespuitingsrekord was verkeerd',
+  'crops.harvest.overrideReason.other': 'Ander',
+  'crops.harvest.overrideTextLabel': 'Besonderhede',
+  'crops.harvest.overrideAudited':
+    'Hierdie oorskrywing word met jou naam en die tyd aangeteken, en kan nie gewysig of verwyder word nie.',
+  'crops.harvest.unresolved':
+    'Hierdie toestel kan nog nie bevestig dat hierdie blok gereed is om te oes nie. Sinkroniseer en probeer weer.',
+  'crops.harvest.quantity': 'Hoeveelheid',
+  'crops.harvest.unit': 'Eenheid',
+  'crops.harvest.grade': 'Graad (opsioneel)',
+  'crops.harvest.destination': 'Bestemming (opsioneel)',
+  'crops.harvest.save': 'Stoor oes',
+  'crops.harvest.saveOverride': 'Stoor oes met oorskrywing',
+  'crops.harvest.back': 'Terug na grond',
+  'crops.harvests.title': 'Oesgeskiedenis',
+  'crops.harvests.record': 'Teken ’n oes aan',
+  'crops.harvests.filterBlock': 'Filter volgens blok',
+  'crops.harvests.allBlocks': 'Alle blokke',
+  'crops.harvests.filterFrom': 'Vanaf',
+  'crops.harvests.filterTo': 'Tot',
+  'crops.harvests.none': 'Nog geen oeste aangeteken nie.',
+  'crops.harvests.overridden': 'Oorskryf —',
   'animals.title': 'Diere',
   'animals.head': 'stuks',
   'animals.allHerds': 'Alle troppe',
@@ -1859,6 +1948,14 @@ const af: Record<TranslationKey, string> = {
   'residue.type.slaughter': 'Geslag',
   'residue.type.theft': 'Gesteel',
   'residue.type.left': 'Uit die kudde',
+  'phi.sectionTitle': 'Oes-voor-oes-tydperk nakoming',
+  'phi.intro':
+    'ʼn Oes wat, sodra elke foon se bespuitingsrekords aangekom het, binne ʼn voor-oes-tydperk geval het wat geen foon destyds kon nagaan nie.',
+  'phi.blocked': 'Hierdie oes val binne die voor-oes-tydperk —',
+  'phi.lateDiscovery':
+    'Dit is eers later opgetel, toe ’n bespuiting wat op ’n ander foon aangeteken is, ons bereik het. Niks op jou foon kon dit destyds geweet het nie.',
+  'phi.notSentYet': 'Op hierdie foon gestoor. Nog nie gestuur nie.',
+  'phi.sentNotFlagged': 'Gestuur. Hierdie foon het dit gemerk uit die rekords wat dit hou.',
 };
 
 export const dictionaries: Record<Locale, Record<TranslationKey, string>> = {

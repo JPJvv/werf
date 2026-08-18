@@ -111,6 +111,10 @@ export const FARM_SCOPED_EVENT_TYPES = [
   // block's own spray HISTORY directly (by `land_unit_id`), never through an enterprise join, so
   // filing under the enterprise would buy that guard nothing either.
   'spray',
+  // FR-205/207 (4d): a harvest is the same family again — see the `fertiliser` note above. It is
+  // the ACT the PHI guard judges, the same way `spray` is the guard's EVIDENCE; both read a block's
+  // own history directly by `land_unit_id`, so both file the identical way for the identical reason.
+  'harvest',
 ] as const satisfies readonly EventType[];
 export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
 

@@ -33,6 +33,8 @@ import { RecordPlantingScreen } from './crops/RecordPlantingScreen';
 import { RecordFertiliserScreen } from './crops/RecordFertiliserScreen';
 import { RecordSprayScreen } from './crops/RecordSprayScreen';
 import { SpraysScreen } from './crops/SpraysScreen';
+import { RecordHarvestScreen } from './crops/RecordHarvestScreen';
+import { HarvestScreen } from './crops/HarvestScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
 import { NotSentScreen } from './sync/NotSentScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
@@ -103,6 +105,11 @@ export function App() {
                 {/* The home grid's "Sprays" tile (`home/tiles.ts`) — registered before the
                     `:module` catch-all so it stops falling through to `ModulePlaceholder`. */}
                 <Route path="sprays" element={<SpraysScreen />} />
+                <Route path="crops/harvest" element={<RecordHarvestScreen />} />
+                {/* The home grid's "harvest" tile (`home/tiles.ts`, `to: '/harvest'`) — registered
+                    before the `:module` catch-all for the identical reason `sprays` is, one line
+                    up (4d — it was a placeholder until this slice). */}
+                <Route path="harvest" element={<HarvestScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
                 {/* Reached from the sync strip when the server has refused something (FR-009). */}

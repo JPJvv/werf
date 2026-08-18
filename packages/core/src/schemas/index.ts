@@ -20,6 +20,7 @@ export * from './livestock';
 export * from './planting';
 export * from './fertiliser';
 export * from './spray';
+export * from './harvest';
 export * from './rainfall';
 export * from './sync';
 export * from './attachments';

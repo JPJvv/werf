@@ -1620,38 +1620,76 @@ Reference data & spray capture
   own scope, not a 4c gap — compliance-checker confirmed 4c's write path (server-side PHI resolution,
   date-in-force lookup, client-write-blocking) is otherwise sound.
 
-PHI guard + harvest — ONE slice, never split (see the note above)
-□ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
-  client-side (device has the cached chemical_products + this block's own local spray events —
-  O-12: blocked locally, no server round trip) AND server-side (a server-only rule arrives after
-  the truck has left). Message names the product, the spray date, and the earliest safe harvest
-  date (US-030's own gherkin — this is the acceptance test, use it verbatim).
-□ 4d·2 The override path: a written reason, audited, never silent (FR-205's own words) — mirrors
-  the sale-guard override PATTERN but is NOT the same mechanism as the cross-device race case
-  below; keep them distinct or 4d conflates a deliberate human override with an automatic flag.
-□ 4d·3 FR-207 Record a harvest: quantity, unit, grade, destination, date — the payload shape is
-  already sketched (`database-schema.md:359`) including `phiOverride?: { reason, by }`. Screen and
-  guard ship together (see slice-order note above).
-□ 4d·4 Both routes a PHI check must read, mirroring the dose-reaches-an-animal defect
-  (`713634b`, Phase 2): a block's own spray AND (per 4a·2) an ancestor's pre-split spray. A guard
-  reading only the child's own events is the same class of bug, just in the crop domain.
-□ 4d·5 Flush ordering: sprays flush before harvests, same reasoning as `16fbb6a` — a point-in-time
-  guard cannot refuse a harvest against a spray that has not arrived yet.
-□ 4d·6 Cross-device race (device A sprays, device B — never having seen it — harvests before
-  either syncs): apply the Phase 2 resolution VERBATIM — **FLAG, NEVER REFUSE** a disposal already
-  recorded; a retroactive compliance flag is DERIVED on read (order-independent) and surfaced on
-  `/attention`, the same screen the meat-withdrawal flag already uses. This is NOT the FR-205
-  override path (4d·2), which is a deliberate in-the-moment human decision — say which mechanism
-  covers which case so a reviewer doesn't conflate them.
-□ 4d·7 Idempotency checked BEFORE validation for a re-flushed harvest, same reasoning as the move
-  fix (`findEvent` pattern) — a harvest that already landed must not re-validate against the state
-  its own first flush wrote and refuse itself.
-□ 4d·8 A PHI refusal on flush is a 4xx: set the capture ASIDE, continue the round, never `return`.
-□ 4d·9 Day arithmetic through `farmLocalDay`, not `toISOString().slice(0,10)` — third recurrence
-  of this exact gotcha in this repo (STATUS.md memory), check it explicitly in review.
-□ 4d·10 Compliance-gated (FR-205/US-030, food-safety/export). No hardcoded PHI anywhere —
-  resolved by `(jurisdiction, productId, occurred_at)` through the reference cache, never a
-  literal in the domain function.
+PHI guard + harvest — ONE slice, never split (see the note above). ☑ **Done (22nd session).** All
+ten items closed together, on `phase-4/crops-fields`, `pnpm verify` forced-cold clean (typecheck
+12/12, test 137 files/1468 tests, build 7/7, 181.82 KB gz) and `pnpm test:e2e` 31/5 skipped — no
+regression. **Compliance-gated code (FR-205, food-safety/export) — NOT merge-ready until JP
+triggers a `compliance-checker` pass**, per CLAUDE.md's owner-gate; say so explicitly rather than
+letting the green `pnpm verify` stand in for it.
+☑ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
+  client-side (`usePhiGuard.ts` over `useEffectiveSprays()`/`useChemicalProducts()` — O-12: blocked
+  locally, no server round trip) AND server-side (`CropsService.recordHarvest`'s
+  `evaluatePhiGuard`). Both call the SAME shared `phiGuardFor` (`@werf/domain`) — see 4d·4's note on
+  why this is one implementation, not the client/server split FR-131 uses. Server's `ValidationError`
+  message names the product, the spray date and the earliest safe harvest date, US-030's own gherkin
+  verbatim.
+☑ 4d·2 The override path: a category (from a closed list) PLUS free text, combined into ONE audited
+  `reason` string (`RecordHarvestScreen.tsx`) — never silent (FR-205's own words). ⭐ **No prior
+  "sale-guard override pattern" actually existed to mirror** — FR-131's withdrawal guard is a hard,
+  non-overridable block; FR-205 is the first override-with-audit mechanism in this codebase, built
+  fresh here. The audit row reuses the EXISTING immutable `audit_log` table (migration 0026,
+  `crops.service.ts`'s `recordPhiOverride`) rather than `recordConflict` (that helper also enqueues a
+  `conflict_reviews` item for a human to CLOSE — a deliberate override has nothing left to review).
+  Kept distinct from the cross-device flag (4d·6) throughout — an overridden harvest is explicitly
+  excluded from the race register, never conflated with it.
+☑ 4d·3 FR-207 Record a harvest: quantity, unit, grade, destination, date — payload shape matches
+  `database-schema.md:359` (`phiOverride?: { reason, by }`, `by` optional in the schema/domain layer
+  since a LOCAL capture never has one to give — see 4d·2's note and `LocalHarvest.tsx`). Screen
+  (`RecordHarvestScreen.tsx`) and guard shipped together, plus a report screen
+  (`HarvestScreen.tsx`, `/harvest`) closing the home tile that already existed pointing at the
+  placeholder — an addition beyond the checklist's own wording, deliberately, to avoid a half-built
+  tile (CLAUDE.md's own rule).
+☑ 4d·4 Both routes a PHI check must read: a block's own spray AND an ancestor's pre-split spray,
+  bounded PER-HOP (not leaf-wide — a single leaf-wide bound is provably wrong, see `phi-guard.ts`'s
+  own header and its counter-example test). Server checks the FULL ancestor chain (real
+  `land_units.created_at`, `evaluatePhiGuard`). ⭐ **Client checks the LEAF ONLY** — a deliberate,
+  advisor-reviewed asymmetry: the local land-unit capture (`StoredLandUnit`) never carries a
+  `created_at` (server-assigned; a just-split offline block has none to give even from its own
+  memory), and extending the hydration projection to add it is real plumbing for a narrow case
+  (block split AND harvested, both still offline) — filed as a follow-up (STATUS.md), not built
+  here. `RecordHarvestScreen.tsx` discloses the gap unconditionally for any block with a non-null
+  `parentId`; the server is the authoritative backstop, same posture `withdrawal.ts` takes for its
+  own client/server split.
+☑ 4d·5 Flush ordering: sprays flush before harvests (`Outbox.tsx`, array order). Also, on top of
+  the checklist's own wording: each spray `provides` a `sprayrow:` tag per block, and each harvest's
+  `guardedBy` walks the (unbounded, deliberately conservative) local ancestor chain for it — so a
+  spray HELD this round (its own `landrow:` dependency unmet, not just one that flushes later)
+  taints a harvest on that block or a descendant too, closing the same class of bug `16fbb6a` fixed,
+  not just reproducing its array-order half.
+☑ 4d·6 Cross-device race: `crops.service.ts`'s `phiComplianceRegister` (re-derived on every read,
+  never a stored flag — mirrors `residueRegister`'s own reasoning) + `phiRegister.ts`'s
+  `useLocalPhiFlags` (this device's own unsent evidence) merged on `AttentionScreen.tsx` in a new
+  section, local-first/server-overwrites, the identical pattern the residue section already uses.
+  `HomeScreen.tsx`'s attention badge folds the count in, deduplicated on event id. An overridden
+  harvest is excluded (4d·2's decision was already deliberate and audited, not a race).
+☑ 4d·7 Idempotency checked BEFORE validation (`findEvent`, mirrors `recordMove`/`recordMobTally`) —
+  proven fail-first at the integration level (a re-flushed override does not re-validate or
+  double-write the audit row).
+☑ 4d·8 A PHI refusal on flush is a 4xx (`ValidationError`) — falls through the EXISTING generic
+  Outbox refusal machinery (`isRefusal`/`refusedThisRound`, already proven for every other capture
+  kind) with no new code needed; not given its own dedicated Outbox-level test, the same "reuses
+  already-proven generic machinery" call `4d·5`'s taint tags make explicit reasoning for.
+☑ 4d·9 Day arithmetic: the server never converts an instant to a day for harvest at all —
+  `harvestedOn` is a day string end to end, client to server, sidestepping the whole bug class
+  rather than needing to guard against it; the one place `phi-guard.ts` DOES compare an instant
+  (the ancestor-split bound) stays an instant-to-instant comparison, never converted. Client capture
+  screen uses `farmToday()`, mirroring `RecordSprayScreen.tsx`.
+☑ 4d·10 Compliance-gated. No hardcoded PHI: the harvest guard reads a spray's ALREADY-RESOLVED
+  `earliestHarvestDate` (ADR-0005 — never recomputed from `chemical_products` on read) when present,
+  falling back to a `(productId, phiDays)` PREVIEW from the local cache only for an unsent local
+  spray (the O-12 offline case) — mirrors `withdrawal.ts`'s `clearDateFor` exactly; an advisor
+  review caught and corrected an earlier draft that dropped this preview fallback entirely, which
+  would have broken the offline journey outright.
 
 Fertiliser (no compliance gate — ships independently of 4c/4d)
 ☑ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, `method`
@@ -1719,7 +1757,7 @@ Quality gates
 □ Domain logic (grazing days, stocking rate, PHI resolution) pure, unit-tested, table-driven
 □ testing-strategy.md O-12 (PHI check offline, blocked locally, no server round trip) and the
   "Spray → PHI → blocked harvest, Offline" journey row are the REQUIRED matrix for this phase —
-  O-12's `⛔ Phase 4 — PHI does not exist yet` marker clears when 4d lands
+  ☑ O-12's marker now reads ✅ (4d, 22nd session) — box for the whole phase stays open until 4e
 □ Both derived artifacts regenerated in the SAME commit as any synced-table change
   (`generate:schema` + `generate:sync-rules`) — verify fails on drift otherwise
 □ TENANCY classification written in the same commit as its table, every time

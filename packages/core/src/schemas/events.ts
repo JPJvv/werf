@@ -588,6 +588,40 @@ export const sprayPayloadSchema = z.object({
 });
 export type SprayPayload = z.infer<typeof sprayPayloadSchema>;
 
+/**
+ * A harvest (FR-207) — COMPLIANCE-GATED (legal-compliance.md § 4.3, US-030): 4d's PHI guard blocks
+ * this at capture unless `phiOverride` is present. `quantity`/`unit` mirror `planting.density`'s
+ * generic `{ value, unit }` shape one field flatter (a harvest has no second numeric field to pair a
+ * unit with), because the unit varies by crop (kg for grain, bins for grapes, bags for potatoes) the
+ * same way a fertiliser rate's does.
+ *
+ * `phiOverride.by` is the acting user id, resolved server-side from the authenticated session —
+ * never client input (the same property `recordHarvestRequestSchema`'s own enumerated shape
+ * protects, one layer out). Its presence is what distinguishes a deliberate, audited override
+ * (FR-205's own words: "a written reason... is audited") from an ordinary harvest that happened to
+ * clear its PHI on its own.
+ */
+export const harvestPayloadSchema = z.object({
+  /** The farm-local day harvested (YYYY-MM-DD) — the day 4d's PHI guard judges, the same role
+   *  `sprayedOn` plays for a spray, one field over. */
+  harvestedOn: dateSchema,
+  quantity: z.number().positive().finite(),
+  unit: z.string().min(1),
+  grade: z.string().min(1).optional(),
+  destination: z.string().min(1).optional(),
+  phiOverride: z
+    .object({
+      reason: z.string().min(1),
+      /** Optional here for the identical reason `createdBy` is never client-set anywhere in this
+       *  codebase: a LOCAL, not-yet-sent capture has a reason (the farmer just typed it) but no
+       *  authoritative acting user to give — the server injects it from the session before this
+       *  event is ever inserted (`crops.service.ts`). Present, always, on anything actually stored. */
+      by: uuidSchema.optional(),
+    })
+    .optional(),
+});
+export type HarvestPayload = z.infer<typeof harvestPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -610,6 +644,7 @@ const CONCRETE_PAYLOADS = {
   planting: plantingPayloadSchema,
   fertiliser: fertiliserPayloadSchema,
   spray: sprayPayloadSchema,
+  harvest: harvestPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

@@ -32,6 +32,8 @@ export * from './land/ancestry';
 export * from './crops/planting';
 export * from './crops/fertiliser';
 export * from './crops/spray';
+export * from './crops/harvest';
+export * from './crops/phi-guard';
 export * from './rainfall';
 export * from './herd-scope';
 export * from './dates';

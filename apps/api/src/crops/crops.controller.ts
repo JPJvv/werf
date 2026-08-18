@@ -5,10 +5,24 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { CapturedEvent } from '../common/event-capture';
 import type { AuthContext } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { CropsService, type SprayHistoryRow } from './crops.service';
+import {
+  CropsService,
+  type HarvestHistoryRow,
+  type PhiFlagRow,
+  type SprayHistoryRow,
+} from './crops.service';
 
 /** `landUnitId`/`from`/`to` narrow the report; `farmId` proves membership (FR-211). */
 const sprayHistoryQuerySchema = z.object({
+  farmId: schemas.uuidSchema,
+  landUnitId: schemas.uuidSchema.optional(),
+  from: schemas.dateSchema.optional(),
+  to: schemas.dateSchema.optional(),
+});
+
+/** `landUnitId`/`from`/`to` narrow the report; `farmId` proves membership (FR-207) — same shape as
+ *  the spray-history query, one report family over. */
+const harvestHistoryQuerySchema = z.object({
   farmId: schemas.uuidSchema,
   landUnitId: schemas.uuidSchema.optional(),
   from: schemas.dateSchema.optional(),
@@ -81,5 +95,52 @@ export class CropsController {
       ...(query.from === undefined ? {} : { from: query.from }),
       ...(query.to === undefined ? {} : { to: query.to }),
     });
+  }
+
+  /**
+   * Record a harvest (FR-207) — COMPLIANCE-GATED. Blocked at capture inside an active pre-harvest
+   * interval unless the body carries a written `phiOverride` (see the service). Same idempotency
+   * and authorship discipline as every other capture here.
+   */
+  @Post('harvests')
+  @HttpCode(HttpStatus.CREATED)
+  async recordHarvest(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordHarvestRequestSchema))
+    body: schemas.RecordHarvestRequest,
+  ): Promise<CapturedEvent> {
+    return this.crops.recordHarvest(auth.userId, body);
+  }
+
+  /**
+   * Auditor-ready harvest history (FR-207) — mirrors `listSprayHistory`; see the service for why
+   * the client screen does not call this.
+   */
+  @Get('harvests')
+  async listHarvestHistory(
+    @CurrentUser() auth: AuthContext,
+    @Query(new ZodValidationPipe(harvestHistoryQuerySchema))
+    query: z.infer<typeof harvestHistoryQuerySchema>,
+  ): Promise<HarvestHistoryRow[]> {
+    return this.crops.listHarvestHistory(auth.userId, query.farmId, {
+      ...(query.landUnitId === undefined ? {} : { landUnitId: query.landUnitId }),
+      ...(query.from === undefined ? {} : { from: query.from }),
+      ...(query.to === undefined ? {} : { to: query.to }),
+    });
+  }
+
+  /**
+   * The PHI compliance register (4d·6, FR-205) — the cross-device race: a harvest that, once every
+   * device's spray evidence has landed, reads as having fallen inside an active PHI it could not
+   * have been checked against at capture. Flagged on `/attention`, never refused after the fact —
+   * see the service for the full reasoning, mirroring `GET /livestock/residue-register`.
+   */
+  @Get('phi-register')
+  async phiComplianceRegister(
+    @CurrentUser() auth: AuthContext,
+    @Query(new ZodValidationPipe(z.object({ farmId: schemas.uuidSchema })))
+    query: { farmId: string },
+  ): Promise<PhiFlagRow[]> {
+    return this.crops.phiComplianceRegister(auth.userId, query.farmId);
   }
 }

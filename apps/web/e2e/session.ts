@@ -71,6 +71,13 @@ export const FIXTURE = {
   mobId: '0190f3a0-0000-7000-8000-0000000000b1',
   productId: '0190f3a0-0000-7000-8000-0000000000d1',
   campId: '0190f3a0-0000-7000-8000-0000000000c1',
+  // A block (not a camp) plus a chemical product and an active-PHI spray on it — 4d's guard panel
+  // and override controls only render once a harvest is actually blocked, and the "Overridden" line
+  // on the harvest history list only renders once a harvest with a `phiOverride` exists.
+  blockId: '0190f3a0-0000-7000-8000-0000000000c2',
+  chemicalProductId: '0190f3a0-0000-7000-8000-0000000000d2',
+  sprayId: '0190f3a0-0000-7000-8000-0000000000f3',
+  overriddenHarvestId: '0190f3a0-0000-7000-8000-0000000000f4',
 } as const;
 
 /** localStorage entries that put a farm's worth of stock on the device. */
@@ -109,6 +116,9 @@ export function populatedStores(): Record<string, unknown> {
       '0190f3a0-0000-7000-8000-0000000000f1',
       '0190f3a0-0000-7000-8000-0000000000f2',
       '0190f3a0-0000-7000-8000-0000000000e1',
+      FIXTURE.blockId,
+      FIXTURE.sprayId,
+      FIXTURE.overriddenHarvestId,
     ],
     [`werf-land:${FARM_ID}`]: [
       {
@@ -118,6 +128,55 @@ export function populatedStores(): Record<string, unknown> {
         name: null,
         hectares: 12,
         kind: 'camp',
+      },
+      {
+        id: FIXTURE.blockId,
+        farmId: FARM_ID,
+        code: 'B12',
+        name: null,
+        hectares: 8,
+        kind: 'block',
+      },
+    ],
+    // A registered chemical product with a PHI (FR-204/FR-508), and a spray on the block that has
+    // NOT round-tripped through the server yet (no `activeIngredients` — `usePhiGuard`'s own
+    // `resolved` discriminator), so the offline PREVIEW path (O-12) is what a11y sees, not an
+    // already-resolved date.
+    [`werf-chemical-products:${FARM_ID}`]: [
+      {
+        id: FIXTURE.chemicalProductId,
+        jurisdiction: 'ZA',
+        name: 'Roundup PowerMax',
+        registrationNumber: 'L1234 Act 36/1947',
+        crop: 'maize',
+        phiDays: 21,
+        reentryHours: 24,
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
+      },
+    ],
+    [`werf-sprays:${FARM_ID}`]: [
+      {
+        id: FIXTURE.sprayId,
+        farmId: FARM_ID,
+        landUnitId: FIXTURE.blockId,
+        occurredAt: new Date().toISOString(),
+        sprayedOn: today,
+        productId: FIXTURE.chemicalProductId,
+      },
+    ],
+    // A harvest this device already recorded with a written override (FR-205) — the only way the
+    // "Overridden — <reason>" line on the harvest history list ever renders.
+    [`werf-harvests:${FARM_ID}`]: [
+      {
+        id: FIXTURE.overriddenHarvestId,
+        farmId: FARM_ID,
+        landUnitId: FIXTURE.blockId,
+        occurredAt: new Date().toISOString(),
+        harvestedOn: today,
+        quantity: 4.5,
+        unit: 'ton',
+        phiOverride: { reason: 'Export deadline: contract ships Friday' },
       },
     ],
     [`werf-herd:${FARM_ID}`]: [

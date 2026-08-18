@@ -44,6 +44,7 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   planting: 'notSent.kind.planting',
   fertiliser: 'notSent.kind.fertiliser',
   spray: 'notSent.kind.spray',
+  harvest: 'notSent.kind.harvest',
   mob: 'notSent.kind.mob',
   tally: 'notSent.kind.tally',
   branding: 'notSent.kind.branding',

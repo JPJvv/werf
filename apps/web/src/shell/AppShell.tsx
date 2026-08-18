@@ -14,6 +14,9 @@ import { LocalFertiliserProvider } from '../crops/LocalFertiliser';
 import { HydratedFertiliserProvider } from '../crops/HydratedFertiliser';
 import { LocalSpraysProvider } from '../crops/LocalSprays';
 import { HydratedSpraysProvider } from '../crops/HydratedSprays';
+import { LocalHarvestProvider } from '../crops/LocalHarvest';
+import { HydratedHarvestProvider } from '../crops/HydratedHarvest';
+import { LocalPhiRegisterProvider } from '../crops/LocalPhiRegister';
 import { LocalChemicalProductsProvider } from '../crops/LocalChemicalProducts';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
@@ -74,6 +77,15 @@ const CAPTURE_STORES = [
   // (`useEffectiveSprays`'s own doc) because it carries the server-resolved PHI fields a local
   // capture never can.
   HydratedSpraysProvider,
+  LocalHarvestProvider,
+  // Also not a capture store — the DOWN-SYNC half of harvests (FR-207), the identical shape as
+  // `HydratedSpraysProvider` above it: the hydrated copy WINS on a shared id (`useEffectiveHarvests`'s
+  // own doc) because it carries the server-resolved `phiOverride.by` a local capture never can.
+  HydratedHarvestProvider,
+  // Not a capture store — an INBOUND cache, the identical kind of thing as `LocalResidueRegisterProvider`
+  // below, one food-safety register over: the cross-device PHI race (4d·6), reached from `/attention`
+  // rather than a tile — the grid's tile set is fixed and generated from the enterprise types.
+  LocalPhiRegisterProvider,
   LocalMobsProvider,
   LocalTalliesProvider,
   LocalBrandingProvider,

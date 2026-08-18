@@ -3,108 +3,30 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-17 (twenty-first session). ✅ **4b + 4c closed AND owner-triggered
-`reviewer`+`sync-auditor`+`compliance-checker` pass complete — 4c now CLEARS, see the note just
-below.** Phase 3 MERGED to `main` as `6823858` (PR #11, merge commit, all 3 CI lanes green at merge).
-Do not re-run P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
+**Last updated:** 2026-08-18 (twenty-second session). ✅ **4d closed — PHI guard + harvest, all ten
+checklist items, one slice.** `pnpm verify` forced-cold clean (typecheck 12/12, 137 files/1468
+tests, build 7/7, 181.82 KB gz) + `pnpm test:e2e` 31/5 skipped, no regression. ⛔ **Compliance-gated
+(FR-205, food-safety/export) — NOT merge-ready until JP triggers a `compliance-checker` pass**, same
+gate 4c already went through; ask before merging. Full account: phase-checklists.md's 4d section.
+Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1/P2.5–P2.10, conflict audit,
+P3.11–P3.15, P3.16, or 4a/4b/4c's own closed work. **Next: 4e (grazing/feed/inventory — the one
+slice with real new schema), or ask for the 4d compliance-checker pass first.**
 
-✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` on
-`phase-4/crops-fields` — CLEARS, 2026-08-17 (twenty-first session, owner-requested).** First pass on
-this branch (4a+4b+4c, 78 files). ⛔ **`reviewer` caught a real gate failure this session's earlier
-`pnpm verify` runs had MISSED**: `@werf/api:typecheck` was a stale Turbo **cache hit, replaying
-logs** both times, masking a genuine `exactOptionalPropertyTypes` compile error in the tie-order test
-just added (`[uuidv7(), uuidv7()].sort()` destructures to `string | undefined`, not a fixed tuple).
-Fixed with an explicit tuple cast; re-verified with `pnpm turbo typecheck --force` (0 cached, 12/12)
-and a fully forced `pnpm verify` chain — **131 files / 1409 tests, 12/12 typecheck, 7/7 builds,
-177.66 KB gz, genuinely cold.** ⭐ **Lesson: a green `pnpm verify` log is not proof unless the
-typecheck/build legs show `cache miss` or `force executing` — a replayed cache hit proves nothing
-changed, not that nothing is broken.** `sync-auditor` and `compliance-checker` independently found
-the SAME MED (`listSprayHistory` ordered by `occurredAt` alone — back-dated captures land on the
-identical noon instant, so same-day sprays tie with no Postgres ordering guarantee; fixed with the
-standard `(occurredAt, id)` total order, fail-first proven). `compliance-checker` additionally found
-a MED in the FR-211 report itself: `SpraysScreen.tsx` read `phiDays === undefined` as "not yet
-synced" for BOTH that case AND "resolved, product has no PHI on record" — the latter is permanent,
-so a fully GlobalGAP-clear spray showed a stale "PHI not yet confirmed" label forever. Fixed the
-discriminator to `activeIngredients` (required non-empty on the wire, so present on every hydrated
-echo, absent on every local-only capture), added a distinct "no PHI on record" state and a fail-safe
-for the still-unreached case of `phiDays` without `earliestHarvestDate`, fail-first proven, and added
-`SpraysScreen.test.tsx` (had zero coverage before this pass — how the MED shipped unnoticed). Per
-CLAUDE.md §6 clause 3 (mechanical + confined to the named files + fail-first tested), these MED
-fixes merge WITHOUT a second compliance-checker pass. **Filed, not fixed**: a schema-level
-`.refine()` on `sprayPayloadSchema` to guarantee `phiDays`/`earliestHarvestDate` co-occur, as
-defense-in-depth — compliance-checker itself flagged this as not reachable via the current write
-path. All findings + fixes: commit `3d10103`. **4c is now MERGE-READY on its own compliance
-grounds** — the outstanding PHI-block-at-capture guard (`legal-compliance.md` §4.3) is explicitly
-4d's own scope, not a 4c gap; compliance-checker confirmed 4c's spray-capture write path (server-
-side PHI resolution, date-in-force lookup, client-write-blocking) is otherwise sound.
-
-✅ **Phase 3 closed clean.** Two SEV-2s found and fixed before merge: OPFS quota loss under device
-storage pressure (16th session, `c45cd01`) and a capture buffered only in memory losing a record to
-a reload before hydration landed (17th session, `c77debb` — found from a real CI failure on
-`offline-capture.spec.ts`, not a review agent; a loaded CI runner widened a race a fast local
-machine closed before it could be observed). Whole-branch `reviewer`+`sync-auditor`+
-`compliance-checker` pass: APPROVABLE after one fix round. Full account in §3 — do not re-litigate.
+✅ **4a/4b/4c condensed (18th–21st sessions) — fully closed, full accounts in `phase-checklists.md`'s
+Phase 4 section, not repeated here.** 4a: blocks + plantings, `ancestorChainOf` (`@werf/domain`)
+walks `parent_id` unbounded for the planting projection. 4b: fertiliser, no compliance gate. 4c:
+chemical-products reference (migration 0032) + spray capture (PHI/active-ingredients resolved
+server-side, ADR-0005) + FR-211 spray-history report. **4c's whole-branch
+`reviewer`+`sync-auditor`+`compliance-checker` pass CLEARED** (21st session, commit `3d10103`) — two
+MED fixed fail-first (spray-history tie-order, a permanent-vs-pending PHI-label conflation), one
+LOW-MED filed as unreachable. ⭐ **That pass caught a stale Turbo cache hit masking a real
+`exactOptionalPropertyTypes` compile error behind two earlier "green" `pnpm verify` runs the same
+session** — a `cache hit, replaying logs` line on a package just touched proves nothing changed,
+not that nothing is broken.
 
 🔶 **Open decision — chemical_products production data source, asked 2026-08-17 (18th session).**
-JP: not decided yet, flag and move on. Dev/test `chemical_products` rows ship as explicitly
-unverified placeholders (mirrors `regulatory_rates`); this blocks production seeding/deployment
-only, not 4a–4e development. Revisit before any production deploy that includes spray capture.
-
-✅ **Phase 4 planned in detail (17th session), before any code.** Full slice plan (4a–4e,
-schema/API/screen/projection/tests per slice) is in `phase-checklists.md`'s Phase 4 section — read
-it first, do not re-derive. Fixed a wrong FR bucketing shared by that file and `roadmap.md` (the
-"two incompatible phase maps" defect class, already paid for once).
-
-✅ **4b + 4c closed (21st session) — "fertiliser + chemical reference & spray."** Two separate
-commits, split deliberately (advisor guidance): `feat(crops): record a fertiliser application
-(FR-206)` landed and verified green FIRST, THEN 4c's migration/domain/screens started, so a
-`pnpm verify` failure could never be ambiguous between the two. 4b: `fertiliser` event, filed under
-`FARM_SCOPED_EVENT_TYPES` the identical way `planting` is, no compliance gate, `/crops/fertilise`.
-4c: migration 0032 `chemical_products` (mirrors `veterinary_products`, `registration_number` NOT
-NULL unlike the vet table), `ReferenceService.listChemicalProducts` + client cache, `recordSpray`
-(PHI/active-ingredients resolved server-side and stored on the event, ADR-0005 — the wire contract
-`recordSprayRequestSchema` deliberately ENUMERATES fields rather than spreading the payload schema,
-unlike 4b's fertiliser/planting, so a future payload field can't silently become client-dictatable),
-and FR-211's spray-history report (`GET /crops/sprays` + `SpraysScreen.tsx`, built from local cached
-data, no invented "season" concept — grepped first, found only a rainfall-specific one). ⭐ A null
-`phi_days` is OMITTED from the event, never zeroed — `attachDosing`'s zero-withdrawal-vaccine
-precedent, reused rather than re-derived. ⭐ `LocalSprays.tsx` does NOT call the domain `recordSpray`
-builder client-side (unlike planting/fertiliser) — it needs the resolved PHI as an input this device
-doesn't have, mirroring `LocalHealth.tsx`'s identical treatment/vaccination/dip shape; the hydrated
-echo of a device's own spray WINS on merge (`mergeByIdPreferHydrated`) once it carries the resolved
-PHI. Two real defects found and fixed along the way: `packages/db/src/schema/tables.ts`'s
-hand-maintained schema-MODULE list needed the new file added by hand (caught by
-`tenancy.spec.ts`'s classification-vocabulary test going red); `packages/db/src/testing.ts`'s
-real-Postgres test-reset TRUNCATE list is ALSO hand-maintained and predates this table, so a fresh
-`chemical_products` row leaked across tests until added (caught by the reference-register
-integration tests). **Deliberately deferred, named rather than smuggled in or silently missed**: the
-"N within PHI" home-tile badge (sits under its own checklist heading; worth pairing with 4d's guard
-rather than building the computation twice), and everything 4d itself owns (harvest capture, the PHI
-guard, `phiOverride`). ✅ **4c touched regulated code and was reviewed — see the top-of-file review-
-pass note; 4c is now merge-ready.** `pnpm test:e2e` default lane: 31 passed / 5 skipped (same gated
-real-stack specs as always; current `pnpm verify` numbers are in the review-pass note above, not
-repeated here). Next: 4d (harvest + PHI guard, one slice, never split — see the phase-checklist's
-own note on why) or 4e (grazing/feed/inventory).
-
-✅ **4a fully closed (4a·1/4a·2/4a·3, 18th–20th sessions) — "blocks & plantings."** 4a·1 (FR-201,
-define a block, 18th). 4a·3 (FR-203, record a planting, 19th): new `apps/api/src/crops/` +
-`packages/domain/src/crops/` modules; `planting` reuses `FARM_SCOPED_EVENT_TYPES` rather than a
-new parallel list; fixed a pre-existing `FirstRunGuide.tsx` mismatch (crop step pointed at
-`/harvest`, now `/crops/plant`). **4a·2 (FR-202, split a block, 20th) — and the open
-planting-inheritance question ANSWERED: YES, unbounded.** No new server endpoint needed —
-`POST /land-units` already accepted `parentId` since Phase 2; `SplitBlockScreen.tsx`
-(`/land/split`) is a bulk-creation UI over the existing write path, never closes the parent. New
-shared `@werf/domain` primitive `ancestorChainOf` walks `parent_id`; `LocalPlantings.tsx` folds
-over it UNBOUNDED (a later planting always wins by the total order, so nothing to bound); 4d's
-PHI guard will reuse the same primitive but MUST bound it to `occurred_at` before the child's own
-`createdAt` — different callers, one shared walk, named so 4d doesn't reuse the wrong bound. Also
-found+fixed a live P2.7-class Outbox gap this slice made real for the first time: land-unit
-creation had no `guardedBy` on its own `parentId` — fixed, fail-first proven. ⭐ Advisor review then
-caught two more: the picker offered already-split blocks (fixed to leaf-only, one generation, so
-4d's per-hop PHI bound stays valid) and the inheritance test asserted a raw COUNT rather than which
-rows carried it (rescoped to `within(row)`) — both fail-first proven. Full account in
-`phase-checklists.md`'s Phase 4 section. Next: 4b (fertiliser) or 4c (chemical reference + spray —
-dev/test unblocked, production seeding waits on JP's source decision above).
+JP: not decided yet, flag and move on. Dev/test rows ship as explicitly unverified placeholders
+(mirrors `regulatory_rates`); blocks production seeding/deployment only, not 4a–4e development.
 
 **Active branch:** `phase-4/crops-fields`, off `main` @ `6823858` (Phase 3 merge commit).
 
@@ -119,7 +41,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑ full, 4b ☑, 4c ☑ merge-ready; 4d/4e open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev. ✅ 4c's compliance-checker pass CLEARED (21st session) — see top-of-file note |
+| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ built — ⛔ compliance pass not yet triggered; 4e open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev. ✅ 4c's compliance-checker pass CLEARED (21st session). 4d (PHI guard + harvest) closed 22nd session, `pnpm verify`/`test:e2e` green — say so before merge, compliance pass not yet asked for |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -132,6 +54,40 @@ noisy accessibility fixture, human-gated regulated verification, a false uncache
 missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+⛔ **4d built and verified (22nd session), COMPLIANCE PASS NOT YET TRIGGERED.** PHI guard
+(`packages/domain/src/crops/phi-guard.ts`, shared by client + server — deliberately NOT the
+client/server split `withdrawal.ts` uses) + harvest capture + FR-205 override (audited via the
+existing `audit_log` table, migration 0026) + 4d·6's cross-device race register
+(`phiComplianceRegister` + `/attention`). An advisor review during design caught and corrected a
+draft that would have broken the OFFLINE case (O-12): the guard must fall back to a local-cache
+PREVIEW for an unsent spray, mirroring `withdrawal.ts`'s `clearDateFor`, not just trust a
+server-resolved date that a local capture never has. Client-side ancestor checking is deliberately
+LEAF-ONLY (the local land-unit capture has no `created_at` to bound a split with); the gap is
+disclosed on `RecordHarvestScreen.tsx` for a split block, and the server (full ancestor chain) is
+the authoritative backstop. Filed, not built: extending `LocalLand`/`HydratedLand` to carry
+`land_units.created_at` so the client guard can check ancestors too — narrow case (block split AND
+harvested, both offline), server already covers it. Say out loud that this is compliance-gated
+(FR-205, food-safety/export) before calling it merge-ready — JP has not asked for the
+`compliance-checker` pass yet.
+
+⚠️ **Self-review before handoff (22nd session, same day) caught three gaps a green `pnpm verify` +
+`test:e2e` could not have — all three closed, still pre-compliance-pass:** (1) `a11y.spec.ts`'s
+enumerated route list never carried ANY crops screen from 4a onward, so the PHI block panel and
+override controls had never been in front of axe — added `/crops/harvest` and `/harvest` to both
+`CAPTURE_SCREENS` and `POPULATED_SCREENS` (session.ts fixture gained a block + chemical product +
+active-PHI spray + an overridden harvest), 18/18 e2e green in both themes, 0 violations. The same gap
+exists for 4a/4b/4c's own screens (planting/fertiliser/spray) — filed, not fixed here, out of this
+slice's scope. (2) A real bug in `RecordHarvestScreen.tsx`: `valid` never checked `harvestedOn !== ''`,
+so clearing the date input left Save enabled and submitting sent an unreadable day into the domain
+builder, which threw inside the async handler with no feedback and left the button permanently
+disabled (`setSaving(false)` never reached) — fixed, regression test added. Not a compliance bypass:
+`'' >= earliestHarvestDate` is false, so the guard still blocks in the safe direction.
+`RecordSprayScreen.tsx` has the identical shape and was NOT touched — pre-existing, belongs to
+already-merge-ready 4c, filed as a follow-up. (3) `AttentionScreen.tsx`'s PHI section had zero
+rendering coverage — `phiRegister.test.ts` only tested the pure fold. Added a test that seeds a local
+block/product/spray/harvest, renders the real `<App/>` at `/attention`, and asserts the
+product/spray-date/earliest-date line plus the folded badge count on `/`.
 
 ✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` on
 `phase-4/crops-fields` — CLEARS, 2026-08-17 (twenty-first session, JP-requested).** Full account is
@@ -194,7 +150,10 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify`, forced/uncached typecheck+build (2026-08-17, twenty-first session, after the review-pass fixes — the number to trust) | ✅ **131 test files / 1409 tests, 12/12 typecheck, 7/7 builds, 177.66 KB gz** |
+| `pnpm verify`, forced/cold — 4d (2026-08-18, twenty-second session, the number to trust) | ✅ **137 test files / 1468 tests, 12/12 typecheck, 7/7 builds, 181.82 KB gz** |
+| `pnpm test:e2e` default lane (2026-08-18, twenty-second session, after 4d) | ✅ 31 passed / 5 skipped |
+| `npx vitest run` + `npx playwright test`, after the self-review fixes above (same day) | ✅ 137 files / 1470 tests; e2e 31 passed / 5 skipped, incl. `/crops/harvest` + `/harvest` now in `a11y.spec.ts` (18/18, 0 violations) |
+| `pnpm verify`, forced/uncached typecheck+build (2026-08-17, twenty-first session, after the review-pass fixes) | ✅ 131 test files / 1409 tests, 12/12 typecheck, 7/7 builds, 177.66 KB gz |
 | Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` (2026-08-17, twenty-first session) | ✅ CLEARS — full account in the top-of-file note. `reviewer` caught a stale-cache-hit masked typecheck failure; both fixed |
 | `pnpm verify` (2026-08-17, twenty-first session, after 4c, BEFORE the review pass — superseded, see above) | 130 test files / 1402 tests, 7/7 builds, 177.56 KB gz — typecheck leg was a false cache hit, do not cite |
 | `pnpm test:e2e` default lane (2026-08-17, twenty-first session, after 4c) | ✅ 31 passed / 5 skipped |

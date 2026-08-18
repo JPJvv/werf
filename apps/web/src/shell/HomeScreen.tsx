@@ -6,6 +6,8 @@ import { HomeGrid } from '../home/HomeGrid';
 import { useHerdSummary, useWithholdingCount } from '../livestock/herd';
 import { useResidueRegister } from '../livestock/LocalResidueRegister';
 import { useLocalResidueFlags } from '../livestock/residue';
+import { usePhiRegister } from '../crops/LocalPhiRegister';
+import { useLocalPhiFlags } from '../crops/phiRegister';
 import { useLandUnits } from '../land/LocalLand';
 import { useSeasonRainfall } from '../rainfall/LocalRainfall';
 import { FirstRunGuide } from './FirstRunGuide';
@@ -45,7 +47,14 @@ export function HomeScreen() {
     ...server.map((f) => f.eventId),
     ...localFlags.map((f) => f.eventId),
   ]).size;
-  const needsAttention = residueAttention + conflictReviews.length;
+  // 4d·6, the identical shape one food-safety register over — see `AttentionScreen.tsx`'s own note.
+  const phiServer = usePhiRegister();
+  const phiLocal = useLocalPhiFlags();
+  const phiAttention = new Set([
+    ...phiServer.map((f) => f.eventId),
+    ...phiLocal.map((f) => f.eventId),
+  ]).size;
+  const needsAttention = residueAttention + phiAttention + conflictReviews.length;
 
   // A signed-in user with no farm is not a state the product can reach: registration
   // creates a business and its first farm in one transaction, and Phase 1 cannot delete a

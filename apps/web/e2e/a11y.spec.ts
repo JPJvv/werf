@@ -212,6 +212,11 @@ const CAPTURE_SCREENS = [
   // or either state while the checklist claimed the sweep covered it. Its POPULATED state is audited
   // below, because a register with nothing on it is one sentence.
   { path: '/attention', heading: /^needs your attention$/i },
+  // 4d (FR-205/FR-207). The seed has no land at all here, so this audits the "no blocks yet" empty
+  // state — its POPULATED state (the PHI block panel and override controls) is audited below,
+  // because that is where the compliance-relevant markup actually is.
+  { path: '/crops/harvest', heading: /record a harvest/i },
+  { path: '/harvest', heading: /harvest history/i },
 ] as const;
 
 /**
@@ -331,6 +336,28 @@ const POPULATED_SCREENS = [
         .first()
         .click();
       await expect(page.getByLabel(/product/i)).toBeVisible();
+    },
+  },
+  {
+    // 4d (FR-205/US-030). The fixture's one block has an unresolved spray inside its product's
+    // 21-day PHI, and the screen defaults the harvest day to today — so the block panel renders with
+    // no interaction needed. The override reason select/textarea (the newest controls here, and the
+    // ones a compliance pass will look at first) only exist once "Override" is clicked.
+    path: '/crops/harvest',
+    heading: /record a harvest/i,
+    act: async (page: Page) => {
+      await expect(page.getByText(/inside a pre-harvest interval/i)).toBeVisible();
+      await page.getByRole('button', { name: /^override$/i }).click();
+      await expect(page.getByLabel(/reason/i)).toBeVisible();
+    },
+  },
+  {
+    // The harvest history list with a written override on it (FR-205) — the "Overridden — <reason>"
+    // line is the one piece of markup here that carries a compliance meaning.
+    path: '/harvest',
+    heading: /harvest history/i,
+    act: async (page: Page) => {
+      await expect(page.getByText(/overridden/i)).toBeVisible();
     },
   },
 ] as const;

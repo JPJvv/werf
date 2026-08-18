@@ -1600,6 +1600,25 @@ Reference data & spray capture
   in this product, and the server endpoint exists for future non-device consumers (a printed pack, a
   desktop export). Not the GlobalGAP checklist engine (control points, non-conformances, evidence
   completeness) — that is `legal-compliance.md` §4.1's Phase 6 build requirement.
+☑ **`compliance-checker` (+ `reviewer` + `sync-auditor`), whole-branch `main..HEAD` — CLEARS, run
+  2026-08-17 (21st session, JP-requested). 4c is MERGE-READY.** Two MED found and fixed as `3d10103`
+  (both fail-first proven): `listSprayHistory` ordered by `occurredAt` alone, so two same-day sprays
+  — an ordinary case, since `RecordSprayScreen` stamps every back-dated capture at the identical noon
+  instant — tied with no Postgres ordering guarantee (`sync-auditor` and `compliance-checker` found
+  this independently); `SpraysScreen.tsx` conflated "not yet hydrated" with "hydrated, product has no
+  PHI on record" under the shared `phiDays === undefined` check, so a fully GlobalGAP-clear spray
+  showed a permanent, wrong "PHI not yet confirmed" label on the one screen this slice exists to
+  produce — fixed by discriminating on `activeIngredients` (required non-empty on the wire, present
+  on every hydrated echo, absent on every local-only capture) instead. `SpraysScreen.test.tsx` added
+  — it had zero coverage before this pass, which is how the MED shipped unnoticed. One LOW-MED filed
+  rather than fixed (a schema-level `.refine()` co-occurrence guard on `phiDays`/`earliestHarvestDate`
+  — not reachable via the current write path, compliance-checker's own call). ⭐ `reviewer` also
+  caught a stale Turbo cache hit masking a real `exactOptionalPropertyTypes` typecheck failure that
+  two earlier `pnpm verify` runs this session had reported green on — see STATUS.md's top-of-file
+  note for the fix and the lesson (a `cache hit, replaying logs` line proves nothing changed, not that
+  nothing is broken). The outstanding PHI-block-at-capture guard (`legal-compliance.md` §4.3) is 4d's
+  own scope, not a 4c gap — compliance-checker confirmed 4c's write path (server-side PHI resolution,
+  date-in-force lookup, client-write-blocking) is otherwise sound.
 
 PHI guard + harvest — ONE slice, never split (see the note above)
 □ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs

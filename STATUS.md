@@ -3,11 +3,40 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-17 (twenty-first session). ✅ **4b (fertiliser) + 4c (chemical reference +
-spray) closed, two separate commits on `phase-4/crops-fields`** — full account in the note just
-below. ⛔ 4c is NOT merge-ready (regulated code, compliance pass not yet run — owner-triggered
-only). Phase 3 MERGED to `main` as `6823858` (PR #11, merge commit, all 3 CI lanes green at merge).
+**Last updated:** 2026-08-17 (twenty-first session). ✅ **4b + 4c closed AND owner-triggered
+`reviewer`+`sync-auditor`+`compliance-checker` pass complete — 4c now CLEARS, see the note just
+below.** Phase 3 MERGED to `main` as `6823858` (PR #11, merge commit, all 3 CI lanes green at merge).
 Do not re-run P1/P2.5–P2.10, conflict audit, P3.11–P3.15 or P3.16.
+
+✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` on
+`phase-4/crops-fields` — CLEARS, 2026-08-17 (twenty-first session, owner-requested).** First pass on
+this branch (4a+4b+4c, 78 files). ⛔ **`reviewer` caught a real gate failure this session's earlier
+`pnpm verify` runs had MISSED**: `@werf/api:typecheck` was a stale Turbo **cache hit, replaying
+logs** both times, masking a genuine `exactOptionalPropertyTypes` compile error in the tie-order test
+just added (`[uuidv7(), uuidv7()].sort()` destructures to `string | undefined`, not a fixed tuple).
+Fixed with an explicit tuple cast; re-verified with `pnpm turbo typecheck --force` (0 cached, 12/12)
+and a fully forced `pnpm verify` chain — **131 files / 1409 tests, 12/12 typecheck, 7/7 builds,
+177.66 KB gz, genuinely cold.** ⭐ **Lesson: a green `pnpm verify` log is not proof unless the
+typecheck/build legs show `cache miss` or `force executing` — a replayed cache hit proves nothing
+changed, not that nothing is broken.** `sync-auditor` and `compliance-checker` independently found
+the SAME MED (`listSprayHistory` ordered by `occurredAt` alone — back-dated captures land on the
+identical noon instant, so same-day sprays tie with no Postgres ordering guarantee; fixed with the
+standard `(occurredAt, id)` total order, fail-first proven). `compliance-checker` additionally found
+a MED in the FR-211 report itself: `SpraysScreen.tsx` read `phiDays === undefined` as "not yet
+synced" for BOTH that case AND "resolved, product has no PHI on record" — the latter is permanent,
+so a fully GlobalGAP-clear spray showed a stale "PHI not yet confirmed" label forever. Fixed the
+discriminator to `activeIngredients` (required non-empty on the wire, so present on every hydrated
+echo, absent on every local-only capture), added a distinct "no PHI on record" state and a fail-safe
+for the still-unreached case of `phiDays` without `earliestHarvestDate`, fail-first proven, and added
+`SpraysScreen.test.tsx` (had zero coverage before this pass — how the MED shipped unnoticed). Per
+CLAUDE.md §6 clause 3 (mechanical + confined to the named files + fail-first tested), these MED
+fixes merge WITHOUT a second compliance-checker pass. **Filed, not fixed**: a schema-level
+`.refine()` on `sprayPayloadSchema` to guarantee `phiDays`/`earliestHarvestDate` co-occur, as
+defense-in-depth — compliance-checker itself flagged this as not reachable via the current write
+path. All findings + fixes: commit `3d10103`. **4c is now MERGE-READY on its own compliance
+grounds** — the outstanding PHI-block-at-capture guard (`legal-compliance.md` §4.3) is explicitly
+4d's own scope, not a 4c gap; compliance-checker confirmed 4c's spray-capture write path (server-
+side PHI resolution, date-in-force lookup, client-write-blocking) is otherwise sound.
 
 ✅ **Phase 3 closed clean.** Two SEV-2s found and fixed before merge: OPFS quota loss under device
 storage pressure (16th session, `c45cd01`) and a capture buffered only in memory losing a record to
@@ -51,12 +80,11 @@ real-Postgres test-reset TRUNCATE list is ALSO hand-maintained and predates this
 integration tests). **Deliberately deferred, named rather than smuggled in or silently missed**: the
 "N within PHI" home-tile badge (sits under its own checklist heading; worth pairing with 4d's guard
 rather than building the computation twice), and everything 4d itself owns (harvest capture, the PHI
-guard, `phiOverride`). ⛔ **4c touches regulated code (PHI resolution, Act 36/1947 registrations)
-and is NOT merge-ready until JP asks for a `compliance-checker` pass** — said out loud per
-CLAUDE.md's gate, not run. `pnpm verify` (after 4c): **130 test files / 1402 tests, 7/7 builds,
-177.56 KB gz**; `pnpm test:e2e` default lane: 31 passed / 5 skipped (same gated real-stack specs as
-always). Next: 4d (harvest + PHI guard, one slice, never split — see the phase-checklist's own note
-on why) or 4e (grazing/feed/inventory).
+guard, `phiOverride`). ✅ **4c touched regulated code and was reviewed — see the top-of-file review-
+pass note; 4c is now merge-ready.** `pnpm test:e2e` default lane: 31 passed / 5 skipped (same gated
+real-stack specs as always; current `pnpm verify` numbers are in the review-pass note above, not
+repeated here). Next: 4d (harvest + PHI guard, one slice, never split — see the phase-checklist's
+own note on why) or 4e (grazing/feed/inventory).
 
 ✅ **4a fully closed (4a·1/4a·2/4a·3, 18th–20th sessions) — "blocks & plantings."** 4a·1 (FR-201,
 define a block, 18th). 4a·3 (FR-203, record a planting, 19th): new `apps/api/src/crops/` +
@@ -91,7 +119,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑ full, 4b ☑, 4c ☑ — dev/prod-blocked as noted; 4d/4e open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev. ⛔ 4c is regulated code, not merge-ready until a `compliance-checker` pass |
+| 4 — Crops & fields | 🔶 **In progress** (4a ☑ full, 4b ☑, 4c ☑ merge-ready; 4d/4e open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev. ✅ 4c's compliance-checker pass CLEARED (21st session) — see top-of-file note |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -104,6 +132,15 @@ noisy accessibility fixture, human-gated regulated verification, a false uncache
 missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` on
+`phase-4/crops-fields` — CLEARS, 2026-08-17 (twenty-first session, JP-requested).** Full account is
+the top-of-file note — not repeated here to stay under the line budget. Two MED (server-side spray
+ordering; FR-211 report's PHI-pending/no-PHI conflation) found and fixed as `3d10103`, both
+fail-first proven; one LOW-MED filed rather than fixed (compliance-checker's own call — not
+reachable via the current write path). `reviewer` also caught a stale Turbo cache hit masking a real
+typecheck failure this session's earlier `pnpm verify` runs had missed. ⛔ New scope opens from
+`3d10103` forward.
 
 ✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main...HEAD` — APPROVABLE,
 2026-08-17 (sixteenth session, JP-requested).** Full account is the top-of-file note — not
@@ -157,7 +194,9 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` (2026-08-17, twenty-first session, after 4c — full run, not `FULL TURBO` cache) | ✅ **130 test files / 1402 tests, 7/7 builds, 177.56 KB gz** |
+| `pnpm verify`, forced/uncached typecheck+build (2026-08-17, twenty-first session, after the review-pass fixes — the number to trust) | ✅ **131 test files / 1409 tests, 12/12 typecheck, 7/7 builds, 177.66 KB gz** |
+| Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` (2026-08-17, twenty-first session) | ✅ CLEARS — full account in the top-of-file note. `reviewer` caught a stale-cache-hit masked typecheck failure; both fixed |
+| `pnpm verify` (2026-08-17, twenty-first session, after 4c, BEFORE the review pass — superseded, see above) | 130 test files / 1402 tests, 7/7 builds, 177.56 KB gz — typecheck leg was a false cache hit, do not cite |
 | `pnpm test:e2e` default lane (2026-08-17, twenty-first session, after 4c) | ✅ 31 passed / 5 skipped |
 | `pnpm verify` (2026-08-17, twenty-first session, after 4b alone, before 4c started) | ✅ **127 test files / 1358 tests, 7/7 builds, 174.74 KB gz** |
 | Earlier Phase 4/Phase 3 baselines (4a·1, 4a·3, the Phase 3 SEV-2/LOW fixes, sixteenth session onward) | Condensed — see item 37 |

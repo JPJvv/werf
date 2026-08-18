@@ -1746,6 +1746,12 @@ Grazing, feed & inventory — the one slice with real new schema
   read-only) and an inventory lot (how much of it THIS FARM has, farm-owned, mutable) are
   deliberately two different tables — conflating them would make a farm's stock count sync-scoped
   by jurisdiction instead of by farm.
+  ⚠️ **This is where inventory becomes compliance-gated.** 4e·3 (this session, FR-501) carries no
+  compliance gate of its own — plain stock counting. The moment a `consumed` movement is wired into
+  the FR-204 spray write path, it joins PHI-guarded, compliance-relevant code, and the per-slice
+  compliance-checker rule (CLAUDE.md, keyed to the labour phase but the FR-204 precedent applies
+  the same discipline here) is live for this slice specifically — do not carry forward "inventory
+  has no gate" into this item.
 □ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
   candidate Sprays/crop tile badge (see the home-metrics note below).
 □ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —

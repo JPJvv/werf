@@ -366,11 +366,13 @@ const POPULATED_SCREENS = [
   },
   {
     // Phase 4e (FR-501): a lot with stock on it — the quantity projected from the movement log,
-    // not the empty state.
+    // not the empty state. Asserts the quantity number itself, not just the item name, so a fold
+    // that silently returns zero (e.g. the hydrated movement never lands) still fails this check.
     path: '/inventory',
     heading: /^stock$/i,
     act: async (page: Page) => {
       await expect(page.getByText(/urea 46%/i)).toBeVisible();
+      await expect(page.getByText(/40/)).toBeVisible();
     },
   },
 ] as const;

@@ -23,7 +23,9 @@ export function StockScreen() {
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
 
-  // Newest lot first — the one a farmer who just receipted a delivery wants to confirm landed.
+  // Newest-created lot first, by UUIDv7's embedded clock — the one a farmer who just receipted a
+  // delivery wants to confirm landed. This is display order only, NOT the (occurredAt, id) total
+  // order `projectQuantityOnHand` folds by — do not read the two as the same ordering.
   const ordered = useMemo(
     () => [...lots].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)),
     [lots],

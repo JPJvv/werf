@@ -4,6 +4,13 @@
  * period a block's own spray history creates, unless overridden (4d·2, a separate mechanism —
  * see `crops/harvest.ts`'s `phiOverride`).
  *
+ * This file holds TWO guards, one per side of § 4.3's obligation: `phiGuardFor` below blocks a
+ * HARVEST that falls inside an active PHI (the LATE check, against real spray history);
+ * `sprayPhiGuardFor`, further down, blocks a SPRAY that would put the block's own PLANNED harvest
+ * date inside the PHI it creates (the EARLY check, against a farming estimate). Both compliance-
+ * gated, both overridable with an audited reason, neither supersedes the other.
+ *
+
  * ⭐ ONE shared implementation, called identically by the API service (querying Postgres for its
  * inputs) and the client capture screen (reading the local/hydrated caches for the identical
  * shapes) — deliberately NOT the client/server split `apps/web/src/livestock/withdrawal.ts` uses
@@ -186,4 +193,44 @@ export function phiGuardFor(
   if (latest !== undefined) return { blocked: true, reason: 'active_phi', blockedBy: latest };
   if (unresolved) return { blocked: true, reason: 'unresolved' };
   return { blocked: false };
+}
+
+export type SprayPhiGuardResult =
+  | { readonly blocked: false }
+  | {
+      readonly blocked: true;
+      readonly reason: 'active_phi';
+      readonly earliestHarvestDate: string;
+      readonly expectedHarvestDate: string;
+    };
+
+/**
+ * Whether spraying `landUnitId` on `sprayedOn` with a `phiDays`-day pre-harvest interval would
+ * clear AFTER the block's own PLANNED harvest date — legal-compliance.md § 4.3's own words:
+ * "Spraying a block within the PHI of its planned harvest date must be blocked at capture... Catching
+ * this at audit time is too late." This is the EARLY half of the compliance obligation; `phiGuardFor`
+ * above is the LATE half, catching the case at the actual harvest. Neither supersedes the other: this
+ * guard reads a farming ESTIMATE (`planting.ts`'s `expectedHarvestDate`, no regulated figure behind
+ * it) that can move or go unrecorded, so `phiGuardFor`'s harvest-time check against real spray
+ * history remains the authoritative backstop when the actual harvest day arrives.
+ *
+ * `expectedHarvestDate` is the caller's job to resolve — `currentPlantingFor` (`planting.ts`) over
+ * the block's own ancestor-unbounded planting history, the identical fold `useCurrentPlanting`
+ * already reads for display. A block with no planned harvest on record (never planted, or the
+ * farmer never gave one) cannot be judged against a plan it doesn't have: `undefined` reads as
+ * "not blocked" here — not fail-closed — because `phiGuardFor` remains the real backstop and this
+ * guard's whole purpose is an EARLY warning, not a guarantee.
+ *
+ * Inclusive on the clear day, the identical convention `phiGuardFor` uses for `harvestedOn` above: a
+ * plan to harvest exactly on the day the PHI clears is not blocked.
+ */
+export function sprayPhiGuardFor(
+  sprayedOn: string,
+  phiDays: number,
+  expectedHarvestDate: string | undefined,
+): SprayPhiGuardResult {
+  if (expectedHarvestDate === undefined) return { blocked: false };
+  const earliestHarvestDate = earliestHarvestDateFor(sprayedOn, phiDays);
+  if (expectedHarvestDate >= earliestHarvestDate) return { blocked: false };
+  return { blocked: true, reason: 'active_phi', earliestHarvestDate, expectedHarvestDate };
 }

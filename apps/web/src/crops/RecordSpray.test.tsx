@@ -23,6 +23,7 @@ const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
 const LAND_KEY = `werf-land:${FARM_ID}`;
 const SPRAYS_KEY = `werf-sprays:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-chemical-products:${FARM_ID}`;
+const PLANTINGS_KEY = `werf-plantings:${FARM_ID}`;
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -99,6 +100,24 @@ function seedProducts(phiDays: number | null): void {
         reentryHours: 12,
         effectiveFrom: '2020-01-01',
         effectiveTo: null,
+      },
+    ]),
+  );
+}
+
+/** This device's own read of what's planted in the block — the guard's planned-harvest input
+ *  (`useCurrentPlanting`, legal-compliance.md § 4.3). */
+function cachedPlanting(expectedHarvestDate: string): void {
+  window.localStorage.setItem(
+    PLANTINGS_KEY,
+    JSON.stringify([
+      {
+        id: '0190f3a0-0000-7000-8000-0000000000e1',
+        farmId: FARM_ID,
+        landUnitId: BLOCK_ID,
+        occurredAt: '2026-01-01T04:00:00.000Z',
+        crop: 'Table grapes',
+        expectedHarvestDate,
       },
     ]),
   );
@@ -227,5 +246,99 @@ describe('recording a spray (FR-204)', () => {
     await user.click(screen.getByRole('link', { name: /record a spray/i }));
 
     expect(await screen.findByLabelText(/^product$/i)).toBeTruthy();
+  });
+});
+
+describe('spray-capture PHI block (legal-compliance.md § 4.3)', () => {
+  it('proceeds with no warning when the block has no planned harvest date on record', async () => {
+    seedProducts(21);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText(/^product$/i), PRODUCT_ID);
+    await user.click(screen.getByRole('button', { name: /save spray/i }));
+
+    await waitFor(async () => {
+      expect(await storedSprays()).toHaveLength(1);
+    });
+    expect((await storedSprays())[0]!['phiOverride']).toBeUndefined();
+  });
+
+  it('blocks, previewed offline with no server round trip, when the PHI would clear AFTER the planned harvest', async () => {
+    seedProducts(21);
+    cachedPlanting('2026-03-15');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText(/^product$/i), PRODUCT_ID);
+    const day = screen.getByLabelText(/^day sprayed$/i) as HTMLInputElement;
+    await user.clear(day);
+    await user.type(day, '2026-03-01');
+
+    expect(await screen.findByText(/would clear after the planned harvest date/i)).toBeTruthy();
+    // The clear date also appears in the ordinary PHI preview line above the banner — both are the
+    // same fact, so more than one match is expected here.
+    expect(screen.getAllByText(/2026-03-22/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/2026-03-15/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^save spray$/i }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    expect(await storedSprays()).toHaveLength(0);
+  });
+
+  it('proceeds when the planned harvest is safely after the PHI clears', async () => {
+    seedProducts(21);
+    cachedPlanting('2026-04-01');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText(/^product$/i), PRODUCT_ID);
+    const day = screen.getByLabelText(/^day sprayed$/i) as HTMLInputElement;
+    await user.clear(day);
+    await user.type(day, '2026-03-01');
+    await user.click(screen.getByRole('button', { name: /^save spray$/i }));
+
+    await waitFor(async () => {
+      expect(await storedSprays()).toHaveLength(1);
+    });
+    expect((await storedSprays())[0]!['phiOverride']).toBeUndefined();
+  });
+
+  it('an override requires a category AND free text, and is recorded with the spray', async () => {
+    seedProducts(21);
+    cachedPlanting('2026-03-15');
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText(/^product$/i), PRODUCT_ID);
+    const day = screen.getByLabelText(/^day sprayed$/i) as HTMLInputElement;
+    await user.clear(day);
+    await user.type(day, '2026-03-01');
+    await screen.findByText(/would clear after the planned harvest date/i);
+
+    await user.click(screen.getByRole('button', { name: /^override$/i }));
+    expect(
+      screen.getByRole('button', { name: /save spray with override/i }).hasAttribute('disabled'),
+    ).toBe(true);
+
+    await user.selectOptions(screen.getByLabelText(/reason/i), 'emergency_pest_control');
+    expect(
+      screen.getByRole('button', { name: /save spray with override/i }).hasAttribute('disabled'),
+    ).toBe(true);
+
+    await user.type(screen.getByLabelText(/details/i), 'Advised by extension officer');
+    await user.click(screen.getByRole('button', { name: /save spray with override/i }));
+
+    await waitFor(async () => {
+      expect(await storedSprays()).toHaveLength(1);
+    });
+    const saved = (await storedSprays())[0] as { phiOverride?: { reason?: string } };
+    expect(saved.phiOverride?.reason).toContain('Advised by extension officer');
+    // `by` is never client-set — see `LocalSprays.tsx`'s module note.
+    expect(saved.phiOverride && 'by' in saved.phiOverride).toBe(false);
   });
 });

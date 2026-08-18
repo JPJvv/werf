@@ -17,21 +17,27 @@
  * PROJECTION over this log: the latest `planting` event per `land_unit_id`, ordered `(occurredAt,
  * id)` — the same total order `mob-tally.ts` folds by and `LocalLand.tsx`'s `latestWalkFor` re-
  * derives for a boundary, for the same reason (two devices recording a planting in a dead zone must
- * not disagree about which one is current depending on arrival order). The fold itself lives beside
- * the store that reads it (`apps/web/src/crops/LocalPlantings.tsx`), not here — this module is pure
- * event construction, and `latestWalkFor` is the precedent for keeping the projection there rather
- * than in `@werf/domain`. An annual crop gets a fresh event every season; a vineyard gets one that
- * persists for years while harvests file against the block underneath it. This is a UX/reporting
- * decision — what a screen shows as "currently planted" — and deliberately NOT a safety dependency:
- * the PHI guard (4d) reads a block's SPRAY history directly and never asks what is currently
- * planted, so getting this projection wrong is a wrong label on a screen, not a compliance defect.
+ * not disagree about which one is current depending on arrival order). An annual crop gets a fresh
+ * event every season; a vineyard gets one that persists for years while harvests file against the
+ * block underneath it.
  *
- * ⛔ NOT ADDRESSED HERE, named rather than silently missed: whether a SPLIT block (4a·2, `parent_id`)
- * inherits its parent's most recent planting. Left unanswered, a farmer splitting a planted block
- * mid-season sees every child read "never planted" the moment 4a·2 ships, which is a real regression
- * this module cannot see coming because it does not know about splitting yet. Whoever builds the
- * "current planting" read (client projection or a future report) must decide this, the same way
- * 4d·4 had to decide it for spray/PHI.
+ * `currentPlantingFor` below is that fold — ONE shared implementation, called identically by the
+ * client (`apps/web/src/crops/LocalPlantings.tsx`'s `useCurrentPlanting`, its original home) and now
+ * the API service (`crops.service.ts`'s `evaluateSprayPhiGuard`), the same posture `phi-guard.ts`
+ * takes for its own guard. This is no longer purely a UX/reporting decision: the spray-capture PHI
+ * guard (legal-compliance.md § 4.3, "spraying a block within the PHI of its planned harvest date
+ * must be blocked at capture") reads THIS projection's `expectedHarvestDate` as its planned-harvest
+ * input, so getting the fold wrong is now a wrong compliance decision, not only a wrong screen label.
+ * The PHI guard proper (`phi-guard.ts`'s `phiGuardFor`/`sprayPhiGuardFor`) still reads spray history
+ * directly for the actual block/clear decision — this projection only supplies the ONE date those
+ * guards compare against.
+ *
+ * Split-block inheritance (4a·2, `parent_id`) is answered BY REUSING `land/ancestry.ts`'s
+ * `ancestorChainOf`, UNBOUNDED — a split never closes the parent, so a child's ground carries
+ * whatever was last planted on the ground it came from, until a fresher planting on the child itself
+ * supersedes it by the total order. `ancestry.ts`'s own header names this the correct bound for the
+ * planting projection specifically (as opposed to the PHI guard's own per-hop spray bound, a
+ * different question with a different answer).
  */
 
 import { schemas, ValidationError } from '@werf/core';
@@ -105,4 +111,48 @@ export function recordPlanting(input: PlantingInput): schemas.NewEvent {
     notes: input.notes ?? null,
     createdBy: input.createdBy ?? null,
   };
+}
+
+/** A planting, as either caller can supply it — enough to fold "what's currently in the ground"
+ *  over a block and its ancestors. A DB row and a local/hydrated capture both structurally satisfy
+ *  this (extra fields ignored), the same posture `PhiSprayFact` takes for a spray. */
+export interface PlantingFact {
+  readonly id: string;
+  readonly landUnitId: string;
+  /** ISO instant. Sorted as a string alongside `id` for the total order — see the module note. */
+  readonly occurredAt: string;
+  readonly expectedHarvestDate?: string;
+}
+
+/**
+ * The planting a block currently reads as "in the ground" — the latest across `landUnitIds` (a
+ * block and, per FR-202, its ancestors — pass `ancestorChainOf(landUnitId, units)`, UNBOUNDED) by
+ * the total order `(occurredAt, id)`. `undefined` when none of them has ever been planted.
+ *
+ * Generic over `T extends PlantingFact` so the CALLER's richer shape survives the round trip:
+ * `LocalPlantings.tsx`'s `useCurrentPlanting` passes `StoredPlanting[]` and gets a `StoredPlanting`
+ * back (crop, cultivar, density intact), not the narrowed `PlantingFact` this function itself only
+ * needs to read. Without the generic, the ONE shared implementation this file's own note above
+ * insists on would be shared in name only — the client would have to re-narrow or re-widen the
+ * result, exactly the kind of friction that makes a "shared" function quietly grow a second, real
+ * implementation next to it.
+ */
+export function currentPlantingFor<T extends PlantingFact>(
+  plantings: readonly T[],
+  landUnitIds: readonly string[],
+): T | undefined {
+  const ids = new Set(landUnitIds);
+  let latest: T | undefined;
+  for (const planting of plantings) {
+    if (!ids.has(planting.landUnitId)) continue;
+    if (latest === undefined || isLaterPlanting(planting, latest)) latest = planting;
+  }
+  return latest;
+}
+
+function isLaterPlanting(candidate: PlantingFact, incumbent: PlantingFact): boolean {
+  if (candidate.occurredAt !== incumbent.occurredAt) {
+    return candidate.occurredAt > incumbent.occurredAt;
+  }
+  return candidate.id > incumbent.id;
 }

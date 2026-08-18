@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   phiGuardFor,
+  sprayPhiGuardFor,
   type PhiLandUnitFact,
   type PhiProductFact,
   type PhiSprayFact,
@@ -272,5 +273,43 @@ describe('phiGuardFor (FR-205, US-030)', () => {
       [landUnit({ id: B12 })],
     );
     expect(result).toMatchObject({ blocked: true, reason: 'active_phi' });
+  });
+});
+
+describe('sprayPhiGuardFor (legal-compliance.md § 4.3 — the spray-side EARLY check)', () => {
+  it('is clear when the block has no planned harvest date on record', () => {
+    const result = sprayPhiGuardFor('2026-03-01', 21, undefined);
+    expect(result).toEqual({ blocked: false });
+  });
+
+  it('blocks when a 21-day PHI from the spray day would clear AFTER the planned harvest', () => {
+    // Sprayed 2026-03-01, 21-day PHI clears 2026-03-22. Planned harvest 2026-03-15 falls inside it.
+    const result = sprayPhiGuardFor('2026-03-01', 21, '2026-03-15');
+    expect(result).toEqual({
+      blocked: true,
+      reason: 'active_phi',
+      earliestHarvestDate: '2026-03-22',
+      expectedHarvestDate: '2026-03-15',
+    });
+  });
+
+  it('is clear when the planned harvest is safely after the PHI clears', () => {
+    const result = sprayPhiGuardFor('2026-03-01', 21, '2026-04-01');
+    expect(result).toEqual({ blocked: false });
+  });
+
+  it('is clear exactly on the day the PHI clears — inclusive at the boundary', () => {
+    const result = sprayPhiGuardFor('2026-03-01', 21, '2026-03-22');
+    expect(result).toEqual({ blocked: false });
+  });
+
+  it('blocks by one day when the planned harvest falls the day before the PHI clears', () => {
+    const result = sprayPhiGuardFor('2026-03-01', 21, '2026-03-21');
+    expect(result).toMatchObject({ blocked: true, reason: 'active_phi' });
+  });
+
+  it('a zero-day PHI never blocks — the spray day itself is always safe to harvest', () => {
+    const result = sprayPhiGuardFor('2026-03-01', 0, '2026-03-01');
+    expect(result).toEqual({ blocked: false });
   });
 });

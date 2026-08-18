@@ -11,6 +11,14 @@
  *      literal here would be a defect even if correct today.
  *   2. The clear date (`earliestHarvestDate`) is computed AT CAPTURE and stored.
  *
+ * `phiOverride` mirrors `harvest.ts`'s field of the same name exactly, one guard over
+ * (`phi-guard.ts`'s `sprayPhiGuardFor`, legal-compliance.md § 4.3): present only when the caller's
+ * own guard blocked this spray (its resulting PHI would clear after the block's planned harvest
+ * date) and the farmer chose to override it. `by` is OPTIONAL for the identical reason it is on
+ * `harvest.ts`'s field — the acting user id, never client-supplied; the API service always fills it
+ * in, a client's own local capture has a reason but no server-trusted answer to give for who.
+ *
+
  * Filed under `FARM_SCOPED_EVENT_TYPES` (@werf/core) — a block is ground, not a herd, the same
  * filing `planting`/`fertiliser` already use and for the identical reason.
  *
@@ -59,6 +67,13 @@ export interface SprayInput {
   readonly windKph?: number;
   readonly tempC?: number;
   readonly targetPest?: string;
+  /**
+   * Present only when the spray-capture PHI guard blocked this spray and the farmer overrode it
+   * (legal-compliance.md § 4.3: "an override that requires a reason and is audited"). `by` is the
+   * acting user id — the caller's job to resolve from the session when it can (server: always;
+   * client: never — see the module note).
+   */
+  readonly phiOverride?: { readonly reason: string; readonly by?: string };
   readonly notes?: string | null;
   readonly createdBy?: string | null;
 }
@@ -85,6 +100,7 @@ export function recordSpray(input: SprayInput): schemas.NewEvent {
     payload.phiDays = input.phiDays;
     payload.earliestHarvestDate = earliestHarvestDateFor(input.sprayedOn, input.phiDays);
   }
+  if (input.phiOverride !== undefined) payload.phiOverride = input.phiOverride;
 
   if (!schemas.sprayPayloadSchema.safeParse(payload).success) {
     throw new ValidationError(

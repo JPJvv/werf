@@ -668,6 +668,11 @@ export type FertiliserPayload = z.infer<typeof fertiliserPayloadSchema>;
  * product carries no PHI on record. A null `phi_days` and a zero-day PHI are different facts
  * (`chemical_products.ts`'s module note), and the same "omit, don't zero" discipline
  * `attachDosing` already applies to a zero-withdrawal vaccine.
+ *
+ * `phiOverride` mirrors `harvestPayloadSchema`'s field of the same name exactly, one guard over
+ * (`phi-guard.ts`'s `sprayPhiGuardFor`, legal-compliance.md § 4.3's spray-capture block): present
+ * only when the spray-capture guard was blocked and the farmer overrode it. `by` is the acting
+ * user id, resolved server-side from the session — never client input.
  */
 export const sprayPayloadSchema = z.object({
   productId: uuidSchema,
@@ -688,6 +693,12 @@ export const sprayPayloadSchema = z.object({
   /** `sprayedOn` + `phiDays`, computed server-side and stored — never recomputed on read. Absent
    *  exactly when `phiDays` is absent. */
   earliestHarvestDate: dateSchema.optional(),
+  phiOverride: z
+    .object({
+      reason: z.string().min(1),
+      by: uuidSchema.optional(),
+    })
+    .optional(),
 });
 export type SprayPayload = z.infer<typeof sprayPayloadSchema>;
 

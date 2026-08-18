@@ -7,9 +7,11 @@
  * and `recordFertiliserRequestSchema` spread theirs — those two carry no compliance gate, so the
  * client is trusted with every field it types. A spray is different: `activeIngredients`,
  * `phiDays` and `earliestHarvestDate` are SERVER-RESOLVED from the registered product (the identical
- * property `recordTreatmentRequestSchema` protects for a treatment's withdrawal, `livestock.ts`).
- * Fields are enumerated here one at a time so a future field added to the payload schema does not
- * silently become something a client can dictate.
+ * property `recordTreatmentRequestSchema` protects for a treatment's withdrawal, `livestock.ts`), and
+ * `phiOverride.by` is NOT client-settable either — the identical property `recordHarvestRequestSchema`
+ * protects for its own field of the same name, one guard over. Fields are enumerated here one at a
+ * time so a future field added to the payload schema does not silently become something a client can
+ * dictate.
  *
  * `landUnitId` is REQUIRED, mirroring `planting`/`fertiliser`'s own reasoning: a spray with no
  * block under it is not a spray.
@@ -40,6 +42,15 @@ export const recordSprayRequestSchema = z.object({
   windKph: z.number().nonnegative().finite().optional(),
   tempC: z.number().finite().optional(),
   targetPest: z.string().min(1).optional(),
+  /** Present only when the spray-capture PHI guard blocked this spray (its resulting PHI would
+   *  clear after the block's planned harvest date, legal-compliance.md § 4.3) and the farmer chose
+   *  to override it. `by` is never carried here — the server resolves it from the authenticated
+   *  session and writes it onto the stored event and the audit row. */
+  phiOverride: z
+    .object({
+      reason: z.string().min(1),
+    })
+    .optional(),
   notes: z.string().min(1).nullable().default(null),
 });
 export type RecordSprayRequest = z.infer<typeof recordSprayRequestSchema>;

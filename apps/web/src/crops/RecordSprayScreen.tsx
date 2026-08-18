@@ -1,7 +1,7 @@
 /**
  * Record a spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED
- * (legal-compliance.md § 4). The crush-side capture that FR-211's audit trail and the future
- * harvest guard (4d) both depend on.
+ * (legal-compliance.md § 4). The crush-side capture that FR-211's audit trail and the harvest
+ * guard (4d) both depend on.
  *
  * ⭐ THE EARLIEST SAFE HARVEST DATE IS SHOWN BEFORE THE FARMER WALKS AWAY FROM THE TANK. Mirrors
  * `RecordHealthScreen.tsx`'s own reasoning exactly, one PHI over: the date shown here is a PREVIEW
@@ -9,8 +9,15 @@
  * uses; the date actually STORED is computed server-side from the registration in force on the
  * spray day (ADR-0005). The client never sends a PHI or active ingredients; it sends a product id.
  *
+ * ⭐ BLOCKS AT CAPTURE, OFFLINE, THE OTHER DIRECTION TOO (legal-compliance.md § 4.3): when the
+ * preview above would clear AFTER the block's own planned harvest date (`useSprayPhiGuard`,
+ * `usePhiGuard.ts`), this screen refuses to save unless overridden — mirrors
+ * `RecordHarvestScreen.tsx`'s own override UI exactly, one guard over. No server round trip needed
+ * to know: the planned harvest date is this device's own `useCurrentPlanting` read.
+ *
  * Offline-first: `save` commits locally and instantly with no network in the path. The product
- * register is a local cache, so the picker and the PHI preview both work at the tank in a dead zone.
+ * register and the planting log are both local caches, so the picker, the PHI preview, and the
+ * guard all work at the tank in a dead zone.
  */
 
 import { useMemo, useState, type FormEvent } from 'react';
@@ -27,6 +34,15 @@ import {
   type StoredChemicalProduct,
 } from './LocalChemicalProducts';
 import { useRecordSpray } from './LocalSprays';
+import { useSprayPhiGuard } from './usePhiGuard';
+
+const OVERRIDE_REASON_CATEGORIES = [
+  'emergency_pest_control',
+  'harvest_date_will_move',
+  'misrecorded_planting',
+  'other',
+] as const;
+type OverrideReasonCategory = (typeof OVERRIDE_REASON_CATEGORIES)[number];
 
 function today(): string {
   return farmToday();
@@ -82,6 +98,9 @@ export function RecordSprayScreen() {
   const [windKph, setWindKph] = useState('');
   const [tempC, setTempC] = useState('');
   const [targetPest, setTargetPest] = useState('');
+  const [overriding, setOverriding] = useState(false);
+  const [overrideCategory, setOverrideCategory] = useState<OverrideReasonCategory | ''>('');
+  const [overrideText, setOverrideText] = useState('');
   const [savedProduct, setSavedProduct] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -91,12 +110,25 @@ export function RecordSprayScreen() {
   );
   const product = inForce.find((p) => p.id === productId);
 
+  // Called unconditionally, before the `!activeFarm` early return below (Rules of Hooks) — the
+  // identical ordering constraint `RecordHarvestScreen.tsx`'s own guard call obeys.
+  const guard = useSprayPhiGuard(selectedId, sprayedOn, product?.phiDays ?? undefined);
+
   if (!activeFarm) return null;
 
   const clearDate = harvestPreview(product, sprayedOn);
-  const valid = selected !== null && product !== undefined;
+  const overrideReady = overrideCategory !== '' && overrideText.trim() !== '';
+  const needsOverride = guard.blocked;
+  const valid =
+    selected !== null && product !== undefined && (!needsOverride || (overriding && overrideReady));
 
   const clearSaved = () => setSavedProduct(null);
+
+  const resetOverride = () => {
+    setOverriding(false);
+    setOverrideCategory('');
+    setOverrideText('');
+  };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -105,6 +137,16 @@ export function RecordSprayScreen() {
 
     const rateLPerHa = optionalPositiveNumber(rateValue);
     const waterLPerHa = optionalPositiveNumber(waterValue);
+
+    // `by` is never set here — the acting user id is server-resolved from the session, the same
+    // reasoning `createdBy` is never client-set anywhere in this app (`RecordHarvestScreen.tsx`'s
+    // own module note, one guard over).
+    const phiOverride =
+      needsOverride && overrideReady
+        ? {
+            reason: `${t(`crops.spray.overrideReason.${overrideCategory as OverrideReasonCategory}`)}: ${overrideText.trim()}`,
+          }
+        : undefined;
 
     await recordSpray({
       id: uuidv7(),
@@ -120,8 +162,10 @@ export function RecordSprayScreen() {
       ...(windKph.trim() === '' ? {} : { windKph: Number(windKph) }),
       ...(tempC.trim() === '' ? {} : { tempC: Number(tempC) }),
       ...(targetPest.trim() === '' ? {} : { targetPest: targetPest.trim() }),
+      ...(phiOverride === undefined ? {} : { phiOverride }),
     });
 
+    resetOverride();
     setSavedProduct(product.name);
     setProductId('');
     setRateValue('');
@@ -175,6 +219,7 @@ export function RecordSprayScreen() {
               onChange={(e) => {
                 setPicked(e.target.value);
                 clearSaved();
+                resetOverride();
               }}
               className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body text-soil-900"
             >
@@ -202,6 +247,7 @@ export function RecordSprayScreen() {
               onChange={(e) => {
                 clearSaved();
                 setSprayedOn(e.target.value);
+                resetOverride();
               }}
               className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
             />
@@ -218,6 +264,7 @@ export function RecordSprayScreen() {
               onChange={(e) => {
                 clearSaved();
                 setProductId(e.target.value);
+                resetOverride();
               }}
               className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
             >
@@ -244,6 +291,58 @@ export function RecordSprayScreen() {
               </p>
             )}
           </div>
+
+          {guard.blocked && (
+            <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+              <p className="mb-1 font-ui font-semibold">{t('crops.spray.blockedTitle')}</p>
+              <p>
+                {t('crops.spray.blockedClears')}{' '}
+                <span className="font-data tabular-nums">{guard.earliestHarvestDate}</span>.{' '}
+                {t('crops.spray.blockedPlanned')}{' '}
+                <span className="font-data tabular-nums">{guard.expectedHarvestDate}</span>.
+              </p>
+              {!overriding ? (
+                <button
+                  type="button"
+                  onClick={() => setOverriding(true)}
+                  className="min-h-touch-min mt-2 rounded border border-soil-700 bg-sand-100 px-3 text-body text-soil-900"
+                >
+                  {t('crops.spray.override')}
+                </button>
+              ) : (
+                <div className="mt-3 flex flex-col gap-2">
+                  <label htmlFor="overrideCategory" className="text-label uppercase text-soil-700">
+                    {t('crops.spray.overrideReasonLabel')}
+                  </label>
+                  <select
+                    id="overrideCategory"
+                    value={overrideCategory}
+                    onChange={(e) =>
+                      setOverrideCategory(e.target.value as OverrideReasonCategory | '')
+                    }
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+                  >
+                    <option value="">{t('crops.spray.overrideReasonChoose')}</option>
+                    {OVERRIDE_REASON_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {t(`crops.spray.overrideReason.${category}`)}
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="overrideText" className="text-label uppercase text-soil-700">
+                    {t('crops.spray.overrideTextLabel')}
+                  </label>
+                  <textarea
+                    id="overrideText"
+                    value={overrideText}
+                    onChange={(e) => setOverrideText(e.target.value)}
+                    className="min-h-24 rounded border border-soil-200 bg-sand-100 px-3 py-2 text-body text-soil-900"
+                  />
+                  <p className="text-label text-soil-700">{t('crops.spray.overrideAudited')}</p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mb-4 grid grid-cols-2 gap-2">
             <div className="flex flex-col">
@@ -361,7 +460,7 @@ export function RecordSprayScreen() {
             disabled={!valid || saving}
             className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
           >
-            {t('crops.spray.save')}
+            {guard.blocked && overriding ? t('crops.spray.saveOverride') : t('crops.spray.save')}
           </button>
         </form>
       )}

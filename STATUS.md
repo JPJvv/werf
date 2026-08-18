@@ -3,32 +3,26 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-18 (twenty-third session). ✅ **4e·3 closed — inventory items/lots/
-movements (FR-501), one slice, deliberately narrowed from 4e's full six-item scope on `advisor()`
-guidance (see §3).** `pnpm verify` forced-cold clean: 1053/1053 unit tests (incl. 23 new domain +
-13 new API-integration + 9 new web-component tests), lint clean, typecheck 12/12, build 7/7,
-185.89 KB gz (+4.07 KB over 4d's 181.82). `pnpm test:e2e` 31/5 skipped, incl. `/inventory` +
-`/inventory/receive` now in `a11y.spec.ts` (18/18, 0 violations). New migration `0033_inventory`.
-⛔ **4e·1 (FR-151 grazing days/stocking rate) is BLOCKED, not merely next** — its own checklist text
-assumed a mob-move capture that does not exist; see §3's owner question, asked, not yet answered.
-Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1/P2.5–P2.10, conflict audit,
-P3.11–P3.15, P3.16, or 4a/4b/4c/4d/4e·3's own closed work. **Next: answer the 4e·1 mob-move
-question, or ask for the 4d/4e·3 compliance-checker pass first (4d is FR-205-gated and still
-pending; 4e·3 carries no compliance gate of its own — no reference product, no regulated figure —
-so it would ride along in the same batched pass, not trigger a second one).**
+**Last updated:** 2026-08-18 (twenty-fourth session). ✅ **JP-requested `compliance-checker` pass on
+4d+4e·3 ran; found one real gap (4d·11 below), fixed same session, NOT yet re-verified by a follow-up
+pass** — say so before calling 4d/4e·3 merge-ready. `pnpm verify` forced-cold: 1544/1544 unit tests
+(+491 over 23rd session's count, incl. new domain/API/web/Outbox coverage for 4d·11), lint clean,
+typecheck 12/12, build 7/7, 186.76 KB gz. `pnpm test:e2e` 31/5 skipped, one flaky rerun (isolated
+pass confirmed pre-existing contention, not a regression — see §4).
+⛔ **4e·1 (FR-151) still BLOCKED** — see §3's owner question, still not answered.
+Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, or 4e·3's own closed
+work. **Next: answer the 4e·1 mob-move question, the new 4d·11 `unresolved`-dead-end question (§3),
+or ask for a follow-up compliance-checker pass confirming 4d·11's fix.**
 
-✅ **4a/4b/4c/4d condensed (18th–22nd sessions) — fully closed, full accounts in
-`phase-checklists.md`'s Phase 4 section, not repeated here.** 4a: blocks + plantings,
-`ancestorChainOf` (`@werf/domain`) walks `parent_id` unbounded for the planting projection. 4b:
-fertiliser, no compliance gate. 4c: chemical-products reference (migration 0032) + spray capture
-(PHI/active-ingredients resolved server-side, ADR-0005) + FR-211 spray-history report. **4c's
-whole-branch `reviewer`+`sync-auditor`+`compliance-checker` pass CLEARED** (21st session, commit
-`3d10103`). 4d: PHI guard (`phiGuardFor`, shared client+server) + harvest capture + FR-205 override
-+ 4d·6 cross-device PHI race register — built and verified 22nd session, `pnpm verify` 137
-files/1468 tests, **still ⛔ compliance-gated (FR-205), not yet triggered**. ⭐ **The 21st-session
-pass caught a stale Turbo cache hit masking a real `exactOptionalPropertyTypes` compile error behind
-two earlier "green" `pnpm verify` runs the same session** — a `cache hit, replaying logs` line on a
-package just touched proves nothing changed, not that nothing is broken.
+✅ **4a/4b/4c/4d/4e·3 condensed (18th–23rd sessions) — fully closed, full accounts in
+`phase-checklists.md`'s Phase 4 section.** 4a: blocks + plantings. 4b: fertiliser, no compliance
+gate. 4c: chemical-products reference + spray capture (PHI resolved server-side, ADR-0005) +
+FR-211 report — **whole-branch review CLEARED** (21st session, `3d10103`). 4d: PHI guard
+(`phiGuardFor`, shared client+server) + harvest capture + FR-205 override + cross-device race
+register (22nd session). 4e·3: inventory items/lots/movements (FR-501), migration `0033` (23rd
+session). ⭐ The 21st-session pass caught a stale Turbo cache hit masking a real compile error
+behind two earlier "green" `pnpm verify` runs — a `cache hit, replaying logs` line on a package
+just touched proves nothing changed, not that nothing is broken.
 
 🔶 **Open decision — chemical_products production data source, asked 2026-08-17 (18th session).**
 JP: not decided yet, flag and move on. Dev/test rows ship as explicitly unverified placeholders
@@ -47,7 +41,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ built — ⛔ compliance pass not yet triggered; 4e·3 ☑, 4e·1 ⛔ blocked on owner question, 4e·2/4e·4/4e·5/4e·6 open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full 4a–4e slice plan. ⛔ Production `chemical_products` (4c) needs JP to name a maintained Act 36/1947 source — asked 18th session, does not block dev. ✅ 4c's compliance-checker pass CLEARED (21st session). 4d (PHI guard + harvest) closed 22nd session, compliance pass not yet asked for. 4e·3 (inventory) closed 23rd session, `pnpm verify`/`test:e2e` green, no compliance gate of its own. 4e·1 blocked — see §3 |
+| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ built + one compliance gap found+fixed 24th session (4d·11), ⛔ fix not yet re-verified by a pass; 4e·3 ☑; 4e·1 ⛔ blocked, 4e·2/4e·4/4e·5/4e·6 open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). 4d: compliance-checker pass (24th session) found the spray-side § 4.3 block was never built — closed as 4d·11, see §3; re-verification not yet requested. 4e·3 closed 23rd session, no gate of its own. 4e·1 blocked — see §3 |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -60,6 +54,19 @@ noisy accessibility fixture, human-gated regulated verification, a false uncache
 missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+✅ **`compliance-checker` pass on 4d+4e·3, JP-requested 2026-08-18 (24th session) — one real gap
+found (4d·11 in `phase-checklists.md`), fixed same session; two more disclosed, not fixed.**
+(1) FIXED: legal-compliance.md § 4.3 requires a spray blocked at capture when its PHI would clear
+after the block's OWN planned harvest date — only the harvest-side half (FR-205) had been built.
+Added `sprayPhiGuardFor` (`@werf/domain`), wired client+server+outbox, same audited-override shape
+as 4d·2. Not yet re-verified by a follow-up compliance-checker pass — do not call 4d merge-ready
+without asking for one. (2) FILED, not fixed: the spray product picker doesn't filter/label by crop,
+though PHI is registered per-crop under Act 36/1947 (`chemical_products.crop` exists, unused) —
+pre-existing (4c), not introduced this session. 🔶 (3) **Open question:** `usePhiGuard`'s
+`unresolved` state (a harvest whose spray's product isn't cached locally yet) has NO override path
+client-side — a hard offline dead-end, unlike this branch's own `stock.ts` "never refuse a real farm
+event" posture. Leave it a hard stop, or give it a flagged/deferred path? JP to decide.
 
 🔶 **Open question — 4e·1's mob-move gap, asked 2026-08-18 (23rd session).** FR-151 (grazing days /
 stocking rate) needs to know which camp a mob is IN over time, and there is no capture for that
@@ -195,17 +202,12 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify`, forced/cold — 4e·3 (2026-08-18, twenty-third session, the number to trust) | ✅ **1053/1053 unit tests (incl. 13 new API-integration against real Postgres), lint clean, 12/12 typecheck, 7/7 builds, 185.89 KB gz** |
-| `pnpm test:e2e` default lane (2026-08-18, twenty-third session, after 4e·3) | ✅ 31 passed / 5 skipped, incl. `/inventory` + `/inventory/receive` now in `a11y.spec.ts` (18/18, 0 violations) |
-| `pnpm verify`, forced/cold — 4d (2026-08-18, twenty-second session) | ✅ 137 test files / 1468 tests, 12/12 typecheck, 7/7 builds, 181.82 KB gz |
-| `pnpm test:e2e` default lane (2026-08-18, twenty-second session, after 4d) | ✅ 31 passed / 5 skipped |
-| `npx vitest run` + `npx playwright test`, after the self-review fixes above (same day) | ✅ 137 files / 1470 tests; e2e 31 passed / 5 skipped, incl. `/crops/harvest` + `/harvest` now in `a11y.spec.ts` (18/18, 0 violations) |
-| `pnpm verify`, forced/uncached typecheck+build (2026-08-17, twenty-first session, after the review-pass fixes) | ✅ 131 test files / 1409 tests, 12/12 typecheck, 7/7 builds, 177.66 KB gz |
-| Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` (2026-08-17, twenty-first session) | ✅ CLEARS — full account in the top-of-file note. `reviewer` caught a stale-cache-hit masked typecheck failure; both fixed |
-| `pnpm verify` (2026-08-17, twenty-first session, after 4c, BEFORE the review pass — superseded, see above) | 130 test files / 1402 tests, 7/7 builds, 177.56 KB gz — typecheck leg was a false cache hit, do not cite |
-| `pnpm test:e2e` default lane (2026-08-17, twenty-first session, after 4c) | ✅ 31 passed / 5 skipped |
-| `pnpm verify` (2026-08-17, twenty-first session, after 4b alone, before 4c started) | ✅ **127 test files / 1358 tests, 7/7 builds, 174.74 KB gz** |
-| Earlier Phase 4/Phase 3 baselines (4a·1, 4a·3, the Phase 3 SEV-2/LOW fixes, sixteenth session onward) | Condensed — see item 37 |
+| `pnpm verify`, forced/cold — 4d·11 (2026-08-18, 24th session, **the number to trust**) | ✅ **1544/1544 unit tests, lint clean, 12/12 typecheck, 7/7 builds, 186.76 KB gz** |
+| `pnpm test:e2e` default lane, twice (2026-08-18, 24th session) | ✅ 31/5 skipped both runs; one run's a11y suite hit the known flaky context-teardown timeout, isolated rerun + a full clean rerun both passed — not a regression |
+| `compliance-checker` on 4d+4e·3, JP-requested (2026-08-18, 24th session) | NOT APPROVABLE (1 gap) → fixed as 4d·11 same session, **not yet re-verified by a follow-up pass** — full account in §3 |
+| `pnpm verify`/`test:e2e` — 4e·3 (23rd session) and 4d (22nd session) | Superseded by the row above — condensed detail in `phase-checklists.md` |
+| Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` (21st session) | ✅ CLEARS — full account in §3. Caught a stale-cache-hit masked typecheck failure |
+| Earlier Phase 4/Phase 3 baselines (4a–4c, sixteenth session onward) | Condensed — see item 37 |
 | `WERF_REAL_STACK=1`, all 5 gated tests, each run isolated (2026-08-17, sixteenth session) | ✅ All pass — two real test-tooling defects found and fixed as `dd1fac8`; full account in §5 item 41 |
 | Whole-branch review-agent pass + narrow follow-up (2026-08-17, sixteenth session) | ✅ APPROVABLE — full account in §3 |
 | `compliance-checker` `45775ea..ec8336e` (2026-08-16, fourteenth session) | ✅ CLEARED, one LOW fixed same session — full account in §3 |

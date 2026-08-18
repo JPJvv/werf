@@ -4,7 +4,9 @@
  * endpoint here must be idempotent on the client id). Sends exactly the wire contract's fields —
  * never `activeIngredients`/`phiDays`/`earliestHarvestDate`, which a local capture never holds
  * (`LocalSprays.tsx`'s module note) and which the server resolves and refuses to take from a client
- * regardless (`recordSprayRequestSchema`).
+ * regardless (`recordSprayRequestSchema`). `phiOverride`, when present, carries only the `reason`
+ * the farmer typed — never `by`, which the server resolves from the session, the identical
+ * discipline `harvestApi.ts` applies to its own field of the same name.
  */
 
 import { postCapture } from '../sync/captureApi';
@@ -28,6 +30,9 @@ export const sprayApi = {
         ...(spray.windKph === undefined ? {} : { windKph: spray.windKph }),
         ...(spray.tempC === undefined ? {} : { tempC: spray.tempC }),
         ...(spray.targetPest === undefined ? {} : { targetPest: spray.targetPest }),
+        ...(spray.phiOverride === undefined
+          ? {}
+          : { phiOverride: { reason: spray.phiOverride.reason } }),
       },
       token,
     ),

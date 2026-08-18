@@ -1690,6 +1690,32 @@ letting the green `pnpm verify` stand in for it.
   spray (the O-12 offline case) — mirrors `withdrawal.ts`'s `clearDateFor` exactly; an advisor
   review caught and corrected an earlier draft that dropped this preview fallback entirely, which
   would have broken the offline journey outright.
+☑ 4d·11 The OTHER half of § 4.3, missed by 4d·1–10 and caught by an owner-requested
+  compliance-checker pass (24th session): "Spraying a block within the PHI of its planned harvest
+  date must be **blocked at capture**" names the SPRAY as the capture to block, not only the
+  harvest — 4d·1 built the harvest-side (LATE) check and the doc's own spray-side (EARLY) check was
+  never built, disclosed nowhere, and read as a silent gap rather than a deferral. Closed same
+  session: `sprayPhiGuardFor` (`@werf/domain/crops/phi-guard.ts`) blocks `recordSpray` when
+  `sprayedOn + phiDays` would clear AFTER the block's own planned harvest date — sourced from
+  `currentPlantingFor` (moved from `LocalPlantings.tsx` into `@werf/domain/crops/planting.ts` so
+  client and server share ONE fold, the same posture `phiGuardFor` already takes; UNBOUNDED ancestor
+  walk, matching the display projection's own already-decided FR-202 semantics, deliberately NOT the
+  harvest guard's per-hop spray bound — a different question). Same override shape as 4d·2: a
+  category + free text reason, audited (`recordPhiOverride` generalised to serve both guards, keyed
+  by `eventId` rather than `harvestEventId`). Client: `useSprayPhiGuard`
+  (`usePhiGuard.ts`) blocks `RecordSprayScreen` offline, no server round trip, from the SAME local
+  planting cache `useCurrentPlanting` already reads for the land screen. Outbox: a spray now
+  `guardedBy` a `plantingrow:` tag per ancestor (mirroring harvest's own `sprayrow:` dependency one
+  guard earlier) — without it, an outbox that ever sent a same-device spray ahead of the planting
+  moments before it captured it could let the server's guard run blind and silently drop a farmer's
+  own override. ⚠️ Deliberately NOT built: a `phiComplianceRegister`-style cross-device race register
+  for the spray/planting pair (4d·6's counterpart) — the ordinary same-device race is closed by the
+  outbox dependency above, but two DIFFERENT devices racing a planting and a spray, both offline,
+  both landing out of order server-side, is not re-derived retroactively the way harvest's own race
+  is. Filed as a follow-up, not silently dropped a second time. Also unenforced still: `usePhiGuard`'s
+  own pre-existing `unresolved` dead-end (an offline harvest whose spray's product isn't cached
+  yet cannot be recorded at all) — flagged by the same compliance-checker pass as an owner
+  question, not answered here.
 
 Fertiliser (no compliance gate — ships independently of 4c/4d)
 ☑ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, `method`

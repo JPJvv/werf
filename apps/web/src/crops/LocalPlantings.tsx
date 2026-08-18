@@ -19,7 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createSqliteCaptureStore, type CaptureStore } from '@werf/sync';
-import { ancestorChainOf, recordPlanting } from '@werf/domain';
+import { ancestorChainOf, currentPlantingFor, recordPlanting } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
 import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
@@ -168,14 +168,17 @@ export function useEffectivePlantings(): readonly StoredPlanting[] {
 }
 
 /**
- * The planting a block currently reads as "in the ground", as this device sees it.
+ * The planting a block currently reads as "in the ground", as this device sees it. The fold itself
+ * is `@werf/domain`'s `currentPlantingFor` — ORDERED BY `(occurredAt, id)`, the same total order
+ * `LocalLand.tsx`'s `latestWalkFor` uses for a boundary, never by `occurredAt` alone, because two
+ * plantings of one block can tie on the same day by construction, and a tie left to array order
+ * resolves to arrival order rather than to what happened.
  *
- * ⭐ ORDERED BY `(occurredAt, id)`, the same total order `LocalLand.tsx`'s `latestWalkFor` uses for a
- * boundary — never by `occurredAt` alone, because two plantings of one block can tie on the same day
- * by construction, and a tie left to array order resolves to arrival order rather than to what
- * happened. This is a UX/reporting decision, not a safety one (see `@werf/domain/crops/planting.ts`'s
- * module note) — the PHI guard (4d) will read a block's SPRAY history directly and never asks this
- * question.
+ * ⭐ NO LONGER a client-only UX decision — see `@werf/domain/crops/planting.ts`'s own module note:
+ * `crops.service.ts`'s spray-capture PHI guard (§ 4.3, 4d·11) now reads this SAME fold server-side,
+ * for the identical reason `phiGuardFor` is one shared implementation rather than a client/server
+ * split. Was a hand-rolled local `latestPlantingFor`/`isLater` pair until 4d·11 moved it, to close
+ * the exact "two implementations that quietly drift" risk this codebase has been bitten by before.
  *
  * Reads `useEffectivePlantings` (local+hydrated merged), so a planting another device recorded is
  * not invisible here.
@@ -183,35 +186,13 @@ export function useEffectivePlantings(): readonly StoredPlanting[] {
  * ⭐ FR-202 (split, 4a·2): also walks `parent_id` via `@werf/domain`'s `ancestorChainOf`, UNBOUNDED —
  * a block split off another still carries whatever was last planted on the ground it came from,
  * because the split closes nothing (`land/split`'s own module note). See `ancestry.ts`'s header for
- * why this projection is unbounded while the future PHI guard's ancestor walk (4d·4) will not be.
+ * why this projection is unbounded while the PHI guard's own spray-evidence ancestor walk is not.
  */
 export function useCurrentPlanting(landUnitId: string): StoredPlanting | undefined {
   const plantings = useEffectivePlantings();
   const units = useEffectiveLandUnits();
   return useMemo(
-    () => latestPlantingFor(plantings, ancestorChainOf(landUnitId, units)),
+    () => currentPlantingFor(plantings, ancestorChainOf(landUnitId, units)),
     [plantings, units, landUnitId],
   );
-}
-
-/** The latest planting across a set of land units (a block and, per FR-202, its ancestors) by the
- *  total order, or undefined when none of them has ever been planted. */
-export function latestPlantingFor(
-  plantings: readonly StoredPlanting[],
-  landUnitIds: readonly string[],
-): StoredPlanting | undefined {
-  const ids = new Set(landUnitIds);
-  let latest: StoredPlanting | undefined;
-  for (const planting of plantings) {
-    if (!ids.has(planting.landUnitId)) continue;
-    if (latest === undefined || isLater(planting, latest)) latest = planting;
-  }
-  return latest;
-}
-
-function isLater(candidate: StoredPlanting, incumbent: StoredPlanting): boolean {
-  if (candidate.occurredAt !== incumbent.occurredAt) {
-    return candidate.occurredAt > incumbent.occurredAt;
-  }
-  return candidate.id > incumbent.id;
 }

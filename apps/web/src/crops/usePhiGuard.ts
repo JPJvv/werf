@@ -1,8 +1,10 @@
 /**
- * The client half of the PHI guard (FR-205, US-030, O-12) — blocked locally, no server round trip.
- * Assembles `phiGuardFor`'s (`@werf/domain`) inputs from this device's own caches and runs the
- * IDENTICAL pure function the server runs (`crops.service.ts`'s `evaluatePhiGuard`) — see
- * `phi-guard.ts`'s own module header for why this is one shared implementation rather than the
+ * The client half of BOTH PHI guards (FR-205, US-030, O-12, legal-compliance.md § 4.3) — blocked
+ * locally, no server round trip, either direction. `usePhiGuard` (harvest-side) assembles
+ * `phiGuardFor`'s (`@werf/domain`) inputs from this device's own caches and runs the IDENTICAL pure
+ * function the server runs (`crops.service.ts`'s `evaluatePhiGuard`); `useSprayPhiGuard`
+ * (spray-side, further down) does the same for `sprayPhiGuardFor`/`evaluateSprayPhiGuard` — see
+ * `phi-guard.ts`'s own module header for why both are one shared implementation rather than the
  * client/server split `withdrawal.ts` (FR-131) uses.
  *
  * ⭐ Passes an EMPTY `landUnits` list, always — the one deliberate asymmetry with the server, which
@@ -21,12 +23,15 @@
 import { useMemo } from 'react';
 import {
   phiGuardFor,
+  sprayPhiGuardFor,
   type PhiGuardResult,
   type PhiProductFact,
   type PhiSprayFact,
+  type SprayPhiGuardResult,
 } from '@werf/domain';
 import { useEffectiveSprays, type StoredSpray } from './LocalSprays';
 import { useChemicalProducts } from './LocalChemicalProducts';
+import { useCurrentPlanting } from './LocalPlantings';
 
 export function sprayFactsOf(sprays: readonly StoredSpray[]): readonly PhiSprayFact[] {
   return sprays.map((spray) => ({
@@ -67,4 +72,25 @@ export function usePhiGuard(landUnitId: string, harvestedOn: string): PhiGuardRe
     () => phiGuardFor(landUnitId, harvestedOn, sprayFacts, productFacts, []),
     [landUnitId, harvestedOn, sprayFacts, productFacts],
   );
+}
+
+/**
+ * The spray-side half of § 4.3 (`sprayPhiGuardFor`): blocked locally against the block's OWN
+ * planted-in-the-ground read (`useCurrentPlanting`, `LocalPlantings.tsx` — ancestor-UNBOUNDED per
+ * FR-202, unlike the harvest guard's per-hop spray bound above, a different question with a
+ * different, already-decided answer). `phiDays` is `undefined` until a product is picked, or when
+ * the picked product carries no PHI on record — either way the guard is never even evaluated,
+ * mirroring the server's own `product.phiDays !== null` gate (`crops.service.ts`'s `recordSpray`).
+ */
+export function useSprayPhiGuard(
+  landUnitId: string,
+  sprayedOn: string,
+  phiDays: number | undefined,
+): SprayPhiGuardResult {
+  const planting = useCurrentPlanting(landUnitId);
+
+  return useMemo(() => {
+    if (phiDays === undefined) return { blocked: false };
+    return sprayPhiGuardFor(sprayedOn, phiDays, planting?.expectedHarvestDate);
+  }, [sprayedOn, phiDays, planting]);
 }

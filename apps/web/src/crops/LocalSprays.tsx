@@ -57,6 +57,12 @@ export interface StoredSpray {
   readonly activeIngredients?: readonly string[];
   readonly phiDays?: number;
   readonly earliestHarvestDate?: string;
+  /** Present only when the spray-capture PHI guard (`usePhiGuard.ts`'s `useSprayPhiGuard`,
+   *  legal-compliance.md § 4.3) blocked this spray and the farmer overrode it. A local capture that
+   *  needed one carries `reason` alone — `by` arrives only once this device's own capture has
+   *  round-tripped through the server, the identical asymmetry `LocalHarvest.tsx`'s field of the
+   *  same name documents. */
+  readonly phiOverride?: { readonly reason: string; readonly by?: string };
 }
 
 export type SprayStore = CaptureStore<StoredSpray>;
@@ -132,7 +138,10 @@ export function useRecordSpray(): (spray: StoredSpray) => Promise<void> {
  * id — `mergeByIdPreferHydrated`, the same choice `HydratedLivestock.tsx` makes for a move — because
  * the hydrated copy carries `activeIngredients`/`phiDays`/`earliestHarvestDate`, which a purely
  * local capture never can (see `StoredSpray`'s own doc). Without this, FR-211's report would show
- * every spray missing its PHI until a farmer happened to open the app after a full round trip.
+ * every spray missing its PHI until a farmer happened to open the app after a full round trip. The
+ * same reasoning covers `phiOverride.by`, one field over — plain `mergeById` would permanently
+ * shadow it the moment this device's own override round-trips back down, the identical defect class
+ * `LocalHarvest.tsx`'s module note names for its own field of the same name.
  */
 export function useEffectiveSprays(): readonly StoredSpray[] {
   const sprays = useSprays();

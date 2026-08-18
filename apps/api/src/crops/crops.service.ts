@@ -18,14 +18,18 @@ import { auditLog, chemicalProducts, events, landUnits, type AppDb } from '@werf
 import { NotFoundError, ValidationError, type schemas } from '@werf/core';
 import {
   ancestorChainOf,
+  currentPlantingFor,
   phiGuardFor,
   recordFertiliser,
   recordHarvest,
   recordPlanting,
   recordSpray,
+  sprayPhiGuardFor,
   type PhiGuardResult,
   type PhiLandUnitFact,
   type PhiSprayFact,
+  type PlantingFact,
+  type SprayPhiGuardResult,
 } from '@werf/domain';
 import { APP_DB } from '../db/db.module';
 import {
@@ -111,16 +115,47 @@ export class CropsService {
    * the earliest-harvest date from the spray day and stores it ON the event. The rule that applied
    * is the rule at the time of the spray (ADR-0005): a later re-registration cannot move this
    * block's harvest window, because the date is already fixed here.
+   *
+   * ALSO compliance-gated the other direction (legal-compliance.md § 4.3): blocks at capture when
+   * this spray's resulting PHI would clear AFTER the block's own planned harvest date, unless the
+   * request carries a written override — the EARLY half of § 4.3's obligation, `phiGuardFor`'s
+   * harvest-time check (`recordHarvest` below) being the LATE half. Only evaluated when the product
+   * carries a PHI at all; a product with none on record blocks nothing, the identical "a real fact,
+   * not a gap" reasoning `phiGuardFor` already applies.
    */
   async recordSpray(userId: string, input: schemas.RecordSprayRequest): Promise<CapturedEvent> {
     return this.app.asUser(userId, async (tx) => {
       await assertCanCapture(tx, userId, input.farmId);
+
+      // Idempotent BEFORE validation (mirrors `recordHarvest`'s own `findEvent` guard below): a
+      // re-flushed spray must not re-run the guard against planting state that may have shifted
+      // (a new/updated planting landed) since the first flush already committed it.
+      const already = await findEvent(tx, input.farmId, input.id);
+      if (already) return already;
+
       const product = await resolveChemicalProduct(
         tx,
         input.farmId,
         input.productId,
         input.sprayedOn,
       );
+
+      let blockingGuard: Extract<SprayPhiGuardResult, { blocked: true }> | undefined;
+      if (product.phiDays !== null) {
+        const guard = await this.evaluateSprayPhiGuard(
+          tx,
+          input.farmId,
+          input.landUnitId,
+          input.sprayedOn,
+          product.phiDays,
+        );
+        if (guard.blocked) {
+          if (input.phiOverride === undefined) {
+            throw new ValidationError(sprayBlockedMessage(product.name, guard));
+          }
+          blockingGuard = guard;
+        }
+      }
 
       const event = recordSpray({
         id: input.id,
@@ -140,9 +175,31 @@ export class CropsService {
         ...(input.windKph === undefined ? {} : { windKph: input.windKph }),
         ...(input.tempC === undefined ? {} : { tempC: input.tempC }),
         ...(input.targetPest === undefined ? {} : { targetPest: input.targetPest }),
+        // `by` is the acting user id — never taken from the request (`sprayPayloadSchema`'s own
+        // module note, `@werf/core`). Only attached when the guard actually blocked (see below).
+        ...(blockingGuard !== undefined && input.phiOverride !== undefined
+          ? { phiOverride: { reason: input.phiOverride.reason, by: userId } }
+          : {}),
       });
 
-      return insertEvent(tx, event);
+      const inserted = await insertEvent(tx, event);
+
+      // Audited only when the guard actually found something to override — a client that sent a
+      // reason speculatively (its own local preview disagreed with the server) gets an ordinary
+      // spray, not a false "overridden" audit trail for a block that was never blocked.
+      if (blockingGuard !== undefined && input.phiOverride !== undefined) {
+        await recordPhiOverride(tx, {
+          farmId: input.farmId,
+          userId,
+          eventId: inserted.id,
+          landUnitId: input.landUnitId,
+          reason: input.phiOverride.reason,
+          guard: blockingGuard,
+          rule: "FR-204/FR-205 (legal-compliance.md § 4.3): a written override of a spray blocked because its pre-harvest interval would clear after the block's planned harvest date, recorded with the acting user and timestamp.",
+        });
+      }
+
+      return inserted;
     });
   }
 
@@ -277,10 +334,11 @@ export class CropsService {
         await recordPhiOverride(tx, {
           farmId: input.farmId,
           userId,
-          harvestEventId: inserted.id,
+          eventId: inserted.id,
           landUnitId: input.landUnitId,
           reason: input.phiOverride.reason,
           guard,
+          rule: 'FR-205: a written override of an active pre-harvest interval, recorded with the acting user and timestamp.',
         });
       }
 
@@ -457,25 +515,93 @@ export class CropsService {
       `the earliest safe harvest date is ${guard.blockedBy.earliestHarvestDate}.`
     );
   }
+
+  /**
+   * The spray-capture PHI guard's inputs (legal-compliance.md § 4.3), assembled from this farm's
+   * own data: every land unit (for the ancestor walk) and the block's — and, per FR-202, its
+   * ancestors' — planting history. `currentPlantingFor` (`@werf/domain`) is the SAME fold
+   * `useCurrentPlanting` reads client-side for display; walked UNBOUNDED via `ancestorChainOf`,
+   * never per-hop-bounded the way `evaluatePhiGuard`'s spray walk is — a different question (what's
+   * currently in the ground, not which spray applies) with a different, already-decided answer
+   * (`planting.ts`'s own module note).
+   */
+  private async evaluateSprayPhiGuard(
+    tx: CaptureTx,
+    farmId: string,
+    landUnitId: string,
+    sprayedOn: string,
+    phiDays: number,
+  ): Promise<SprayPhiGuardResult> {
+    const unitRows = await tx
+      .select({ id: landUnits.id, parentId: landUnits.parentId, createdAt: landUnits.createdAt })
+      .from(landUnits)
+      .where(and(eq(landUnits.farmId, farmId), isNull(landUnits.deletedAt)));
+    const units: PhiLandUnitFact[] = unitRows.map((u) => ({
+      id: u.id,
+      parentId: u.parentId,
+      createdAt: u.createdAt.toISOString(),
+    }));
+    const chain = ancestorChainOf(landUnitId, units);
+
+    const plantingRows = chain.length
+      ? await tx
+          .select({
+            id: events.id,
+            landUnitId: events.landUnitId,
+            occurredAt: events.occurredAt,
+            payload: events.payload,
+          })
+          .from(events)
+          .where(
+            and(
+              eq(events.farmId, farmId),
+              eq(events.type, 'planting'),
+              inArray(events.landUnitId, [...chain]),
+              isNull(events.deletedAt),
+            ),
+          )
+      : [];
+    const plantings = plantingRows
+      .map((row) => toPlantingFact(row))
+      .filter((p): p is PlantingFact => p !== null);
+
+    const planting = currentPlantingFor(plantings, chain);
+    return sprayPhiGuardFor(sprayedOn, phiDays, planting?.expectedHarvestDate);
+  }
+}
+
+/** Answers "so when can I harvest?" before it is asked, the same discipline US-030's own gherkin
+ *  established for the harvest-side guard's own message, one direction over. */
+function sprayBlockedMessage(
+  productName: string,
+  guard: Extract<SprayPhiGuardResult, { blocked: true }>,
+): string {
+  return (
+    `${productName}'s pre-harvest interval would only clear on ${guard.earliestHarvestDate} — ` +
+    `after this block's planned harvest date of ${guard.expectedHarvestDate}.`
+  );
 }
 
 /**
- * Writes the FR-205 override audit row into the SAME immutable `audit_log` table
+ * Writes a PHI override audit row into the SAME immutable `audit_log` table
  * `common/conflict-review.ts` uses for a system-detected conflict — not `recordConflict` itself,
  * which also enqueues a `conflict_reviews` item for a human to CLOSE. A PHI override is a decision
  * a human already made, deliberately, at capture; there is nothing left to review. `conflictKey`
- * scoped to the harvest event id makes this insert idempotent on its own, on top of `recordHarvest`'s
- * own `findEvent` guard.
+ * scoped to the event id makes this insert idempotent on its own, on top of `recordHarvest`'s/
+ * `recordSpray`'s own `findEvent` guard. Shared by both callers — the harvest-side (FR-205) and the
+ * spray-side (§ 4.3) override are the same kind of fact, differing only in which guard fired and
+ * which rule text names it.
  */
 async function recordPhiOverride(
   tx: CaptureTx,
   input: {
     readonly farmId: string;
     readonly userId: string;
-    readonly harvestEventId: string;
+    readonly eventId: string;
     readonly landUnitId: string;
     readonly reason: string;
-    readonly guard: PhiGuardResult;
+    readonly guard: PhiGuardResult | SprayPhiGuardResult;
+    readonly rule: string;
   },
 ): Promise<void> {
   await tx
@@ -484,15 +610,37 @@ async function recordPhiOverride(
       farmId: input.farmId,
       userId: input.userId,
       tableName: 'events',
-      recordId: input.harvestEventId,
+      recordId: input.eventId,
       action: 'phi_override',
-      rule: 'FR-205: a written override of an active pre-harvest interval, recorded with the acting user and timestamp.',
-      conflictKey: `phi_override:${input.harvestEventId}`,
+      rule: input.rule,
+      conflictKey: `phi_override:${input.eventId}`,
       facts: [{ landUnitId: input.landUnitId, reason: input.reason, guard: input.guard }],
       winner: null,
       source: 'api',
     })
     .onConflictDoNothing({ target: auditLog.conflictKey });
+}
+
+/** Tolerant per row, the same discipline `toPhiSprayFact` applies: a planting whose payload
+ *  resolved differently across a schema change is skipped, never crashes the spray-capture guard. */
+function toPlantingFact(row: {
+  id: string;
+  landUnitId: string | null;
+  occurredAt: Date;
+  payload: unknown;
+}): PlantingFact | null {
+  if (row.landUnitId === null) return null;
+  const payload = row.payload;
+  if (typeof payload !== 'object' || payload === null) return null;
+  const p = payload as Record<string, unknown>;
+  const expectedHarvestDate = p['expectedHarvestDate'];
+
+  return {
+    id: row.id,
+    landUnitId: row.landUnitId,
+    occurredAt: row.occurredAt.toISOString(),
+    ...(typeof expectedHarvestDate === 'string' ? { expectedHarvestDate } : {}),
+  };
 }
 
 /** Tolerant per row, the same discipline `toSprayHistoryFacts` applies: a harvest whose product

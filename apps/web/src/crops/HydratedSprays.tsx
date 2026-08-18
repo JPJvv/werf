@@ -70,6 +70,14 @@ function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | null {
   const str = (key: string): string | undefined =>
     typeof payload[key] === 'string' ? (payload[key] as string) : undefined;
 
+  const overrideRaw = payload['phiOverride'];
+  let phiOverride: { reason: string; by: string } | undefined;
+  if (typeof overrideRaw === 'object' && overrideRaw !== null) {
+    const reason = (overrideRaw as { reason?: unknown }).reason;
+    const by = (overrideRaw as { by?: unknown }).by;
+    if (typeof reason === 'string' && typeof by === 'string') phiOverride = { reason, by };
+  }
+
   return {
     id,
     farmId,
@@ -89,6 +97,7 @@ function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | null {
     ...(str('earliestHarvestDate') === undefined
       ? {}
       : { earliestHarvestDate: str('earliestHarvestDate') }),
+    ...(phiOverride === undefined ? {} : { phiOverride }),
   } as StoredSpray;
 }
 

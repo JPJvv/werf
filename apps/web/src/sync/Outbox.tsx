@@ -792,10 +792,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
-    // A planting references the block it was sown in — same FK-only shape as a boundary walk, and
-    // for the identical reason: nothing here creates evidence a server-side guard reads (there is
-    // no compliance gate on FR-203), so `guardedBy` alone, no safety ordering. `landUnitId` is never
-    // null on a planting — a planting with no ground under it is not a planting (P2.7 shape).
+    // A planting references the block it was sown in — same FK-only shape as a boundary walk, so
+    // `guardedBy` alone, no safety ordering of its OWN capture (FR-203 carries no compliance gate).
+    // It DOES `provide` a `plantingrow:` tag, though: the spray-capture PHI guard (legal-compliance.md
+    // § 4.3, below) reads a block's planted-in-the-ground `expectedHarvestDate` server-side, so a
+    // planting held this round (its own `landrow:` dependency unmet) must taint a spray that depends
+    // on it too — the identical evidence-before-the-act shape a spray already is for a harvest,
+    // one guard earlier in the chain. `landUnitId` is never null on a planting — a planting with no
+    // ground under it is not a planting (P2.7 shape).
     for (const planting of plantings) {
       if (!sent.has(planting.id)) {
         items.push({
@@ -804,6 +808,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           detail: landUnitCodes.get(planting.landUnitId) ?? null,
           send: (token) => cropsApi.recordPlanting(planting, token),
           guardedBy: [`landrow:${planting.landUnitId}`],
+          provides: [`plantingrow:${planting.landUnitId}`],
         });
       }
     }
@@ -825,6 +830,17 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     // spray HELD this round (its own `landrow:` dependency unmet, e.g. a block split moments ago)
     // taints any harvest on that block or a descendant, holding it rather than letting it post
     // ahead of evidence the server has not seen yet.
+    //
+    // ⭐ IT ALSO `guardedBy` a PLANTING, the other direction of § 4.3's own obligation: the spray's
+    // OWN server-side guard (`evaluateSprayPhiGuard`, `crops.service.ts`) reads the block's planted
+    // `expectedHarvestDate`, sourced by `currentPlantingFor`'s UNBOUNDED ancestor walk (the identical
+    // bound `useCurrentPlanting` reads for display, deliberately unlike the PER-HOP spray-evidence
+    // bound the harvest guard above uses — a different question, already decided in `planting.ts`'s
+    // own module note). Without this, a planting captured moments before its spray on the SAME
+    // device could still lose the race if the outbox ever sent them out of order: the spray's
+    // server guard would run against a planting the server had not seen yet, and either wrongly wave
+    // a should-be-blocked spray through, or drop a genuine override the client attached. Held, never
+    // refused — the same posture every `guardedBy` dependency in this queue takes.
     for (const spray of sprays) {
       if (!sent.has(spray.id)) {
         items.push({
@@ -832,7 +848,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'spray',
           detail: landUnitCodes.get(spray.landUnitId) ?? null,
           send: (token) => sprayApi.recordSpray(spray, token),
-          guardedBy: [`landrow:${spray.landUnitId}`],
+          guardedBy: [
+            `landrow:${spray.landUnitId}`,
+            ...ancestorChainOf(spray.landUnitId, landUnits).map((id) => `plantingrow:${id}`),
+          ],
           provides: [`sprayrow:${spray.landUnitId}`],
         });
       }

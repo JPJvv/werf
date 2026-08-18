@@ -2462,6 +2462,61 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(sent).not.toContain(SPRAY_ID);
   });
 
+  it('⭐ holds a spray behind a refused planting — legal-compliance.md § 4.3’s own evidence dependency, one guard earlier than the spray→harvest one above', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-plantings:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: PLANTING_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-14T04:00:00.000Z',
+          crop: 'Table grapes',
+          expectedHarvestDate: '2026-03-15',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-sprays:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SPRAY_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-10-05T05:00:00.000Z',
+          sprayedOn: '2026-10-05',
+          productId: SPRAY_PRODUCT_ID,
+        },
+      ]),
+    );
+    // Land units land fine; the PLANTING is what gets refused this round — proving the spray waits
+    // on its own guard's evidence, not merely on the block existing (already covered above).
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/crops/plantings') && method === 'POST') {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ code: 'CONFLICT', message: 'a planting conflict' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/crops/plantings'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/sprays'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(SPRAY_ID);
+  });
+
   it('⭐ holds a SPLIT CHILD behind its refused parent (FR-202, 4a·2) — a land unit can both provide and be guarded by a landrow:', async () => {
     cachedSession();
     // The parent AND its child are both still pending — the ordinary case for a split done and

@@ -236,6 +236,13 @@ const CAPTURE_SCREENS = [
   // because that is where the compliance-relevant markup actually is.
   { path: '/crops/harvest', heading: /record a harvest/i },
   { path: '/harvest', heading: /harvest history/i },
+  // ⛔ 4b/4c (FR-206/FR-204) were never added here — the sweep covered harvest (4d) but not the two
+  // OLDER crop-capture screens, the identical "missing from the list, not from the code" gap
+  // `/attention` (FR-131) once was. The seed has no land here either, so this audits the same
+  // "no blocks yet" empty state; the populated state (incl. 4e·4's optional stock-lot picker) is
+  // NOT separately audited — narrowing disclosed, not silent (STATUS.md, 4e·4).
+  { path: '/crops/fertilise', heading: /record a fertiliser application/i },
+  { path: '/crops/spray', heading: /record a spray/i },
   // Phase 4e (FR-501). The seed has no stock yet, so this audits the empty state; the populated
   // state (the item/lot form fields) is audited below, because that is where the controls are.
   { path: '/inventory', heading: /^stock$/i },

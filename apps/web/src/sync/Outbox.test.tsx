@@ -2916,3 +2916,165 @@ describe('inventory (Phase 4e, FR-501): three FK-only tiers, no needsHead equiva
     expect(sent).not.toContain(MOVEMENT_ID);
   });
 });
+
+describe('inventory auto-decrement (Phase 4e, FR-502): a spray/fertiliser guarded by its OWN stock lot', () => {
+  const LAND_UNIT_ID = '0190f3a0-0000-7000-8000-000000010100';
+  const ITEM_ID = '0190f3a0-0000-7000-8000-000000010101';
+  const LOT_ID = '0190f3a0-0000-7000-8000-000000010102';
+  const FERTILISER_ID = '0190f3a0-0000-7000-8000-000000010103';
+  const SPRAY_ID = '0190f3a0-0000-7000-8000-000000010104';
+  const SPRAY_PRODUCT_ID = '0190f3a0-0000-7000-8000-000000010105';
+
+  function seedLandUnitAndLot(): void {
+    window.localStorage.setItem(
+      `werf-land:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LAND_UNIT_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: null,
+          kind: 'block',
+          code: 'B12',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-inventory-items:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: ITEM_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          category: 'fertiliser',
+          name: 'Urea 46%',
+          unit: 'kg',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-inventory-lots:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LOT_ID,
+          farmId: FARM_ID,
+          inventoryItemId: ITEM_ID,
+          batch: null,
+          expiryDate: null,
+          location: null,
+        },
+      ]),
+    );
+  }
+
+  /** Everything succeeds EXCEPT the lot itself, which is refused this round. */
+  function lotRefusingFetch() {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/inventory/lots')) {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ code: 'CONFLICT', message: 'a lot conflict' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+  }
+
+  it('⭐ holds a fertiliser application behind its OWN refused stock lot — a second FK, alongside the block', async () => {
+    cachedSession();
+    seedLandUnitAndLot();
+    window.localStorage.setItem(
+      `werf-fertiliser:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: FERTILISER_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-20T06:15:00.000Z',
+          product: 'Urea 46%',
+          method: 'broadcast',
+          inventoryLotId: LOT_ID,
+        },
+      ]),
+    );
+    const fetchMock = lotRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/inventory/lots'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/fertiliser-applications'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(FERTILISER_ID);
+  });
+
+  it('⭐ holds a spray behind its OWN refused stock lot — a second FK, alongside the block/planting chain', async () => {
+    cachedSession();
+    seedLandUnitAndLot();
+    window.localStorage.setItem(
+      `werf-sprays:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SPRAY_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-10-05T05:00:00.000Z',
+          sprayedOn: '2026-10-05',
+          productId: SPRAY_PRODUCT_ID,
+          inventoryLotId: LOT_ID,
+        },
+      ]),
+    );
+    const fetchMock = lotRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/inventory/lots'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/sprays'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(SPRAY_ID);
+  });
+
+  it('a spray/fertiliser with NO inventory lot is unaffected by an unrelated refused lot', async () => {
+    cachedSession();
+    seedLandUnitAndLot();
+    window.localStorage.setItem(
+      `werf-fertiliser:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: FERTILISER_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-20T06:15:00.000Z',
+          product: 'Compost',
+          method: 'broadcast',
+          // Deliberately no `inventoryLotId` — this farm is not tracking stock for this application.
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 201, json: async () => ({}) }) as unknown as Response,
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/crops/fertiliser-applications'))).toBe(
+      true,
+    );
+  });
+});

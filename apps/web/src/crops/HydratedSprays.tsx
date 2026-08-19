@@ -21,12 +21,15 @@ import { getLocalDatabase } from '../sync/local-db';
 import type { StoredSpray } from './LocalSprays';
 
 const SPRAY_EVENTS_SQL =
-  'SELECT id, farm_id, land_unit_id, occurred_at, payload FROM events ' +
+  'SELECT id, farm_id, land_unit_id, occurred_at, payload, inventory_lot_id FROM events ' +
   "WHERE farm_id = ? AND type = 'spray' AND deleted_at IS NULL";
 
 /** Tolerant per row — a row written by a future schema version this build does not understand is
- *  skipped, not fatal, same philosophy as `HydratedFertiliser.tsx`'s mapper. */
-function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | null {
+ *  skipped, not fatal, same philosophy as `HydratedFertiliser.tsx`'s mapper. Exported for a direct
+ *  unit test (Phase 4e, FR-502): `inventory_lot_id` is a top-level event COLUMN, easy to leave out
+ *  of the `SELECT` and silently drop the moment this device's own capture round-trips down
+ *  (`mergeByIdPreferHydrated` — hydrated wins). */
+export function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | null {
   const id = row['id'];
   const farmId = row['farm_id'];
   const landUnitId = row['land_unit_id'];
@@ -78,6 +81,12 @@ function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | null {
     if (typeof reason === 'string' && typeof by === 'string') phiOverride = { reason, by };
   }
 
+  // A top-level event COLUMN (Phase 4e, FR-502), not a payload field — omitted, not queried, until
+  // now: `useEffectiveSprays`'s `mergeByIdPreferHydrated` merge means the hydrated copy is what
+  // this device reads once its own capture round-trips, so a column missing here silently drops the
+  // field the moment that happens (the "exists everywhere except where it's read" class).
+  const inventoryLotId = row['inventory_lot_id'];
+
   return {
     id,
     farmId,
@@ -98,6 +107,7 @@ function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | null {
       ? {}
       : { earliestHarvestDate: str('earliestHarvestDate') }),
     ...(phiOverride === undefined ? {} : { phiOverride }),
+    ...(typeof inventoryLotId === 'string' ? { inventoryLotId } : {}),
   } as StoredSpray;
 }
 

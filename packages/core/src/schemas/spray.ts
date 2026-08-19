@@ -51,6 +51,11 @@ export const recordSprayRequestSchema = z.object({
       reason: z.string().min(1),
     })
     .optional(),
+  /** The stock lot this spray drew from (Phase 4e, FR-502) — OPTIONAL, not regulated, so unlike
+   *  `productId` this is trusted straight from the client: `insertEvent`'s own
+   *  `assertOwnedReferences` call still checks it belongs to this farm. The quantity consumed is a
+   *  separate `inventory_movement` capture, never a field of this request. */
+  inventoryLotId: uuidSchema.optional(),
   notes: z.string().min(1).nullable().default(null),
 });
 export type RecordSprayRequest = z.infer<typeof recordSprayRequestSchema>;

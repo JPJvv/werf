@@ -101,6 +101,7 @@ export class CropsService {
         createdBy: userId,
         ...(input.rate === undefined ? {} : { rate: input.rate }),
         ...(input.operator === undefined ? {} : { operator: input.operator }),
+        ...(input.inventoryLotId === undefined ? {} : { inventoryLotId: input.inventoryLotId }),
       });
 
       return insertEvent(tx, event);
@@ -175,6 +176,7 @@ export class CropsService {
         ...(input.windKph === undefined ? {} : { windKph: input.windKph }),
         ...(input.tempC === undefined ? {} : { tempC: input.tempC }),
         ...(input.targetPest === undefined ? {} : { targetPest: input.targetPest }),
+        ...(input.inventoryLotId === undefined ? {} : { inventoryLotId: input.inventoryLotId }),
         // `by` is the acting user id — never taken from the request (`sprayPayloadSchema`'s own
         // module note, `@werf/core`). Only attached when the guard actually blocked (see below).
         ...(blockingGuard !== undefined && input.phiOverride !== undefined

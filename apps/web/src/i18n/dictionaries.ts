@@ -460,6 +460,11 @@ const en = {
   'crops.fertilise.save': 'Save application',
   'crops.fertilise.saved': 'saved — your work is saved',
   'crops.fertilise.back': 'Back to land',
+  // Inventory auto-decrement (Phase 4e, FR-502) — optional stock-lot reference on an application.
+  'crops.fertilise.fromStock': 'From stock (optional)',
+  'crops.fertilise.notTracked': "Not tracking this one's stock",
+  'crops.fertilise.quantityUsed': 'Quantity used',
+  'crops.fertilise.quantityUsedBad': 'Give the quantity used, or clear the stock lot above.',
   // Spray (FR-204/FR-211) — COMPLIANCE-GATED.
   'crops.spray.title': 'Record a spray',
   'crops.spray.noBlocks': 'No blocks yet. Add your first one — it saves with no signal.',
@@ -480,6 +485,11 @@ const en = {
   'crops.spray.save': 'Save spray',
   'crops.spray.saved': 'saved — your work is saved',
   'crops.spray.back': 'Back to land',
+  // Inventory auto-decrement (Phase 4e, FR-502) — optional stock-lot reference on a spray.
+  'crops.spray.fromStock': 'From stock (optional)',
+  'crops.spray.notTracked': "Not tracking this one's stock",
+  'crops.spray.quantityUsed': 'Quantity used',
+  'crops.spray.quantityUsedBad': 'Give the quantity used, or clear the stock lot above.',
   // Spray-capture PHI guard (legal-compliance.md § 4.3) — COMPLIANCE-GATED, the EARLY half of
   // FR-205's obligation: blocks a spray whose pre-harvest interval would clear after the block's
   // OWN planned harvest date.
@@ -1521,6 +1531,11 @@ const af: Record<TranslationKey, string> = {
   'crops.fertilise.save': 'Stoor toediening',
   'crops.fertilise.saved': 'gestoor — jou werk is gestoor',
   'crops.fertilise.back': 'Terug na grond',
+  'crops.fertilise.fromStock': 'Van voorraad (opsioneel)',
+  'crops.fertilise.notTracked': "Volg nie hierdie s'n voorraad nie",
+  'crops.fertilise.quantityUsed': 'Hoeveelheid gebruik',
+  'crops.fertilise.quantityUsedBad':
+    'Gee die hoeveelheid gebruik, of maak die voorraadlot hierbo skoon.',
   'crops.spray.title': 'Teken ’n bespuiting aan',
   'crops.spray.noBlocks': 'Nog geen blokke nie. Voeg jou eerste een by — dit stoor sonder sein.',
   'crops.spray.noProducts':
@@ -1541,6 +1556,11 @@ const af: Record<TranslationKey, string> = {
   'crops.spray.save': 'Stoor bespuiting',
   'crops.spray.saved': 'gestoor — jou werk is gestoor',
   'crops.spray.back': 'Terug na grond',
+  'crops.spray.fromStock': 'Van voorraad (opsioneel)',
+  'crops.spray.notTracked': "Volg nie hierdie s'n voorraad nie",
+  'crops.spray.quantityUsed': 'Hoeveelheid gebruik',
+  'crops.spray.quantityUsedBad':
+    'Gee die hoeveelheid gebruik, of maak die voorraadlot hierbo skoon.',
   'crops.spray.blockedTitle': 'Hierdie bespuiting sal na die beplande oesdatum vry word',
   'crops.spray.blockedClears': 'Hierdie produk sal eers veilig wees om te oes vanaf',
   'crops.spray.blockedPlanned': 'Die beplande oesdatum vir hierdie blok is',

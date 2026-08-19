@@ -18,6 +18,17 @@
  * Offline-first: `save` commits locally and instantly with no network in the path. The product
  * register and the planting log are both local caches, so the picker, the PHI preview, and the
  * guard all work at the tank in a dead zone.
+ *
+ * ⭐ Inventory auto-decrement (Phase 4e, FR-502) — OPTIONAL, additive: a farm without stock
+ * tracking on sees no lot picker's worth of extra decisions. Picking a lot stores an
+ * `inventoryLotId` reference ON the spray event (a plain, uncompliance-gated field — see
+ * `@werf/domain`'s `SprayInput`) and, separately, appends a `consumed` `inventory_movement`
+ * through the SAME local capture 4e·3's `ReceiveStockScreen` uses (`useRecordInventoryMovement`).
+ * These are two independent local commits, not one atomic write: if the spray itself is later
+ * refused server-side (a 4xx on a PHI guard this device's stale cache did not know about), the
+ * movement still lands — the stock genuinely left the shed regardless of whether the compliance
+ * write was accepted, the identical "the spray happened whether or not the shed card was
+ * accurate" reasoning `stock.ts`'s own module note gives for a shortfall.
  */
 
 import { useMemo, useState, type FormEvent } from 'react';
@@ -28,6 +39,12 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveLandUnits } from '../land/LocalLand';
+import {
+  useEffectiveInventoryItems,
+  useEffectiveInventoryLots,
+  useCurrentQuantity,
+} from '../inventory/stock';
+import { useRecordInventoryMovement } from '../inventory/LocalInventory';
 import {
   useChemicalProducts,
   chemicalProductsInForceOn,
@@ -76,6 +93,9 @@ export function RecordSprayScreen() {
   const blocks = useMemo(() => units.filter((unit) => unit.kind === 'block'), [units]);
   const products = useChemicalProducts();
   const recordSpray = useRecordSpray();
+  const recordMovement = useRecordInventoryMovement();
+  const inventoryItems = useEffectiveInventoryItems();
+  const inventoryLots = useEffectiveInventoryLots();
   const [params] = useSearchParams();
 
   const requested = params.get('block');
@@ -101,6 +121,8 @@ export function RecordSprayScreen() {
   const [overriding, setOverriding] = useState(false);
   const [overrideCategory, setOverrideCategory] = useState<OverrideReasonCategory | ''>('');
   const [overrideText, setOverrideText] = useState('');
+  const [inventoryLotId, setInventoryLotId] = useState('');
+  const [quantityUsed, setQuantityUsed] = useState('');
   const [savedProduct, setSavedProduct] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -110,8 +132,31 @@ export function RecordSprayScreen() {
   );
   const product = inForce.find((p) => p.id === productId);
 
+  // Chemical lots only (Phase 4e, FR-502) — a fertiliser or feed lot has no place in a spray
+  // capture. Not filtered or matched against `productId`: `chemical_products` (national reference,
+  // what the product IS) and an inventory item (farm-owned, what THIS farm has) are deliberately
+  // two different catalogues that this app does not yet link (filed, not built — phase-checklists.md
+  // 4e·4's own note), so the farmer matches them by name, the same posture `ReceiveStockScreen`
+  // already takes for every capture that reads stock.
+  const chemicalLots = useMemo(
+    () =>
+      inventoryLots
+        .filter(
+          (lot) =>
+            inventoryItems.find((i) => i.id === lot.inventoryItemId)?.category === 'chemical',
+        )
+        .map((lot) => ({
+          lot,
+          item: inventoryItems.find((i) => i.id === lot.inventoryItemId),
+        })),
+    [inventoryLots, inventoryItems],
+  );
+  const selectedLot = chemicalLots.find((c) => c.lot.id === inventoryLotId);
+
   // Called unconditionally, before the `!activeFarm` early return below (Rules of Hooks) — the
-  // identical ordering constraint `RecordHarvestScreen.tsx`'s own guard call obeys.
+  // identical ordering constraint `RecordHarvestScreen.tsx`'s own guard call obeys. Read
+  // unconditionally too, for the same reason — `''` reads as zero, which is never used below.
+  const currentQuantity = useCurrentQuantity(inventoryLotId);
   const guard = useSprayPhiGuard(selectedId, sprayedOn, product?.phiDays ?? undefined);
 
   if (!activeFarm) return null;
@@ -119,8 +164,16 @@ export function RecordSprayScreen() {
   const clearDate = harvestPreview(product, sprayedOn);
   const overrideReady = overrideCategory !== '' && overrideText.trim() !== '';
   const needsOverride = guard.blocked;
+  const quantityUsedNumber = optionalPositiveNumber(quantityUsed);
+  // Lot picked + quantity blank must block save, never silently emit no movement — see the module
+  // note's own "these are two independent commits" point: an unmatched pair here would mean the
+  // spray event carries an `inventoryLotId` no movement ever explains.
+  const quantityBad = inventoryLotId !== '' && quantityUsedNumber === undefined;
   const valid =
-    selected !== null && product !== undefined && (!needsOverride || (overriding && overrideReady));
+    selected !== null &&
+    product !== undefined &&
+    (!needsOverride || (overriding && overrideReady)) &&
+    !quantityBad;
 
   const clearSaved = () => setSavedProduct(null);
 
@@ -163,7 +216,22 @@ export function RecordSprayScreen() {
       ...(tempC.trim() === '' ? {} : { tempC: Number(tempC) }),
       ...(targetPest.trim() === '' ? {} : { targetPest: targetPest.trim() }),
       ...(phiOverride === undefined ? {} : { phiOverride }),
+      ...(inventoryLotId === '' ? {} : { inventoryLotId }),
     });
+
+    // A SEPARATE local commit from the spray above — see the module note. `quantityBad` already
+    // kept `valid` false unless a picked lot carries a real quantity, so this is safe to read here.
+    if (inventoryLotId !== '' && quantityUsedNumber !== undefined) {
+      await recordMovement({
+        id: uuidv7(),
+        farmId: activeFarm.id,
+        inventoryLotId,
+        occurredAt: sprayedInstant(sprayedOn),
+        reason: 'consumed',
+        quantity: quantityUsedNumber,
+        currentQuantity,
+      });
+    }
 
     resetOverride();
     setSavedProduct(product.name);
@@ -175,6 +243,8 @@ export function RecordSprayScreen() {
     setWindKph('');
     setTempC('');
     setTargetPest('');
+    setInventoryLotId('');
+    setQuantityUsed('');
     setSaving(false);
   };
 
@@ -291,6 +361,58 @@ export function RecordSprayScreen() {
               </p>
             )}
           </div>
+
+          {chemicalLots.length > 0 && (
+            <div className="mb-4 flex flex-col">
+              <label htmlFor="inventoryLot" className="mb-1 text-label uppercase text-soil-700">
+                {t('crops.spray.fromStock')}
+              </label>
+              <select
+                id="inventoryLot"
+                value={inventoryLotId}
+                onChange={(e) => {
+                  clearSaved();
+                  setInventoryLotId(e.target.value);
+                  setQuantityUsed('');
+                }}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              >
+                <option value="">{t('crops.spray.notTracked')}</option>
+                {chemicalLots.map(({ lot, item }) => (
+                  <option key={lot.id} value={lot.id}>
+                    {item?.name ?? lot.inventoryItemId}
+                    {lot.batch ? ` · ${lot.batch}` : ''} — {lot.quantityOnHand} {item?.unit ?? ''}
+                  </option>
+                ))}
+              </select>
+              {selectedLot && (
+                <div className="mt-2 flex flex-col">
+                  <label htmlFor="quantityUsed" className="mb-1 text-label uppercase text-soil-700">
+                    {t('crops.spray.quantityUsed')} ({selectedLot.item?.unit ?? ''})
+                  </label>
+                  <input
+                    id="quantityUsed"
+                    name="quantityUsed"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="any"
+                    value={quantityUsed}
+                    onChange={(e) => {
+                      clearSaved();
+                      setQuantityUsed(e.target.value);
+                    }}
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
+                  />
+                  {quantityBad && (
+                    <p className="mt-1 text-label text-klei-700">
+                      {t('crops.spray.quantityUsedBad')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {guard.blocked && (
             <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">

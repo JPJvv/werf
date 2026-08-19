@@ -101,4 +101,19 @@ describe('recordFertiliser (FR-206)', () => {
   ])('refuses %s', (_case, rate) => {
     expect(() => recordFertiliser(input({ rate }))).toThrow(ValidationError);
   });
+
+  const LOT_ID = '01900000-0000-7000-8000-000000000e02';
+
+  it('⭐ stores an optional inventory lot on the event COLUMN, never the payload (FR-502)', () => {
+    const event = recordFertiliser(input({ inventoryLotId: LOT_ID }));
+
+    expect(event.inventoryLotId).toBe(LOT_ID);
+    expect('inventoryLotId' in event.payload).toBe(false);
+  });
+
+  it('leaves the inventory lot null when a farm is not tracking stock for this application', () => {
+    const event = recordFertiliser(input());
+
+    expect(event.inventoryLotId).toBeNull();
+  });
 });

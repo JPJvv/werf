@@ -1878,19 +1878,54 @@ Grazing, feed & inventory — the one slice with real new schema
   `'adjusted'` deferred but `'counted'`/`'received'`/`'consumed'` are real, tested, and wired
   through the outbox (three FK-only tiers — item → lot → movement — no `needsHead`-shaped
   arithmetic guard needed, because a shortfall is never refused).
-□ 4e·4 FR-502 Inventory auto-decrements on use — spray (4c) and fertiliser (4b) capture gain an
-  OPTIONAL inventory-lot reference (additive to the schema already shipped in 4b/4c, no rework):
-  a farm without inventory tracking on can still spray/fertilise; one that does emits a
-  `consumed` movement. The chemical_products reference row (what the product IS, national,
-  read-only) and an inventory lot (how much of it THIS FARM has, farm-owned, mutable) are
-  deliberately two different tables — conflating them would make a farm's stock count sync-scoped
-  by jurisdiction instead of by farm.
-  ⚠️ **This is where inventory becomes compliance-gated.** 4e·3 (this session, FR-501) carries no
-  compliance gate of its own — plain stock counting. The moment a `consumed` movement is wired into
-  the FR-204 spray write path, it joins PHI-guarded, compliance-relevant code, and the per-slice
-  compliance-checker rule (CLAUDE.md, keyed to the labour phase but the FR-204 precedent applies
-  the same discipline here) is live for this slice specifically — do not carry forward "inventory
-  has no gate" into this item.
+☑ 4e·4 FR-502 Inventory auto-decrements on use — CLOSED (28th session). Spray (4c) and fertiliser
+  (4b) capture gain an OPTIONAL inventory-lot reference (additive to the schema already shipped
+  in 4b/4c, no rework, no new migration — `events.inventory_lot_id` shipped in 0033): a farm
+  without inventory tracking on can still spray/fertilise; one that does emits a `consumed`
+  movement. The chemical_products reference row (what the product IS, national, read-only) and an
+  inventory lot (how much of it THIS FARM has, farm-owned, mutable) stay two different tables, not
+  linked to each other — the farmer matches by name, the same filed-not-built gap 4c's product
+  picker already carries.
+  **Shape: TWO independent local commits, not one atomic write.** `recordSpray`/`recordFertiliser`
+  (`@werf/domain`) gained an optional `inventoryLotId` threaded onto the event's COLUMN (never the
+  payload — an unregulated reference, unlike `productId`); separately, the SAME capture that
+  already exists for 4e·3 (`useRecordInventoryMovement`) records a `consumed` movement when a lot
+  and a quantity were given. If the spray is later refused server-side (a stale-cache PHI guard
+  miss) the movement still lands — "the spray happened whether or not the shed card was accurate"
+  (`stock.ts`'s own module note) applies in this direction too; the reverse (movement refused,
+  spray accepted) does not arise since a movement is never refused on its merits. Ownership of the
+  referenced lot is validated for FREE — `insertEvent`'s existing `assertOwnedReferences` call
+  already checks `inventoryLotId` against the farm, added generically for 4e·3 and reused here
+  with no new server code.
+  ⭐ Two real gaps an `advisor()` design pass caught before writing code, both fixed and each
+  proven by a test that FAILED first: (1) `HydratedSprays.tsx`/`HydratedFertiliser.tsx`'s down-sync
+  SQL selected `payload` but never the top-level `inventory_lot_id` COLUMN — `useEffectiveSprays`'s
+  `mergeByIdPreferHydrated` merge means the hydrated copy wins once this device's own capture
+  round-trips, so the field would have silently vanished the moment sync completed; both mapping
+  functions now select and map it, exported (`mapHydratedSpray`/`mapHydratedFertiliser`, the same
+  precedent `mapHydratedMobMove` set) for a direct unit test. (2) The Outbox's `guardedBy`
+  resolution taints a subject only once the item PROVIDING it has been ATTEMPTED this same flush
+  round (array order is attempt order) — the inventory item/lot tiers were queued near the END of
+  the items array (after every crop capture), so a spray/fertiliser's new conditional
+  `inventorylotrow:` guard would never actually hold: by the time the guard was checked, the lot
+  had not been attempted yet, so nothing had tainted it. Fixed by moving the item/lot tiers to
+  right after land units (before any capture that can reference one); the inventory MOVEMENT tier
+  alone stays where it was, since nothing else depends on it. Caught by this slice's OWN new Outbox
+  test, not by inspection — the first version of the guard shipped, the test failed, the reorder
+  fixed it.
+  ⚠️ **Compliance scope note — the spray write path is touched, not re-opened.** FR-204's own PHI
+  logic is untouched; `inventoryLotId` is a plain, unregulated reference validated the same way
+  every other FK on this event already is. Flagged out loud per CLAUDE.md's rule (compliance
+  pass is owner-triggered, never spawned unprompted) — this slice is not to be called
+  merge-ready until JP asks for a `compliance-checker` pass and it clears.
+  ⭐ Also closed a PRE-EXISTING a11y gap while touching these two screens: `e2e/a11y.spec.ts`'s
+  `CAPTURE_SCREENS` list had `/crops/harvest` (4d) but never `/crops/spray` or `/crops/fertilise`
+  (4b/4c) — the identical "missing from the list, not from the code" class `/attention` once was.
+  Added both; `pnpm test:e2e -- a11y` 20/20, both themes, including the new stock-lot controls.
+  `pnpm verify`: 1622/1631 unit tests in the combined run + 2 suites (`animals.integration.test.ts`,
+  `theft.integration.test.ts` — untouched by this slice) hit a transient Docker testcontainer
+  health-check timeout, both confirmed clean in isolation (9/9); lint/typecheck clean, build 7/7,
+  190.89 KB gz.
 □ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
   candidate Sprays/crop tile badge (see the home-metrics note below).
 □ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —

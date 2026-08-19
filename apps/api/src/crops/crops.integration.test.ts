@@ -21,6 +21,8 @@ import {
   createElevatedDb,
   events,
   farmUsers,
+  inventoryItems,
+  inventoryLots,
   landUnits,
   users,
   type AppDb,
@@ -227,6 +229,27 @@ describe('planting capture (FR-203)', () => {
     return row!;
   }
 
+  /** A real inventory lot this tenant's own catalogue already holds (Phase 4e, FR-502) — created
+   *  directly through Drizzle, the identical shortcut `aChemicalProduct` takes, since this
+   *  describe's module wires `CropsService` alone, not `InventoryService`. */
+  async function anInventoryLot(a: { userId: string; farmId: string }) {
+    const [item] = await elevated.db
+      .insert(inventoryItems)
+      .values({
+        farmId: a.farmId,
+        category: 'chemical',
+        name: 'Cyprodinex 50 WG',
+        unit: 'L',
+        createdBy: a.userId,
+      })
+      .returning();
+    const [lot] = await elevated.db
+      .insert(inventoryLots)
+      .values({ farmId: a.farmId, inventoryItemId: item!.id, createdBy: a.userId })
+      .returning();
+    return lot!.id;
+  }
+
   it('records a planting as an append-only event scoped to the BLOCK, not a herd', async () => {
     const a = await tenant('Crop');
     const landUnitId = await block(a);
@@ -426,6 +449,37 @@ describe('planting capture (FR-203)', () => {
       const rows = await elevated.db.select().from(events);
       expect(rows).toHaveLength(0);
     });
+
+    it('⭐ stores an optional inventory lot reference on the event (Phase 4e, FR-502)', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const inventoryLotId = await anInventoryLot(a);
+
+      const captured = await service.recordFertiliser(
+        a.userId,
+        fertiliserBody({ farmId: a.farmId, landUnitId, inventoryLotId }),
+      );
+
+      expect(captured.inventoryLotId).toBe(inventoryLotId);
+      expect(Object.keys(captured.payload as object)).not.toContain('inventoryLotId');
+    });
+
+    it("refuses a fertiliser application naming ANOTHER farm's inventory lot", async () => {
+      const a = await tenant('Crop');
+      const b = await tenant('Other');
+      const landUnitId = await block(a);
+      const othersLot = await anInventoryLot(b);
+
+      await expect(
+        service.recordFertiliser(
+          a.userId,
+          fertiliserBody({ farmId: a.farmId, landUnitId, inventoryLotId: othersLot }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await elevated.db.select().from(events);
+      expect(rows).toHaveLength(0);
+    });
   });
 
   describe('spray capture (FR-204) — COMPLIANCE-GATED', () => {
@@ -566,6 +620,44 @@ describe('planting capture (FR-203)', () => {
       expect(again.id).toBe(first.id);
       const rows = await app.asUser(a.userId, (tx) => tx.select().from(events));
       expect(rows).toHaveLength(1);
+    });
+
+    it('⭐ stores an optional inventory lot reference on the event, never in the payload (Phase 4e, FR-502)', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: 7 });
+      const inventoryLotId = await anInventoryLot(a);
+
+      const captured = await service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId, productId: product.id, inventoryLotId }),
+      );
+
+      expect(captured.inventoryLotId).toBe(inventoryLotId);
+      expect(Object.keys(captured.payload as object)).not.toContain('inventoryLotId');
+    });
+
+    it("refuses a spray naming ANOTHER farm's inventory lot", async () => {
+      const a = await tenant('Crop');
+      const b = await tenant('Other');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct({ phiDays: 7 });
+      const othersLot = await anInventoryLot(b);
+
+      await expect(
+        service.recordSpray(
+          a.userId,
+          sprayBody({
+            farmId: a.farmId,
+            landUnitId,
+            productId: product.id,
+            inventoryLotId: othersLot,
+          }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+
+      const rows = await elevated.db.select().from(events);
+      expect(rows).toHaveLength(0);
     });
   });
 

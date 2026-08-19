@@ -135,4 +135,19 @@ describe('recordSpray (FR-204)', () => {
   it('refuses a spray day that is not a calendar date', () => {
     expect(() => recordSpray(input({ sprayedOn: '5 October 2026' }))).toThrow(ValidationError);
   });
+
+  const LOT_ID = '01900000-0000-7000-8000-000000000e01';
+
+  it('⭐ stores an optional inventory lot on the event COLUMN, never the payload (FR-502)', () => {
+    const event = recordSpray(input({ inventoryLotId: LOT_ID }));
+
+    expect(event.inventoryLotId).toBe(LOT_ID);
+    expect('inventoryLotId' in event.payload).toBe(false);
+  });
+
+  it('leaves the inventory lot null when a farm is not tracking stock for this spray', () => {
+    const event = recordSpray(input());
+
+    expect(event.inventoryLotId).toBeNull();
+  });
 });

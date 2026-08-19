@@ -39,6 +39,10 @@ export interface StoredFertiliser {
   readonly method: FertiliserMethod;
   readonly rate?: FertiliserRate;
   readonly operator?: string;
+  /** The stock lot this application drew from (Phase 4e, FR-502) — OPTIONAL. See `@werf/domain`'s
+   *  `FertiliserInput` field of the same name: the quantity consumed is a separate
+   *  `inventory_movement` capture, never a field here. */
+  readonly inventoryLotId?: string;
 }
 
 export type FertiliserStore = CaptureStore<StoredFertiliser>;
@@ -113,6 +117,7 @@ export function useRecordFertiliser(): (application: {
   readonly method: FertiliserMethod;
   readonly rate?: FertiliserRate;
   readonly operator?: string;
+  readonly inventoryLotId?: string;
 }) => Promise<void> {
   const store = useFertiliserStore();
   return useCallback(
@@ -126,6 +131,9 @@ export function useRecordFertiliser(): (application: {
         method: application.method,
         ...(application.rate === undefined ? {} : { rate: application.rate }),
         ...(application.operator === undefined ? {} : { operator: application.operator }),
+        ...(application.inventoryLotId === undefined
+          ? {}
+          : { inventoryLotId: application.inventoryLotId }),
       });
       return store.append({
         id: application.id,
@@ -136,6 +144,9 @@ export function useRecordFertiliser(): (application: {
         method: application.method,
         ...(application.rate === undefined ? {} : { rate: application.rate }),
         ...(application.operator === undefined ? {} : { operator: application.operator }),
+        ...(application.inventoryLotId === undefined
+          ? {}
+          : { inventoryLotId: application.inventoryLotId }),
       });
     },
     [store],

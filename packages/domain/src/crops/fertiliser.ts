@@ -36,6 +36,13 @@ export interface FertiliserInput {
   readonly method: schemas.FertiliserPayload['method'];
   readonly rate?: FertiliserRate;
   readonly operator?: string;
+  /**
+   * The stock lot this application drew from (Phase 4e, FR-502) — OPTIONAL, the identical shape
+   * `spray.ts`'s field of the same name documents: a farm without inventory tracking on can still
+   * fertilise, and the quantity consumed is a separate `inventory_movement` a caller records on its
+   * own, never invented here.
+   */
+  readonly inventoryLotId?: string;
   readonly notes?: string | null;
   readonly createdBy?: string | null;
 }
@@ -72,7 +79,7 @@ export function recordFertiliser(input: FertiliserInput): schemas.NewEvent {
     landUnitId: input.landUnitId,
     employeeId: null,
     batchId: null,
-    inventoryLotId: null,
+    inventoryLotId: input.inventoryLotId ?? null,
     locationGeojson: null,
     notes: input.notes ?? null,
     createdBy: input.createdBy ?? null,

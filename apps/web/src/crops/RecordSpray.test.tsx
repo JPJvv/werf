@@ -24,6 +24,11 @@ const LAND_KEY = `werf-land:${FARM_ID}`;
 const SPRAYS_KEY = `werf-sprays:${FARM_ID}`;
 const PRODUCTS_KEY = `werf-chemical-products:${FARM_ID}`;
 const PLANTINGS_KEY = `werf-plantings:${FARM_ID}`;
+const ITEM_ID = '0190f3a0-0000-7000-8000-0000000000g1';
+const LOT_ID = '0190f3a0-0000-7000-8000-0000000000g2';
+const ITEMS_KEY = `werf-inventory-items:${FARM_ID}`;
+const LOTS_KEY = `werf-inventory-lots:${FARM_ID}`;
+const MOVEMENTS_KEY = `werf-inventory-movements:${FARM_ID}`;
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -125,6 +130,55 @@ function cachedPlanting(expectedHarvestDate: string): void {
 
 function storedSprays(): Promise<readonly Record<string, unknown>[]> {
   return storedCaptures<Record<string, unknown>>(SPRAYS_KEY);
+}
+
+function storedMovements(): Promise<readonly Record<string, unknown>[]> {
+  return storedCaptures<Record<string, unknown>>(MOVEMENTS_KEY);
+}
+
+/** A chemical lot with 40kg already received — the state a real device would hold before a spray
+ *  is captured against it (Phase 4e, FR-502). */
+function cachedChemicalLot(): void {
+  window.localStorage.setItem(
+    ITEMS_KEY,
+    JSON.stringify([
+      {
+        id: ITEM_ID,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'chemical',
+        name: 'Cyprodinex 50 WG',
+        unit: 'L',
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    LOTS_KEY,
+    JSON.stringify([
+      {
+        id: LOT_ID,
+        farmId: FARM_ID,
+        inventoryItemId: ITEM_ID,
+        batch: 'B-2026-01',
+        expiryDate: null,
+        location: null,
+      },
+    ]),
+  );
+  window.localStorage.setItem(
+    MOVEMENTS_KEY,
+    JSON.stringify([
+      {
+        id: '0190f3a0-0000-7000-8000-0000000000g3',
+        farmId: FARM_ID,
+        inventoryLotId: LOT_ID,
+        occurredAt: '2026-08-01T04:00:00.000Z',
+        reason: 'received',
+        quantity: 40,
+        delta: 40,
+      },
+    ]),
+  );
 }
 
 beforeEach(() => {
@@ -246,6 +300,79 @@ describe('recording a spray (FR-204)', () => {
     await user.click(screen.getByRole('link', { name: /record a spray/i }));
 
     expect(await screen.findByLabelText(/^product$/i)).toBeTruthy();
+  });
+});
+
+describe('inventory auto-decrement on a spray (Phase 4e, FR-502)', () => {
+  it('offers no stock picker when the farm tracks no chemical inventory', async () => {
+    seedProducts(7);
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await screen.findByLabelText(/^product$/i);
+    expect(screen.queryByLabelText(/from stock/i)).toBeNull();
+  });
+
+  it('picking a lot and a quantity records BOTH the spray and a separate `consumed` movement', async () => {
+    seedProducts(7);
+    cachedChemicalLot();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText(/^product$/i), PRODUCT_ID);
+    await user.selectOptions(screen.getByLabelText(/from stock/i), LOT_ID);
+    await user.type(screen.getByLabelText(/quantity used/i), '2.5');
+    await user.click(screen.getByRole('button', { name: /save spray/i }));
+
+    await waitFor(async () => {
+      expect(await storedSprays()).toHaveLength(1);
+    });
+    expect((await storedSprays())[0]).toMatchObject({ inventoryLotId: LOT_ID });
+
+    // The fixture already seeds ONE `received` movement — this asserts a SECOND, SEPARATE
+    // `consumed` movement lands alongside it, never replacing or merging into it.
+    await waitFor(async () => {
+      expect(await storedMovements()).toHaveLength(2);
+    });
+    const movement = (await storedMovements()).find((m) => m['reason'] === 'consumed') as {
+      reason: string;
+      delta: number;
+    };
+    expect(movement).toMatchObject({ inventoryLotId: LOT_ID, reason: 'consumed', quantity: 2.5 });
+    expect(movement.delta).toBe(-2.5);
+  });
+
+  it('blocks save when a lot is picked but the quantity is left blank', async () => {
+    seedProducts(7);
+    cachedChemicalLot();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText(/^product$/i), PRODUCT_ID);
+    await user.selectOptions(screen.getByLabelText(/from stock/i), LOT_ID);
+
+    expect(screen.getByRole('button', { name: /save spray/i }).hasAttribute('disabled')).toBe(true);
+    expect(await screen.findByText(/give the quantity used/i)).toBeTruthy();
+  });
+
+  it('leaving the lot as "not tracking" saves the spray with no NEW inventory movement', async () => {
+    seedProducts(7);
+    cachedChemicalLot();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/crops/spray?block=${BLOCK_ID}`);
+    render(<App />);
+
+    await user.selectOptions(await screen.findByLabelText(/^product$/i), PRODUCT_ID);
+    await user.click(screen.getByRole('button', { name: /save spray/i }));
+
+    await waitFor(async () => {
+      expect(await storedSprays()).toHaveLength(1);
+    });
+    expect((await storedSprays())[0]!['inventoryLotId']).toBeUndefined();
+    // Still just the ONE seeded `received` movement — no `consumed` movement was added.
+    expect(await storedMovements()).toHaveLength(1);
   });
 });
 

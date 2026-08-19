@@ -74,6 +74,14 @@ export interface SprayInput {
    * client: never — see the module note).
    */
   readonly phiOverride?: { readonly reason: string; readonly by?: string };
+  /**
+   * The stock lot this spray drew from (Phase 4e, FR-502) — OPTIONAL: a farm without inventory
+   * tracking on can still spray. Purely a reference stored on the event; the quantity actually
+   * consumed is a SEPARATE `inventory_movement` event a caller records independently
+   * (`recordInventoryMovement`, `stock.ts`) — never invented here, since "how much" is the
+   * farmer-typed fact the movement carries, not this event's concern.
+   */
+  readonly inventoryLotId?: string;
   readonly notes?: string | null;
   readonly createdBy?: string | null;
 }
@@ -122,7 +130,7 @@ export function recordSpray(input: SprayInput): schemas.NewEvent {
     landUnitId: input.landUnitId,
     employeeId: null,
     batchId: null,
-    inventoryLotId: null,
+    inventoryLotId: input.inventoryLotId ?? null,
     locationGeojson: null,
     notes: input.notes ?? null,
     createdBy: input.createdBy ?? null,

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
 import { getCurrentFakeLocalDatabase, storedCaptures } from '../test-support/local-db';
+import { mapHydratedSpray } from './HydratedSprays';
 
 const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
@@ -169,5 +170,43 @@ describe('spray hydration — a spray another device sent (FR-204/FR-211)', () =
       expect(screen.getByText('2026-10-12')).toBeTruthy();
     });
     expect(await storedCaptures(SPRAYS_KEY)).toHaveLength(1);
+  });
+});
+
+describe('⭐ inventory lot reference survives the down-sync mapping (Phase 4e, FR-502)', () => {
+  const LOT_ID = '0190f3a0-0000-7000-8000-00000000e0aa';
+
+  it('carries `inventory_lot_id` — a top-level COLUMN, not a payload field — onto the mapped row', () => {
+    const mapped = mapHydratedSpray({
+      id: '0190f3a0-0000-7000-8000-00000000e004',
+      farm_id: FARM_ID,
+      land_unit_id: BLOCK_ID,
+      occurred_at: '2026-10-05T05:00:00.000Z',
+      payload: JSON.stringify({
+        productId: PRODUCT_ID,
+        activeIngredients: ['cyprodinil'],
+        sprayedOn: '2026-10-05',
+      }),
+      inventory_lot_id: LOT_ID,
+    });
+
+    expect(mapped?.inventoryLotId).toBe(LOT_ID);
+  });
+
+  it('omits it, rather than a stray null/undefined, when no lot was referenced', () => {
+    const mapped = mapHydratedSpray({
+      id: '0190f3a0-0000-7000-8000-00000000e005',
+      farm_id: FARM_ID,
+      land_unit_id: BLOCK_ID,
+      occurred_at: '2026-10-05T05:00:00.000Z',
+      payload: JSON.stringify({
+        productId: PRODUCT_ID,
+        activeIngredients: ['cyprodinil'],
+        sprayedOn: '2026-10-05',
+      }),
+      inventory_lot_id: null,
+    });
+
+    expect(mapped && 'inventoryLotId' in mapped).toBe(false);
   });
 });

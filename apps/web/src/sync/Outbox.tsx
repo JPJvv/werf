@@ -780,6 +780,37 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
+    // Inventory items and lots (Phase 4e, FR-501) are queued HERE, right after land units and
+    // BEFORE any capture that can carry an OPTIONAL `inventoryLotId` reference (fertiliser/spray,
+    // FR-502, below) — deliberately not down beside the inventory MOVEMENT tier this pair used to
+    // sit with. `guardedBy` resolution taints a subject only once the item PROVIDING it has been
+    // attempted THIS round (`taint`, above); array order IS attempt order, so a lot queued after
+    // the spray that references it would still read as "not yet tainted" when the spray's own
+    // guard is checked, and the spray would wrongly send. Items/lots have no FK of their own to
+    // land, so moving them earlier costs nothing.
+    for (const item of inventoryItems) {
+      if (!sent.has(item.id)) {
+        items.push({
+          id: item.id,
+          kind: 'inventoryItem',
+          detail: item.name,
+          send: (token) => inventoryApi.recordItem(item, token),
+          provides: [`inventoryitemrow:${item.id}`],
+        });
+      }
+    }
+    for (const lot of inventoryLots) {
+      if (!sent.has(lot.id)) {
+        items.push({
+          id: lot.id,
+          kind: 'inventoryLot',
+          detail: lot.batch,
+          send: (token) => inventoryApi.recordLot(lot, token),
+          guardedBy: [`inventoryitemrow:${lot.inventoryItemId}`],
+          provides: [`inventorylotrow:${lot.id}`],
+        });
+      }
+    }
     // A boundary walk references the camp it is the shape of, so it follows the land units above.
     //
     // ⭐ NO SAFETY ORDERING APPLIES HERE, and that is asked explicitly rather than assumed, because
@@ -824,7 +855,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     }
     // A fertiliser application is the identical FK-only shape as a planting, and for the identical
-    // reason: FR-206 carries no compliance gate, so `guardedBy` alone, no safety ordering.
+    // reason: FR-206 carries no compliance gate, so `guardedBy` alone, no safety ordering. An
+    // OPTIONAL stock-lot reference (Phase 4e, FR-502) adds a second FK guard, conditionally: a lot
+    // created this same offline round has not synced yet, so an application drawing on it must wait
+    // behind the lot, the identical shape an inventory movement is already held behind its own lot.
     for (const application of fertiliserApplications) {
       if (!sent.has(application.id)) {
         items.push({
@@ -832,7 +866,12 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'fertiliser',
           detail: landUnitCodes.get(application.landUnitId) ?? null,
           send: (token) => fertiliserApi.recordFertiliser(application, token),
-          guardedBy: [`landrow:${application.landUnitId}`],
+          guardedBy: [
+            `landrow:${application.landUnitId}`,
+            ...(application.inventoryLotId === undefined
+              ? []
+              : [`inventorylotrow:${application.inventoryLotId}`]),
+          ],
         });
       }
     }
@@ -862,6 +901,11 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           guardedBy: [
             `landrow:${spray.landUnitId}`,
             ...ancestorChainOf(spray.landUnitId, landUnits).map((id) => `plantingrow:${id}`),
+            // An OPTIONAL stock-lot reference (Phase 4e, FR-502) — see the fertiliser tier's own
+            // note above for why this guard is conditional.
+            ...(spray.inventoryLotId === undefined
+              ? []
+              : [`inventorylotrow:${spray.inventoryLotId}`]),
           ],
           provides: [`sprayrow:${spray.landUnitId}`],
         });
@@ -1316,35 +1360,13 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
-    // Inventory (Phase 4e, FR-501) references no animal or camp either, so it has no place in the
-    // ordering above and no SAFETY ordering applies (unlike a tally, `consumed` is never refused on
-    // its merits — `recordInventoryMovement`'s own module note — so there is no `needsHead`
-    // equivalent here to ask). Three FK-only tiers: item, then a lot of it, then a movement against
-    // that lot — each `guardedBy` the row directly above it, the identical shape a mob's tally is
-    // held behind `mobrow:`.
-    for (const item of inventoryItems) {
-      if (!sent.has(item.id)) {
-        items.push({
-          id: item.id,
-          kind: 'inventoryItem',
-          detail: item.name,
-          send: (token) => inventoryApi.recordItem(item, token),
-          provides: [`inventoryitemrow:${item.id}`],
-        });
-      }
-    }
-    for (const lot of inventoryLots) {
-      if (!sent.has(lot.id)) {
-        items.push({
-          id: lot.id,
-          kind: 'inventoryLot',
-          detail: lot.batch,
-          send: (token) => inventoryApi.recordLot(lot, token),
-          guardedBy: [`inventoryitemrow:${lot.inventoryItemId}`],
-          provides: [`inventorylotrow:${lot.id}`],
-        });
-      }
-    }
+    // The inventory MOVEMENT tier alone stays here — its item/lot tiers are queued much earlier
+    // now, right after land units (see that comment for why: `guardedBy` resolution needs the lot
+    // to have been ATTEMPTED before any dependent, spray/fertiliser included, is checked this same
+    // round). No SAFETY ordering applies to a movement itself (unlike a tally, `consumed` is never
+    // refused on its merits — `recordInventoryMovement`'s own module note — so there is no
+    // `needsHead` equivalent here to ask); its only dependency is FK-only, `guardedBy` the lot row
+    // directly above it, the identical shape a mob's tally is held behind `mobrow:`.
     for (const movement of inventoryMovements) {
       if (!sent.has(movement.id)) {
         items.push({

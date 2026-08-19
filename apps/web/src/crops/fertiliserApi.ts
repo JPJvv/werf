@@ -22,6 +22,9 @@ export const fertiliserApi = {
         method: application.method,
         ...(application.rate === undefined ? {} : { rate: application.rate }),
         ...(application.operator === undefined ? {} : { operator: application.operator }),
+        ...(application.inventoryLotId === undefined
+          ? {}
+          : { inventoryLotId: application.inventoryLotId }),
       },
       token,
     ),

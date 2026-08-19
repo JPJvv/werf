@@ -63,6 +63,10 @@ export interface StoredSpray {
    *  round-tripped through the server, the identical asymmetry `LocalHarvest.tsx`'s field of the
    *  same name documents. */
   readonly phiOverride?: { readonly reason: string; readonly by?: string };
+  /** The stock lot this spray drew from (Phase 4e, FR-502) — OPTIONAL. See `@werf/domain`'s
+   *  `SprayInput` field of the same name: the quantity consumed is a separate `inventory_movement`
+   *  capture, never a field here. */
+  readonly inventoryLotId?: string;
 }
 
 export type SprayStore = CaptureStore<StoredSpray>;

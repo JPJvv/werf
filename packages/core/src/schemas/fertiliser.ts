@@ -20,6 +20,10 @@ export const recordFertiliserRequestSchema = z.object({
   landUnitId: uuidSchema,
   /** When it was applied. */
   occurredAt: timestampSchema,
+  /** The stock lot this application drew from (Phase 4e, FR-502) — OPTIONAL, the identical field
+   *  `spray.ts`'s request schema carries. The quantity consumed is a separate `inventory_movement`
+   *  capture, never a field of this request. */
+  inventoryLotId: uuidSchema.optional(),
   notes: z.string().min(1).nullable().default(null),
   // The facts themselves, reused from the `fertiliser` event payload so the two cannot drift.
   ...fertiliserPayloadSchema.shape,

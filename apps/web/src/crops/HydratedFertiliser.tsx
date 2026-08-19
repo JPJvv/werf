@@ -25,12 +25,13 @@ import type { StoredFertiliser } from './LocalFertiliser';
 
 // `type = 'fertiliser'` narrows the shared `events` table to exactly the rows this store folds.
 const FERTILISER_EVENTS_SQL =
-  'SELECT id, farm_id, land_unit_id, occurred_at, payload FROM events ' +
+  'SELECT id, farm_id, land_unit_id, occurred_at, payload, inventory_lot_id FROM events ' +
   "WHERE farm_id = ? AND type = 'fertiliser' AND deleted_at IS NULL";
 
 /** Tolerant per row — a row written by a future schema version this build does not understand is
- *  skipped, not fatal, same philosophy as `HydratedCrops.tsx`'s mapper. */
-function mapHydratedFertiliser(row: Record<string, unknown>): StoredFertiliser | null {
+ *  skipped, not fatal, same philosophy as `HydratedCrops.tsx`'s mapper. Exported for a direct unit
+ *  test — see `HydratedSprays.tsx`'s identical note on `inventory_lot_id` (Phase 4e, FR-502). */
+export function mapHydratedFertiliser(row: Record<string, unknown>): StoredFertiliser | null {
   const id = row['id'];
   const farmId = row['farm_id'];
   const landUnitId = row['land_unit_id'];
@@ -79,6 +80,10 @@ function mapHydratedFertiliser(row: Record<string, unknown>): StoredFertiliser |
     if (typeof value === 'number' && typeof unit === 'string') rate = { value, unit };
   }
 
+  // A top-level event COLUMN (Phase 4e, FR-502), not a payload field — see `HydratedSprays.tsx`'s
+  // identical note for why this must be selected explicitly, one compliance gate lighter.
+  const inventoryLotId = row['inventory_lot_id'];
+
   return {
     id,
     farmId,
@@ -88,6 +93,7 @@ function mapHydratedFertiliser(row: Record<string, unknown>): StoredFertiliser |
     method,
     ...(rate === undefined ? {} : { rate }),
     ...(operator === undefined ? {} : { operator }),
+    ...(typeof inventoryLotId === 'string' ? { inventoryLotId } : {}),
   };
 }
 

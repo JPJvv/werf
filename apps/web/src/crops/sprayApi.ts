@@ -33,6 +33,7 @@ export const sprayApi = {
         ...(spray.phiOverride === undefined
           ? {}
           : { phiOverride: { reason: spray.phiOverride.reason } }),
+        ...(spray.inventoryLotId === undefined ? {} : { inventoryLotId: spray.inventoryLotId }),
       },
       token,
     ),

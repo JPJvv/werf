@@ -8,6 +8,12 @@
  *
  * The block picker reconciles `?block=` against the live list on every render, the identical
  * pattern `RecordPlantingScreen`/`WalkBoundaryScreen` document — see either for the full reasoning.
+ *
+ * ⭐ Inventory auto-decrement (Phase 4e, FR-502) — OPTIONAL, additive, the identical shape
+ * `RecordSprayScreen.tsx`'s own module note documents one guard lighter (FR-206 carries no
+ * compliance gate): picking a lot stores an `inventoryLotId` reference on the application AND,
+ * as a SEPARATE local commit, appends a `consumed` `inventory_movement` through the same capture
+ * `ReceiveStockScreen` uses.
  */
 
 import { useMemo, useState, type FormEvent } from 'react';
@@ -18,6 +24,12 @@ import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveLandUnits } from '../land/LocalLand';
+import {
+  useEffectiveInventoryItems,
+  useEffectiveInventoryLots,
+  useCurrentQuantity,
+} from '../inventory/stock';
+import { useRecordInventoryMovement } from '../inventory/LocalInventory';
 import { useRecordFertiliser, type FertiliserMethod } from './LocalFertiliser';
 
 const METHODS: readonly FertiliserMethod[] = ['broadcast', 'band', 'fertigation', 'foliar'];
@@ -49,6 +61,9 @@ export function RecordFertiliserScreen() {
   const units = useEffectiveLandUnits();
   const blocks = useMemo(() => units.filter((unit) => unit.kind === 'block'), [units]);
   const recordFertiliser = useRecordFertiliser();
+  const recordMovement = useRecordInventoryMovement();
+  const inventoryItems = useEffectiveInventoryItems();
+  const inventoryLots = useEffectiveInventoryLots();
   const [params] = useSearchParams();
 
   const requested = params.get('block');
@@ -68,8 +83,28 @@ export function RecordFertiliserScreen() {
   const [rateUnit, setRateUnit] = useState('');
   const [operator, setOperator] = useState('');
   const [day, setDay] = useState(today);
+  const [inventoryLotId, setInventoryLotId] = useState('');
+  const [quantityUsed, setQuantityUsed] = useState('');
   const [savedProduct, setSavedProduct] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Fertiliser lots only (Phase 4e, FR-502) — see `RecordSprayScreen.tsx`'s identical note on why
+  // this is matched by category, not by `product` (two different, unlinked catalogues).
+  const fertiliserLots = useMemo(
+    () =>
+      inventoryLots
+        .filter(
+          (lot) =>
+            inventoryItems.find((i) => i.id === lot.inventoryItemId)?.category === 'fertiliser',
+        )
+        .map((lot) => ({
+          lot,
+          item: inventoryItems.find((i) => i.id === lot.inventoryItemId),
+        })),
+    [inventoryLots, inventoryItems],
+  );
+  const selectedLot = fertiliserLots.find((c) => c.lot.id === inventoryLotId);
+  const currentQuantity = useCurrentQuantity(inventoryLotId);
 
   if (!activeFarm) return null;
 
@@ -79,7 +114,9 @@ export function RecordFertiliserScreen() {
     (rateValueNumber !== undefined && rateUnit.trim() === '') ||
     (rateValueNumber === undefined && rateValue.trim() === '' && rateUnit.trim() !== '');
   const validProduct = product.trim() !== '';
-  const valid = validProduct && !rateBad;
+  const quantityUsedNumber = optionalPositiveNumber(quantityUsed);
+  const quantityBad = inventoryLotId !== '' && quantityUsedNumber === undefined;
+  const valid = validProduct && !rateBad && !quantityBad;
 
   const clearSaved = () => setSavedProduct(null);
 
@@ -99,13 +136,30 @@ export function RecordFertiliserScreen() {
         ? {}
         : { rate: { value: rateValueNumber, unit: rateUnit.trim() } }),
       ...(operator.trim() === '' ? {} : { operator: operator.trim() }),
+      ...(inventoryLotId === '' ? {} : { inventoryLotId }),
     });
+
+    // A SEPARATE local commit — see the module note. `quantityBad` already kept `valid` false
+    // unless a picked lot carries a real quantity.
+    if (inventoryLotId !== '' && quantityUsedNumber !== undefined) {
+      await recordMovement({
+        id: uuidv7(),
+        farmId: activeFarm.id,
+        inventoryLotId,
+        occurredAt: appliedInstant(day),
+        reason: 'consumed',
+        quantity: quantityUsedNumber,
+        currentQuantity,
+      });
+    }
 
     setSavedProduct(product.trim());
     setProduct('');
     setRateValue('');
     setRateUnit('');
     setOperator('');
+    setInventoryLotId('');
+    setQuantityUsed('');
     setSaving(false);
   };
 
@@ -242,6 +296,58 @@ export function RecordFertiliserScreen() {
           <p className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
             {t('crops.fertilise.rateBad')}
           </p>
+        )}
+
+        {fertiliserLots.length > 0 && (
+          <div className="mb-4 flex flex-col">
+            <label htmlFor="inventoryLot" className="mb-1 text-label uppercase text-soil-700">
+              {t('crops.fertilise.fromStock')}
+            </label>
+            <select
+              id="inventoryLot"
+              value={inventoryLotId}
+              onChange={(e) => {
+                clearSaved();
+                setInventoryLotId(e.target.value);
+                setQuantityUsed('');
+              }}
+              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+            >
+              <option value="">{t('crops.fertilise.notTracked')}</option>
+              {fertiliserLots.map(({ lot, item }) => (
+                <option key={lot.id} value={lot.id}>
+                  {item?.name ?? lot.inventoryItemId}
+                  {lot.batch ? ` · ${lot.batch}` : ''} — {lot.quantityOnHand} {item?.unit ?? ''}
+                </option>
+              ))}
+            </select>
+            {selectedLot && (
+              <div className="mt-2 flex flex-col">
+                <label htmlFor="quantityUsed" className="mb-1 text-label uppercase text-soil-700">
+                  {t('crops.fertilise.quantityUsed')} ({selectedLot.item?.unit ?? ''})
+                </label>
+                <input
+                  id="quantityUsed"
+                  name="quantityUsed"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  value={quantityUsed}
+                  onChange={(e) => {
+                    clearSaved();
+                    setQuantityUsed(e.target.value);
+                  }}
+                  className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
+                />
+                {quantityBad && (
+                  <p className="mt-1 text-label text-klei-700">
+                    {t('crops.fertilise.quantityUsedBad')}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         <div className="mb-4 flex flex-col">

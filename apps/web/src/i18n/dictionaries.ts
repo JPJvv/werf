@@ -45,6 +45,19 @@ const en = {
   'shell.farm': 'Farm',
   'settings.language.title': 'Language',
   'settings.security.title': 'Security',
+  // FR-152 (4e·2): the owner-set rest-period warning threshold. Owner-only to edit, the same
+  // posture `settings.farms.notOwner` takes for the same reason — this changes how the farm is
+  // configured, not a worker's own capture.
+  'settings.grazing.title': 'Grazing',
+  'settings.grazing.intro':
+    'Warn when a camp is grazed again before it has rested this many days. Leave it blank to turn the warning off.',
+  'settings.grazing.notOwner': 'Only the farm owner can change the rest-period setting.',
+  'settings.grazing.needsSignal':
+    'Changing this setting needs a connection, so every device on the farm sees the same threshold. Everything else in the app keeps working without one.',
+  'settings.grazing.label': 'Rest-period warning threshold',
+  'settings.grazing.saved': 'Saved',
+  'settings.grazing.failed': 'The rest-period setting could not be saved just now. Try again.',
+  'settings.grazing.save': 'Save',
   'settings.security.body':
     'The phones and computers that can open this account. Lost one? Remove its key here.',
   'settings.security.loading': 'Reading your keys…',
@@ -324,6 +337,12 @@ const en = {
   'land.grazing.arrivalUnknown': 'Grazing — arrival not recorded',
   'land.grazing.noRecord': 'No grazing recorded',
   'land.grazing.rateUnit': 'head/ha',
+  // FR-152 (4e·2): the owner-set rest-period WARNING, not a block. Answers "so when CAN I move
+  // them back?" directly, the same discipline `crops.spray.harvestFrom`'s PHI panel sets — never
+  // a raw day count the farmer has to do arithmetic on.
+  'land.grazing.readyIn': 'Ready to graze again in',
+  'land.grazing.restTargetUnit': 'days',
+  'land.grazing.prematureMoveTitle': 'This camp may not be fully rested yet',
   // FR-201, block only: soil type is free text (descriptions vary too widely for a closed set);
   // irrigation is a tap-not-type choice from a fixed vocabulary (@werf/core IRRIGATION_TYPES).
   'land.soilType': 'Soil type (optional)',
@@ -1153,6 +1172,18 @@ const af: Record<TranslationKey, string> = {
   'shell.farm': 'Plaas',
   'settings.language.title': 'Taal',
   'settings.security.title': 'Sekuriteit',
+  'settings.grazing.title': 'Weiding',
+  'settings.grazing.intro':
+    'Waarsku wanneer ’n kamp weer bewei word voordat dit hierdie aantal dae gerus het. Laat leeg om die waarskuwing af te skakel.',
+  'settings.grazing.notOwner':
+    'Net die eienaar van die plaas kan die rusperiode-instelling verander.',
+  'settings.grazing.needsSignal':
+    'Om hierdie instelling te verander het ’n verbinding nodig, sodat elke toestel op die plaas dieselfde mikpunt sien. Alles anders in die app werk steeds daarsonder.',
+  'settings.grazing.label': 'Rusperiode-waarskuwingsmikpunt',
+  'settings.grazing.saved': 'Gestoor',
+  'settings.grazing.failed':
+    'Die rusperiode-instelling kon nie nou gestoor word nie. Probeer weer.',
+  'settings.grazing.save': 'Stoor',
   'settings.security.body':
     'Die fone en rekenaars wat hierdie rekening kan oopmaak. Een verloor? Verwyder sy sleutel hier.',
   'settings.security.loading': 'Lees jou sleutels…',
@@ -1382,6 +1413,9 @@ const af: Record<TranslationKey, string> = {
   'land.grazing.arrivalUnknown': 'Wei — aankoms nie aangeteken nie',
   'land.grazing.noRecord': 'Geen weiding aangeteken nie',
   'land.grazing.rateUnit': 'stuks/ha',
+  'land.grazing.readyIn': 'Weer gereed om te wei oor',
+  'land.grazing.restTargetUnit': 'dae',
+  'land.grazing.prematureMoveTitle': 'Hierdie kamp het moontlik nog nie genoeg gerus nie',
   'land.soilType': 'Grondtipe (opsioneel)',
   'land.irrigation': 'Besproeiing (opsioneel)',
   'land.irrigation.none': 'Nie gespesifiseer nie',

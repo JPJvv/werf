@@ -140,6 +140,36 @@ export function campGrazingStatuses(
   return result;
 }
 
+export interface RestPeriodWarning {
+  /** Days rested so far — the same number `GrazingRow`'s main line already shows. */
+  readonly daysRested: number;
+  /** Days until the threshold is reached — the direct answer to "so when CAN I move them back?",
+   *  never left for the farmer to subtract themselves (`RecordSprayScreen.tsx`'s PHI panel sets
+   *  this bar: answer the next question before it is asked). */
+  readonly daysRemaining: number;
+}
+
+/**
+ * FR-152 (4e·2): the "warn on premature return" signal, never a block (contrast the PHI guard,
+ * which blocks — this is agronomic judgement, not law, `phase-checklists.md` 4e·2's own
+ * boundary). `null` when there is nothing to warn about: no threshold set (owner decision, 4e·2 —
+ * never warn off a guessed default), the camp is not currently resting, or it has already rested
+ * long enough.
+ *
+ * Only `resting` can be premature. `grazing`/`grazingUnknown` mean something is standing there
+ * NOW, which is a fact about the present, not a prospective return to warn against; `undefined`
+ * (no record) has nothing to compare a threshold to.
+ */
+export function restPeriodWarning(
+  status: CampGrazingStatus | undefined,
+  restPeriodDays: number | null,
+): RestPeriodWarning | null {
+  if (status?.kind !== 'resting' || restPeriodDays === null || status.days >= restPeriodDays) {
+    return null;
+  }
+  return { daysRested: status.days, daysRemaining: restPeriodDays - status.days };
+}
+
 export function useCampGrazing(): ReadonlyMap<string, CampGrazingStatus> {
   const animals = useEffectiveAnimals();
   const mobs = useEffectiveMobs();

@@ -34,7 +34,7 @@ const SESSION_USER: schemas.AuthSession['user'] = {
   deletedAt: null,
 };
 
-function cachedSession(): void {
+function cachedSession(restPeriodDays: number | null = null): void {
   const payload = {
     accessToken: 'access-token',
     expiresIn: 900,
@@ -48,6 +48,7 @@ function cachedSession(): void {
         enterpriseTypes: ['beef_cattle'],
         role: 'owner',
         enterprises: [],
+        restPeriodDays,
       },
     ],
     activeFarmId: FARM_ID,
@@ -285,5 +286,82 @@ describe('moving animals (FR-103)', () => {
     // seeded herd hydrates asynchronously, so this is the first data-dependent query in the render.
     expect(await screen.findByText(/no camps yet/i)).toBeTruthy();
     expect(screen.getByRole('link', { name: /add a camp/i })).toBeTruthy();
+  });
+});
+
+describe('rest-period warning on the destination camp (FR-152, 4e·2)', () => {
+  it('warns, but does not block, when the destination has not rested the owner-set threshold', async () => {
+    cachedSession(30);
+    const [camp1, camp4] = seedCamps('Camp 1', 'Camp 4');
+    const [animalId] = seedHerd(1, camp1!);
+    // Camp 4's own history: this animal was there once, and left 10 days ago — inside a 30-day
+    // threshold. Two moves, not one — see `MoveMob.test.tsx`'s identical note on why a departure
+    // needs the arrival on the log too.
+    window.localStorage.setItem(
+      MOVES_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          animalId,
+          occurredAt: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+          batchId: null,
+          toLandUnitId: camp4,
+        },
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          animalId,
+          occurredAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+          batchId: null,
+          toLandUnitId: camp1,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/move');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
+    await user.selectOptions(screen.getByLabelText(/move to which camp/i), camp4!);
+
+    expect(await screen.findByText(/may not be fully rested yet/i)).toBeTruthy();
+    // Advisory, never a block.
+    expect(screen.getByRole('button', { name: /move them/i }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('says nothing when the owner has not set a threshold', async () => {
+    cachedSession(null);
+    const [camp1, camp4] = seedCamps('Camp 1', 'Camp 4');
+    const [animalId] = seedHerd(1, camp1!);
+    window.localStorage.setItem(
+      MOVES_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          animalId,
+          occurredAt: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+          batchId: null,
+          toLandUnitId: camp4,
+        },
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          animalId,
+          occurredAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+          batchId: null,
+          toLandUnitId: camp1,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/move');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /select all shown/i }));
+    await user.selectOptions(screen.getByLabelText(/move to which camp/i), camp4!);
+
+    expect(screen.queryByText(/may not be fully rested yet/i)).toBeNull();
   });
 });

@@ -129,6 +129,22 @@ for (const theme of THEMES) {
     expect(results.violations).toEqual([]);
   });
 
+  // FR-152 (4e·2). The seeded farm's owner sees the input and the klei-tinted "needs a
+  // connection" panel is never shown here — `seed()`'s page starts online, and this is the one
+  // place that panel's own markup gets an axe pass, since `CAPTURE_SCREENS` never triggers it.
+  test(`settings → grazing has no accessibility violations in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme });
+    await page.goto('/settings/grazing');
+
+    await expect(page.getByRole('heading', { name: /^grazing$/i })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
   test(`settings → language has no accessibility violations in the ${theme} theme`, async ({
     page,
   }) => {

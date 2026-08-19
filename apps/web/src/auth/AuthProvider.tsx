@@ -74,6 +74,12 @@ export interface AuthContextValue {
    * the device, so this reports whether it followed the person or only the phone.
    */
   saveLocale(locale: string): Promise<boolean>;
+  /**
+   * Sets or clears the active farm's FR-152 rest-period warning threshold (4e·2). Resolves false
+   * rather than throwing when it cannot reach the server — see the implementation for why this is
+   * `saveLocale`'s shape, not `addFarm`'s.
+   */
+  saveRestPeriodDays(days: number | null): Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -316,9 +322,39 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     [session, sessions],
   );
 
+  /**
+   * FR-152 write-back (4e·2). Mirrors `saveLocale`, not `addFarm`: this is a per-farm PREFERENCE
+   * an owner sets, not a tenancy-root-minting action, so there is no local write path to fall
+   * back to and none is needed — it resolves false rather than throwing when offline, and the
+   * screen states that plainly rather than queuing a settings edit as though it were a farmer's
+   * captured work (CLAUDE.md's write-queue rule protects work, not a preference toggle).
+   */
+  const saveRestPeriodDays = useCallback(
+    async (days: number | null): Promise<boolean> => {
+      const token = session?.accessToken;
+      const farmId = resolveActiveFarm(session)?.id;
+      if (!token || !farmId) return false;
+      try {
+        const farm = await authApi.updateRestPeriodDays(token, farmId, { restPeriodDays: days });
+        setSession((current) => {
+          if (!current) return current;
+          const next = {
+            ...current,
+            farms: current.farms.map((f) => (f.id === farmId ? farm : f)),
+          };
+          cacheOffline(sessions, next);
+          return next;
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [session, sessions],
+  );
+
   const value = useMemo<AuthContextValue>(() => {
-    const activeFarm =
-      session?.farms.find((farm) => farm.id === session.activeFarmId) ?? session?.farms[0] ?? null;
+    const activeFarm = resolveActiveFarm(session);
 
     return {
       session,
@@ -334,6 +370,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
       addFarm,
       refreshSession,
       saveLocale,
+      saveRestPeriodDays,
     };
   }, [
     session,
@@ -346,6 +383,7 @@ export function AuthProvider({ children, store }: AuthProviderProps) {
     addFarm,
     refreshSession,
     saveLocale,
+    saveRestPeriodDays,
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -362,6 +400,20 @@ function defaultStore(): SessionStore<schemas.OfflineSession> {
     storage: window.localStorage,
     sanitizePersisted: sanitizeOfflineSession,
   });
+}
+
+/**
+ * The single rule for which farm the shell is showing: the one named by `activeFarmId`, or the
+ * first farm on the session when there is none (a session cached before it existed, or one that
+ * never explicitly switched). ONE function, not a hand-duplicated inline expression, because a
+ * second copy of this rule is exactly the kind of drift CLAUDE.md's schema-duplication warning
+ * generalises to — `saveRestPeriodDays` writing to a different farm than `activeFarm` displays
+ * would be a silent, farm-scoped version of that same defect class.
+ */
+function resolveActiveFarm(session: ClientSession | null): schemas.SessionFarm | null {
+  return (
+    session?.farms.find((farm) => farm.id === session.activeFarmId) ?? session?.farms[0] ?? null
+  );
 }
 
 function cacheOffline(

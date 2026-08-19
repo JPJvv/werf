@@ -68,6 +68,16 @@ export const farms = pgTable(
     timezone: text('timezone').notNull().default('Africa/Johannesburg'),
     /** Number of UTC calendar-month event buckets retained on each device (offline-sync.md §3). */
     eventRetentionMonths: integer('event_retention_months').notNull().default(24),
+    /**
+     * FR-152's rest-period WARNING threshold (4e·2, phase-checklists.md) — how many days a camp
+     * should rest before it is grazed again. Deliberately NOT in `regulatory_rates`: this is
+     * agronomic veld-management judgement, not law, so it does not carry a jurisdiction or an
+     * `effective_from` — it is a plain per-farm setting the owner sets and changes at will
+     * (ADR-0006's boundary between a regulated figure and a farm preference). Nullable, no
+     * default: an unset threshold means no warning is shown, never a guessed number presented as
+     * if it were considered advice (owner decision, 4e·2).
+     */
+    restPeriodDays: integer('rest_period_days'),
     /** Running total of FINALISED attachment bytes this farm has stored (P3.16, migration 0030).
      *  Server-maintained only — `AttachmentsService` increments it atomically against the quota
      *  when a `createAttachment` transitions a row to "will be uploaded" (a fresh insert or a
@@ -81,6 +91,10 @@ export const farms = pgTable(
     check('farms_jurisdiction_v1', sql`${t.jurisdiction} = 'ZA'`),
     check('farms_event_retention_months_positive', sql`${t.eventRetentionMonths} > 0`),
     check('farms_attachment_bytes_used_nonnegative', sql`${t.attachmentBytesUsed} >= 0`),
+    check(
+      'farms_rest_period_days_positive',
+      sql`${t.restPeriodDays} IS NULL OR ${t.restPeriodDays} > 0`,
+    ),
   ],
 );
 

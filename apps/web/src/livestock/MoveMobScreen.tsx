@@ -23,6 +23,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveLandUnits } from '../land/LocalLand';
 import { useEffectiveMobs } from './herd';
 import { useRecordMobMove } from './LocalMobMoves';
+import { useCampGrazing, restPeriodWarning } from './grazing';
 
 export function MoveMobScreen() {
   const { t } = useTranslation();
@@ -30,6 +31,10 @@ export function MoveMobScreen() {
   const landUnits = useEffectiveLandUnits();
   const mobs = useEffectiveMobs();
   const recordMobMove = useRecordMobMove();
+  // FR-152 (4e·2): warn, never block, when the chosen destination hasn't rested the owner-set
+  // number of days yet — checked at capture, the same "warn before the truck leaves" discipline
+  // every advisory check in this app follows, even though this one is agronomic, not a guard.
+  const grazing = useCampGrazing();
 
   const term = useMemo(
     () => vocabularyFor((activeFarm?.enterpriseTypes as EnterpriseType[]) ?? []).land,
@@ -49,6 +54,8 @@ export function MoveMobScreen() {
   // already in is not a move, and the screen refuses it up front rather than letting the server 400.
   const destinationNamed = toLandUnitId !== '';
   const wouldMove = destinationNamed && selected !== null && selected.landUnitId !== toLandUnitId;
+  const destinationStatus = wouldMove ? grazing.get(toLandUnitId) : undefined;
+  const destinationWarning = restPeriodWarning(destinationStatus, activeFarm.restPeriodDays);
 
   const save = async () => {
     if (!selected || !wouldMove || saving) return;
@@ -153,6 +160,21 @@ export function MoveMobScreen() {
                   ))}
                 </select>
               </div>
+
+              {destinationWarning !== null && (
+                <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                  <p className="mb-1 font-ui font-semibold">
+                    {t('land.grazing.prematureMoveTitle')}
+                  </p>
+                  <p>
+                    {t('land.grazing.readyIn')}{' '}
+                    <span className="font-data tabular-nums">
+                      {destinationWarning.daysRemaining}
+                    </span>{' '}
+                    {t('land.grazing.restTargetUnit')}
+                  </p>
+                </div>
+              )}
 
               <button
                 type="submit"

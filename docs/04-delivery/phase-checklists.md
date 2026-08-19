@@ -1806,13 +1806,60 @@ Grazing, feed & inventory — the one slice with real new schema
   `/land` route already in the a11y sweep — 0 violations, both themes, with the row rendered. No
   server projection, no migration, no home tile (deferred under its own heading). Not compliance-
   gated (4e·2's own note: the rest-period NUMBER is agronomic, not legal).
-□ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — UNBLOCKED (25th session, same
-  mob-move decision as 4e·1). The rest-period NUMBER is agronomic, not legal: it does not belong in
-  `regulatory_rates` (that seam is for LAW, not veld-management best practice — ADR-0006's own
-  boundary). It is a per-camp or per-farm SETTING the owner sets, never a literal in code, for the
-  same "never hardcode a number the farmer might reasonably disagree with" reasoning `CLAUDE.md`
-  applies to regulated numbers, extended here on product-design grounds rather than legal ones.
-  Not yet built.
+☑ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — CLOSED (27th session). The
+  rest-period NUMBER is agronomic, not legal: it does not belong in `regulatory_rates` (that seam
+  is for LAW, not veld-management best practice — ADR-0006's own boundary). Owner decision (asked
+  this session): ONE farm-wide default (no per-camp override — YAGNI, add additively if a farmer
+  ever needs one), starts UNSET (`farms.rest_period_days`, nullable, no default — migration 0034 +
+  a CHECK it is positive when set) so no warning shows until the owner deliberately sets a number,
+  never a guessed default presented as considered advice.
+  ⭐ **Edited server-side only**, the SAME posture `updateEnterpriseTypes` already takes and for the
+  same reason: unlike a locale preference (`saveLocale`'s "device only, will catch up" shape, fine
+  because a locale is inherently per-device), a rest-period threshold is a shared farm fact every
+  device's warning should agree on — a device that "set" it only locally while offline would
+  silently diverge from a co-worker's phone. `PATCH /farms/:farmId/rest-period-days`
+  (`FarmsService.updateRestPeriodDays`, owner-role-gated, mirrors `updateEnterpriseTypes` exactly)
+  + Settings → Grazing (`GrazingSettings.tsx`, online-gated like `FarmsSettings.tsx`'s farm-add
+  flow, read-only for a non-owner). `AuthProvider.saveRestPeriodDays` resolves `false` rather than
+  throwing when it cannot reach the server (`saveLocale`'s contract) — the SCREEN is what enforces
+  "online only", not the provider method, so the method stays reusable/defensive on its own.
+  Advisory, never a block (contrast the PHI guard): `restPeriodWarning` (`grazing.ts`, pure,
+  unit-tested) returns non-null only for a currently-`resting` camp below the threshold — a
+  `grazing`/`grazingUnknown` camp is a fact about NOW, not a prospective return, and `undefined`
+  (no record) has nothing to compare a threshold to. It carries `daysRemaining`, not just a
+  boolean, so the copy answers "so when CAN I move them back?" directly rather than making a
+  farmer subtract two numbers — the same discipline `RecordSprayScreen.tsx`'s PHI panel set for
+  "so when CAN I harvest?" (an `advisor()` review caught the first draft making the farmer do that
+  arithmetic, and a second finding in the same pass — `saveRestPeriodDays` reading
+  `session.activeFarmId` directly instead of the SAME farms[0]-fallback `activeFarm` itself
+  resolves with — meant a session cached with no active farm id set could show the form, accept an
+  edit, and silently fail to save it while online; fixed by extracting one shared
+  `resolveActiveFarm` both call, with a regression test that pins the exact cached-session shape
+  that reproduced it). Checked at CAPTURE, not just displayed after the fact ("warn before the
+  truck leaves" — the same discipline CLAUDE.md applies to guards, extended here to an advisory
+  check): both `MoveMobScreen.tsx` and `MoveAnimalsScreen.tsx` show a klei-tinted warning panel for
+  the chosen destination camp, save stays enabled. `LandScreen.tsx`'s `GrazingRow` also carries an
+  ambient version — a farmer sees "Ready to graze again in 18 days" on a resting camp's own row,
+  before ever opening a move screen. `pnpm verify`: **1608/1608**
+  (+21), lint/typecheck clean, build 7/7, 189.69 KB gz. `e2e/a11y.spec.ts` (20/20, incl. new
+  Settings → Grazing entry, both themes) run in isolation — full `pnpm test:e2e` not re-run this
+  session, scope narrowed to the a11y sweep + the two move-screen React-level integration tests
+  (`MoveMob.test.tsx`/`MoveAnimals.test.tsx`), which already exercise the warning through the real
+  `<App/>` render. ⚠️ Not built: a POPULATED_SCREENS a11y entry that renders the warning panel
+  itself (would need the shared e2e fixture extended with a resting camp + a farm-level
+  `restPeriodDays` — disclosed as a scope cut, not a silent gap; the panel reuses the identical
+  klei-panel classes already audited elsewhere, e.g. `RecordSprayScreen.tsx`'s PHI block).
+  ⭐ A second `advisor()` pass, after the first round of fixes, caught a residue of its own #3 fix:
+  dropping `setSaved`/`setFailed` from the re-seed effect stopped the save-vs-effect race but left
+  a "Saved" banner from one farm surviving a genuine farm SWITCH while parked on the screen — split
+  into two effects (one re-seeds `days`, keyed on id+value; a second clears the banners, keyed on
+  id ALONE, so this device's own successful save — same id, only the value changes — does not
+  retrigger it), proven through the real shell/`FarmSwitcher`, not the standalone component.
+  ⚠️ **Disclosed, not a defect**: the warning reads `activeFarm.restPeriodDays` off the CACHED
+  session, so a co-worker's device keeps the old threshold until its own next
+  `refreshSession`/sign-in even though the `farms` row syncs down immediately — identical to how
+  `enterpriseTypes`/`eventRetentionMonths` already behave, and the warning is advisory. Noted here
+  so a later `sync-auditor` pass does not re-derive it as a finding.
 ☑ 4e·3 FR-501 `inventory_items`/`inventory_lots` (migration 0033) + RLS + TENANCY (farm-scoped;
   chemicals, fertiliser, feed, medicine; batch, expiry, location) — closed 23rd session. Stock ON
   HAND is a PROJECTION over an append-only `inventory_movement` log (received/consumed/counted,

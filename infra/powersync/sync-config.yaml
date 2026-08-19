@@ -58,7 +58,7 @@ streams:
     auto_subscribe: true
   farms:
     query: |
-      SELECT attachment_bytes_used, business_id, created_at, deleted_at, district, enterprise_types, event_retention_months, hectares, id, jurisdiction, name, province, timezone, updated_at FROM farms
+      SELECT attachment_bytes_used, business_id, created_at, deleted_at, district, enterprise_types, event_retention_months, hectares, id, jurisdiction, name, province, rest_period_days, timezone, updated_at FROM farms
       WHERE id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: true
   inventory_items:

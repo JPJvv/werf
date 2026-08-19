@@ -22,7 +22,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
-import { useCampGrazing, type CampGrazingStatus } from '../livestock/grazing';
+import { useCampGrazing, restPeriodWarning, type CampGrazingStatus } from '../livestock/grazing';
 import { useCurrentPlanting } from '../crops/LocalPlantings';
 import { useLatestFertiliser } from '../crops/LocalFertiliser';
 import { useCurrentBoundary, useEffectiveLandUnits, type StoredLandUnit } from './LocalLand';
@@ -122,6 +122,7 @@ export function LandScreen() {
                     headCount={head}
                     hectares={unit.hectares}
                     status={grazing.get(unit.id)}
+                    restPeriodDays={activeFarm?.restPeriodDays ?? null}
                   />
                 )}
                 {/* A camp is never planted (FR-203) — gated on the unit's own `kind`, not the farm's
@@ -211,42 +212,61 @@ function BoundaryRow({
  * (`BoundaryRow`'s own two numbers) — the fence as it actually runs, not the title deed — and shows
  * no rate at all rather than a zero or a NaN when neither is known, the same discipline
  * `BoundaryRow`/`PlantingRow` already apply to their own absences.
+ *
+ * FR-152 (4e·2): an ambient warning panel appears BELOW the row when this camp is resting for
+ * fewer days than the farm's owner-set threshold — `restPeriodWarning`'s own note on why this is
+ * advisory, never a block, and why an unset threshold (`restPeriodDays === null`) shows nothing
+ * rather than a guessed default.
  */
 function GrazingRow({
   landUnitId,
   headCount,
   hectares,
   status,
+  restPeriodDays,
 }: {
   landUnitId: string;
   headCount: number;
   hectares: number | null;
   status: CampGrazingStatus | undefined;
+  restPeriodDays: number | null;
 }) {
   const { t } = useTranslation();
   const walked = useCurrentBoundary(landUnitId);
   const denominator = walked?.areaHectares ?? hectares;
   const rate =
     headCount > 0 && denominator !== null && denominator > 0 ? headCount / denominator : null;
+  const warning = restPeriodWarning(status, restPeriodDays);
 
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-body text-soil-700">
-        {status === undefined ? (
-          t('land.grazing.noRecord')
-        ) : status.kind === 'grazingUnknown' ? (
-          t('land.grazing.arrivalUnknown')
-        ) : (
-          <>
-            <span className="font-data tabular-nums text-soil-900">{status.days}</span>{' '}
-            {t(status.kind === 'grazing' ? 'land.grazing.daysGrazing' : 'land.grazing.daysResting')}
-          </>
-        )}
-      </span>
-      {rate !== null && (
-        <span className="font-data text-body tabular-nums text-soil-700">
-          {rate.toFixed(1)} {t('land.grazing.rateUnit')}
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-body text-soil-700">
+          {status === undefined ? (
+            t('land.grazing.noRecord')
+          ) : status.kind === 'grazingUnknown' ? (
+            t('land.grazing.arrivalUnknown')
+          ) : (
+            <>
+              <span className="font-data tabular-nums text-soil-900">{status.days}</span>{' '}
+              {t(
+                status.kind === 'grazing' ? 'land.grazing.daysGrazing' : 'land.grazing.daysResting',
+              )}
+            </>
+          )}
         </span>
+        {rate !== null && (
+          <span className="font-data text-body tabular-nums text-soil-700">
+            {rate.toFixed(1)} {t('land.grazing.rateUnit')}
+          </span>
+        )}
+      </div>
+      {warning !== null && (
+        <p className="border-l-4 border-klei-700 bg-klei-100 p-2 text-body text-soil-900">
+          {t('land.grazing.readyIn')}{' '}
+          <span className="font-data tabular-nums text-soil-900">{warning.daysRemaining}</span>{' '}
+          {t('land.grazing.restTargetUnit')}
+        </p>
       )}
     </div>
   );

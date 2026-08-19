@@ -3,35 +3,38 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-19 (twenty-sixth session). ✅ **4e·1 CLOSED — the grazing-days/rest-days/
-stocking-rate read projection (FR-151's remainder) built, tested, verified.** `foldCampActivity`
-(`@werf/domain/livestock/grazing.ts`, pure fold, `(occurredAt, id)` total order) + `campGrazingStatuses`
-(`apps/web/src/livestock/grazing.ts`, cross-checks occupancy against `useEffectiveAnimals`/
-`useEffectiveMobs` — never trusts the move log alone for who is currently there, closing a
-would-be "grazing ~700 days off a dead animal" defect proven-then-fixed in test) + `GrazingRow` in
-`LandScreen.tsx`, gated on `unit.kind === 'camp'`. Client-only, derived, no migration, no server
-projection, no home tile, not compliance-gated — full account in `phase-checklists.md` 4e·1. An
-`advisor()` call before writing code caught the correctness-deciding design point (occupancy must
-come from the herd summary's live/active list, not the fold) before any code existed.
-⭐ **A post-commit `advisor()` call found one real gap, fixed as a second commit**: `restUnknown` was
-unreachable dead code (a camp with no occupant/departure is always absent from the map by
-construction) — same class as 4d's pruned `phiGuardFor` branch. Removed it; a died-in-place occupant
-with no departure now shows the same honest "No grazing recorded" copy as ground never grazed. Added
-a reoccupy-then-vacate-again test through the full composition. `pnpm verify`: **1588/1588** (+18),
-lint/typecheck clean, build 7/7, 188.54 KB gz; `pnpm test:e2e` 31/5 skipped, `/land` a11y clean.
-Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, 4e·1, 4e·3, or the
-25th session's mob-move compliance-checker pass. **Next: 4e·2 (rest-period warning threshold —
-needs an owner-set number, ask JP), or 4e·4/4e·5/4e·6 — JP's pick.**
+**Last updated:** 2026-08-19 (twenty-seventh session). ✅ **4e·2 CLOSED — FR-152 camp rest-period
+warning threshold built, tested, verified.** Owner decisions asked this session: one farm-wide
+default (no per-camp override — YAGNI), starts UNSET. `farms.rest_period_days` (migration 0034,
+nullable, CHECK positive) + `PATCH /farms/:farmId/rest-period-days` (owner-gated, mirrors
+`updateEnterpriseTypes`, NOT `saveLocale` — a shared farm setting cannot honestly go "device only,
+will catch up") + Settings → Grazing. `restPeriodWarning` (`grazing.ts`, pure, unit-tested) warns,
+never blocks, on a resting camp below threshold, carrying `daysRemaining` so the copy answers "when
+CAN I move them back" directly; checked at CAPTURE in `MoveMobScreen.tsx`/`MoveAnimalsScreen.tsx`
+and shown ambiently on `LandScreen.tsx`'s `GrazingRow`. ⭐ A pre-completion `advisor()` pass caught a
+real bug before it shipped: `saveRestPeriodDays` read `session.activeFarmId` directly instead of
+the SAME farms[0]-fallback `activeFarm` itself resolves with, so a session cached with no active
+farm id could show the form and silently fail every save while online — fixed with one shared
+`resolveActiveFarm` helper + a regression test. A SECOND `advisor()` pass over that fix caught a
+residue (a "Saved" banner surviving a farm switch) — split into two effects, fixed, all four
+numbers below are POST-fix. Full account in `phase-checklists.md` 4e·2.
+`pnpm verify`: **1608/1608** (+21), lint/typecheck
+clean, build 7/7, 189.69 KB gz; `e2e/a11y.spec.ts` 20/20 (new Settings → Grazing entry, both
+themes) — full `pnpm test:e2e` not re-run this session, scope narrowing disclosed in the checklist.
+Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, 4e·1, 4e·2, 4e·3, or
+the 25th session's mob-move compliance-checker pass. **Next: 4e·4/4e·5/4e·6 — JP's pick.**
 
-✅ **4a/4b/4c/4d/4e·3 condensed (18th–23rd sessions) — fully closed, full accounts in
+✅ **4a/4b/4c/4d/4e·1/4e·3 condensed (18th–26th sessions) — fully closed, full accounts in
 `phase-checklists.md`'s Phase 4 section.** 4a: blocks + plantings. 4b: fertiliser, no compliance
 gate. 4c: chemical-products reference + spray capture (PHI resolved server-side, ADR-0005) +
 FR-211 report — **whole-branch review CLEARED** (21st session, `3d10103`). 4d: PHI guard
 (`phiGuardFor`, shared client+server) + harvest capture + FR-205 override + cross-device race
-register (22nd session). 4e·3: inventory items/lots/movements (FR-501), migration `0033` (23rd
-session). ⭐ The 21st-session pass caught a stale Turbo cache hit masking a real compile error
-behind two earlier "green" `pnpm verify` runs — a `cache hit, replaying logs` line on a package
-just touched proves nothing changed, not that nothing is broken.
+register (22nd session). 4e·1: grazing-days/rest-days/stocking-rate projection (FR-151),
+cross-checked against live occupancy rather than the move log alone (26th session). 4e·3: inventory
+items/lots/movements (FR-501), migration `0033` (23rd session). ⭐ The 21st-session pass caught a
+stale Turbo cache hit masking a real compile error behind two earlier "green" `pnpm verify` runs —
+a `cache hit, replaying logs` line on a package just touched proves nothing changed, not that
+nothing is broken.
 
 🔶 **Open decision — chemical_products production data source, asked 2026-08-17 (18th session).**
 JP: not decided yet, flag and move on. Dev/test rows ship as explicitly unverified placeholders
@@ -50,7 +53,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·1 ☑, 4e·3 ☑; 4e·2/4e·4/4e·5/4e·6 open, all unblocked), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1 closed 26th session (grazing-days/rest-days/stocking-rate projection), not compliance-gated — see §3 |
+| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·1 ☑, 4e·2 ☑, 4e·3 ☑; 4e·4/4e·5/4e·6 open, all unblocked), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1 closed 26th session. 4e·2 closed 27th session (rest-period warning, FR-152), not compliance-gated — see §3 |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -76,24 +79,16 @@ pre-existing (4c), not introduced this session. ✅ (3) **RESOLVED 2026-08-19 (2
 leave it a hard stop.** No work done — `usePhiGuard`'s `unresolved` state stays a genuine dead-end,
 by owner choice, not an oversight.
 
-◐ **4e·1's mob-move decision RESOLVED (JP chose (a)) and the CAPTURE built, 25th session — the
-FR-151 projection itself still open.** `recordMobMove` (`@werf/domain/livestock/movement.ts`,
-sibling to `recordMove`) + `LivestockService.recordMobMove`/`mobPositionBefore` (mirrors
-`positionBefore`'s total order exactly) + `POST /livestock/mob-moves`. ⭐ The structural risk the
-decision named — an animal transferring INTO a mob also stamps that event's own `mob_id`, so a
-mob-position read scoped on `mobId` alone would misread it as the WHOLE FLOCK relocating — is
-closed and PROVEN (`mobPositionBefore`/`MOB_MOVE_EVENTS_SQL`/`mapHydratedMobMove` all scope on
-`animalId IS NULL`; an integration test transfers an animal in and asserts the mob's own camp is
-untouched). Client: `LocalMobMoves.tsx` + `MoveMobScreen.tsx` (`/animals/groups/move`, one mob +
-one destination per save). Outbox `guardedBy` BOTH `mobrow:`/`landrow:`, proven fail-first.
-⭐ `herd.ts`'s `useEffectiveMobs` gained `positionByMob` (the mob twin of `positionByAnimal`) so a
-just-captured, unflushed mob move shows on screen immediately, offline — proven in
-`MoveMob.test.tsx` with no reload. ⚠️ Deliberately NOT built: a cross-device mob-move race
-register (4d·6/4d·11's counterpart) — filed, not dropped. ⭐ Also fixed: a new a11y act asserted
-"move to which **camp**" against the e2e fixture's mixed farm, whose word is "block" — the exact
-trap `CAPTURE_SCREENS`' own header names for `/land`. **Remainder, not yet built**: the
-grazing-days/stocking-rate READ PROJECTION and its screen — the capture above is the primitive it
-needed, not the deliverable. 4e·2 (rest-period tracking) is also unblocked, also not yet built.
+✅ **4e·1's mob-move decision RESOLVED (JP chose (a)), CAPTURE built (25th session), projection
+CLOSED (26th session) — full account condensed above and in `phase-checklists.md` 4e·1.**
+`recordMobMove` + `mobPositionBefore` scope strictly on `animalId IS NULL`, proven by an
+integration test that transfers an animal INTO a mob and asserts the mob's own camp is untouched
+(the structural risk the original decision named). ⚠️ Deliberately NOT built: a cross-device
+mob-move race register (4d·6/4d·11's counterpart) — filed, not dropped.
+
+✅ **4e·2's setting-shape decisions RESOLVED (JP asked directly, 27th session) — full account in
+`phase-checklists.md` 4e·2.** One farm-wide default, no per-camp override (YAGNI); starts unset,
+no seeded default number.
 
 ✅ **`compliance-checker` pass on 4d·11 + the mob-move capture, JP-requested 2026-08-19 (25th
 session) — 4d·11 APPROVABLE, one HIGH found+fixed on the mob-move diff.** 4d·11 re-derived from
@@ -213,7 +208,8 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` — 4e·1 grazing/rest/stocking-rate projection (2026-08-19, 26th session, **the number to trust**) | ✅ **1587/1587 unit tests (+17), lint/typecheck clean, 7/7 builds, 188.56 KB gz.** `pnpm test:e2e` 31/5 skipped, incl. `/land`'s a11y sweep with the new `GrazingRow` rendered (0 violations, both themes) |
+| `pnpm verify` — 4e·2 rest-period warning threshold (2026-08-19, 27th session, **the number to trust**) | ✅ **1608/1608 unit tests (+21), lint/typecheck clean, 7/7 builds, 189.69 KB gz.** `e2e/a11y.spec.ts` 20/20 in isolation, incl. new Settings → Grazing entry, both themes — full `pnpm test:e2e` not re-run, scope disclosed in `phase-checklists.md` 4e·2 |
+| `pnpm verify` — 4e·1 grazing/rest/stocking-rate projection (2026-08-19, 26th session) | ✅ 1587/1587 unit tests (+17), lint/typecheck clean, 7/7 builds, 188.56 KB gz. `pnpm test:e2e` 31/5 skipped, incl. `/land`'s a11y sweep with `GrazingRow` rendered |
 | `pnpm verify`, forced/cold — 4d·11 re-verify + mob-move fix (2026-08-19, 25th session) | ✅ 1570/1570 unit tests (+26), lint/typecheck clean, 7/7 builds, 187.62 KB gz. `pnpm test:e2e` 31/5 skipped. One run hit transient Postgres testcontainer contention, confirmed not a regression (re-ran clean) |
 | `compliance-checker` on 4d·11 + mob-move, JP-requested (2026-08-19, 25th session) | ✅ 4d·11 APPROVABLE; one HIGH on mob-move found+fixed same session — full account in §3 |
 | `compliance-checker` on 4d+4e·3, JP-requested (2026-08-18, 24th session) | NOT APPROVABLE (1 gap) → fixed as 4d·11, re-verified by the row above |

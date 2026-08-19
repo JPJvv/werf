@@ -5,7 +5,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { campGrazingStatuses, type GrazingAnimal, type GrazingMob } from './grazing';
+import {
+  campGrazingStatuses,
+  restPeriodWarning,
+  type GrazingAnimal,
+  type GrazingMob,
+} from './grazing';
 import type { StoredMove } from './LocalMoves';
 import type { StoredMobMove } from './LocalMobMoves';
 
@@ -163,5 +168,32 @@ describe('campGrazingStatuses — empty camps', () => {
       TODAY,
     );
     expect(statuses.get(CAMP_A)).toEqual({ kind: 'resting', days: 15 }); // since 2026-08-04, not -06-10
+  });
+});
+
+describe('restPeriodWarning — FR-152 (4e·2), warn not block', () => {
+  it('warns, and answers "when CAN I move them back" directly, when resting fewer days than the threshold', () => {
+    expect(restPeriodWarning({ kind: 'resting', days: 12 }, 30)).toEqual({
+      daysRested: 12,
+      daysRemaining: 18,
+    });
+  });
+
+  it('is null once the resting days reach the threshold', () => {
+    expect(restPeriodWarning({ kind: 'resting', days: 30 }, 30)).toBeNull();
+    expect(restPeriodWarning({ kind: 'resting', days: 45 }, 30)).toBeNull();
+  });
+
+  it('never warns when the owner has not set a threshold', () => {
+    expect(restPeriodWarning({ kind: 'resting', days: 1 }, null)).toBeNull();
+  });
+
+  it('never warns off a currently-grazing or arrival-unknown camp — a fact about now, not a return', () => {
+    expect(restPeriodWarning({ kind: 'grazing', days: 1 }, 30)).toBeNull();
+    expect(restPeriodWarning({ kind: 'grazingUnknown' }, 30)).toBeNull();
+  });
+
+  it('never warns when there is no record at all — nothing to compare a threshold to', () => {
+    expect(restPeriodWarning(undefined, 30)).toBeNull();
   });
 });

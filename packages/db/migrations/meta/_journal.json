@@ -239,6 +239,13 @@
       "when": 1787062572886,
       "tag": "0033_inventory",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787146596061,
+      "tag": "0034_farm_rest_period_days",
+      "breakpoints": true
     }
   ]
 }

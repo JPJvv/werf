@@ -45,6 +45,7 @@ import { SettingsLayout } from './settings/SettingsLayout';
 import { AppearanceSettings } from './settings/AppearanceSettings';
 import { LanguageSettings } from './settings/LanguageSettings';
 import { FarmsSettings } from './settings/FarmsSettings';
+import { GrazingSettings } from './settings/GrazingSettings';
 import { SecuritySettings } from './settings/SecuritySettings';
 
 /**
@@ -132,6 +133,7 @@ export function App() {
                   <Route path="appearance" element={<AppearanceSettings />} />
                   <Route path="language" element={<LanguageSettings />} />
                   <Route path="farms" element={<FarmsSettings />} />
+                  <Route path="grazing" element={<GrazingSettings />} />
                   <Route path="security" element={<SecuritySettings />} />
                 </Route>
                 <Route path=":module" element={<ModulePlaceholder />} />

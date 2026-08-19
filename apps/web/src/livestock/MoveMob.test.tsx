@@ -35,7 +35,7 @@ const SESSION_USER: schemas.AuthSession['user'] = {
   deletedAt: null,
 };
 
-function cachedSession(): void {
+function cachedSession(restPeriodDays: number | null = null): void {
   const payload = {
     accessToken: 'access-token',
     expiresIn: 900,
@@ -49,6 +49,7 @@ function cachedSession(): void {
         enterpriseTypes: ['sheep_wool'],
         role: 'owner',
         enterprises: [],
+        restPeriodDays,
       },
     ],
     activeFarmId: FARM_ID,
@@ -188,5 +189,82 @@ describe('moving a group (FR-151)', () => {
     render(<App />);
 
     expect(await screen.findByText(/no groups to move yet/i)).toBeTruthy();
+  });
+});
+
+describe('rest-period warning on the destination camp (FR-152, 4e·2)', () => {
+  it('warns, but does not block, when the destination has not rested the owner-set threshold', async () => {
+    cachedSession(30);
+    const [camp1, camp4] = seedCamps('Camp 1', 'Camp 4');
+    const mobId = seedMob('Flock A', camp1!);
+    // Camp 4's own history: this same mob was there once, and left 10 days ago — well inside a
+    // 30-day threshold. Two moves, not one: `foldCampActivity` only records a DEPARTURE when it
+    // sees the camp change away from something it already held, so the arrival has to be on the
+    // log too (`grazing.ts`'s own module note).
+    window.localStorage.setItem(
+      MOB_MOVES_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          mobId,
+          occurredAt: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+          toLandUnitId: camp4,
+        },
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          mobId,
+          occurredAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+          toLandUnitId: camp1,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/move');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /Flock A/ }));
+    await user.selectOptions(screen.getByLabelText(/move to which camp/i), camp4!);
+
+    expect(await screen.findByText(/may not be fully rested yet/i)).toBeTruthy();
+    // Advisory, never a block — the save action stays enabled.
+    expect(screen.getByRole('button', { name: /move them/i }).hasAttribute('disabled')).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: /move them/i }));
+    await waitFor(async () => expect(await storedMobMoves()).toHaveLength(3));
+  });
+
+  it('says nothing when the owner has not set a threshold', async () => {
+    cachedSession(null);
+    const [camp1, camp4] = seedCamps('Camp 1', 'Camp 4');
+    const mobId = seedMob('Flock A', camp1!);
+    window.localStorage.setItem(
+      MOB_MOVES_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          mobId,
+          occurredAt: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+          toLandUnitId: camp4,
+        },
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          mobId,
+          occurredAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+          toLandUnitId: camp1,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/move');
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /Flock A/ }));
+    await user.selectOptions(screen.getByLabelText(/move to which camp/i), camp4!);
+
+    expect(screen.queryByText(/may not be fully rested yet/i)).toBeNull();
   });
 });

@@ -179,6 +179,7 @@ export const LOCAL_SCHEMA_TABLES: readonly LocalTableDef[] = [
       { name: 'jurisdiction', type: 'TEXT' },
       { name: 'name', type: 'TEXT' },
       { name: 'province', type: 'TEXT' },
+      { name: 'rest_period_days', type: 'INTEGER' },
       { name: 'timezone', type: 'TEXT' },
       { name: 'updated_at', type: 'TEXT' },
     ],

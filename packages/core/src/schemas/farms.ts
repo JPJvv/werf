@@ -37,6 +37,18 @@ export const updateEnterpriseTypesRequestSchema = z
 export type UpdateEnterpriseTypesRequest = z.infer<typeof updateEnterpriseTypesRequestSchema>;
 
 /**
+ * Set or clear the farm's FR-152 rest-period WARNING threshold (4e·2) — an agronomic
+ * preference the owner sets, never a literal in code (ADR-0006's boundary: this is veld
+ * management, not law, so it carries no jurisdiction and no `effective_from`). `null` clears
+ * it back to "no warning shown", which is a real, intentional choice, not an omission — so it
+ * is a required field rather than an optional one a caller could forget.
+ */
+export const updateRestPeriodDaysRequestSchema = z.object({
+  restPeriodDays: z.number().int().positive().nullable(),
+});
+export type UpdateRestPeriodDaysRequest = z.infer<typeof updateRestPeriodDaysRequestSchema>;
+
+/**
  * Invite someone to a farm with a role (FR-005). The role is attached to THIS farm only —
  * the same person can be a manager here and a viewer next door (SRS-12).
  */

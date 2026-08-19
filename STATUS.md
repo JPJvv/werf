@@ -5,26 +5,28 @@
 
 **Last updated:** 2026-08-19 (twenty-eighth session). ✅ **4e·4 CLOSED — FR-502 inventory
 auto-decrement on spray/fertiliser capture, built, tested, verified.** JP picked 4e·4 over
-4e·5/4e·6 when asked. Spray (4c)/fertiliser (4b) gain an OPTIONAL `inventoryLotId` reference on the
-event's own column (no new migration — `events.inventory_lot_id` shipped in 0033); using it ALSO
-appends a separate `consumed` `inventory_movement` through 4e·3's existing local capture — two
-independent commits, not one atomic write, deliberately (mirrors `stock.ts`'s own "the spray
-happened whether or not the shed card was accurate" reasoning). Lot ownership is validated for
-FREE via `insertEvent`'s existing `assertOwnedReferences`, no new server code. ⭐ An `advisor()`
-design pass caught two real gaps, BOTH proven by a test that failed first: (1) the down-sync SQL
-for sprays/fertiliser never selected the new `inventory_lot_id` column, so it would silently vanish
-once this device's own capture round-tripped (`mergeByIdPreferHydrated` — hydrated wins) — fixed,
-both mapping functions exported for a direct test. (2) The Outbox's `guardedBy` taint only
-propagates from an item ATTEMPTED earlier in the SAME array — the inventory item/lot tiers sat near
-the end (after every crop capture), so the new `inventorylotrow:` guard could never actually hold;
-moved item/lot to right after land units to fix it. Full account in `phase-checklists.md` 4e·4.
-⚠️ **Touches FR-204's spray write path — flagged per CLAUDE.md, NOT spawned: not merge-ready until
-JP asks for a `compliance-checker` pass.** ⭐ Also closed a pre-existing a11y gap: `/crops/spray`
-and `/crops/fertilise` were missing from `e2e/a11y.spec.ts`'s `CAPTURE_SCREENS` (only
-`/crops/harvest` had been added in 4d) — added both, 20/20 both themes.
-`pnpm verify`: **1622/1631** unit tests in the combined run — 2 suites
-(`animals.integration.test.ts`, `theft.integration.test.ts`, untouched by this slice) hit a
-transient Docker testcontainer health-check timeout, both confirmed clean in isolation (9/9);
+4e·5/4e·6. Spray (4c)/fertiliser (4b) gain an OPTIONAL `inventoryLotId` on the event's own column
+(no new migration — `events.inventory_lot_id` shipped in 0033); using it ALSO appends a separate
+`consumed` `inventory_movement` through 4e·3's existing local capture — two independent commits,
+not one atomic write, deliberately (mirrors `stock.ts`'s "the spray happened whether or not the
+shed card was accurate"). Lot ownership validated FREE via `insertEvent`'s existing
+`assertOwnedReferences`. ⭐ An `advisor()` design pass caught two real gaps, both proven by a
+failing-first test: (1) the down-sync SQL for sprays/fertiliser never selected the new column, so
+it would vanish once this device's own capture round-tripped (`mergeByIdPreferHydrated` — hydrated
+wins) — fixed, mapping functions exported for a direct test. (2) The Outbox's `guardedBy` taint
+only propagates from an item attempted earlier in the SAME array — the inventory item/lot tiers sat
+after every crop capture, so the new guard could never hold; moved item/lot to right after land
+units. Full account in `phase-checklists.md` 4e·4. ⚠️ **Touches FR-204's spray write path —
+flagged per CLAUDE.md, NOT spawned: not merge-ready until JP asks for a `compliance-checker`
+pass.** ⭐ A post-completion `advisor()` pass caught two more before declaring done, both fixed: a
+colour-only 14px error text (NFR-411/frontend.md violation, invisible to the a11y sweep's
+empty-state-only audit) now matches `rateBad`'s tinted-panel pattern; and the a11y-only e2e claim
+was too narrow given the Outbox reorder — full `pnpm test:e2e` now run, **33 passed, 5 skipped**
+(`WERF_REAL_STACK` specs, correctly gated). Also closed a pre-existing a11y gap: `/crops/spray` and
+`/crops/fertilise` were missing from `CAPTURE_SCREENS` (only `/crops/harvest` had been added in
+4d) — added both. `pnpm verify`: **1631/1631** unit tests (+23) — 1622 in the combined run plus 9
+from two suites (`animals.integration.test.ts`, `theft.integration.test.ts`, untouched by this
+slice) that hit transient Docker testcontainer contention and re-ran clean in isolation;
 lint/typecheck clean, build 7/7, **190.89 KB gz**. Phase 3 MERGED to `main` as `6823858` (PR #11).
 Do not re-run P1–P3, 4a/4b/4c, 4e·1–4e·4, or the 25th session's mob-move compliance-checker pass.
 **Next: 4e·5 (low-stock/expiry warnings) or 4e·6 (feed consumption) — JP's pick.**
@@ -96,10 +98,8 @@ mob-move race register (4d·6/4d·11's counterpart) — filed, not dropped.
 `phase-checklists.md` 4e·2.** One farm-wide default, no per-camp override (YAGNI); starts unset,
 no seeded default number.
 
-✅ **4e·4 built and verified (28th session).** Full account is the top-of-file note and
-`phase-checklists.md` 4e·4 — not repeated here to stay under the line budget. 🔶 **Open — waiting on
-JP:** touches FR-204's spray write path; not merge-ready until an owner-requested
-`compliance-checker` pass clears.
+✅ **4e·4 built and verified (28th session)** — see the top-of-file note / `phase-checklists.md`
+4e·4. 🔶 **Open:** touches FR-204's spray path, not merge-ready until a `compliance-checker` pass.
 
 ✅ **`compliance-checker` pass on 4d·11 + the mob-move capture, JP-requested 2026-08-19 (25th
 session) — 4d·11 APPROVABLE, one HIGH found+fixed on the mob-move diff.** 4d·11 re-derived from
@@ -217,7 +217,7 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` — 4e·4 inventory auto-decrement (2026-08-19, 28th session, **the number to trust**) | ✅ **1622/1631 unit tests in the combined run, lint/typecheck clean, 7/7 builds, 190.89 KB gz.** 2 suites (`animals.integration.test.ts`, `theft.integration.test.ts`, untouched by this slice) hit a transient Docker testcontainer health-check timeout in the combined run, both confirmed clean in isolation (9/9). `e2e/a11y.spec.ts` 20/20 both themes, incl. two newly-added routes (`/crops/spray`, `/crops/fertilise` — a pre-existing gap closed this session) |
+| `pnpm verify` — 4e·4 inventory auto-decrement (2026-08-19, 28th session, **the number to trust**) | ✅ **1631/1631 unit tests passing (+23), lint/typecheck clean, 7/7 builds, 190.89 KB gz.** 1622 passed in the combined run; 2 suites (`animals.integration.test.ts`, `theft.integration.test.ts`, untouched by this slice) hit a transient Docker testcontainer health-check timeout in that run and were confirmed clean re-run in isolation (9/9) — no regression. Full `pnpm test:e2e` 33 passed/5 skipped (`WERF_REAL_STACK` specs), incl. `e2e/a11y.spec.ts` 20/20 both themes with two newly-added routes (`/crops/spray`, `/crops/fertilise` — a pre-existing gap closed this session) |
 | `pnpm verify` — 4e·2 rest-period warning threshold (2026-08-19, 27th session) | ✅ 1608/1608 unit tests (+21), lint/typecheck clean, 7/7 builds, 189.69 KB gz. `e2e/a11y.spec.ts` 20/20 in isolation, incl. new Settings → Grazing entry, both themes — full `pnpm test:e2e` not re-run, scope disclosed in `phase-checklists.md` 4e·2 |
 | `pnpm verify` — 4e·1 projection / 4d·11+mob-move (2026-08-19, 26th/25th sessions) | ✅ 1587/1587 (+17) then 1570/1570 (+26), lint/typecheck clean, 7/7 builds. 25th session hit transient Postgres contention, confirmed not a regression |
 | `compliance-checker` on 4d·11+mob-move (25th) / 4d+4e·3 (24th) | ✅ 4d·11 APPROVABLE after one HIGH fixed — full account in §3 |

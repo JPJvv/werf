@@ -1922,10 +1922,10 @@ Grazing, feed & inventory — the one slice with real new schema
   `CAPTURE_SCREENS` list had `/crops/harvest` (4d) but never `/crops/spray` or `/crops/fertilise`
   (4b/4c) — the identical "missing from the list, not from the code" class `/attention` once was.
   Added both; `pnpm test:e2e -- a11y` 20/20, both themes, including the new stock-lot controls.
-  `pnpm verify`: 1622/1631 unit tests in the combined run + 2 suites (`animals.integration.test.ts`,
-  `theft.integration.test.ts` — untouched by this slice) hit a transient Docker testcontainer
-  health-check timeout, both confirmed clean in isolation (9/9); lint/typecheck clean, build 7/7,
-  190.89 KB gz.
+  `pnpm verify`: 1631/1631 unit tests passing — 1622 in the combined run; 2 suites
+  (`animals.integration.test.ts`, `theft.integration.test.ts` — untouched by this slice) hit a
+  transient Docker testcontainer health-check timeout in that run and were confirmed clean re-run
+  in isolation (9/9), no regression; lint/typecheck clean, build 7/7, 190.89 KB gz.
 □ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
   candidate Sprays/crop tile badge (see the home-metrics note below).
 □ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —

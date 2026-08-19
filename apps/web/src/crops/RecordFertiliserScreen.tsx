@@ -341,7 +341,7 @@ export function RecordFertiliserScreen() {
                   className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
                 />
                 {quantityBad && (
-                  <p className="mt-1 text-label text-klei-700">
+                  <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
                     {t('crops.fertilise.quantityUsedBad')}
                   </p>
                 )}

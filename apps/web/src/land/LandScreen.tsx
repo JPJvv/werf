@@ -22,6 +22,7 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
+import { useCampGrazing, type CampGrazingStatus } from '../livestock/grazing';
 import { useCurrentPlanting } from '../crops/LocalPlantings';
 import { useLatestFertiliser } from '../crops/LocalFertiliser';
 import { useCurrentBoundary, useEffectiveLandUnits, type StoredLandUnit } from './LocalLand';
@@ -35,6 +36,8 @@ export function LandScreen() {
   const units = useEffectiveLandUnits();
   // Live head per camp, individual animals and groups together (FR-705).
   const { byLandUnit } = useHerdSummary();
+  // FR-151: grazing/rest days per camp, derived from the mob-move + individual-move logs (4e·1).
+  const grazing = useCampGrazing();
 
   const term = useMemo(
     () => vocabularyFor((activeFarm?.enterpriseTypes as EnterpriseType[]) ?? []).land,
@@ -111,6 +114,16 @@ export function LandScreen() {
                   term={term}
                   hasTypedBoundary={unit.boundaryGeojson !== null}
                 />
+                {/* FR-151, camps only: grazing/rest days + stocking rate — gated on `kind`, the
+                    mirror of the `kind === 'block'` rows below (a block is never grazed). */}
+                {unit.kind === 'camp' && (
+                  <GrazingRow
+                    landUnitId={unit.id}
+                    headCount={head}
+                    hectares={unit.hectares}
+                    status={grazing.get(unit.id)}
+                  />
+                )}
                 {/* A camp is never planted (FR-203) — gated on the unit's own `kind`, not the farm's
                     vocabulary, so a mixed farm's camps still show only the boundary row above. */}
                 {unit.kind === 'block' && <PlantingRow landUnitId={unit.id} />}
@@ -182,6 +195,58 @@ function BoundaryRow({
       >
         {t(landKey(term, 'walkFrom'))}
       </Link>
+    </div>
+  );
+}
+
+/**
+ * Grazing/rest days + stocking rate on this camp (FR-151, 4e·1's remainder). `status` is `undefined`
+ * for a camp the projection has no information about at all — the same "no entry" LandScreen renders
+ * as an honest absence everywhere else, folded here into the same copy as a known-empty, never-left
+ * camp (`land.grazing.notYetGrazed`) rather than a distinct fourth string, because a farmer standing
+ * at the gate cannot tell the two apart either way: nothing has ever been recorded happening here.
+ *
+ * The stocking rate's denominator prefers the WALKED hectares over the declared ones
+ * (`BoundaryRow`'s own two numbers) — the fence as it actually runs, not the title deed — and shows
+ * no rate at all rather than a zero or a NaN when neither is known, the same discipline
+ * `BoundaryRow`/`PlantingRow` already apply to their own absences.
+ */
+function GrazingRow({
+  landUnitId,
+  headCount,
+  hectares,
+  status,
+}: {
+  landUnitId: string;
+  headCount: number;
+  hectares: number | null;
+  status: CampGrazingStatus | undefined;
+}) {
+  const { t } = useTranslation();
+  const walked = useCurrentBoundary(landUnitId);
+  const denominator = walked?.areaHectares ?? hectares;
+  const rate =
+    headCount > 0 && denominator !== null && denominator > 0 ? headCount / denominator : null;
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-body text-soil-700">
+        {status === undefined || status.kind === 'restUnknown' ? (
+          t('land.grazing.notYetGrazed')
+        ) : status.kind === 'grazingUnknown' ? (
+          t('land.grazing.arrivalUnknown')
+        ) : (
+          <>
+            <span className="font-data tabular-nums text-soil-900">{status.days}</span>{' '}
+            {t(status.kind === 'grazing' ? 'land.grazing.daysGrazing' : 'land.grazing.daysResting')}
+          </>
+        )}
+      </span>
+      {rate !== null && (
+        <span className="font-data text-body tabular-nums text-soil-700">
+          {rate.toFixed(1)} {t('land.grazing.rateUnit')}
+        </span>
+      )}
     </div>
   );
 }

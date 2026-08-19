@@ -3,20 +3,22 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-19 (twenty-fifth session). ✅ **JP answered all three open questions
-((a) mob-move capture; 4d·11's `unresolved` stays a hard stop; the 4d·11 re-verification pass
-BATCHED), then asked for that pass — it ran this session.** ✅ **4d·11 re-verification: APPROVABLE
-— the fix is genuine, re-derived from the code, not assumed.** ⚠️ **The pass also swept the
-uncommitted mob-move capture (FR-151) and found ONE HIGH finding — fixed same session, fail-first
-proven**: `possessionTrail` (the stock-theft evidence pack's movement history, FR-603) filtered
-`move` events by `animalId`, so a mob-level move (`animalId: null`) was invisible to it — an
-individually-identified animal walked only with its flock would print "no movement history" in
-the one document meant to prove continuous possession (legal-compliance.md §3.2). Full account in
-§3. `pnpm verify` forced-cold: **1570/1570** (+26), lint/typecheck clean, build 7/7, 187.62 KB gz;
-`pnpm test:e2e` 31/5 skipped, incl. new a11y coverage for `/animals/groups/move`.
-Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, 4e·3, this
-session's mob-move capture, or its compliance-checker pass. **Next: build 4e·1's grazing-days
-projection, 4e·2 (rest-period, unblocked), or 4e·4/4e·5/4e·6 — JP's pick.**
+**Last updated:** 2026-08-19 (twenty-sixth session). ✅ **4e·1 CLOSED — the grazing-days/rest-days/
+stocking-rate read projection (FR-151's remainder) built, tested, verified.** `foldCampActivity`
+(`@werf/domain/livestock/grazing.ts`, pure fold, `(occurredAt, id)` total order) + `campGrazingStatuses`
+(`apps/web/src/livestock/grazing.ts`, cross-checks occupancy against `useEffectiveAnimals`/
+`useEffectiveMobs` — never trusts the move log alone for who is currently there, closing a
+would-be "grazing ~700 days off a dead animal" defect proven-then-fixed in test) + `GrazingRow` in
+`LandScreen.tsx`, gated on `unit.kind === 'camp'`. Client-only, derived, no migration, no server
+projection, no home tile, not compliance-gated — full account in `phase-checklists.md` 4e·1. An
+`advisor()` call before writing code caught the correctness-deciding design point (occupancy must
+come from the herd summary's live/active list, not the fold) before any code existed.
+`pnpm verify`: **1587/1587** (+17: 9 domain + 8 web), lint/typecheck clean, build 7/7, 188.56 KB gz;
+`pnpm test:e2e` 31/5 skipped, incl. `/land`'s a11y sweep with the new row rendered (0 violations,
+both themes).
+Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, 4e·1, 4e·3, or the
+25th session's mob-move compliance-checker pass. **Next: 4e·2 (rest-period warning threshold —
+needs an owner-set number, ask JP), or 4e·4/4e·5/4e·6 — JP's pick.**
 
 ✅ **4a/4b/4c/4d/4e·3 condensed (18th–23rd sessions) — fully closed, full accounts in
 `phase-checklists.md`'s Phase 4 section.** 4a: blocks + plantings. 4b: fertiliser, no compliance
@@ -45,7 +47,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·3 ☑; 4e·1 ◐ mob-move capture built + compliance-checker swept 25th session (one HIGH found+fixed), grazing-days projection still open; 4e·2/4e·4/4e·5/4e·6 open, all unblocked), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1: mob-move decision resolved + built + compliance-swept 25th session — see §3 |
+| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·1 ☑, 4e·3 ☑; 4e·2/4e·4/4e·5/4e·6 open, all unblocked), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1 closed 26th session (grazing-days/rest-days/stocking-rate projection), not compliance-gated — see §3 |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -208,7 +210,8 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify`, forced/cold — 4d·11 re-verify + mob-move fix (2026-08-19, 25th session, **the number to trust**) | ✅ **1570/1570 unit tests (+26), lint/typecheck clean, 7/7 builds, 187.62 KB gz.** `pnpm test:e2e` 31/5 skipped. One run hit transient Postgres testcontainer contention, confirmed not a regression (re-ran clean) |
+| `pnpm verify` — 4e·1 grazing/rest/stocking-rate projection (2026-08-19, 26th session, **the number to trust**) | ✅ **1587/1587 unit tests (+17), lint/typecheck clean, 7/7 builds, 188.56 KB gz.** `pnpm test:e2e` 31/5 skipped, incl. `/land`'s a11y sweep with the new `GrazingRow` rendered (0 violations, both themes) |
+| `pnpm verify`, forced/cold — 4d·11 re-verify + mob-move fix (2026-08-19, 25th session) | ✅ 1570/1570 unit tests (+26), lint/typecheck clean, 7/7 builds, 187.62 KB gz. `pnpm test:e2e` 31/5 skipped. One run hit transient Postgres testcontainer contention, confirmed not a regression (re-ran clean) |
 | `compliance-checker` on 4d·11 + mob-move, JP-requested (2026-08-19, 25th session) | ✅ 4d·11 APPROVABLE; one HIGH on mob-move found+fixed same session — full account in §3 |
 | `compliance-checker` on 4d+4e·3, JP-requested (2026-08-18, 24th session) | NOT APPROVABLE (1 gap) → fixed as 4d·11, re-verified by the row above |
 | Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` (21st session) | ✅ CLEARS — full account in §3. Caught a stale-cache-hit masked typecheck failure |

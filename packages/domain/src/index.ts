@@ -27,6 +27,7 @@ export * from './livestock/herd-summary';
 export * from './livestock/classes';
 export * from './livestock/mob-tally';
 export * from './livestock/attributes';
+export * from './livestock/grazing';
 export * from './land/boundary';
 export * from './land/ancestry';
 export * from './crops/planting';

@@ -314,6 +314,14 @@ const en = {
   // sheep — this counts groups as well as individual animals.
   'land.headUnit': 'head',
   'land.capacity': 'Grazing capacity (LSU, optional)',
+  // FR-151, camps only: grazing/rest days derived from the mob-move + individual-move logs
+  // (`grazing.ts`). "Two absences are two facts" — an occupant placed at creation and never moved,
+  // and an empty camp nothing has ever left, are different unknowns from each other and from zero.
+  'land.grazing.daysGrazing': 'days grazing',
+  'land.grazing.daysResting': 'days resting',
+  'land.grazing.arrivalUnknown': 'Grazing — arrival not recorded',
+  'land.grazing.notYetGrazed': 'Not yet grazed',
+  'land.grazing.rateUnit': 'head/ha',
   // FR-201, block only: soil type is free text (descriptions vary too widely for a closed set);
   // irrigation is a tap-not-type choice from a fixed vocabulary (@werf/core IRRIGATION_TYPES).
   'land.soilType': 'Soil type (optional)',
@@ -1367,6 +1375,11 @@ const af: Record<TranslationKey, string> = {
   'land.hectaresUnit': 'ha',
   'land.headUnit': 'stuks',
   'land.capacity': 'Weidingskapasiteit (GVE, opsioneel)',
+  'land.grazing.daysGrazing': 'dae wei',
+  'land.grazing.daysResting': 'dae rus',
+  'land.grazing.arrivalUnknown': 'Wei — aankoms nie aangeteken nie',
+  'land.grazing.notYetGrazed': 'Nog nie bewei nie',
+  'land.grazing.rateUnit': 'stuks/ha',
   'land.soilType': 'Grondtipe (opsioneel)',
   'land.irrigation': 'Besproeiing (opsioneel)',
   'land.irrigation.none': 'Nie gespesifiseer nie',

@@ -1731,9 +1731,9 @@ Fertiliser (no compliance gate — ships independently of 4c/4d)
   resolves nothing server-side beyond the ordinary tenancy/FK checks every capture gets.
 
 Grazing, feed & inventory — the one slice with real new schema
-◐ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — UNBLOCKED, mob-move capture
-  BUILT (25th session); the grazing-days/stocking-rate READ PROJECTION itself is not yet built —
-  see the remainder below.
+☑ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — mob-move capture BUILT (25th
+  session); the grazing-days/rest-days/stocking-rate READ PROJECTION closed 26th session — see the
+  remainder-closed entry below.
   ✅ **RESOLVED, 25th session: JP chose (a) — a new mob-move capture**, reusing `type: 'move'`
   with `animalId: null, mobId: <mob>`. `recordMobMove` (`@werf/domain/livestock/movement.ts`,
   sibling to `recordMove`, not a variant of it — a mob has one dimension to move, a camp, not the
@@ -1771,10 +1771,33 @@ Grazing, feed & inventory — the one slice with real new schema
   for whole-flock doses (the identical defect class, closed once before, reopened by this
   capture) to also pull mob-scoped moves; proven fail-first (temporarily reverting just the new
   block reproduced `expected [] to have length 1`).
-  □ **Remainder of 4e·1, not yet built**: the actual grazing-days/stocking-rate READ PROJECTION —
-  a fold over the mob-move + `boundary_walk` logs producing "N days in this camp" / a stocking
-  rate — and the screen/tile that shows it. The mob-move capture above is the primitive it needs,
-  not the deliverable FR-151 itself.
+  ✅ **Remainder of 4e·1 closed (26th session)**: the grazing-days/rest-days/stocking-rate READ
+  PROJECTION, client-only and derived, never stored (4e·3's precedent — no evidence-pack consumer
+  the way `possessionTrail` needs one, so nothing to hydrate). `foldCampActivity`
+  (`@werf/domain/livestock/grazing.ts`) is a pure fold over the merged move + mob-move logs, same
+  `(occurredAt, id)` total order as `positionByAnimal`/`positionByMob`, producing per-entity arrival
+  timestamps and per-camp last-departure timestamps. ⭐ **Occupancy is decided by the caller, never
+  by the fold** — `campGrazingStatuses` (`apps/web/src/livestock/grazing.ts`) cross-checks arrivals
+  against `useEffectiveAnimals`/`useEffectiveMobs`'s own live/active list (the same one
+  `herd-summary.ts`'s `byLandUnit` trusts), because the move log alone has no idea an occupant died
+  or was sold out without ever being moved off the camp — a live/active-blind version was proven to
+  misreport "grazing ~700 days" off a dead animal's last position in a test, then fixed. ⭐ A move's
+  `toLandUnitId` can be `undefined` (an individual move that only changed the MOB, not the camp) — the
+  fold resolves against what it itself is holding for that entity, never the event's own
+  `fromLandUnitId`, for the same staleness reason `mergeByIdPreferHydrated` exists (a local capture's
+  `fromLandUnitId` is whatever the device last knew, which can be stale next to a co-worker's
+  not-yet-synced move). Two occupants in one camp report the LONGEST-present arrival (worst-case
+  grazing pressure), proven with a two-occupant test. "Two absences are two facts"
+  (`LandScreen.tsx`'s `BoundaryRow`) extends here: an occupant placed at creation and never moved
+  (`grazingUnknown`) and a camp nothing has ever left (`restUnknown`) are both honestly distinct from
+  a real day count, never rendered as zero. Stocking rate is `head/ha` (no LSU conversion invented —
+  none exists in this codebase, and `carryingCapacityLsu` is a farmer-set figure with no established
+  per-species conversion to compare against honestly), denominator prefers the WALKED hectares over
+  the declared one, no rate shown when neither is known. Surface: `GrazingRow` in `LandScreen.tsx`,
+  gated on `unit.kind === 'camp'` (the mirror of the `kind === 'block'` rows), reached from the same
+  `/land` route already in the a11y sweep — 0 violations, both themes, with the row rendered. No
+  server projection, no migration, no home tile (deferred under its own heading). Not compliance-
+  gated (4e·2's own note: the rest-period NUMBER is agronomic, not legal).
 □ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — UNBLOCKED (25th session, same
   mob-move decision as 4e·1). The rest-period NUMBER is agronomic, not legal: it does not belong in
   `regulatory_rates` (that seam is for LAW, not veld-management best practice — ADR-0006's own

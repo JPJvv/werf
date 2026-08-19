@@ -201,10 +201,11 @@ function BoundaryRow({
 
 /**
  * Grazing/rest days + stocking rate on this camp (FR-151, 4e·1's remainder). `status` is `undefined`
- * for a camp the projection has no information about at all — the same "no entry" LandScreen renders
- * as an honest absence everywhere else, folded here into the same copy as a known-empty, never-left
- * camp (`land.grazing.notYetGrazed`) rather than a distinct fourth string, because a farmer standing
- * at the gate cannot tell the two apart either way: nothing has ever been recorded happening here.
+ * for a camp `campGrazingStatuses` has no information about at all — never-grazed ground reads
+ * identically to ground whose only occupant died in place with no move ever taking it out, because
+ * this projection genuinely cannot tell those two apart from the move log alone
+ * (`grazing.ts`'s own module note) — an honest "nothing recorded" rather than a claim this ground
+ * was never grazed.
  *
  * The stocking rate's denominator prefers the WALKED hectares over the declared ones
  * (`BoundaryRow`'s own two numbers) — the fence as it actually runs, not the title deed — and shows
@@ -231,8 +232,8 @@ function GrazingRow({
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-body text-soil-700">
-        {status === undefined || status.kind === 'restUnknown' ? (
-          t('land.grazing.notYetGrazed')
+        {status === undefined ? (
+          t('land.grazing.noRecord')
         ) : status.kind === 'grazingUnknown' ? (
           t('land.grazing.arrivalUnknown')
         ) : (

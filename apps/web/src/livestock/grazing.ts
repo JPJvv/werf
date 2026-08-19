@@ -25,8 +25,7 @@ import { farmDay } from '../farmTime';
 export type CampGrazingStatus =
   | { readonly kind: 'grazing'; readonly days: number }
   | { readonly kind: 'grazingUnknown' }
-  | { readonly kind: 'resting'; readonly days: number }
-  | { readonly kind: 'restUnknown' };
+  | { readonly kind: 'resting'; readonly days: number };
 
 /** The fold's own minimal shapes — a `StoredAnimal`/`StoredMob` each satisfy these structurally. */
 export interface GrazingAnimal {
@@ -69,10 +68,21 @@ function earliest(instants: readonly string[]): string {
 /**
  * Grazing/rest status for every camp with live occupants OR a known departure — occupied
  * (`grazing`, days since the LONGEST-present current occupant arrived, i.e. the worst-case grazing
- * pressure) or empty (`resting`, days since it was last vacated). The `*Unknown` variants are the
- * honest "two absences are two facts" case `LandScreen.tsx`'s `BoundaryRow` already draws: a camp
- * can be occupied by an animal/mob placed there at creation and never moved (no arrival on record),
- * or empty with no departure ever captured (nothing has ever left it, as far as this log goes).
+ * pressure) or empty (`resting`, days since it was last vacated). `grazingUnknown` is the honest
+ * "two absences are two facts" case `LandScreen.tsx`'s `BoundaryRow` already draws: a camp can be
+ * occupied by an animal/mob placed there at creation and never moved, so there is no arrival on
+ * record even though it plainly has live head standing in it.
+ *
+ * ⭐ There is no `restUnknown` twin. A camp with NO occupant and NO departure record is simply absent
+ * from the returned map — `landUnitIds` is the union of `occupants.keys()` and
+ * `activity.landUnitLastDeparture.keys()`, so a camp reaching the "empty" branch below is guaranteed
+ * to have a departure timestamp; a fourth variant here would be unreachable dead code (the exact
+ * defect class `phiGuardFor`'s pruned fail-closed branch already named in this phase — proven by
+ * trying to construct a test that hits it and failing to). The caller (`LandScreen.tsx`'s
+ * `GrazingRow`) treats "no entry in this map" as its OWN single "nothing recorded" case, which is
+ * also the honest answer for a camp whose sole occupant died in place with no move ever taking it
+ * out — this projection genuinely cannot tell "never grazed" and "grazed, then the record went
+ * cold" apart, and does not pretend to.
  *
  * Pure — `today` (a `YYYY-MM-DD` farm-local day) and the merged move logs are supplied by the
  * caller, mirroring `herd.ts`'s `projectHerd`/`positionByMob`. `moves`/`mobMoves` are assumed
@@ -120,11 +130,10 @@ export function campGrazingStatuses(
       result.set(landUnitId, { kind: 'grazing', days });
       continue;
     }
+    // Guaranteed defined: `landUnitId` reached this branch only via
+    // `activity.landUnitLastDeparture.keys()` (no occupant matched it above) — see the module note.
     const departedAt = activity.landUnitLastDeparture.get(landUnitId);
-    if (departedAt === undefined) {
-      result.set(landUnitId, { kind: 'restUnknown' });
-      continue;
-    }
+    if (departedAt === undefined) continue;
     const days = Math.max(0, calendarDaysBetween(farmDay(new Date(departedAt)), today));
     result.set(landUnitId, { kind: 'resting', days });
   }

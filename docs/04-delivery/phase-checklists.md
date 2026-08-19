@@ -1787,10 +1787,18 @@ Grazing, feed & inventory — the one slice with real new schema
   `fromLandUnitId`, for the same staleness reason `mergeByIdPreferHydrated` exists (a local capture's
   `fromLandUnitId` is whatever the device last knew, which can be stale next to a co-worker's
   not-yet-synced move). Two occupants in one camp report the LONGEST-present arrival (worst-case
-  grazing pressure), proven with a two-occupant test. "Two absences are two facts"
-  (`LandScreen.tsx`'s `BoundaryRow`) extends here: an occupant placed at creation and never moved
-  (`grazingUnknown`) and a camp nothing has ever left (`restUnknown`) are both honestly distinct from
-  a real day count, never rendered as zero. Stocking rate is `head/ha` (no LSU conversion invented —
+  grazing pressure), proven with a two-occupant test; a reoccupy-then-vacate-again cycle reports the
+  LATEST departure, proven through the full composition (not just the domain fold alone). "Two
+  absences are two facts" (`LandScreen.tsx`'s `BoundaryRow`) extends here in ONE variant, not two: an
+  occupant placed at creation and never moved (`grazingUnknown`) is honestly distinct from a real day
+  count. There is deliberately no `restUnknown` twin — a camp with no occupant AND no departure record
+  is simply absent from the map (a fourth status variant there would be unreachable dead code, the
+  same defect class `phiGuardFor`'s pruned fail-closed branch already named this phase), so the
+  screen's own `status === undefined` case carries that meaning, and it is honestly the SAME copy
+  ("No grazing recorded") a camp whose sole occupant died in place with no departure shows — this
+  projection cannot tell "never grazed" and "record went cold" apart from the move log alone, and
+  does not pretend to (caught in a completion `advisor()` pass, not self-caught). Stocking rate is
+  `head/ha` (no LSU conversion invented —
   none exists in this codebase, and `carryingCapacityLsu` is a farmer-set figure with no established
   per-species conversion to compare against honestly), denominator prefers the WALKED hectares over
   the declared one, no rate shown when neither is known. Surface: `GrazingRow` in `LandScreen.tsx`,

@@ -13,9 +13,12 @@ would-be "grazing ~700 days off a dead animal" defect proven-then-fixed in test)
 projection, no home tile, not compliance-gated — full account in `phase-checklists.md` 4e·1. An
 `advisor()` call before writing code caught the correctness-deciding design point (occupancy must
 come from the herd summary's live/active list, not the fold) before any code existed.
-`pnpm verify`: **1587/1587** (+17: 9 domain + 8 web), lint/typecheck clean, build 7/7, 188.56 KB gz;
-`pnpm test:e2e` 31/5 skipped, incl. `/land`'s a11y sweep with the new row rendered (0 violations,
-both themes).
+⭐ **A post-commit `advisor()` call found one real gap, fixed as a second commit**: `restUnknown` was
+unreachable dead code (a camp with no occupant/departure is always absent from the map by
+construction) — same class as 4d's pruned `phiGuardFor` branch. Removed it; a died-in-place occupant
+with no departure now shows the same honest "No grazing recorded" copy as ground never grazed. Added
+a reoccupy-then-vacate-again test through the full composition. `pnpm verify`: **1588/1588** (+18),
+lint/typecheck clean, build 7/7, 188.54 KB gz; `pnpm test:e2e` 31/5 skipped, `/land` a11y clean.
 Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, 4e·1, 4e·3, or the
 25th session's mob-move compliance-checker pass. **Next: 4e·2 (rest-period warning threshold —
 needs an owner-set number, ask JP), or 4e·4/4e·5/4e·6 — JP's pick.**

@@ -130,8 +130,38 @@ describe('campGrazingStatuses — empty camps', () => {
     expect(statuses.get(CAMP_A)).toEqual({ kind: 'resting', days: 15 });
   });
 
-  it('a camp nothing has ever left reports restUnknown, not zero', () => {
+  it('a camp nothing has ever left is simply absent from the map — no restUnknown variant', () => {
     const statuses = campGrazingStatuses([], [], [], [], TODAY);
     expect(statuses.has(CAMP_A)).toBe(false); // absent, same "no entry" `LandScreen.tsx` renders honestly
+  });
+
+  it('a reoccupied-then-vacated-again camp reports rest days from the LATEST departure, through the full composition', () => {
+    // The path a rotational-grazing farmer hits every season: vacate, reoccupy, vacate again. This
+    // exercises `foldCampActivity`'s overwrite-forward AND the occupancy cross-check together —
+    // `grazing.test.ts` (@werf/domain) already proves the fold alone; this proves neither layer
+    // shadows the other once composed.
+    const firstDeparture = move({
+      id: '01900000-0000-7000-8000-00000000c001',
+      occurredAt: '2026-06-10T12:00:00.000Z',
+      toLandUnitId: CAMP_B,
+    });
+    const reoccupy = move({
+      id: '01900000-0000-7000-8000-00000000c002',
+      occurredAt: '2026-07-01T12:00:00.000Z',
+      toLandUnitId: CAMP_A,
+    });
+    const secondDeparture = move({
+      id: '01900000-0000-7000-8000-00000000c003',
+      occurredAt: '2026-08-04T12:00:00.000Z',
+      toLandUnitId: CAMP_B,
+    });
+    const statuses = campGrazingStatuses(
+      [animal({ landUnitId: CAMP_B })],
+      [],
+      [firstDeparture, reoccupy, secondDeparture],
+      [],
+      TODAY,
+    );
+    expect(statuses.get(CAMP_A)).toEqual({ kind: 'resting', days: 15 }); // since 2026-08-04, not -06-10
   });
 });

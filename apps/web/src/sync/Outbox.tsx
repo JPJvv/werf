@@ -123,6 +123,11 @@ import {
   type StoredLifecycleEvent,
 } from '../livestock/LocalLifecycle';
 import { useMoves, useMovesHydrationFailed, useMovesSettled } from '../livestock/LocalMoves';
+import {
+  useMobMoves,
+  useMobMovesHydrationFailed,
+  useMobMovesSettled,
+} from '../livestock/LocalMobMoves';
 import { animalDisposalSubjects, mobDisposalSubjects } from '../livestock/withdrawal';
 import { farmDay } from '../farmTime';
 import {
@@ -265,6 +270,7 @@ export type CaptureKind =
   | 'weight'
   | 'lifecycle'
   | 'move'
+  | 'mobMove'
   | 'health'
   | 'breeding'
   | 'theft'
@@ -519,6 +525,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const weights = useWeights();
   const events = useLifecycleEvents();
   const moves = useMoves();
+  const mobMoves = useMobMoves();
   const health = useHealthEvents();
   const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
@@ -569,6 +576,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const weightsSettled = useWeightsSettled();
   const eventsSettled = useLifecycleEventsSettled();
   const movesSettled = useMovesSettled();
+  const mobMovesSettled = useMobMovesSettled();
   const healthSettled = useHealthEventsSettled();
   const breedingSettled = useBreedingEventsSettled();
   const theftSettled = useTheftIncidentsSettled();
@@ -596,6 +604,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     weightsSettled &&
     eventsSettled &&
     movesSettled &&
+    mobMovesSettled &&
     healthSettled &&
     breedingSettled &&
     theftSettled &&
@@ -633,6 +642,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const weightsHydrationFailed = useWeightsHydrationFailed();
   const eventsHydrationFailed = useLifecycleEventsHydrationFailed();
   const movesHydrationFailed = useMovesHydrationFailed();
+  const mobMovesHydrationFailed = useMobMovesHydrationFailed();
   const healthHydrationFailed = useHealthEventsHydrationFailed();
   const breedingHydrationFailed = useBreedingEventsHydrationFailed();
   const theftHydrationFailed = useTheftIncidentsHydrationFailed();
@@ -660,6 +670,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     weightsHydrationFailed ||
     eventsHydrationFailed ||
     movesHydrationFailed ||
+    mobMovesHydrationFailed ||
     healthHydrationFailed ||
     breedingHydrationFailed ||
     theftHydrationFailed ||
@@ -974,6 +985,26 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           ...(typeof move.toLandUnitId === 'string'
             ? { guardedBy: [`landrow:${move.toLandUnitId}`] }
             : {}),
+        });
+      }
+    }
+    // A mob-level move (FR-151) — the whole group, not one animal. Same safety tier as the animal
+    // moves above (evidence before the disposals below judge anything against it), and `guardedBy`
+    // BOTH the mob itself (a mob created this same round has no accepted row yet) and the
+    // destination camp, mirroring the animal move's own camp guard.
+    for (const mobMove of mobMoves) {
+      if (!sent.has(mobMove.id)) {
+        items.push({
+          id: mobMove.id,
+          kind: 'mobMove',
+          detail: mobs.find((m) => m.id === mobMove.mobId)?.name ?? null,
+          send: (token) => livestockApi.recordMobMove(mobMove, token),
+          guardedBy: [
+            `mobrow:${mobMove.mobId}`,
+            ...(typeof mobMove.toLandUnitId === 'string'
+              ? [`landrow:${mobMove.toLandUnitId}`]
+              : []),
+          ],
         });
       }
     }

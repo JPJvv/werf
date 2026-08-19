@@ -144,6 +144,21 @@ export class LivestockController {
   }
 
   /**
+   * Record a mob-level move (FR-151) — the whole group walks to another camp. Only the destination
+   * is sent; the server reads where the mob is from its own row. Sent after its mob by the flush.
+   * Idempotent on the id.
+   */
+  @Post('mob-moves')
+  @HttpCode(HttpStatus.CREATED)
+  async recordMobMove(
+    @CurrentUser() auth: AuthContext,
+    @Body(new ZodValidationPipe(schemas.recordMobMoveRequestSchema))
+    body: schemas.RecordMobMoveRequest,
+  ): Promise<CapturedEvent> {
+    return this.livestock.recordMobMove(auth.userId, body, auth.sessionId);
+  }
+
+  /**
    * Record a birth (FR-104) against the DAM. The calf's `animals` row is created through the
    * ordinary create-animal path and sent first; this event carries the calving facts.
    */

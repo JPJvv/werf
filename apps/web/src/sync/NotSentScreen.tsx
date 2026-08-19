@@ -53,6 +53,7 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   weight: 'notSent.kind.weight',
   lifecycle: 'notSent.kind.lifecycle',
   move: 'notSent.kind.move',
+  mobMove: 'notSent.kind.mobMove',
   health: 'notSent.kind.health',
   breeding: 'notSent.kind.breeding',
   theft: 'notSent.kind.theft',

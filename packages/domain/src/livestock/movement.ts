@@ -103,3 +103,80 @@ export function recordMove(input: MoveInput): MoveCapture {
     animalChange: { animalId: input.animalId, landUnitId: toLandUnitId, mobId: toMobId },
   };
 }
+
+/**
+ * A mob-level move (FR-151): the whole group walks to another camp, with no individual `animals`
+ * rows behind it to carry a location. Reuses the same `type: 'move'` event `recordMove` writes,
+ * with `animalId: null` and `mobId` naming the group — the decision recorded in
+ * `phase-checklists.md` 4e·1 rather than a parallel event type, so every existing `move` reader
+ * (flush ordering, the outbox's safety guards) already knows the shape.
+ *
+ * ⭐ The distinguishing filter downstream is `animalId IS NULL`, not `mobId IS NOT NULL` — an
+ * individual animal moving INTO a mob also stamps the event's `mobId` to the destination mob
+ * (`recordMove`'s own envelope convention), so a mob's OWN camp-move log must scope on the absent
+ * `animalId`, or an animal transfer would read as the whole flock relocating. `mobPositionBefore`
+ * (`livestock.service.ts`) and this device's own hydration query both apply that filter — see
+ * their own notes for why a leaf-wide `mobId` scope alone would silently corrupt this.
+ */
+export interface MobMoveInput {
+  /** Client-generated UUIDv7 for the event row (injected — a v7 embeds a clock this package can't read). */
+  readonly id: string;
+  readonly farmId: string;
+  readonly mobId: string;
+  /** When the mob was walked, on the farm (injected). Not `created_at`, set server-side on write. */
+  readonly occurredAt: Date;
+  /** The camp the mob is currently in. */
+  readonly fromLandUnitId: string | null;
+  /** Destination camp. `null` is a real target — the mob is taken off a mapped camp. */
+  readonly toLandUnitId: string | null;
+  readonly enterpriseId?: string | null;
+  readonly locationGeojson?: string | null;
+  readonly notes?: string | null;
+  readonly createdBy?: string | null;
+}
+
+/** The result of a mob move: the event to append, and the camp it projects the mob to. */
+export interface MobMoveCapture {
+  readonly event: schemas.NewEvent;
+  readonly landUnitId: string | null;
+}
+
+export function recordMobMove(input: MobMoveInput): MobMoveCapture {
+  if (input.toLandUnitId === input.fromLandUnitId) {
+    throw new ValidationError('A move must change the camp');
+  }
+
+  // The mob dimension is unchanged by construction — this is a camp move, not a transfer between
+  // groups (that is `recordMobTally`'s `transfer_out`/`transfer_in` pair). Both sides name the same
+  // mob so the payload stays internally consistent with the envelope's own `toMobId` convention.
+  const payload = {
+    fromLandUnitId: input.fromLandUnitId,
+    toLandUnitId: input.toLandUnitId,
+    fromMobId: input.mobId,
+    toMobId: input.mobId,
+  };
+  if (!schemas.movePayloadSchema.safeParse(payload).success) {
+    throw new ValidationError('Invalid move payload');
+  }
+
+  const event: schemas.NewEvent = {
+    id: input.id,
+    farmId: input.farmId,
+    type: 'move',
+    occurredAt: input.occurredAt,
+    payload,
+    enterpriseId: input.enterpriseId ?? null,
+    syncedAt: null,
+    animalId: null,
+    mobId: input.mobId,
+    landUnitId: input.toLandUnitId,
+    employeeId: null,
+    batchId: null,
+    inventoryLotId: null,
+    locationGeojson: input.locationGeojson ?? null,
+    notes: input.notes ?? null,
+    createdBy: input.createdBy ?? null,
+  };
+
+  return { event, landUnitId: input.toLandUnitId };
+}

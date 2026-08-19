@@ -20,6 +20,7 @@ import type {
 import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMating, StoredPregnancyTest } from './LocalBreeding';
 import type { StoredMove } from './LocalMoves';
+import type { StoredMobMove } from './LocalMobMoves';
 import type { StoredTally } from './LocalTallies';
 import type { StoredTheftIncident } from './LocalTheft';
 
@@ -141,6 +142,21 @@ export const livestockApi = {
         // "leave that dimension alone", and sending null instead would clear it.
         ...(move.toLandUnitId === undefined ? {} : { toLandUnitId: move.toLandUnitId }),
         ...(move.toMobId === undefined ? {} : { toMobId: move.toMobId }),
+      },
+      token,
+    ),
+
+  /** A mob-level move (FR-151). Only the destination is sent; the server reads where the mob is
+   *  from its own row, so the stored history cannot disagree with the mob. */
+  recordMobMove: (move: StoredMobMove, token: string): Promise<void> =>
+    post(
+      '/livestock/mob-moves',
+      {
+        id: move.id,
+        farmId: move.farmId,
+        mobId: move.mobId,
+        occurredAt: move.occurredAt,
+        toLandUnitId: move.toLandUnitId,
       },
       token,
     ),

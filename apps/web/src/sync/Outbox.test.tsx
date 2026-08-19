@@ -2633,6 +2633,42 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(sent).not.toContain(MOVE2_ID);
   });
 
+  it('⭐ holds a MOB move behind a refused camp (FR-151) — the group-level guard, not the animal one', async () => {
+    // The mob-move item's own `guardedBy` carries TWO subjects (`mobrow:`/`landrow:`), unlike an
+    // animal move's camp-only guard — proven here by marking the mob ALREADY sent (a prior round)
+    // so only the camp refusal is under test, isolating the `landrow:` half from the `mobrow:` one.
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        { id: MOB_ID, farmId: FARM_ID, name: 'Ossies', species: 'cattle', landUnitId: null },
+      ]),
+    );
+    window.localStorage.setItem(`werf-sent:${FARM_ID}`, JSON.stringify([MOB_ID]));
+    window.localStorage.setItem(
+      `werf-mob-moves:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOVE2_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-20T08:00:00.000Z',
+          toLandUnitId: LAND_UNIT_ID,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mob-moves'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(MOVE2_ID);
+  });
+
   it('⭐ holds a theft incident behind BOTH a refused camp and a refused named animal', async () => {
     // The two dependency kinds a theft incident carries (Outbox.tsx's own header on the loop),
     // proven together: `landUnitId` from the camp picker AND `animalIds` from the ownership

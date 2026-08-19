@@ -1623,9 +1623,9 @@ Reference data & spray capture
 PHI guard + harvest — ONE slice, never split (see the note above). ☑ **Done (22nd session).** All
 ten items closed together, on `phase-4/crops-fields`, `pnpm verify` forced-cold clean (typecheck
 12/12, test 137 files/1468 tests, build 7/7, 181.82 KB gz) and `pnpm test:e2e` 31/5 skipped — no
-regression. **Compliance-gated code (FR-205, food-safety/export) — NOT merge-ready until JP
-triggers a `compliance-checker` pass**, per CLAUDE.md's owner-gate; say so explicitly rather than
-letting the green `pnpm verify` stand in for it.
+regression. ✅ **CLEARED by `compliance-checker`, 25th session** — a spray-side gap found by the
+24th-session pass was closed as 4d·11 (below) and re-verified APPROVABLE this session; 4d is
+merge-ready.
 ☑ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
   client-side (`usePhiGuard.ts` over `useEffectiveSprays()`/`useChemicalProducts()` — O-12: blocked
   locally, no server round trip) AND server-side (`CropsService.recordHarvest`'s
@@ -1714,8 +1714,10 @@ letting the green `pnpm verify` stand in for it.
   both landing out of order server-side, is not re-derived retroactively the way harvest's own race
   is. Filed as a follow-up, not silently dropped a second time. Also unenforced still: `usePhiGuard`'s
   own pre-existing `unresolved` dead-end (an offline harvest whose spray's product isn't cached
-  yet cannot be recorded at all) — flagged by the same compliance-checker pass as an owner
-  question, not answered here.
+  yet cannot be recorded at all) — JP decided (25th session) to leave it a hard stop, by choice.
+  ✅ **Re-verified APPROVABLE by `compliance-checker`, 25th session** — `sprayPhiGuardFor` genuinely
+  blocks, resolves PHI by the spray day, and the override is server-audited with `by`
+  client-unsettable; re-derived from the code, not assumed.
 
 Fertiliser (no compliance gate — ships independently of 4c/4d)
 ☑ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, `method`
@@ -1729,24 +1731,57 @@ Fertiliser (no compliance gate — ships independently of 4c/4d)
   resolves nothing server-side beyond the ordinary tenancy/FK checks every capture gets.
 
 Grazing, feed & inventory — the one slice with real new schema
-⛔ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — BLOCKED, not merely unbuilt.
-  This item's own text said "a PURE projection over existing `move` + `boundary_walk` events" and
-  that premise does not hold: `recordMove` (`@werf/domain/livestock/movement.ts`) requires an
-  `animalId` and mob-only stock (FR-102's own words — "the model most South African smallholders
-  actually run") has NO capture path that moves a mob between camps at all — `mobs.land_unit_id`
-  is written once, at `recordMob`, and never again. So "grazing days per camp" is computable today
-  only for individually-tracked animals, the INVERSE of the product's stated primary user. Closing
-  this needs an owner decision, not a design choice made silently: does FR-151 get a NEW mob-move
-  capture (reusing `type: 'move'` with `animalId: null`, verified in the 23rd session not to
-  poison `positionBefore`'s existing per-animal queries — they filter by `animalId`, so a null one
-  is invisible to them, not corrupting) — asked, not yet answered.
-□ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — the rest-period NUMBER is
-  agronomic, not legal: it does not belong in `regulatory_rates` (that seam is for LAW, not
-  veld-management best practice — ADR-0006's own boundary). It is a per-camp or per-farm SETTING
-  the owner sets, never a literal in code, for the same "never hardcode a number the farmer might
-  reasonably disagree with" reasoning `CLAUDE.md` applies to regulated numbers, extended here on
-  product-design grounds rather than legal ones. Blocked on the same 4e·1 mob-move decision for the
-  camp-departure half of "premature return".
+◐ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — UNBLOCKED, mob-move capture
+  BUILT (25th session); the grazing-days/stocking-rate READ PROJECTION itself is not yet built —
+  see the remainder below.
+  ✅ **RESOLVED, 25th session: JP chose (a) — a new mob-move capture**, reusing `type: 'move'`
+  with `animalId: null, mobId: <mob>`. `recordMobMove` (`@werf/domain/livestock/movement.ts`,
+  sibling to `recordMove`, not a variant of it — a mob has one dimension to move, a camp, not the
+  animal/mob pair an individual walk carries). Server: `LivestockService.recordMobMove` +
+  `mobPositionBefore` (mirrors `positionBefore` exactly — same total order, same "arrival order is
+  not `occurred_at` order" reasoning) + `POST /livestock/mob-moves`. ⭐ **The structural risk named
+  when this was blocked, closed and proven, not just asserted**: an individual animal transferring
+  INTO a mob also stamps that `move` event's own `mob_id` to the destination
+  (`recordMove`'s envelope convention), so a naive mob-position read scoped on `mobId` alone would
+  read that transfer as the WHOLE FLOCK relocating. Both `mobPositionBefore` (server) and
+  `MOB_MOVE_EVENTS_SQL`/`mapHydratedMobMove` (client hydration) scope on `animalId IS NULL`
+  instead — proven by an integration test that transfers an animal into a mob and asserts the
+  mob's own denormalised camp is untouched, and a unit test that asserts the mapper returns `null`
+  for a row carrying an `animal_id`. Client: `LocalMobMoves.tsx` (append-only local store,
+  destination-only, mirrors `LocalMoves.tsx`), `MoveMobScreen.tsx` (`/animals/groups/move`, one
+  mob + one destination per save — `AdjustMobScreen.tsx`'s single-select shape, not
+  `MoveAnimalsScreen.tsx`'s batch one, since a group move has no per-animal fan-out to select
+  over). Outbox: `guardedBy` BOTH `mobrow:${mobId}` and `landrow:${toLandUnitId}` — proven
+  fail-first (`Outbox.test.tsx`, "holds a MOB move behind a refused camp"). ⭐ **`herd.ts`'s
+  `useEffectiveMobs` gained a `positionByMob` fold** (the mob twin of `positionByAnimal`, same
+  `(occurredAt, id)` total order) — without it a just-captured, not-yet-flushed mob move would not
+  show on screen until the flush round-tripped a fresh `mobs.land_unit_id` back down, the identical
+  staleness class `positionByAnimal` already closes for an individual animal's walk; proven by
+  `MoveMob.test.tsx`'s own screen asserting the new camp with no reload. ⚠️ Deliberately NOT
+  built: a cross-device race register for a mob move (4d·6/4d·11's counterpart) — two DEVICES
+  moving the SAME mob to different camps, both offline, is not reconciled retroactively the way
+  those registers do; a same-device race is closed by the outbox `guardedBy` above. Filed, not
+  silently dropped.
+  ✅ **Swept by `compliance-checker` (25th session, JP-requested) — one HIGH found+fixed.** The new
+  capture stamps `animal_id = NULL` on a mob-level `move`, which made it invisible to
+  `possessionTrail` (`livestock.service.ts`, the FR-603 stock-theft evidence pack's movement
+  history) — an individually-identified animal walked only with its flock would have printed "no
+  movement history" in the document meant to prove continuous possession (legal-compliance.md
+  §3.2). Fixed by extending the SAME `mobMembership`-windowed reconstruction the file already uses
+  for whole-flock doses (the identical defect class, closed once before, reopened by this
+  capture) to also pull mob-scoped moves; proven fail-first (temporarily reverting just the new
+  block reproduced `expected [] to have length 1`).
+  □ **Remainder of 4e·1, not yet built**: the actual grazing-days/stocking-rate READ PROJECTION —
+  a fold over the mob-move + `boundary_walk` logs producing "N days in this camp" / a stocking
+  rate — and the screen/tile that shows it. The mob-move capture above is the primitive it needs,
+  not the deliverable FR-151 itself.
+□ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — UNBLOCKED (25th session, same
+  mob-move decision as 4e·1). The rest-period NUMBER is agronomic, not legal: it does not belong in
+  `regulatory_rates` (that seam is for LAW, not veld-management best practice — ADR-0006's own
+  boundary). It is a per-camp or per-farm SETTING the owner sets, never a literal in code, for the
+  same "never hardcode a number the farmer might reasonably disagree with" reasoning `CLAUDE.md`
+  applies to regulated numbers, extended here on product-design grounds rather than legal ones.
+  Not yet built.
 ☑ 4e·3 FR-501 `inventory_items`/`inventory_lots` (migration 0033) + RLS + TENANCY (farm-scoped;
   chemicals, fertiliser, feed, medicine; batch, expiry, location) — closed 23rd session. Stock ON
   HAND is a PROJECTION over an append-only `inventory_movement` log (received/consumed/counted,

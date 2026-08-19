@@ -28,6 +28,7 @@ import { LocalIdentifiersProvider } from '../livestock/LocalIdentifiers';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
 import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
 import { LocalMovesProvider } from '../livestock/LocalMoves';
+import { LocalMobMovesProvider } from '../livestock/LocalMobMoves';
 import { LocalHealthProvider } from '../livestock/LocalHealth';
 import { LocalVetProductsProvider } from '../livestock/LocalVetProducts';
 import { LocalResidueRegisterProvider } from '../livestock/LocalResidueRegister';
@@ -102,6 +103,7 @@ const CAPTURE_STORES = [
   LocalWeightsProvider,
   LocalLifecycleProvider,
   LocalMovesProvider,
+  LocalMobMovesProvider,
   LocalHealthProvider,
   LocalVetProductsProvider,
   // Not a capture store — an INBOUND cache, the identical kind of thing as `LocalVetProductsProvider`

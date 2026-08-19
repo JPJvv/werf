@@ -8,10 +8,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { projectHerd, projectMobs } from './herd';
+import { positionByMob, projectHerd, projectMobs } from './herd';
 import type { StoredAnimal } from './LocalHerd';
 import type { StoredMove } from './LocalMoves';
 import type { StoredMob } from './LocalMobs';
+import type { StoredMobMove } from './LocalMobMoves';
 
 const FARM_ID = '01900000-0000-7000-8000-000000000f01';
 const ANIMAL_ID = '01900000-0000-7000-8000-0000000000a1';
@@ -82,6 +83,53 @@ describe('projectHerd — where an animal is, when two moves share a day', () =>
     const projected = projectHerd([animal()], [], [walked, unassigned])[0];
     expect(projected?.landUnitId).toBe(CAMP_4);
     expect(projected?.mobId).toBeNull();
+  });
+});
+
+describe('positionByMob — the mob twin of the animal move fold, same total order (FR-151)', () => {
+  const MOB_ID = '01900000-0000-7000-8000-0000000000b1';
+  const mobMove = (over: Partial<StoredMobMove> & { id: string }): StoredMobMove => ({
+    farmId: FARM_ID,
+    mobId: MOB_ID,
+    occurredAt: '2026-07-22T12:00:00.000Z',
+    toLandUnitId: null,
+    ...over,
+  });
+
+  it('⭐ breaks a same-day tie by the capture id, whichever order the device holds them in', () => {
+    const toCamp4 = mobMove({ id: EARLIER, toLandUnitId: CAMP_4 });
+    const toCamp7 = mobMove({ id: LATER, toLandUnitId: CAMP_7 });
+
+    expect(positionByMob([toCamp4, toCamp7]).get(MOB_ID)).toBe(CAMP_7);
+    // The same log, arriving in the other order — a second phone's captures do not arrive sorted.
+    expect(positionByMob([toCamp7, toCamp4]).get(MOB_ID)).toBe(CAMP_7);
+  });
+
+  it('still folds by the day first, so a later day beats a higher id', () => {
+    const older = mobMove({
+      id: LATER,
+      occurredAt: '2026-07-20T12:00:00.000Z',
+      toLandUnitId: CAMP_4,
+    });
+    const newer = mobMove({
+      id: EARLIER,
+      occurredAt: '2026-07-24T12:00:00.000Z',
+      toLandUnitId: CAMP_7,
+    });
+
+    expect(positionByMob([older, newer]).get(MOB_ID)).toBe(CAMP_7);
+    expect(positionByMob([newer, older]).get(MOB_ID)).toBe(CAMP_7);
+  });
+
+  it('takes the mob off a mapped camp when the latest move names null, a real destination', () => {
+    const walked = mobMove({ id: EARLIER, toLandUnitId: CAMP_4 });
+    const unmapped = mobMove({ id: LATER, toLandUnitId: null });
+
+    expect(positionByMob([walked, unmapped]).get(MOB_ID)).toBeNull();
+  });
+
+  it('carries no entry for a mob that has never moved', () => {
+    expect(positionByMob([]).has(MOB_ID)).toBe(false);
   });
 });
 

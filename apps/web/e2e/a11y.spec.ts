@@ -190,6 +190,9 @@ const CAPTURE_SCREENS = [
   { path: '/animals/groups/new', heading: /record a group/i },
   { path: '/animals/groups/count', heading: /change a group’s numbers/i },
   { path: '/animals/move', heading: /move animals/i },
+  // FR-151. The seed's own single camp (NOORD) means every populated-screen click reveals the same
+  // widgets an axe pass needs to see — the controls are audited below, in POPULATED_SCREENS.
+  { path: '/animals/groups/move', heading: /move a group/i },
   { path: '/animals/mating', heading: /record a service/i },
   { path: '/animals/pregnancy', heading: /pregnancy test/i },
   { path: '/animals/birth', heading: /record a birth/i },
@@ -262,6 +265,22 @@ const POPULATED_SCREENS = [
         .click();
       await page.getByRole('button', { name: /^sold$/i }).click();
       await expect(page.getByText(/cannot go for slaughter or sale yet/i)).toBeVisible();
+    },
+  },
+  {
+    // FR-151, and the capture `phase-checklists.md` 4e·1 unblocks — the destination select only
+    // renders once a group is picked, which is the markup axe never saw before this slice existed.
+    // The seed's farm is mixed (cattle + row crops), so its word for a piece of ground is "block" —
+    // matching only "camp" here would be the wrong farm's vocabulary, the same trap this file's own
+    // CAPTURE_SCREENS header names for `/land`.
+    path: '/animals/groups/move',
+    heading: /move a group/i,
+    act: async (page: Page) => {
+      await page
+        .getByRole('button', { name: /ossies/i })
+        .first()
+        .click();
+      await expect(page.getByLabel(/move to which (camp|block)/i)).toBeVisible();
     },
   },
   {

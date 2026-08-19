@@ -35,6 +35,7 @@ import type { StoredMob } from './LocalMobs';
 import type { StoredAnimal } from './LocalHerd';
 import type { StoredBrandingRegister } from './LocalBranding';
 import type { StoredMove } from './LocalMoves';
+import type { StoredMobMove } from './LocalMobMoves';
 import type { StoredIdentifier } from './LocalIdentifiers';
 import type { StoredTheftIncident } from './LocalTheft';
 import type { StoredWeight } from './LocalWeights';
@@ -72,6 +73,16 @@ const LIFECYCLE_EVENTS_SQL =
 const MOVE_EVENTS_SQL =
   'SELECT id, farm_id, animal_id, occurred_at, batch_id, payload FROM events ' +
   "WHERE farm_id = ? AND type = 'move' AND deleted_at IS NULL";
+
+// ⭐ `animal_id IS NULL` is the real narrowing clause, not `mob_id IS NOT NULL` — an individual
+// animal transferring INTO a mob also stamps that event's own `mob_id`, and this query must not
+// pick that up as the whole group relocating. `mapHydratedMobMove` re-checks the same guard
+// defensively (the fake local database in tests does not filter by extra WHERE clauses, only by
+// `type` — see `packages/sync/src/testing.ts`), so production and test share one behaviour.
+const MOB_MOVE_EVENTS_SQL =
+  'SELECT id, farm_id, mob_id, occurred_at, payload FROM events ' +
+  "WHERE farm_id = ? AND type = 'move' AND animal_id IS NULL AND mob_id IS NOT NULL " +
+  'AND deleted_at IS NULL';
 
 const HEALTH_EVENT_TYPES = "('treatment','vaccination','dip')";
 const HEALTH_EVENTS_SQL =
@@ -418,6 +429,49 @@ function mapHydratedMove(row: Record<string, unknown>): StoredMove | null {
   }
 }
 
+/**
+ * A MOB's own camp move (FR-151) — `mapHydratedMove`'s mirror. `row['animal_id']` must be absent:
+ * that is what tells this row apart from an individual animal transferring INTO the same mob, which
+ * also carries this mob's id but is a different fact (see `MOB_MOVE_EVENTS_SQL`'s own note).
+ */
+export function mapHydratedMobMove(row: Record<string, unknown>): StoredMobMove | null {
+  const id = row['id'];
+  const farmId = row['farm_id'];
+  const mobId = row['mob_id'];
+  const occurredAtRaw = row['occurred_at'];
+  const payloadJson = row['payload'];
+  if (
+    typeof id !== 'string' ||
+    typeof farmId !== 'string' ||
+    typeof mobId !== 'string' ||
+    row['animal_id'] != null ||
+    typeof occurredAtRaw !== 'string' ||
+    typeof payloadJson !== 'string'
+  ) {
+    return null;
+  }
+  const occurredAtDate = new Date(occurredAtRaw);
+  if (Number.isNaN(occurredAtDate.getTime())) return null;
+  try {
+    const payload: unknown = JSON.parse(payloadJson);
+    if (typeof payload !== 'object' || payload === null) return null;
+    const { toLandUnitId, fromLandUnitId } = payload as {
+      toLandUnitId?: unknown;
+      fromLandUnitId?: unknown;
+    };
+    return {
+      id,
+      farmId,
+      mobId,
+      occurredAt: occurredAtDate.toISOString(),
+      toLandUnitId: typeof toLandUnitId === 'string' ? toLandUnitId : null,
+      fromLandUnitId: typeof fromLandUnitId === 'string' ? fromLandUnitId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** What the FR-131 withdrawal guard needs from a hydrated dose — `WithholdDose`'s hydrated half.
  *  No `productId`: the wire payload never carries one (see `withdrawal.ts`'s module header). */
 export interface HydratedHealthDose {
@@ -653,6 +707,7 @@ interface HydratedLivestockValue {
   readonly brandingRegisters: HydratedTableStore<StoredBrandingRegister>;
   readonly lifecycleEvents: HydratedTableStore<HydratedLifecycleEvent>;
   readonly moves: HydratedTableStore<StoredMove>;
+  readonly mobMoves: HydratedTableStore<StoredMobMove>;
   readonly healthEvents: HydratedTableStore<HydratedHealthDose>;
   readonly identifiers: HydratedTableStore<StoredIdentifier>;
   readonly theftIncidents: HydratedTableStore<StoredTheftIncident>;
@@ -691,6 +746,7 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
     brandingRegisters: emptyHydratedTableStore<StoredBrandingRegister>(),
     lifecycleEvents: emptyHydratedTableStore<HydratedLifecycleEvent>(),
     moves: emptyHydratedTableStore<StoredMove>(),
+    mobMoves: emptyHydratedTableStore<StoredMobMove>(),
     healthEvents: emptyHydratedTableStore<HydratedHealthDose>(),
     identifiers: emptyHydratedTableStore<StoredIdentifier>(),
     theftIncidents: emptyHydratedTableStore<StoredTheftIncident>(),
@@ -748,6 +804,12 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
         params: [farmId],
         mapRow: mapHydratedMove,
       }),
+      mobMoves: createHydratedTableStore({
+        database: getLocalDatabase(),
+        sql: MOB_MOVE_EVENTS_SQL,
+        params: [farmId],
+        mapRow: mapHydratedMobMove,
+      }),
       healthEvents: createHydratedTableStore({
         database: getLocalDatabase(),
         sql: HEALTH_EVENTS_SQL,
@@ -793,6 +855,7 @@ export function HydratedLivestockProvider({ children }: { children: ReactNode })
       pair.brandingRegisters.close();
       pair.lifecycleEvents.close();
       pair.moves.close();
+      pair.mobMoves.close();
       pair.healthEvents.close();
       pair.identifiers.close();
       pair.theftIncidents.close();
@@ -902,6 +965,22 @@ export function useHydratedMovesSettled(): boolean {
 export function useHydratedMovesHydrationFailed(): boolean {
   const { moves } = useHydratedLivestock();
   return useSyncExternalStore(moves.subscribe, moves.hydrationFailed);
+}
+
+/** Mob-level walks (FR-151) another device recorded and the server has replicated to this one. */
+export function useHydratedMobMoves(): readonly StoredMobMove[] {
+  const { mobMoves } = useHydratedLivestock();
+  return useSyncExternalStore(mobMoves.subscribe, mobMoves.all);
+}
+
+export function useHydratedMobMovesSettled(): boolean {
+  const { mobMoves } = useHydratedLivestock();
+  return useSyncExternalStore(mobMoves.subscribe, mobMoves.settled);
+}
+
+export function useHydratedMobMovesHydrationFailed(): boolean {
+  const { mobMoves } = useHydratedLivestock();
+  return useSyncExternalStore(mobMoves.subscribe, mobMoves.hydrationFailed);
 }
 
 /** Treatments/vaccinations/dips another device gave and the server has replicated to this one, in

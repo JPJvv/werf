@@ -258,6 +258,28 @@ export const recordMoveRequestSchema = z.object({
 export type RecordMoveRequest = z.infer<typeof recordMoveRequestSchema>;
 
 /**
+ * Record a mob-level move (FR-151) — the whole group walks to another camp, with no individual
+ * `animals` rows behind it to carry a destination. Reuses `recordMoveRequestSchema`'s own "only the
+ * destination crosses the wire" shape: the FROM side is read server-side off the mob's own row, for
+ * the identical reason (asking the client to restate it only creates a way for the two to disagree).
+ *
+ * `toLandUnitId` is required here, unlike the animal move's optional one — this capture has exactly
+ * one purpose, so there is no "leave this dimension unchanged" case to distinguish from omission.
+ * `null` is still a real target: the mob is taken off a mapped camp.
+ */
+export const recordMobMoveRequestSchema = z.object({
+  id: uuidV7Schema,
+  farmId: uuidSchema,
+  mobId: uuidSchema,
+  /** When the mob was walked, on the farm. Not `created_at` (set on write). */
+  occurredAt: timestampSchema,
+  toLandUnitId: uuidSchema.nullable(),
+  locationGeojson: geoJsonStringSchema.nullable().default(null),
+  notes: z.string().min(1).nullable().default(null),
+});
+export type RecordMobMoveRequest = z.infer<typeof recordMobMoveRequestSchema>;
+
+/**
  * Health capture (FR-130/131/132/133) — COMPLIANCE-GATED (legal-compliance.md § 3). The fields
  * every treatment / vaccination / dip carries. The sharp part: the client sends a `productId`, NOT
  * the withdrawal period. The server resolves the veterinary product's REGISTERED meat/milk

@@ -3,16 +3,20 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-18 (twenty-fourth session). ✅ **JP-requested `compliance-checker` pass on
-4d+4e·3 ran; found one real gap (4d·11 below), fixed same session, NOT yet re-verified by a follow-up
-pass** — say so before calling 4d/4e·3 merge-ready. `pnpm verify` forced-cold: 1544/1544 unit tests
-(+491 over 23rd session's count, incl. new domain/API/web/Outbox coverage for 4d·11), lint clean,
-typecheck 12/12, build 7/7, 186.76 KB gz. `pnpm test:e2e` 31/5 skipped, one flaky rerun (isolated
-pass confirmed pre-existing contention, not a regression — see §4).
-⛔ **4e·1 (FR-151) still BLOCKED** — see §3's owner question, still not answered.
-Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, or 4e·3's own closed
-work. **Next: answer the 4e·1 mob-move question, the new 4d·11 `unresolved`-dead-end question (§3),
-or ask for a follow-up compliance-checker pass confirming 4d·11's fix.**
+**Last updated:** 2026-08-19 (twenty-fifth session). ✅ **JP answered all three open questions
+((a) mob-move capture; 4d·11's `unresolved` stays a hard stop; the 4d·11 re-verification pass
+BATCHED), then asked for that pass — it ran this session.** ✅ **4d·11 re-verification: APPROVABLE
+— the fix is genuine, re-derived from the code, not assumed.** ⚠️ **The pass also swept the
+uncommitted mob-move capture (FR-151) and found ONE HIGH finding — fixed same session, fail-first
+proven**: `possessionTrail` (the stock-theft evidence pack's movement history, FR-603) filtered
+`move` events by `animalId`, so a mob-level move (`animalId: null`) was invisible to it — an
+individually-identified animal walked only with its flock would print "no movement history" in
+the one document meant to prove continuous possession (legal-compliance.md §3.2). Full account in
+§3. `pnpm verify` forced-cold: **1570/1570** (+26), lint/typecheck clean, build 7/7, 187.62 KB gz;
+`pnpm test:e2e` 31/5 skipped, incl. new a11y coverage for `/animals/groups/move`.
+Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, 4e·3, this
+session's mob-move capture, or its compliance-checker pass. **Next: build 4e·1's grazing-days
+projection, 4e·2 (rest-period, unblocked), or 4e·4/4e·5/4e·6 — JP's pick.**
 
 ✅ **4a/4b/4c/4d/4e·3 condensed (18th–23rd sessions) — fully closed, full accounts in
 `phase-checklists.md`'s Phase 4 section.** 4a: blocks + plantings. 4b: fertiliser, no compliance
@@ -41,7 +45,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ built + one compliance gap found+fixed 24th session (4d·11), ⛔ fix not yet re-verified by a pass; 4e·3 ☑; 4e·1 ⛔ blocked, 4e·2/4e·4/4e·5/4e·6 open), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). 4d: compliance-checker pass (24th session) found the spray-side § 4.3 block was never built — closed as 4d·11, see §3; re-verification not yet requested. 4e·3 closed 23rd session, no gate of its own. 4e·1 blocked — see §3 |
+| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·3 ☑; 4e·1 ◐ mob-move capture built + compliance-checker swept 25th session (one HIGH found+fixed), grazing-days projection still open; 4e·2/4e·4/4e·5/4e·6 open, all unblocked), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1: mob-move decision resolved + built + compliance-swept 25th session — see §3 |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -60,26 +64,46 @@ found (4d·11 in `phase-checklists.md`), fixed same session; two more disclosed,
 (1) FIXED: legal-compliance.md § 4.3 requires a spray blocked at capture when its PHI would clear
 after the block's OWN planned harvest date — only the harvest-side half (FR-205) had been built.
 Added `sprayPhiGuardFor` (`@werf/domain`), wired client+server+outbox, same audited-override shape
-as 4d·2. Not yet re-verified by a follow-up compliance-checker pass — do not call 4d merge-ready
-without asking for one. (2) FILED, not fixed: the spray product picker doesn't filter/label by crop,
+as 4d·2. ✅ **Re-verified 2026-08-19 (25th session) — APPROVABLE, see the pass entry below.**
+(2) FILED, not fixed: the spray product picker doesn't filter/label by crop,
 though PHI is registered per-crop under Act 36/1947 (`chemical_products.crop` exists, unused) —
-pre-existing (4c), not introduced this session. 🔶 (3) **Open question:** `usePhiGuard`'s
-`unresolved` state (a harvest whose spray's product isn't cached locally yet) has NO override path
-client-side — a hard offline dead-end, unlike this branch's own `stock.ts` "never refuse a real farm
-event" posture. Leave it a hard stop, or give it a flagged/deferred path? JP to decide.
+pre-existing (4c), not introduced this session. ✅ (3) **RESOLVED 2026-08-19 (25th session): JP said
+leave it a hard stop.** No work done — `usePhiGuard`'s `unresolved` state stays a genuine dead-end,
+by owner choice, not an oversight.
 
-🔶 **Open question — 4e·1's mob-move gap, asked 2026-08-18 (23rd session).** FR-151 (grazing days /
-stocking rate) needs to know which camp a mob is IN over time, and there is no capture for that
-today: `mobs.land_unit_id` is written once at creation (`recordMob`) and never again — a group-only
-flock (FR-102's stated primary user) cannot be moved between camps by any path in the product. The
-individual-animal `move` event exists but is the minority case. Closing FR-151 needs one of these,
-picked by JP, not guessed: **(a)** add a mob-move capture reusing `type: 'move'` with `animalId:
-null, mobId: <mob>` — verified this session that the server's per-animal projections
-(`positionBefore`/`mobMembership` in `livestock.service.ts`) are scoped by `eq(events.animalId, …)`
-and so are structurally blind to a null-`animalId` row, not corrupted by one; **(b)** scope FR-151 to
-individually-tracked herds only for now, disclosed as a gap on the eventual screen; **(c)** something
-else. Flag and move on — do not build (a) silently, since it is new capture surface with its own
-outbox/schema/RLS cost, the same size of decision 4e·2's rest-period setting already is.
+◐ **4e·1's mob-move decision RESOLVED (JP chose (a)) and the CAPTURE built, 25th session — the
+FR-151 projection itself still open.** `recordMobMove` (`@werf/domain/livestock/movement.ts`,
+sibling to `recordMove`) + `LivestockService.recordMobMove`/`mobPositionBefore` (mirrors
+`positionBefore`'s total order exactly) + `POST /livestock/mob-moves`. ⭐ The structural risk the
+decision named — an animal transferring INTO a mob also stamps that event's own `mob_id`, so a
+mob-position read scoped on `mobId` alone would misread it as the WHOLE FLOCK relocating — is
+closed and PROVEN (`mobPositionBefore`/`MOB_MOVE_EVENTS_SQL`/`mapHydratedMobMove` all scope on
+`animalId IS NULL`; an integration test transfers an animal in and asserts the mob's own camp is
+untouched). Client: `LocalMobMoves.tsx` + `MoveMobScreen.tsx` (`/animals/groups/move`, one mob +
+one destination per save). Outbox `guardedBy` BOTH `mobrow:`/`landrow:`, proven fail-first.
+⭐ `herd.ts`'s `useEffectiveMobs` gained `positionByMob` (the mob twin of `positionByAnimal`) so a
+just-captured, unflushed mob move shows on screen immediately, offline — proven in
+`MoveMob.test.tsx` with no reload. ⚠️ Deliberately NOT built: a cross-device mob-move race
+register (4d·6/4d·11's counterpart) — filed, not dropped. ⭐ Also fixed: a new a11y act asserted
+"move to which **camp**" against the e2e fixture's mixed farm, whose word is "block" — the exact
+trap `CAPTURE_SCREENS`' own header names for `/land`. **Remainder, not yet built**: the
+grazing-days/stocking-rate READ PROJECTION and its screen — the capture above is the primitive it
+needed, not the deliverable. 4e·2 (rest-period tracking) is also unblocked, also not yet built.
+
+✅ **`compliance-checker` pass on 4d·11 + the mob-move capture, JP-requested 2026-08-19 (25th
+session) — 4d·11 APPROVABLE, one HIGH found+fixed on the mob-move diff.** 4d·11 re-derived from
+the code, not assumed: `sprayPhiGuardFor` genuinely blocks, resolves PHI by the spray day (never
+`now()`), and the override is server-audited with `by` client-unsettable. **HIGH, mob-move:**
+`possessionTrail` (`livestock.service.ts`, the FR-603 evidence pack's movement history) filtered
+`events.animalId IN (...)`, so a mob-level move (`animalId: null`) was invisible to it — the exact
+defect class already fixed once for whole-flock DOSES (the block right above it in the same
+function) was reopened for MOVES by this session's new capture. Fixed by extending the same
+`mobMembership`-windowed reconstruction already used for doses to also pull mob-scoped `move`
+events, proven fail-first (a temporary revert of just the new block reproduced `expected [] to
+have length 1`). `pnpm verify` forced-cold: **1570/1570** (+26), lint/typecheck clean, build 7/7,
+187.62 KB gz; `pnpm test:e2e` 31/5 skipped. One earlier `pnpm verify` run hit Postgres
+testcontainer contention (270 failures, exactly 2 files, "recovery mode") — both re-ran clean in
+isolation and a full re-run passed clean, confirmed transient, unrelated to this fix.
 
 ✅ **4e·3 closed (23rd session) — inventory items/lots/movements (FR-501), narrowed from 4e's full
 six-item scope on `advisor()` guidance before writing code.** The cut: build 4e·3's schema/RLS/
@@ -107,39 +131,21 @@ contra one Explore-agent claim it was derived — only `SCHEMA_TABLE_NAMES` itse
 canonical tables registered by hand or every test mounting `<App/>` threw an unhandled rejection
 from `HydratedInventoryProvider`'s always-mounted watch, not just inventory's own tests.
 
-⛔ **4d built and verified (22nd session), COMPLIANCE PASS NOT YET TRIGGERED.** PHI guard
-(`packages/domain/src/crops/phi-guard.ts`, shared by client + server — deliberately NOT the
-client/server split `withdrawal.ts` uses) + harvest capture + FR-205 override (audited via the
-existing `audit_log` table, migration 0026) + 4d·6's cross-device race register
-(`phiComplianceRegister` + `/attention`). An advisor review during design caught and corrected a
-draft that would have broken the OFFLINE case (O-12): the guard must fall back to a local-cache
-PREVIEW for an unsent spray, mirroring `withdrawal.ts`'s `clearDateFor`, not just trust a
-server-resolved date that a local capture never has. Client-side ancestor checking is deliberately
-LEAF-ONLY (the local land-unit capture has no `created_at` to bound a split with); the gap is
-disclosed on `RecordHarvestScreen.tsx` for a split block, and the server (full ancestor chain) is
-the authoritative backstop. Filed, not built: extending `LocalLand`/`HydratedLand` to carry
-`land_units.created_at` so the client guard can check ancestors too — narrow case (block split AND
-harvested, both offline), server already covers it. Say out loud that this is compliance-gated
-(FR-205, food-safety/export) before calling it merge-ready — JP has not asked for the
-`compliance-checker` pass yet.
+✅ **4d built (22nd session), CLEARED by compliance-checker (25th session, see above).** PHI guard
+(`packages/domain/src/crops/phi-guard.ts`, shared client+server) + harvest capture + FR-205
+override (audited, migration 0026) + 4d·6's cross-device race register. Client-side ancestor
+checking is deliberately LEAF-ONLY (no local `created_at` to bound a split with) — disclosed on
+`RecordHarvestScreen.tsx`, server (full ancestor chain) is the authoritative backstop. An advisor
+review during design caught a draft that would have broken the OFFLINE case (O-12): the guard
+falls back to a local-cache PREVIEW for an unsent spray, mirroring `withdrawal.ts`'s
+`clearDateFor`, rather than trusting a server-resolved date a local capture never has.
 
-⚠️ **Self-review before handoff (22nd session, same day) caught three gaps a green `pnpm verify` +
-`test:e2e` could not have — all three closed, still pre-compliance-pass:** (1) `a11y.spec.ts`'s
-enumerated route list never carried ANY crops screen from 4a onward, so the PHI block panel and
-override controls had never been in front of axe — added `/crops/harvest` and `/harvest` to both
-`CAPTURE_SCREENS` and `POPULATED_SCREENS` (session.ts fixture gained a block + chemical product +
-active-PHI spray + an overridden harvest), 18/18 e2e green in both themes, 0 violations. The same gap
-exists for 4a/4b/4c's own screens (planting/fertiliser/spray) — filed, not fixed here, out of this
-slice's scope. (2) A real bug in `RecordHarvestScreen.tsx`: `valid` never checked `harvestedOn !== ''`,
-so clearing the date input left Save enabled and submitting sent an unreadable day into the domain
-builder, which threw inside the async handler with no feedback and left the button permanently
-disabled (`setSaving(false)` never reached) — fixed, regression test added. Not a compliance bypass:
-`'' >= earliestHarvestDate` is false, so the guard still blocks in the safe direction.
-`RecordSprayScreen.tsx` has the identical shape and was NOT touched — pre-existing, belongs to
-already-merge-ready 4c, filed as a follow-up. (3) `AttentionScreen.tsx`'s PHI section had zero
-rendering coverage — `phiRegister.test.ts` only tested the pure fold. Added a test that seeds a local
-block/product/spray/harvest, renders the real `<App/>` at `/attention`, and asserts the
-product/spray-date/earliest-date line plus the folded badge count on `/`.
+⚠️ **Self-review same day (22nd session) caught three gaps a green `pnpm verify` could not have —
+all closed:** `a11y.spec.ts` never covered ANY crops screen from 4a onward (fixed, 18/18 e2e green,
+0 violations — the same gap in 4a/4b/4c's own screens was filed, not fixed here); a real bug in
+`RecordHarvestScreen.tsx` (`valid` never checked `harvestedOn !== ''`, permanently disabling Save
+on a cleared date — fixed, not a compliance bypass since the guard still blocks in the safe
+direction); `AttentionScreen.tsx`'s PHI section had zero render coverage (added).
 
 ✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` on
 `phase-4/crops-fields` — CLEARS, 2026-08-17 (twenty-first session, JP-requested).** Full account is
@@ -202,18 +208,15 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify`, forced/cold — 4d·11 (2026-08-18, 24th session, **the number to trust**) | ✅ **1544/1544 unit tests, lint clean, 12/12 typecheck, 7/7 builds, 186.76 KB gz** |
-| `pnpm test:e2e` default lane, twice (2026-08-18, 24th session) | ✅ 31/5 skipped both runs; one run's a11y suite hit the known flaky context-teardown timeout, isolated rerun + a full clean rerun both passed — not a regression |
-| `compliance-checker` on 4d+4e·3, JP-requested (2026-08-18, 24th session) | NOT APPROVABLE (1 gap) → fixed as 4d·11 same session, **not yet re-verified by a follow-up pass** — full account in §3 |
-| `pnpm verify`/`test:e2e` — 4e·3 (23rd session) and 4d (22nd session) | Superseded by the row above — condensed detail in `phase-checklists.md` |
+| `pnpm verify`, forced/cold — 4d·11 re-verify + mob-move fix (2026-08-19, 25th session, **the number to trust**) | ✅ **1570/1570 unit tests (+26), lint/typecheck clean, 7/7 builds, 187.62 KB gz.** `pnpm test:e2e` 31/5 skipped. One run hit transient Postgres testcontainer contention, confirmed not a regression (re-ran clean) |
+| `compliance-checker` on 4d·11 + mob-move, JP-requested (2026-08-19, 25th session) | ✅ 4d·11 APPROVABLE; one HIGH on mob-move found+fixed same session — full account in §3 |
+| `compliance-checker` on 4d+4e·3, JP-requested (2026-08-18, 24th session) | NOT APPROVABLE (1 gap) → fixed as 4d·11, re-verified by the row above |
 | Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` (21st session) | ✅ CLEARS — full account in §3. Caught a stale-cache-hit masked typecheck failure |
-| Earlier Phase 4/Phase 3 baselines (4a–4c, sixteenth session onward) | Condensed — see item 37 |
 | `WERF_REAL_STACK=1`, all 5 gated tests, each run isolated (2026-08-17, sixteenth session) | ✅ All pass — two real test-tooling defects found and fixed as `dd1fac8`; full account in §5 item 41 |
 | Whole-branch review-agent pass + narrow follow-up (2026-08-17, sixteenth session) | ✅ APPROVABLE — full account in §3 |
-| `compliance-checker` `45775ea..ec8336e` (2026-08-16, fourteenth session) | ✅ CLEARED, one LOW fixed same session — full account in §3 |
-| `compliance-checker` `428200a..45775ea` (2026-08-15, twelfth session) | ✅ CLEARED, no SEV-1/SEV-2/MED/LOW — full account in §3 |
+| `compliance-checker` `45775ea..ec8336e` / `428200a..45775ea` (fourteenth/twelfth sessions) | ✅ Both CLEARED — full account in §3 |
 | Review agents `baf4b4d..428200a` (2026-08-15, fourth session) | ✅ `reviewer`+`sync-auditor`+`compliance-checker` all CLEARED — full account in §3 |
-| Historical baselines (2026-08-08 through 2026-08-14) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
+| Historical baselines (2026-08-08 through 2026-08-17) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
 
 ## 5. Next executable steps — the punch list, sliced for separate sessions
 
@@ -243,8 +246,7 @@ definition-of-done sweep (sixteenth session): `pnpm verify` **116 files/1278 tes
 168.78 KB gz**; `pnpm test:e2e` 31/5 skipped; `WERF_REAL_STACK=1` all 5 gated specs pass in
 isolation — two real defects found and fixed in test tooling only, `dd1fac8` (a stale MIME literal
 predating the P3.16 whitelist, and an unscoped-by-`farm_id` fixture lookup that collided against a
-persistent dev Postgres). Every **phase-checklist** box is `☑`; this punch list was a stricter pass
-on top of that, not a reopening.
+persistent dev Postgres). Every **phase-checklist** box is `☑`; this punch list was a stricter pass on top of that, not a reopening.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

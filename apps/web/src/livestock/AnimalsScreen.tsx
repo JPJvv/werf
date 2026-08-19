@@ -14,6 +14,7 @@ import type { TranslationKey } from '../i18n/dictionaries';
 import { useAuth } from '../auth/AuthProvider';
 import { useEffectiveAnimals, useEffectiveMobs, useHerdClasses, useHerdSummary } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
+import { useEffectiveLandUnits } from '../land/LocalLand';
 
 export function speciesLabel(t: (key: TranslationKey) => string, species: Species): string {
   return t(`species.${species}` as TranslationKey);
@@ -42,6 +43,7 @@ export function AnimalsScreen() {
 
   const animals = useEffectiveAnimals(filter);
   const mobs = useEffectiveMobs(filter);
+  const landUnits = useEffectiveLandUnits();
   const labels = useAnimalLabels();
   const summary = useHerdSummary(filter);
   const classes = useHerdClasses(filter);
@@ -112,6 +114,18 @@ export function AnimalsScreen() {
           className="mb-3 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
         >
           {t('animals.countGroup')}
+        </Link>
+      )}
+
+      {/* FR-151: a group can now be walked to another camp, the capture this metric was blocked on —
+          offered only when there is somewhere for it to go, same gating as the count-group link
+          above. */}
+      {mobs.length > 0 && landUnits.length > 0 && (
+        <Link
+          to="/animals/groups/move"
+          className="mb-3 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+        >
+          {t('animals.moveGroup')}
         </Link>
       )}
 

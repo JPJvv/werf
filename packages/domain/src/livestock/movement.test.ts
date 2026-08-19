@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AnimalStatus } from '@werf/core';
 import { ValidationError } from '@werf/core';
-import { type MoveInput, recordMove } from './movement';
+import { type MobMoveInput, type MoveInput, recordMobMove, recordMove } from './movement';
 
 const EVENT_ID = '01900000-0000-7000-8000-0000000000e1';
 const FARM_ID = '01900000-0000-7000-8000-000000000f01';
@@ -95,5 +95,59 @@ describe('recordMove (FR-103)', () => {
         ValidationError,
       );
     }
+  });
+});
+
+function mobMoveInput(overrides: Partial<MobMoveInput> = {}): MobMoveInput {
+  return {
+    id: EVENT_ID,
+    farmId: FARM_ID,
+    mobId: MOB_A,
+    occurredAt: OCCURRED,
+    fromLandUnitId: CAMP_A,
+    toLandUnitId: CAMP_B,
+    createdBy: USER_ID,
+    ...overrides,
+  };
+}
+
+describe('recordMobMove (FR-151)', () => {
+  it('moves the whole group to another camp, with no animal subject', () => {
+    const { event, landUnitId } = recordMobMove(mobMoveInput());
+
+    expect(event.type).toBe('move');
+    expect(event.animalId).toBeNull();
+    expect(event.mobId).toBe(MOB_A);
+    expect(event.occurredAt).toBe(OCCURRED);
+    expect(event.payload).toEqual({
+      fromLandUnitId: CAMP_A,
+      toLandUnitId: CAMP_B,
+      fromMobId: MOB_A,
+      toMobId: MOB_A, // the mob's own identity is unchanged — this is a camp move, not a transfer
+    });
+    // The event's own scope column points at the destination, the same convention `recordMove` uses.
+    expect(event.landUnitId).toBe(CAMP_B);
+    expect(landUnitId).toBe(CAMP_B);
+  });
+
+  it('takes the mob off a mapped camp when the destination is null', () => {
+    const { event, landUnitId } = recordMobMove(mobMoveInput({ toLandUnitId: null }));
+    expect(event.payload).toMatchObject({ toLandUnitId: null });
+    expect(landUnitId).toBeNull();
+  });
+
+  it('refuses a move that leaves the mob in the same camp, including null-to-null', () => {
+    expect(() =>
+      recordMobMove(mobMoveInput({ fromLandUnitId: CAMP_A, toLandUnitId: CAMP_A })),
+    ).toThrow(ValidationError);
+    expect(() => recordMobMove(mobMoveInput({ fromLandUnitId: null, toLandUnitId: null }))).toThrow(
+      ValidationError,
+    );
+  });
+
+  it('carries herd scoping (FR-113)', () => {
+    const ENTERPRISE = '01900000-0000-7000-8000-000000000e01';
+    const { event } = recordMobMove(mobMoveInput({ enterpriseId: ENTERPRISE }));
+    expect(event.enterpriseId).toBe(ENTERPRISE);
   });
 });

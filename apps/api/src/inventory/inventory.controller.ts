@@ -1,4 +1,14 @@
-import { Body, Controller, HttpCode, HttpStatus, Inject, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { schemas } from '@werf/core';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type { CapturedEvent } from '../common/event-capture';
@@ -21,6 +31,18 @@ export class InventoryController {
     body: schemas.NewInventoryItem,
   ) {
     return this.inventory.recordItem(auth.userId, body);
+  }
+
+  /** Set or clear an item's FR-503 low-stock warning threshold (4e·5) — an owner/manager
+   *  preference, reachable for any existing item, not only a newly-created one. */
+  @Patch('items/:itemId/reorder-point')
+  async updateReorderPoint(
+    @CurrentUser() auth: AuthContext,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body(new ZodValidationPipe(schemas.updateInventoryItemReorderPointRequestSchema))
+    body: schemas.UpdateInventoryItemReorderPointRequest,
+  ) {
+    return this.inventory.updateReorderPoint(auth.userId, itemId, body);
   }
 
   /** Record a lot (FR-501) — a physical batch of an item, created empty and received into by a

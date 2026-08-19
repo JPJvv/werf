@@ -19,13 +19,15 @@ import {
   createElevatedDb,
   enterprises,
   events,
+  farmUsers,
+  inventoryItems,
   inventoryLots,
   users,
   type AppDb,
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { NotFoundError, schemas, uuidv7 } from '@werf/core';
+import { NotFoundError, TenancyError, schemas, uuidv7 } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
@@ -215,6 +217,121 @@ describe('inventory capture (Phase 4e, FR-501)', () => {
           a.userId,
           itemBody({ farmId: a.farmId, enterpriseId: neighbourEnterprise!.id }),
         ),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('low-stock reorder point (FR-503, 4e·5)', () => {
+    it('sets the threshold', async () => {
+      const a = await tenant('Store');
+      const inventoryItemId = await item(a);
+
+      const updated = await service.updateReorderPoint(a.userId, inventoryItemId, {
+        farmId: a.farmId,
+        reorderPoint: 20,
+      });
+
+      expect(Number(updated.reorderPoint)).toBe(20);
+      const [row] = await elevated.db
+        .select()
+        .from(inventoryItems)
+        .where(eq(inventoryItems.id, inventoryItemId));
+      expect(Number(row!.reorderPoint)).toBe(20);
+    });
+
+    it('clears the threshold back to null — a real choice, not a value the schema forbids', async () => {
+      const a = await tenant('Store');
+      const inventoryItemId = await item(a);
+      await service.updateReorderPoint(a.userId, inventoryItemId, {
+        farmId: a.farmId,
+        reorderPoint: 20,
+      });
+
+      const cleared = await service.updateReorderPoint(a.userId, inventoryItemId, {
+        farmId: a.farmId,
+        reorderPoint: null,
+      });
+
+      expect(cleared.reorderPoint).toBeNull();
+    });
+
+    it('reaches an item created before this session as easily as a brand new one', async () => {
+      // No creation-time field for this exists on purpose — every item, old or new, goes through
+      // this one write path (`inventory.service.ts`'s own module note).
+      const a = await tenant('Store');
+      const inventoryItemId = await item(a);
+
+      const updated = await service.updateReorderPoint(a.userId, inventoryItemId, {
+        farmId: a.farmId,
+        reorderPoint: 5,
+      });
+
+      expect(Number(updated.reorderPoint)).toBe(5);
+    });
+
+    it('refuses a stranger, exactly as if the farm did not exist', async () => {
+      const a = await tenant('Store');
+      const b = await tenant('Neighbour');
+      const inventoryItemId = await item(a);
+
+      await expect(
+        service.updateReorderPoint(b.userId, inventoryItemId, {
+          farmId: a.farmId,
+          reorderPoint: 20,
+        }),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('allows a manager, unlike the owner-only rest-period-days precedent', async () => {
+      const a = await tenant('Store');
+      const inventoryItemId = await item(a);
+      const b = await tenant('Manager');
+      await elevated.db.insert(farmUsers).values({
+        farmId: a.farmId,
+        userId: b.userId,
+        role: 'manager',
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      });
+
+      const updated = await service.updateReorderPoint(b.userId, inventoryItemId, {
+        farmId: a.farmId,
+        reorderPoint: 15,
+      });
+
+      expect(Number(updated.reorderPoint)).toBe(15);
+    });
+
+    it('refuses a worker — routine stock management, but not this owner/manager preference', async () => {
+      const a = await tenant('Store');
+      const inventoryItemId = await item(a);
+      const b = await tenant('Worker');
+      await elevated.db.insert(farmUsers).values({
+        farmId: a.farmId,
+        userId: b.userId,
+        role: 'worker',
+        invitedAt: new Date(),
+        acceptedAt: new Date(),
+      });
+
+      await expect(
+        service.updateReorderPoint(b.userId, inventoryItemId, {
+          farmId: a.farmId,
+          reorderPoint: 15,
+        }),
+      ).rejects.toThrow(TenancyError);
+    });
+
+    it('refuses an item on another farm, as a not-found rather than leaking its existence', async () => {
+      const a = await tenant('Store');
+      const b = await tenant('Neighbour');
+      const neighbourItemId = await item(b);
+
+      await expect(
+        service.updateReorderPoint(a.userId, neighbourItemId, {
+          farmId: a.farmId,
+          reorderPoint: 20,
+        }),
       ).rejects.toThrow(NotFoundError);
     });
   });

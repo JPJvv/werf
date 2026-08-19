@@ -194,6 +194,7 @@ export const LOCAL_SCHEMA_TABLES: readonly LocalTableDef[] = [
       { name: 'enterprise_id', type: 'TEXT' },
       { name: 'farm_id', type: 'TEXT' },
       { name: 'name', type: 'TEXT' },
+      { name: 'reorder_point', type: 'REAL' },
       { name: 'unit', type: 'TEXT' },
       { name: 'updated_at', type: 'TEXT' },
       { name: 'updated_by', type: 'TEXT' },

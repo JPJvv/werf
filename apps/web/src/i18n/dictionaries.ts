@@ -1093,6 +1093,18 @@ const en = {
   'inventory.receive.save': 'Save receipt',
   'inventory.receive.saved': 'received — your work is saved',
   'inventory.receive.back': 'Back to stock',
+  // FR-503 (4e·5): low-stock and expiry warnings, never a block — an owner/manager preference on
+  // the reorder point, an objective fact on expiry.
+  'inventory.lowStock.sectionTitle': 'Low stock',
+  'inventory.lowStock.below': 'below your reorder point of',
+  'inventory.lowStock.itemWarning': 'Below the reorder point set for this item.',
+  'inventory.reorderPoint.label': 'Reorder point',
+  'inventory.reorderPoint.unset': 'Not set',
+  'inventory.reorderPoint.save': 'Save',
+  'inventory.reorderPoint.saved': 'Saved',
+  'inventory.reorderPoint.failed': 'Could not be saved just now. Try again.',
+  'inventory.reorderPoint.needsSignal': 'Needs signal to save.',
+  'inventory.expired.warning': 'Expired',
   // The residue register (FR-131) — COMPLIANCE-GATED. Copy rules apply hardest here: what
   // happened, why, what now, and never a reprimand. Every line on this screen describes something
   // the farmer already did, and most of it they could not have known at the time.
@@ -2083,6 +2095,16 @@ const af: Record<TranslationKey, string> = {
   'inventory.receive.save': 'Stoor ontvangs',
   'inventory.receive.saved': 'ontvang — jou werk is gestoor',
   'inventory.receive.back': 'Terug na voorraad',
+  'inventory.lowStock.sectionTitle': 'Lae voorraad',
+  'inventory.lowStock.below': 'onder jou aanvulpunt van',
+  'inventory.lowStock.itemWarning': 'Onder die aanvulpunt vir hierdie item.',
+  'inventory.reorderPoint.label': 'Aanvulpunt',
+  'inventory.reorderPoint.unset': 'Nie gestel nie',
+  'inventory.reorderPoint.save': 'Stoor',
+  'inventory.reorderPoint.saved': 'Gestoor',
+  'inventory.reorderPoint.failed': 'Kon nie nou gestoor word nie. Probeer weer.',
+  'inventory.reorderPoint.needsSignal': 'Benodig sein om te stoor.',
+  'inventory.expired.warning': 'Verval',
   'residue.link': 'Kort jou aandag',
   'residue.title': 'Kort jou aandag',
   'attention.intro':

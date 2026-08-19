@@ -15,8 +15,8 @@
 
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, lt, or } from 'drizzle-orm';
-import { events, inventoryItems, inventoryLots, type AppDb } from '@werf/db';
-import { NotFoundError, type schemas } from '@werf/core';
+import { events, farmUsers, inventoryItems, inventoryLots, type AppDb } from '@werf/db';
+import { NotFoundError, TenancyError, type schemas } from '@werf/core';
 import { recordInventoryMovement, projectQuantityOnHand } from '@werf/domain';
 import { APP_DB } from '../db/db.module';
 import {
@@ -67,6 +67,54 @@ export class InventoryService {
         .from(inventoryItems)
         .where(and(eq(inventoryItems.id, input.id), eq(inventoryItems.farmId, input.farmId)));
       return existing!;
+    });
+  }
+
+  /**
+   * Sets or clears an item's FR-503 low-stock WARNING threshold (4e·5) — an owner/manager-set
+   * preference, so there is no compliance gate on this write, the identical posture
+   * `FarmsService.updateRestPeriodDays` (FR-152, 4e·2) takes for a farm-wide agronomic number one
+   * level up. Owner OR manager, unlike `updateRestPeriodDays`'s owner-only: this is routine stock
+   * management a manager is trusted to run day to day, not a farm-wide policy choice.
+   *
+   * Reachable for ANY existing item, not only a newly-created one — `newInventoryItemSchema`
+   * deliberately carries no `reorderPoint` field, so every item (old or new) gets a threshold
+   * through this ONE write path rather than a creation-time field that only new rows could ever
+   * reach.
+   */
+  async updateReorderPoint(
+    userId: string,
+    itemId: string,
+    input: schemas.UpdateInventoryItemReorderPointRequest,
+  ) {
+    return this.app.asUser(userId, async (tx) => {
+      const [membership] = await tx
+        .select({ role: farmUsers.role })
+        .from(farmUsers)
+        .where(
+          and(
+            eq(farmUsers.farmId, input.farmId),
+            eq(farmUsers.userId, userId),
+            isNull(farmUsers.deletedAt),
+          ),
+        );
+      if (!membership) throw new NotFoundError('Farm not found');
+      if (membership.role !== 'owner' && membership.role !== 'manager') {
+        throw new TenancyError(`Role ${membership.role} may not set a reorder point`);
+      }
+
+      const [updated] = await tx
+        .update(inventoryItems)
+        .set({
+          reorderPoint: input.reorderPoint === null ? null : numericText(input.reorderPoint),
+          updatedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(inventoryItems.id, itemId), eq(inventoryItems.farmId, input.farmId)))
+        .returning();
+
+      if (!updated) throw new NotFoundError('Inventory item not found');
+      return updated;
     });
   }
 

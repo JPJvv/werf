@@ -34,6 +34,21 @@ export const newInventoryItemSchema = z.object({
 });
 export type NewInventoryItem = z.infer<typeof newInventoryItemSchema>;
 
+/**
+ * Set or clear an item's FR-503 low-stock WARNING threshold (4e·5) — an owner/manager-set
+ * preference, not a regulated figure, mirroring `updateRestPeriodDaysRequestSchema`'s own shape
+ * and reasoning one level down (per item rather than per farm — see `inventory.ts`'s (`@werf/db`)
+ * module note for why a single farm-wide number cannot honestly stand in for this one). `null`
+ * clears it back to "no warning shown", a real choice, so it is required rather than optional.
+ */
+export const updateInventoryItemReorderPointRequestSchema = z.object({
+  farmId: uuidSchema,
+  reorderPoint: z.number().positive().nullable(),
+});
+export type UpdateInventoryItemReorderPointRequest = z.infer<
+  typeof updateInventoryItemReorderPointRequestSchema
+>;
+
 export const newInventoryLotSchema = z.object({
   /** Client-generated UUIDv7 for the row. */
   id: uuidV7Schema,

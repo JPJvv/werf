@@ -23,7 +23,13 @@ import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
 import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 
-/** An inventory item as held locally — the farm's own catalogue entry ("our urea"). */
+/** An inventory item as held locally — the farm's own catalogue entry ("our urea").
+ *
+ * `reorderPoint` is OPTIONAL, not `| null` like the item's other nullable fields: an item this
+ * device created carries no opinion on it at all (there is no creation-time field for it — see
+ * `ReceiveStockScreen.tsx`'s module note), so it is absent here and only ever arrives from the
+ * server once an owner/manager sets it (`stock.ts`'s `useEffectiveInventoryItems`, which reads
+ * this field ONLY off the hydrated copy for exactly that reason). */
 export interface StoredInventoryItem {
   readonly id: string;
   readonly farmId: string;
@@ -31,6 +37,7 @@ export interface StoredInventoryItem {
   readonly category: InventoryItemCategory;
   readonly name: string;
   readonly unit: string;
+  readonly reorderPoint?: number | null;
 }
 
 /** A lot as held locally — a physical batch of an item. `quantityOnHand` here is always what this

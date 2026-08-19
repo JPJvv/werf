@@ -5,7 +5,7 @@
  * would hold them, and asserts the SUM renders rather than either piece alone.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
@@ -125,10 +125,13 @@ describe('stock on hand (Phase 4e, FR-501)', () => {
     render(<App />);
 
     await screen.findByText(/urea 46%/i);
-    // 40 received, 12 consumed — the fold, not either recorded field alone.
-    expect(screen.getByText(/28/)).toBeTruthy();
-    expect(screen.getByText(/b-2026-01/i)).toBeTruthy();
-    expect(screen.getByText(/main store/i)).toBeTruthy();
+    const batchRow = screen.getByText(/b-2026-01/i).closest('li');
+    if (batchRow === null) throw new Error('lot row not found');
+    // 40 received, 12 consumed — the fold, not either recorded field alone. Shown TWICE: once as
+    // the item-level total (one lot, so total === this lot's own quantity), once on the lot row
+    // itself — scoped to that row so it does not collide with the item-level number above it.
+    expect(within(batchRow).getByText(/28/)).toBeTruthy();
+    expect(within(batchRow).getByText(/main store/i)).toBeTruthy();
   });
 
   it('shows the empty state honestly when the farm has no stock yet', async () => {

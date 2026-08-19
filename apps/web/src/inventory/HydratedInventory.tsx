@@ -31,7 +31,7 @@ import type {
 } from './LocalInventory';
 
 const INVENTORY_ITEMS_SQL =
-  'SELECT id, farm_id, enterprise_id, category, name, unit FROM inventory_items ' +
+  'SELECT id, farm_id, enterprise_id, category, name, unit, reorder_point FROM inventory_items ' +
   'WHERE farm_id = ? AND deleted_at IS NULL';
 
 const INVENTORY_LOTS_SQL =
@@ -46,7 +46,7 @@ const INVENTORY_MOVEMENT_EVENTS_SQL =
 
 /** Tolerant per row — a row written by a future schema version this build does not understand is
  *  skipped, not fatal, same philosophy as `HydratedLand.tsx`'s mapper. */
-function mapHydratedInventoryItem(row: Record<string, unknown>): StoredInventoryItem | null {
+export function mapHydratedInventoryItem(row: Record<string, unknown>): StoredInventoryItem | null {
   const id = row['id'];
   const farmId = row['farm_id'];
   const category = row['category'];
@@ -63,6 +63,7 @@ function mapHydratedInventoryItem(row: Record<string, unknown>): StoredInventory
     return null;
   }
   const enterpriseId = row['enterprise_id'];
+  const reorderPointRaw = row['reorder_point'];
   return {
     id,
     farmId,
@@ -70,6 +71,7 @@ function mapHydratedInventoryItem(row: Record<string, unknown>): StoredInventory
     category,
     name,
     unit,
+    reorderPoint: typeof reorderPointRaw === 'number' ? reorderPointRaw : null,
   };
 }
 

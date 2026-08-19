@@ -1948,8 +1948,51 @@ Grazing, feed & inventory — the one slice with real new schema
   in isolation (9/9), no regression; lint/typecheck clean, build 7/7, 190.89 KB gz. `pnpm verify`
   re-run clean after the 29th-session compliance fixes: 1632/1632 (+1), lint/typecheck clean,
   build 7/7, 190.88 KB gz.
-□ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
-  candidate Sprays/crop tile badge (see the home-metrics note below).
+☑ 4e·5 FR-503 Low-stock and expiry warnings — CLOSED (30th session). Two independent read models
+  over the inventory projection, `stock.ts`: `lowStockWarnings` (per-ITEM, summed across every lot
+  of that item against a per-item `reorder_point` — never per-lot, since one nearly-empty batch
+  beside two full ones is normal, not a warning) and `isExpired` (per-LOT, an objective fact
+  against `farmToday()`, no threshold). `StockScreen.tsx` restructured from a flat lot list to
+  items-with-nested-lots, both because a low-stock warning is inherently item-scoped and because
+  the reorder-point editor needed a home reachable for every item, not only a newly-created one.
+  ⭐ JP resolved BOTH design questions directly before code, mirroring 4e·2's "ask, don't guess"
+  precedent: (1) expiry ships **"expired" only this slice** — no farm-wide "warn N days before"
+  setting, so nothing here guesses a threshold; (2) low-stock is a genuine new mutable field
+  (`inventory_items.reorder_point`, migration `0035`, nullable, no seeded default), not folded into
+  a farm-wide number, because a reorder point cannot honestly be one figure across 5kg of dip and
+  2 tonnes of feed.
+  ⭐ An `advisor()` design pass caught the trap `newInventoryItemSchema`'s create-once shape would
+  have set: a threshold settable ONLY at item creation reaches nothing that already exists. Fixed
+  by a dedicated `PATCH /inventory/items/:itemId/reorder-point` (owner OR manager — routine stock
+  management, unlike `updateRestPeriodDays`'s owner-only farm policy), reachable for any item from
+  `StockScreen.tsx` itself, and by switching `useEffectiveInventoryItems`'s merge from `mergeById`
+  to `mergeByIdPreferHydrated` — `reorderPoint` is the first field on this table set AFTER
+  creation, which broke `mergeById`'s "no field here changes after creation" premise; local-wins
+  would have permanently shadowed a threshold set from another device, including this one's own
+  echo. Proven by `HydratedInventory.test.tsx`: a local item with no reorder point, then a hydrated
+  echo of the SAME id carrying one, must show the hydrated value.
+  ⭐ A second `advisor()` pass (post-implementation) caught two real gaps, both fixed: (1) the
+  client write path (`submit → useSetReorderPoint → inventoryApi.updateReorderPoint → "Saved"`/
+  `"failed"`, the `!canManage` read-only branch, and the offline-disabled state) had ZERO coverage
+  — the a11y pass only exercises the owner-online happy path, the same class of hole
+  `AttentionScreen`'s PHI section and `RecordHarvestScreen`'s `valid` were in 4d. Fixed:
+  `ReorderPoint.test.tsx`, 5 cases. (2) `pnpm verify` had never actually been run as the ONE
+  composite command — only its four pieces separately. Run for real; see the Verification line
+  below.
+  ⚠️ **Compliance scope note, out loud (CLAUDE.md's rule) — this is a warning-only slice, nothing
+  regulated.** `inventory_items.category` includes `medicine`/`chemical`, and "Expired" now renders
+  on those lots, but `phi-guard.ts`/`withdrawal.ts` are untouched — expiry here is informational,
+  it does **not** gate spray or treatment capture. Whether it should is a separate owner decision,
+  not something this slice silently declined.
+  ⚠️ **Surfacing is screen-local, disclosed so FR-503 is not later read as "shipped and visible
+  everywhere."** Both warnings render only on `/inventory`, reached by the secondary "Stock on
+  hand" link — no home-tile badge. A tile needs `HOME_TILE_KEYS` + terminology + enterprise gating,
+  its own decision, out of scope here; `inventory` currently has no home tile of its own at all
+  (`tiles.ts`'s own module note on why: shed inventory is farm-level, not enterprise-level).
+  `pnpm verify` (30th session, run as the ONE composite command, not four separate ones):
+  **1656/1656** unit tests passing (+24 over the 29th-session baseline: 8 pure-function, 4
+  hydration/merge, 5 client write-path, 7 API integration), lint/typecheck clean, build 7/7,
+  **192.32 KB gz**. `pnpm test:e2e -- a11y` 20/20 both themes, `/inventory` covered since 4e·4.
 □ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —
   depends on 4e·3 existing; a `feed` consumption movement against a `land_unit_id`/`mob_id`, Money
   in integer cents for the cost side.

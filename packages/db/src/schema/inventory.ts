@@ -12,25 +12,45 @@
  * created empty (zero) and RECEIVED into by a movement, so there is nothing to carry forward.
  */
 
-import { date, numeric, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { check, date, numeric, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { auditColumns, primaryId } from './columns';
 import { inventoryItemCategoryEnum } from './enums';
 import { enterprises, farms, users } from './core';
 
-export const inventoryItems = pgTable('inventory_items', {
-  id: primaryId(),
-  farmId: uuid('farm_id')
-    .notNull()
-    .references(() => farms.id),
-  enterpriseId: uuid('enterprise_id').references(() => enterprises.id),
-  category: inventoryItemCategoryEnum('category').notNull(),
-  name: text('name').notNull(),
-  /** Free text — "kg", "L", "bag" — too many real units across four categories for a closed set. */
-  unit: text('unit').notNull(),
-  ...auditColumns,
-  createdBy: uuid('created_by').references(() => users.id),
-  updatedBy: uuid('updated_by').references(() => users.id),
-});
+export const inventoryItems = pgTable(
+  'inventory_items',
+  {
+    id: primaryId(),
+    farmId: uuid('farm_id')
+      .notNull()
+      .references(() => farms.id),
+    enterpriseId: uuid('enterprise_id').references(() => enterprises.id),
+    category: inventoryItemCategoryEnum('category').notNull(),
+    name: text('name').notNull(),
+    /** Free text — "kg", "L", "bag" — too many real units across four categories for a closed set. */
+    unit: text('unit').notNull(),
+    /**
+     * FR-503's low-stock WARNING threshold (4e·5) — how much of this item the farm wants on hand
+     * before it counts as running low. Nullable, no default: an unset threshold means no warning
+     * is shown, never a guessed number presented as if it were considered advice — the identical
+     * "no seeded default" decision `farms.rest_period_days` (4e·2) already made, one item at a
+     * time instead of one farm-wide number, because a reorder point cannot honestly be a single
+     * farm-wide figure (5kg of dip and 2 tonnes of feed have nothing in common). Owner/manager-set
+     * and editable after creation — see `inventory.service.ts`'s `updateReorderPoint`.
+     */
+    reorderPoint: numeric('reorder_point', { precision: 12, scale: 2 }),
+    ...auditColumns,
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedBy: uuid('updated_by').references(() => users.id),
+  },
+  (t) => [
+    check(
+      'inventory_items_reorder_point_positive',
+      sql`${t.reorderPoint} IS NULL OR ${t.reorderPoint} > 0`,
+    ),
+  ],
+);
 
 export const inventoryLots = pgTable('inventory_lots', {
   id: primaryId(),

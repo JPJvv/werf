@@ -63,7 +63,7 @@ streams:
     auto_subscribe: true
   inventory_items:
     query: |
-      SELECT category, created_at, created_by, deleted_at, enterprise_id, farm_id, id, name, unit, updated_at, updated_by FROM inventory_items
+      SELECT category, created_at, created_by, deleted_at, enterprise_id, farm_id, id, name, reorder_point, unit, updated_at, updated_by FROM inventory_items
       WHERE farm_id IN (SELECT farm_id FROM farm_users WHERE user_id = auth.user_id() AND deleted_at IS NULL AND accepted_at IS NOT NULL)
     auto_subscribe: true
   inventory_lots:

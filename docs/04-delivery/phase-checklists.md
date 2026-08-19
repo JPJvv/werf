@@ -1916,16 +1916,38 @@ Grazing, feed & inventory — the one slice with real new schema
   ⚠️ **Compliance scope note — the spray write path is touched, not re-opened.** FR-204's own PHI
   logic is untouched; `inventoryLotId` is a plain, unregulated reference validated the same way
   every other FK on this event already is. Flagged out loud per CLAUDE.md's rule (compliance
-  pass is owner-triggered, never spawned unprompted) — this slice is not to be called
-  merge-ready until JP asks for a `compliance-checker` pass and it clears.
+  pass is owner-triggered, never spawned unprompted).
+  ✅ **`compliance-checker` pass CLEARED (29th session, JP-requested), scope `d331a2c..HEAD`
+  (4e·1 projection + 4e·2 + 4e·4 together — the range since the prior pass) — no SEV-1/SEV-2.**
+  Confirmed by re-deriving from the code, not from this document's own claims: `phi-guard.ts` is
+  untouched in the range; `assertOwnedReferences` genuinely rejects a lot on another farm on BOTH
+  the spray and fertiliser paths (integration-test-proven); the Outbox reorder holds a refused
+  lot's spray/fertiliser correctly across all four lot states (unsent, already-sent, hydrated-only,
+  refused-this-round). Two LOW found and fixed, each fail-first proven: (1) `GrazingSettings.tsx`'s
+  doc comment named a function that doesn't exist (`isRestPeriodPremature`, never built — the real
+  name is `restPeriodWarning`); fixed by correcting the reference. (2) `MoveAnimalsScreen.tsx`
+  gated its destination rest-period warning on "a destination is named" alone, unlike
+  `MoveMobScreen.tsx`, which gates on `wouldMove` — naming a resting camp before (or without)
+  selecting any animal that would actually go there still rendered the warning for a move that
+  cannot happen. The obvious reproduction ("select animals already standing in the destination")
+  turned out to be structurally impossible to construct — a camp holding a live selected occupant
+  is definitionally `grazing`, never `resting`, so `restPeriodWarning` can't fire there regardless
+  of the gate; the real, reproducible case is naming a resting destination with ZERO animals
+  selected yet. Fixed by gating `destinationStatus` on `wouldMove.length > 0`, matching
+  `MoveMobScreen.tsx`. One LOW disclosed, not actioned: the server enforces lot OWNERSHIP but not
+  lot CATEGORY, so a crafted request could attach a feed lot's id to a spray event — no
+  tenancy/compliance consequence (still farm-owned either way), category matching is a client-side
+  UX filter only. **4e·4 is now merge-ready.**
   ⭐ Also closed a PRE-EXISTING a11y gap while touching these two screens: `e2e/a11y.spec.ts`'s
   `CAPTURE_SCREENS` list had `/crops/harvest` (4d) but never `/crops/spray` or `/crops/fertilise`
   (4b/4c) — the identical "missing from the list, not from the code" class `/attention` once was.
   Added both; `pnpm test:e2e -- a11y` 20/20, both themes, including the new stock-lot controls.
-  `pnpm verify`: 1631/1631 unit tests passing — 1622 in the combined run; 2 suites
+  `pnpm verify` (28th session): 1631/1631 unit tests passing — 1622 in the combined run; 2 suites
   (`animals.integration.test.ts`, `theft.integration.test.ts` — untouched by this slice) hit a
   transient Docker testcontainer health-check timeout in that run and were confirmed clean re-run
-  in isolation (9/9), no regression; lint/typecheck clean, build 7/7, 190.89 KB gz.
+  in isolation (9/9), no regression; lint/typecheck clean, build 7/7, 190.89 KB gz. `pnpm verify`
+  re-run clean after the 29th-session compliance fixes: 1632/1632 (+1), lint/typecheck clean,
+  build 7/7, 190.88 KB gz.
 □ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
   candidate Sprays/crop tile badge (see the home-metrics note below).
 □ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —

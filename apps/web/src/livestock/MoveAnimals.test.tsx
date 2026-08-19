@@ -364,4 +364,47 @@ describe('rest-period warning on the destination camp (FR-152, 4e·2)', () => {
 
     expect(screen.queryByText(/may not be fully rested yet/i)).toBeNull();
   });
+
+  it('says nothing until an animal is actually selected — naming a resting camp alone is not a move', async () => {
+    // `MoveMobScreen.tsx` gates its destination warning on `wouldMove` (nothing to warn about until
+    // there is a group to move); this screen gated only on "is a destination named", so picking a
+    // resting camp with NO animal selected yet still rendered a warning for a move that cannot
+    // happen — `wouldMove.length === 0` (blocked) but the panel showed anyway.
+    cachedSession(30);
+    const [camp1, camp4] = seedCamps('Camp 1', 'Camp 4');
+    const [animalId] = seedHerd(1, camp1!);
+    // Camp 4's own history: this animal was there once, and left 10 days ago — inside a 30-day
+    // threshold. Two moves, not one — see the earlier test in this block for why a departure needs
+    // the arrival on the log too.
+    window.localStorage.setItem(
+      MOVES_KEY,
+      JSON.stringify([
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          animalId,
+          occurredAt: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+          batchId: null,
+          toLandUnitId: camp4,
+        },
+        {
+          id: uuidv7(),
+          farmId: FARM_ID,
+          animalId,
+          occurredAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+          batchId: null,
+          toLandUnitId: camp1,
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/move');
+    render(<App />);
+
+    // No animal selected — only the destination is named.
+    await user.selectOptions(await screen.findByLabelText(/move to which camp/i), camp4!);
+
+    expect(screen.getByRole('button', { name: /move them/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByText(/may not be fully rested yet/i)).toBeNull();
+  });
 });

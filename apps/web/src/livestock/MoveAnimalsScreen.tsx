@@ -107,7 +107,10 @@ export function MoveAnimalsScreen() {
       (toMobId !== '' && a.mobId !== toMobId),
   );
   const blocked = !destinationNamed || wouldMove.length === 0;
-  const destinationStatus = toLandUnitId === '' ? undefined : grazing.get(toLandUnitId);
+  // Gated on `wouldMove`, not just `toLandUnitId !== ''` — the same "nothing to warn about until
+  // there is a group to move" rule `MoveMobScreen.tsx` follows. Naming a resting camp before (or
+  // without) selecting anyone that would actually go there is not a move to warn against yet.
+  const destinationStatus = wouldMove.length === 0 ? undefined : grazing.get(toLandUnitId);
   const destinationWarning = restPeriodWarning(destinationStatus, activeFarm.restPeriodDays);
 
   const save = async () => {

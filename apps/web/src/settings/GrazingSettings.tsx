@@ -1,7 +1,7 @@
 /**
  * Settings → Grazing (FR-152, 4e·2). The rest-period WARNING threshold — an agronomic
  * per-farm preference the owner sets, never a literal in code. See `grazing.ts`'s
- * `isRestPeriodPremature` for where this number is actually used, and `phase-checklists.md`
+ * `restPeriodWarning` for where this number is actually used, and `phase-checklists.md`
  * 4e·2 for why it lives outside `regulatory_rates` (ADR-0006's boundary between law and
  * veld-management judgement).
  *

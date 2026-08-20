@@ -36,6 +36,10 @@ import { useResidueRegister, type StoredResidueFlag } from './LocalResidueRegist
 import { useLocalResidueFlags, type LocalResidueFlag } from './residue';
 import { useConflictReviews, useMarkConflictReviewed } from './LocalConflictReviews';
 import { useAnimalLabels } from './LocalIdentifiers';
+import { usePhiRegister } from '../crops/LocalPhiRegister';
+import { useLocalPhiFlags } from '../crops/phiRegister';
+import { useEffectiveLandUnits } from '../land/LocalLand';
+import { useChemicalProducts } from '../crops/LocalChemicalProducts';
 
 /** One row as the screen renders it, whichever source it came from. */
 interface Row {
@@ -73,6 +77,19 @@ interface Row {
    * derivation says so.
    */
   readonly withinWithdrawal: boolean;
+}
+
+/** One PHI compliance row (4d·6), whichever source it came from — see `phiRegister.ts` /
+ *  `crops/harvestApi.ts`'s `PhiFlagRow` for the shared shape. `known` mirrors `Row.known` one field
+ *  up, minus the `'known'` state — a PHI race is never "known at capture" by construction. */
+interface PhiRow {
+  readonly eventId: string;
+  readonly landUnitId: string;
+  readonly harvestedOn: string;
+  readonly productId: string;
+  readonly sprayedOn: string;
+  readonly earliestHarvestDate: string;
+  readonly known: 'late' | 'unsent' | 'sent';
 }
 
 /**
@@ -129,12 +146,47 @@ export function AttentionScreen() {
   const conflicts = useConflictReviews();
   const markReviewed = useMarkConflictReviewed();
   const labels = useAnimalLabels();
+  // 4d·6's own two sources — see the module header's second finding. Not the FR-205 override path
+  // (`RecordHarvestScreen.tsx`): this is the retroactive, order-independent flag for evidence
+  // neither device could have seen at capture, never a deliberate in-the-moment human decision.
+  const phiServer = usePhiRegister();
+  const phiLocal = useLocalPhiFlags();
+  const landUnits = useEffectiveLandUnits();
+  const products = useChemicalProducts();
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState(false);
 
   if (!activeFarm) return null;
 
   const rows = new Map<string, Row>();
+
+  const landUnitCodes = new Map(landUnits.map((u) => [u.id, u.code]));
+  const productNames = new Map(products.map((p) => [p.id, p.name]));
+
+  // The device's own first, so a server row for the same event overwrites it below — the identical
+  // reasoning `rows` above uses, one food-safety register over. `known: 'sent'` vs. `'unsent'`
+  // mirrors the residue register's own distinction; a SERVER row is always the late-discovery case
+  // here, because a harvest this device could have judged for itself never reaches this register at
+  // all (`phiComplianceRegister`/`localPhiFlags` both exclude what their OWN evidence already
+  // cleared or blocked correctly at capture).
+  const phiRows = new Map<string, PhiRow>();
+  for (const flag of phiLocal) {
+    phiRows.set(flag.eventId, { ...flag, known: sent.has(flag.eventId) ? 'sent' : 'unsent' });
+  }
+  for (const flag of phiServer) {
+    phiRows.set(flag.eventId, { ...flag, known: 'late' });
+  }
+  const phiNewestFirst = [...phiRows.values()].sort((a, b) =>
+    a.harvestedOn > b.harvestedOn
+      ? -1
+      : a.harvestedOn < b.harvestedOn
+        ? 1
+        : a.eventId > b.eventId
+          ? -1
+          : a.eventId < b.eventId
+            ? 1
+            : 0,
+  );
 
   // The device's own first, so a server row for the same event overwrites it below. The server has
   // strictly more of the log — including the dose recorded on the other phone — so where the two
@@ -325,6 +377,47 @@ export function AttentionScreen() {
             </li>
           ))}
         </ul>
+      )}
+
+      {phiNewestFirst.length > 0 && (
+        <section className="mt-8" aria-labelledby="phi-register-title">
+          <h2 id="phi-register-title" className="mb-2 font-ui text-h2 text-soil-900">
+            {t('phi.sectionTitle')}
+          </h2>
+          <p className="mb-4 text-body text-soil-700">{t('phi.intro')}</p>
+          <ul aria-label={t('phi.sectionTitle')} className="flex list-none flex-col gap-4 p-0">
+            {phiNewestFirst.map((row) => (
+              <li
+                key={row.eventId}
+                className="rounded border border-soil-200 bg-sand-50 p-3 text-soil-900"
+              >
+                <p className="text-body">
+                  <span className="font-semibold">
+                    {landUnitCodes.get(row.landUnitId) ?? row.landUnitId}
+                  </span>
+                  {' · '}
+                  <span className="font-data tabular-nums">{row.harvestedOn}</span>
+                </p>
+                <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                  {t('phi.blocked')} {productNames.get(row.productId) ?? row.productId}{' '}
+                  {t('crops.harvest.blockedSprayedOn')}{' '}
+                  <span className="font-data tabular-nums">{row.sprayedOn}</span>.{' '}
+                  {t('crops.harvest.blockedEarliest')}{' '}
+                  <span className="font-data tabular-nums">{row.earliestHarvestDate}</span>.
+                </p>
+                <p className="mt-2 text-body text-soil-700">
+                  {t(
+                    row.known === 'late'
+                      ? 'phi.lateDiscovery'
+                      : row.known === 'sent'
+                        ? 'phi.sentNotFlagged'
+                        : 'phi.notSentYet',
+                  )}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <Link to="/" className="mt-6 inline-block text-body text-dam-700">

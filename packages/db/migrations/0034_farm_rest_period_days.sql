@@ -1,0 +1,2 @@
+ALTER TABLE "farms" ADD COLUMN "rest_period_days" integer;--> statement-breakpoint
+ALTER TABLE "farms" ADD CONSTRAINT "farms_rest_period_days_positive" CHECK ("farms"."rest_period_days" IS NULL OR "farms"."rest_period_days" > 0);

@@ -62,6 +62,17 @@ export const EVENT_TYPES = [
   // one next month. `land_units.boundary` is the denormalised CURRENT value of this log — the same
   // relationship `mobs.head_count` has to `tally`, and `animals.land_unit_id` has to `move`.
   'boundary_walk',
+  // A change to an inventory lot's quantity on hand, and why (Phase 4e, FR-501). Appended last
+  // for the same `ALTER TYPE … ADD VALUE` reason as the three above: stock (chemicals, fertiliser,
+  // feed, medicine) was not foreseen when the enum was created. The same relationship `tally` has
+  // to `mobs.head_count` — the quantity is a PROJECTION of this append-only log, never an edited
+  // column (`inventory_lots.quantity_on_hand`).
+  'inventory_movement',
+  // Feed put out for a camp or a mob/group (Phase 4e, FR-153). Appended last for the same
+  // `ALTER TYPE … ADD VALUE` reason as `inventory_movement` above — a feed-out is the ACT; the
+  // stock consequence is a SEPARATE `inventory_movement` a caller records independently
+  // (`recordFeedOut`, @werf/domain), never invented here.
+  'feed',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -93,6 +104,34 @@ export const FARM_SCOPED_EVENT_TYPES = [
   // than assumed. The walk names its `land_unit_id`; what it does not name is a herd, because it
   // does not concern one.
   'boundary_walk',
+  // A block carries maize this season and lucerne the next (FR-203) — the identical reasoning as
+  // `boundary_walk`, one line up, applied to what's IN the ground rather than its shape. A separate
+  // `LAND_SCOPED_EVENT_TYPES` list was considered and rejected: it would buy a second branch in
+  // `assertHerdScoped` with behaviour identical to this one, for a distinction (shape of the ground
+  // vs. what's on it) that FR-113's guard has no reason to care about.
+  'planting',
+  // FR-206: a fertiliser application is filed the identical way `planting` is, for the identical
+  // reason — a block's own `enterpriseId` (when it has one at all; the column is nullable and 4a·1
+  // never asks for it at block creation) was considered as the filing instead and rejected, because
+  // it would give `planting` and `fertiliser` two different filing strategies for the same "fact
+  // about what's in or on the ground" family depending on which one happened to be built first. One
+  // rule for the whole family, named once, here.
+  'fertiliser',
+  // FR-204/211: a spray is the same family again — see the `fertiliser` note directly above. It
+  // also carries the PHI figure the future harvest guard (4d) reads, but that guard reads a
+  // block's own spray HISTORY directly (by `land_unit_id`), never through an enterprise join, so
+  // filing under the enterprise would buy that guard nothing either.
+  'spray',
+  // FR-205/207 (4d): a harvest is the same family again — see the `fertiliser` note above. It is
+  // the ACT the PHI guard judges, the same way `spray` is the guard's EVIDENCE; both read a block's
+  // own history directly by `land_unit_id`, so both file the identical way for the identical reason.
+  'harvest',
+  // Phase 4e, FR-501: a stock movement belongs to the SHED, not a herd. A farm's chemical/
+  // fertiliser/feed/medicine lots are not owned by one enterprise — a mixed farm sprays chemicals
+  // on the crop side and doses medicine on the livestock side out of the same store room — so
+  // filing a movement under one enterprise would hide it from the other, the identical reasoning
+  // `rainfall` and `boundary_walk` already establish for a farm-level fact.
+  'inventory_movement',
 ] as const satisfies readonly EventType[];
 export type FarmScopedEventType = (typeof FARM_SCOPED_EVENT_TYPES)[number];
 

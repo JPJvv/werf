@@ -14,6 +14,8 @@ import { TagSessionScreen } from './livestock/TagSessionScreen';
 import { AddMobScreen } from './livestock/AddMobScreen';
 import { AdjustMobScreen } from './livestock/AdjustMobScreen';
 import { MoveAnimalsScreen } from './livestock/MoveAnimalsScreen';
+import { MoveMobScreen } from './livestock/MoveMobScreen';
+import { RecordFeedScreen } from './livestock/RecordFeedScreen';
 import { RecordMatingScreen } from './livestock/RecordMatingScreen';
 import { RecordPregnancyScreen } from './livestock/RecordPregnancyScreen';
 import { RecordBirthScreen } from './livestock/RecordBirthScreen';
@@ -28,13 +30,23 @@ import { ReportTheftScreen } from './livestock/ReportTheftScreen';
 import { LandScreen } from './land/LandScreen';
 import { AddLandUnitScreen } from './land/AddLandUnitScreen';
 import { WalkBoundaryScreen } from './land/WalkBoundaryScreen';
+import { SplitBlockScreen } from './land/SplitBlockScreen';
+import { RecordPlantingScreen } from './crops/RecordPlantingScreen';
+import { RecordFertiliserScreen } from './crops/RecordFertiliserScreen';
+import { RecordSprayScreen } from './crops/RecordSprayScreen';
+import { SpraysScreen } from './crops/SpraysScreen';
+import { RecordHarvestScreen } from './crops/RecordHarvestScreen';
+import { HarvestScreen } from './crops/HarvestScreen';
 import { RecordRainfallScreen } from './rainfall/RecordRainfallScreen';
+import { StockScreen } from './inventory/StockScreen';
+import { ReceiveStockScreen } from './inventory/ReceiveStockScreen';
 import { NotSentScreen } from './sync/NotSentScreen';
 import { ModulePlaceholder } from './shell/ModulePlaceholder';
 import { SettingsLayout } from './settings/SettingsLayout';
 import { AppearanceSettings } from './settings/AppearanceSettings';
 import { LanguageSettings } from './settings/LanguageSettings';
 import { FarmsSettings } from './settings/FarmsSettings';
+import { GrazingSettings } from './settings/GrazingSettings';
 import { SecuritySettings } from './settings/SecuritySettings';
 
 /**
@@ -73,6 +85,8 @@ export function App() {
                 <Route path="animals/tag" element={<TagSessionScreen />} />
                 <Route path="animals/groups/new" element={<AddMobScreen />} />
                 <Route path="animals/groups/count" element={<AdjustMobScreen />} />
+                <Route path="animals/groups/move" element={<MoveMobScreen />} />
+                <Route path="animals/feed" element={<RecordFeedScreen />} />
                 <Route path="animals/move" element={<MoveAnimalsScreen />} />
                 <Route path="animals/mating" element={<RecordMatingScreen />} />
                 <Route path="animals/pregnancy" element={<RecordPregnancyScreen />} />
@@ -91,8 +105,25 @@ export function App() {
                 {/* Walking a fence with a GPS (FR-150). `?camp=<id>` when reached from one row of
                     the land list; the screen still lets the farmer change which one. */}
                 <Route path="land/walk" element={<WalkBoundaryScreen />} />
+                <Route path="land/split" element={<SplitBlockScreen />} />
+                <Route path="crops/plant" element={<RecordPlantingScreen />} />
+                <Route path="crops/fertilise" element={<RecordFertiliserScreen />} />
+                <Route path="crops/spray" element={<RecordSprayScreen />} />
+                {/* The home grid's "Sprays" tile (`home/tiles.ts`) — registered before the
+                    `:module` catch-all so it stops falling through to `ModulePlaceholder`. */}
+                <Route path="sprays" element={<SpraysScreen />} />
+                <Route path="crops/harvest" element={<RecordHarvestScreen />} />
+                {/* The home grid's "harvest" tile (`home/tiles.ts`, `to: '/harvest'`) — registered
+                    before the `:module` catch-all for the identical reason `sprays` is, one line
+                    up (4d — it was a placeholder until this slice). */}
+                <Route path="harvest" element={<HarvestScreen />} />
                 {/* Rainfall is farm-level, not livestock: both enterprises read it (FR-213). */}
                 <Route path="rainfall" element={<RecordRainfallScreen />} />
+                {/* Inventory is farm-level, not enterprise-level (Phase 4e, FR-501): a mixed farm's
+                    chemical/fertiliser/feed/medicine stock is one shed, not two — see
+                    `HomeScreen.tsx`'s secondary link, the same posture rainfall's link takes. */}
+                <Route path="inventory" element={<StockScreen />} />
+                <Route path="inventory/receive" element={<ReceiveStockScreen />} />
                 {/* Reached from the sync strip when the server has refused something (FR-009). */}
                 <Route path="not-sent" element={<NotSentScreen />} />
                 {/* The residue register (FR-131). Farm-level, not livestock-level: it answers for
@@ -104,6 +135,7 @@ export function App() {
                   <Route path="appearance" element={<AppearanceSettings />} />
                   <Route path="language" element={<LanguageSettings />} />
                   <Route path="farms" element={<FarmsSettings />} />
+                  <Route path="grazing" element={<GrazingSettings />} />
                   <Route path="security" element={<SecuritySettings />} />
                 </Route>
                 <Route path=":module" element={<ModulePlaceholder />} />

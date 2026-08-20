@@ -499,6 +499,263 @@ export const boundaryWalkPayloadSchema = z.object({
 });
 export type BoundaryWalkPayload = z.infer<typeof boundaryWalkPayloadSchema>;
 
+/**
+ * Why an inventory lot's quantity on hand changed (Phase 4e, FR-501). The identical shape as
+ * `tallyPayloadSchema`, one field over: `received` and `consumed` carry a signed `delta` because
+ * deltas COMPOSE (two people recording stock use on two phones in a dead zone must land on the
+ * same total), and `counted` is absolute and RESETS the running total, because "I counted the
+ * shelf and there are 40kg left" supersedes whatever the log believed.
+ *
+ * ⛔ Unlike a tally, a `consumed` movement that would take the quantity below zero is NEVER
+ * refused (`recordInventoryMovement`, @werf/domain): a stock figure that is wrong is not a reason
+ * to block the capture of a real farm event (a spray that happened), it is a reason to recount.
+ * The projection floors at zero and the capture reports the shortfall for the caller to surface.
+ */
+export const INVENTORY_MOVEMENT_INCREASES = ['received'] as const;
+export const INVENTORY_MOVEMENT_DECREASES = ['consumed'] as const;
+export const INVENTORY_MOVEMENT_REASONS = [
+  ...INVENTORY_MOVEMENT_INCREASES,
+  ...INVENTORY_MOVEMENT_DECREASES,
+  'counted',
+] as const;
+export const inventoryMovementReasonSchema = z.enum(INVENTORY_MOVEMENT_REASONS);
+export type InventoryMovementReason = z.infer<typeof inventoryMovementReasonSchema>;
+
+export const inventoryMovementPayloadSchema = z
+  .object({
+    reason: inventoryMovementReasonSchema,
+    /** Signed change in quantity. Present for every reason EXCEPT `counted`; never zero. */
+    delta: z.number().finite().optional(),
+    /** The quantity physically counted. Present ONLY for `counted`; the projection resets to it. */
+    countedQuantity: z.number().nonnegative().finite().optional(),
+    /** Money as integer cents, never a float. What the delivery cost — only a receipt carries one. */
+    unitCostCents: moneySchema.nonnegative().optional(),
+  })
+  .superRefine((payload, ctx) => {
+    const isCounted = payload.reason === 'counted';
+    if (isCounted) {
+      if (payload.countedQuantity === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['countedQuantity'],
+          message: 'A stock count must carry the quantity actually counted',
+        });
+      }
+      if (payload.delta !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['delta'],
+          message: 'A stock count is absolute and carries no delta',
+        });
+      }
+      if (payload.unitCostCents !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['unitCostCents'],
+          message: 'Only a receipt carries a cost',
+        });
+      }
+      return;
+    }
+    if (payload.countedQuantity !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['countedQuantity'],
+        message: 'Only a stock count carries a counted quantity',
+      });
+    }
+    if (payload.delta === undefined || payload.delta === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: 'A movement must change the quantity on hand',
+      });
+      return;
+    }
+    if (payload.reason !== 'received' && payload.unitCostCents !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['unitCostCents'],
+        message: 'Only a receipt carries a cost',
+      });
+    }
+    const shouldIncrease = (INVENTORY_MOVEMENT_INCREASES as readonly string[]).includes(
+      payload.reason,
+    );
+    const shouldDecrease = (INVENTORY_MOVEMENT_DECREASES as readonly string[]).includes(
+      payload.reason,
+    );
+    if (shouldIncrease && !(payload.delta > 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: `A '${payload.reason}' movement must increase the quantity on hand`,
+      });
+    }
+    if (shouldDecrease && !(payload.delta < 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['delta'],
+        message: `A '${payload.reason}' movement must decrease the quantity on hand`,
+      });
+    }
+  });
+export type InventoryMovementPayload = z.infer<typeof inventoryMovementPayloadSchema>;
+
+/**
+ * Feed put out for a camp or a mob/group (Phase 4e, FR-153). `landUnitId`/`mobId` on the envelope
+ * name WHERE it went — at least one is required, enforced at the domain capture boundary
+ * (`recordFeedOut`, @werf/domain), never in this shape.
+ *
+ * `inventoryLotId` (envelope) is REQUIRED here, unlike `sprayPayloadSchema`'s optional reference:
+ * "deduct from feed inventory" is the reason this event type exists at all, not an optional extra.
+ * The unit is read from the lot's own item (`inventory_items.unit`), so `quantity` alone is enough
+ * — the identical shape `InventoryMovementInput.quantity` already takes.
+ *
+ * There is no farmer-typed cost anywhere in this payload. "Cost to enterprise" is a DERIVED read —
+ * the linked lot's own weighted-average `received` cost × quantity (`estimatedUnitCostCents`,
+ * @werf/domain) — never a stored figure two devices could disagree about, the same "an edited
+ * field does not compose" discipline every aggregate in this codebase already follows.
+ */
+export const feedPayloadSchema = z.object({
+  quantity: z.number().positive().finite(),
+});
+export type FeedPayload = z.infer<typeof feedPayloadSchema>;
+
+/**
+ * A crop planted in a block (FR-203): what, from what seed, and how thick. `landUnitId` is not part
+ * of this payload — like every event, it is a field on the envelope (`eventObjectSchema`), never
+ * duplicated into the type-specific shape.
+ *
+ * Every field but `crop` is optional: a farmer noting "planted maize in B12 today" while walking the
+ * row knows what and where before they know the cultivar or the seed source, and refusing the
+ * capture until all five are typed would cost the record, not just the extra detail.
+ */
+export const plantingPayloadSchema = z.object({
+  crop: z.string().min(1),
+  cultivar: z.string().min(1).optional(),
+  /** Units vary too widely across crops (plants/ha for an orchard, kg/ha for a broadcast seed rate)
+   *  for a closed set — the same reasoning FR-201 applied to `soilType`. */
+  density: z
+    .object({
+      value: z.number().positive().finite(),
+      unit: z.string().min(1),
+    })
+    .optional(),
+  seedSource: z.string().min(1).optional(),
+  /** A farming estimate, not a computed one — no regulated figure resolves it (ADR-0005 does not
+   *  apply here). */
+  expectedHarvestDate: dateSchema.optional(),
+});
+export type PlantingPayload = z.infer<typeof plantingPayloadSchema>;
+
+/**
+ * A fertiliser application (FR-206), including fertigation. `method` is not optional — it is the
+ * field FR-206 itself names as the thing that distinguishes fertigation (through the irrigation
+ * system) from broadcast/band (spread or placed on the ground), and a record that does not say
+ * which is not the record FR-206 asks for. `rate` mirrors `planting.density`'s generic
+ * `{ value, unit }` shape for the identical reason: kg/ha for a broadcast application and L/ha for
+ * a fertigation run are both real, and a closed unit set would refuse one of them.
+ */
+export const fertiliserPayloadSchema = z.object({
+  product: z.string().min(1),
+  method: z.enum(['broadcast', 'band', 'fertigation', 'foliar']),
+  rate: z
+    .object({
+      value: z.number().positive().finite(),
+      unit: z.string().min(1),
+    })
+    .optional(),
+  operator: z.string().min(1).optional(),
+});
+export type FertiliserPayload = z.infer<typeof fertiliserPayloadSchema>;
+
+/**
+ * A spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED (legal-compliance.md § 4,
+ * .claude/rules/domain.md). The registered product, active ingredients, rate, water volume,
+ * operator, equipment and weather at application, plus the pre-harvest interval computed AT
+ * CAPTURE and stored (ADR-0005) — the exact discipline `dosingFields` below already proves for a
+ * treatment's withdrawal, one field over.
+ *
+ * `productId` is stored, not a bare PHI number: the server resolves BOTH `activeIngredients` and
+ * `phiDays` from the registered `chemical_products` row in force on `sprayedOn` and writes them
+ * here, so a client can never claim a shorter PHI, or a different active ingredient, by relabelling
+ * (the same property `treatmentPayloadSchema`'s `product` name-snapshot protects, applied here to
+ * the FK itself so 4c·4's report and 4d's future guard can both resolve back to the exact
+ * registration version that applied).
+ *
+ * `phiDays`/`earliestHarvestDate` are OPTIONAL and OMITTED — never zero — when the resolved
+ * product carries no PHI on record. A null `phi_days` and a zero-day PHI are different facts
+ * (`chemical_products.ts`'s module note), and the same "omit, don't zero" discipline
+ * `attachDosing` already applies to a zero-withdrawal vaccine.
+ *
+ * `phiOverride` mirrors `harvestPayloadSchema`'s field of the same name exactly, one guard over
+ * (`phi-guard.ts`'s `sprayPhiGuardFor`, legal-compliance.md § 4.3's spray-capture block): present
+ * only when the spray-capture guard was blocked and the farmer overrode it. `by` is the acting
+ * user id, resolved server-side from the session — never client input.
+ */
+export const sprayPayloadSchema = z.object({
+  productId: uuidSchema,
+  activeIngredients: z.array(z.string().min(1)).min(1),
+  /** The farm-local day the spray was applied (YYYY-MM-DD) — the base for the PHI arithmetic, the
+   *  same role `administeredOn` plays for a treatment (`dosingFields` below). */
+  sprayedOn: dateSchema,
+  rateLPerHa: z.number().positive().finite().optional(),
+  waterLPerHa: z.number().positive().finite().optional(),
+  operator: z.string().min(1).optional(),
+  equipment: z.string().min(1).optional(),
+  windKph: z.number().nonnegative().finite().optional(),
+  tempC: z.number().finite().optional(),
+  targetPest: z.string().min(1).optional(),
+  /** Pre-harvest interval in whole days, resolved server-side. Absent = the registered product
+   *  carries no PHI on record — never stored as 0. */
+  phiDays: z.number().int().nonnegative().optional(),
+  /** `sprayedOn` + `phiDays`, computed server-side and stored — never recomputed on read. Absent
+   *  exactly when `phiDays` is absent. */
+  earliestHarvestDate: dateSchema.optional(),
+  phiOverride: z
+    .object({
+      reason: z.string().min(1),
+      by: uuidSchema.optional(),
+    })
+    .optional(),
+});
+export type SprayPayload = z.infer<typeof sprayPayloadSchema>;
+
+/**
+ * A harvest (FR-207) — COMPLIANCE-GATED (legal-compliance.md § 4.3, US-030): 4d's PHI guard blocks
+ * this at capture unless `phiOverride` is present. `quantity`/`unit` mirror `planting.density`'s
+ * generic `{ value, unit }` shape one field flatter (a harvest has no second numeric field to pair a
+ * unit with), because the unit varies by crop (kg for grain, bins for grapes, bags for potatoes) the
+ * same way a fertiliser rate's does.
+ *
+ * `phiOverride.by` is the acting user id, resolved server-side from the authenticated session —
+ * never client input (the same property `recordHarvestRequestSchema`'s own enumerated shape
+ * protects, one layer out). Its presence is what distinguishes a deliberate, audited override
+ * (FR-205's own words: "a written reason... is audited") from an ordinary harvest that happened to
+ * clear its PHI on its own.
+ */
+export const harvestPayloadSchema = z.object({
+  /** The farm-local day harvested (YYYY-MM-DD) — the day 4d's PHI guard judges, the same role
+   *  `sprayedOn` plays for a spray, one field over. */
+  harvestedOn: dateSchema,
+  quantity: z.number().positive().finite(),
+  unit: z.string().min(1),
+  grade: z.string().min(1).optional(),
+  destination: z.string().min(1).optional(),
+  phiOverride: z
+    .object({
+      reason: z.string().min(1),
+      /** Optional here for the identical reason `createdBy` is never client-set anywhere in this
+       *  codebase: a LOCAL, not-yet-sent capture has a reason (the farmer just typed it) but no
+       *  authoritative acting user to give — the server injects it from the session before this
+       *  event is ever inserted (`crops.service.ts`). Present, always, on anything actually stored. */
+      by: uuidSchema.optional(),
+    })
+    .optional(),
+});
+export type HarvestPayload = z.infer<typeof harvestPayloadSchema>;
+
 /** A type whose payload is not yet pinned down: an open record until its phase defines it. */
 const openPayloadSchema = z.record(z.string(), z.unknown());
 
@@ -518,6 +775,12 @@ const CONCRETE_PAYLOADS = {
   rainfall: rainfallPayloadSchema,
   tally: tallyPayloadSchema,
   boundary_walk: boundaryWalkPayloadSchema,
+  planting: plantingPayloadSchema,
+  fertiliser: fertiliserPayloadSchema,
+  spray: sprayPayloadSchema,
+  harvest: harvestPayloadSchema,
+  inventory_movement: inventoryMovementPayloadSchema,
+  feed: feedPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**
@@ -555,6 +818,8 @@ const eventObjectSchema = z.object({
   employeeId: uuidSchema.nullable(),
   /** Groups one action (a dosing run, a weigh session) across many animals (FR-112). */
   batchId: uuidSchema.nullable(),
+  /** The inventory lot an `inventory_movement` concerns (Phase 4e, FR-501). Null on every other type. */
+  inventoryLotId: uuidSchema.nullable(),
   payload: z.record(z.string(), z.unknown()),
   /** GPS where it happened. Crosses the wire as GeoJSON, never PostGIS (like land boundaries). */
   locationGeojson: geoJsonStringSchema.nullable(),
@@ -589,6 +854,7 @@ export const newEventSchema = eventObjectSchema
     landUnitId: eventObjectSchema.shape.landUnitId.default(null),
     employeeId: eventObjectSchema.shape.employeeId.default(null),
     batchId: eventObjectSchema.shape.batchId.default(null),
+    inventoryLotId: eventObjectSchema.shape.inventoryLotId.default(null),
     locationGeojson: eventObjectSchema.shape.locationGeojson.default(null),
     notes: eventObjectSchema.shape.notes.default(null),
     createdBy: eventObjectSchema.shape.createdBy.default(null),

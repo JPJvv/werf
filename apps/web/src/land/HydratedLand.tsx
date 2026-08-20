@@ -25,6 +25,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createHydratedTableStore, type HydratedTableStore } from '@werf/sync';
+import { isIrrigationType, type IrrigationType } from '@werf/core';
 import type { WalkFix } from '@werf/domain';
 import { useAuth } from '../auth/AuthProvider';
 import { getLocalDatabase } from '../sync/local-db';
@@ -71,6 +72,12 @@ function mapHydratedLandUnit(row: Record<string, unknown>): StoredLandUnit | nul
     typeof row[key] === 'string' ? (row[key] as string) : null;
   const num = (key: string): number | null =>
     typeof row[key] === 'number' ? (row[key] as number) : null;
+  // Same tolerance as `kind`, made explicit: a value outside the closed set (a future irrigation
+  // type this build does not know, or corrupt data) is dropped rather than lying about its type.
+  const irrigation = (key: string): IrrigationType | null => {
+    const value = row[key];
+    return typeof value === 'string' && isIrrigationType(value) ? value : null;
+  };
   return {
     id,
     farmId,
@@ -83,7 +90,7 @@ function mapHydratedLandUnit(row: Record<string, unknown>): StoredLandUnit | nul
     hectares: num('hectares'),
     carryingCapacityLsu: num('carrying_capacity_lsu'),
     soilType: str('soil_type'),
-    irrigation: str('irrigation'),
+    irrigation: irrigation('irrigation'),
     attributes,
   };
 }

@@ -12,7 +12,7 @@ import { inflateSync } from 'node:zlib';
 import type { input as ZodInput } from 'zod';
 import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   animalIdentifiers,
   animals,
@@ -25,6 +25,8 @@ import {
   enterprises,
   events,
   farmUsers,
+  inventoryItems,
+  inventoryLots,
   landUnits,
   mobs,
   speciesGestation,
@@ -286,6 +288,30 @@ describe('weight capture (FR-140)', () => {
       .values({ farmId, name: 'Flock A', species: 'sheep', headCount: 300, initialHeadCount: 300 })
       .returning();
     return row!.id;
+  }
+
+  /** A camp (land unit) on the farm, for the movement paths. */
+  async function aCamp(farmId: string, code: string): Promise<string> {
+    const [row] = await elevated.db
+      .insert(landUnits)
+      .values({ farmId, kind: 'camp', code })
+      .returning();
+    return row!.id;
+  }
+
+  /** A feed lot this tenant's own catalogue already holds (Phase 4e, FR-153) — created directly
+   *  through Drizzle, the identical shortcut `crops.integration.test.ts`'s own `anInventoryLot`
+   *  takes, since this describe wires `LivestockService` alone, not `InventoryService`. */
+  async function aFeedLot(farmId: string): Promise<string> {
+    const [item] = await elevated.db
+      .insert(inventoryItems)
+      .values({ farmId, category: 'feed', name: 'Lucerne hay', unit: 'kg' })
+      .returning();
+    const [lot] = await elevated.db
+      .insert(inventoryLots)
+      .values({ farmId, inventoryItemId: item!.id })
+      .returning();
+    return lot!.id;
   }
 
   /** A ZA veterinary product — reference data, written by the elevated admin path, never a farmer.
@@ -1307,14 +1333,6 @@ describe('weight capture (FR-140)', () => {
         ...over,
       });
 
-    async function aCamp(farmId: string, code: string): Promise<string> {
-      const [row] = await elevated.db
-        .insert(landUnits)
-        .values({ farmId, kind: 'camp', code })
-        .returning();
-      return row!.id;
-    }
-
     it('keeps the walk as history AND updates where the animal is now', async () => {
       // Two different facts. The event is how it got there; the animal row is only where it is.
       const a = await tenant('Alpha');
@@ -1518,6 +1536,375 @@ describe('weight capture (FR-140)', () => {
       expect(again.id).toBe(first.id);
       const rows = await app.asUser(a.userId, (tx) =>
         tx.select().from(events).where(eq(events.type, 'move')),
+      );
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  // ── Mob-level movement (FR-151) ─────────────────────────────────────────────────────
+  describe('mob movement (FR-151)', () => {
+    const mobMoveBody = (
+      over: Partial<ZodInput<typeof schemas.recordMobMoveRequestSchema>> & {
+        farmId: string;
+        mobId: string;
+      },
+    ): schemas.RecordMobMoveRequest =>
+      schemas.recordMobMoveRequestSchema.parse({
+        id: uuidv7(),
+        occurredAt: '2026-04-02T06:00:00.000Z',
+        toLandUnitId: null,
+        ...over,
+      });
+
+    it('keeps the walk as history AND updates where the mob is now', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const from = await aCamp(a.farmId, 'Camp 1');
+      const to = await aCamp(a.farmId, 'Camp 4');
+      await elevated.db.update(mobs).set({ landUnitId: from }).where(eq(mobs.id, mobId));
+
+      const moved = await service.recordMobMove(
+        a.userId,
+        mobMoveBody({ farmId: a.farmId, mobId, toLandUnitId: to }),
+      );
+
+      expect(moved.type).toBe('move');
+      expect(moved.animalId).toBeNull();
+      expect(moved.mobId).toBe(mobId);
+      expect(moved.payload).toMatchObject({
+        fromLandUnitId: from,
+        toLandUnitId: to,
+        fromMobId: mobId,
+        toMobId: mobId,
+      });
+      expect(moved.landUnitId).toBe(to);
+
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(mobs).where(eq(mobs.id, mobId)),
+      );
+      expect(now!.landUnitId).toBe(to);
+    });
+
+    it('does not corrupt or get corrupted by an individual animal transferring into the same mob', async () => {
+      // ⭐ The structural risk 4e·1 named: an animal move INTO this mob also stamps the event's own
+      // `mob_id` to the destination. A mob-position read that scoped on `mobId` alone would read that
+      // transfer as the WHOLE FLOCK relocating. `mobPositionBefore`'s `animalId IS NULL` filter is
+      // what keeps the two apart.
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const home = await aCamp(a.farmId, 'Home camp');
+      const farCamp = await aCamp(a.farmId, 'Far camp');
+      await elevated.db.update(mobs).set({ landUnitId: home }).where(eq(mobs.id, mobId));
+      const animalId = await anAnimal(a.farmId);
+
+      // An individual animal transfers INTO the mob — this stamps a `move` event with
+      // `mob_id = mobId`, `animal_id = animalId`, `land_unit_id = farCamp`.
+      await service.recordMove(
+        a.userId,
+        schemas.recordMoveRequestSchema.parse({
+          id: uuidv7(),
+          farmId: a.farmId,
+          animalId,
+          occurredAt: '2026-04-03T06:00:00.000Z',
+          toMobId: mobId,
+        }),
+      );
+
+      // The mob's own denormalised camp must be untouched by that animal-level event.
+      const [afterAnimalMove] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(mobs).where(eq(mobs.id, mobId)),
+      );
+      expect(afterAnimalMove!.landUnitId).toBe(home);
+
+      // And the mob's own move records the TRUE prior camp (home), not the animal event's land unit.
+      const moved = await service.recordMobMove(
+        a.userId,
+        mobMoveBody({ farmId: a.farmId, mobId, toLandUnitId: farCamp }),
+      );
+      expect(moved.payload).toMatchObject({ fromLandUnitId: home, toLandUnitId: farCamp });
+    });
+
+    it('takes a mob OFF a mapped camp when null is sent, which is a real destination', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      await elevated.db.update(mobs).set({ landUnitId: camp }).where(eq(mobs.id, mobId));
+
+      await service.recordMobMove(a.userId, mobMoveBody({ farmId: a.farmId, mobId }));
+
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(mobs).where(eq(mobs.id, mobId)),
+      );
+      expect(now!.landUnitId).toBeNull();
+    });
+
+    it('⭐ a BACK-DATED mob move records where the mob actually was, and does not walk it backwards', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const home = await aCamp(a.farmId, 'Home camp');
+      const dipCamp = await aCamp(a.farmId, 'Dip camp');
+      const farCamp = await aCamp(a.farmId, 'Far camp');
+      await elevated.db.update(mobs).set({ landUnitId: home }).where(eq(mobs.id, mobId));
+
+      await service.recordMobMove(
+        a.userId,
+        mobMoveBody({
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-04-09T06:00:00.000Z',
+          toLandUnitId: farCamp,
+        }),
+      );
+      const backDated = await service.recordMobMove(
+        a.userId,
+        mobMoveBody({
+          farmId: a.farmId,
+          mobId,
+          occurredAt: '2026-04-02T06:00:00.000Z',
+          toLandUnitId: dipCamp,
+        }),
+      );
+
+      expect(backDated.payload).toMatchObject({ fromLandUnitId: home, toLandUnitId: dipCamp });
+      const [now] = await app.asUser(a.userId, (tx) =>
+        tx.select().from(mobs).where(eq(mobs.id, mobId)),
+      );
+      expect(now!.landUnitId).toBe(farCamp);
+    });
+
+    it('refuses a move that leaves the mob in the same camp', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      await elevated.db.update(mobs).set({ landUnitId: camp }).where(eq(mobs.id, mobId));
+
+      await expect(
+        service.recordMobMove(
+          a.userId,
+          mobMoveBody({ farmId: a.farmId, mobId, toLandUnitId: camp }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses to walk a mob into a neighbour’s camp', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const mobId = await aMob(a.farmId);
+      const theirs = await aCamp(b.farmId, 'Camp 9');
+
+      await expect(
+        service.recordMobMove(
+          a.userId,
+          mobMoveBody({ farmId: a.farmId, mobId, toLandUnitId: theirs }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('404s a mob on another farm rather than moving it', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const theirMob = await aMob(b.farmId);
+      const to = await aCamp(a.farmId, 'Camp 4');
+
+      await expect(
+        service.recordMobMove(
+          a.userId,
+          mobMoveBody({ farmId: a.farmId, mobId: theirMob, toLandUnitId: to }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('is idempotent on the client id even though the first move changed what it validates', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const to = await aCamp(a.farmId, 'Camp 4');
+      const body = mobMoveBody({ farmId: a.farmId, mobId, toLandUnitId: to });
+
+      const first = await service.recordMobMove(a.userId, body);
+      const again = await service.recordMobMove(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) =>
+        tx
+          .select()
+          .from(events)
+          .where(and(eq(events.type, 'move'), eq(events.mobId, mobId), isNull(events.animalId))),
+      );
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  // ── Feed capture (Phase 4e, FR-153) ─────────────────────────────────────────────────
+  describe('feed capture (FR-153)', () => {
+    const feedBody = (
+      over: Partial<ZodInput<typeof schemas.recordFeedRequestSchema>> & {
+        farmId: string;
+        inventoryLotId: string;
+      },
+    ): schemas.RecordFeedRequest =>
+      schemas.recordFeedRequestSchema.parse({
+        id: uuidv7(),
+        occurredAt: '2026-04-02T06:00:00.000Z',
+        quantity: 12,
+        ...over,
+      });
+
+    it('derives the camp and enterprise from the MOB, ignoring whatever the client sends', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const mobId = await aMob(a.farmId);
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      const decoyCamp = await aCamp(a.farmId, 'Camp 9');
+      const [decoyHerd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha cattle', type: 'beef_cattle' })
+        .returning();
+      await elevated.db
+        .update(mobs)
+        .set({ landUnitId: camp, enterpriseId: herd!.id })
+        .where(eq(mobs.id, mobId));
+      const lotId = await aFeedLot(a.farmId);
+
+      const fed = await service.recordFeed(
+        a.userId,
+        feedBody({
+          farmId: a.farmId,
+          mobId,
+          inventoryLotId: lotId,
+          // A decoy camp/enterprise the client sends — both must be IGNORED in favour of the
+          // mob's own row.
+          landUnitId: decoyCamp,
+          enterpriseId: decoyHerd!.id,
+        }),
+      );
+
+      expect(fed.type).toBe('feed');
+      expect(fed.mobId).toBe(mobId);
+      expect(fed.landUnitId).toBe(camp);
+      expect(fed.enterpriseId).toBe(herd!.id);
+      expect(fed.inventoryLotId).toBe(lotId);
+      expect(fed.payload).toMatchObject({ quantity: 12 });
+    });
+
+    it('records a camp-only feed-out with the client-supplied enterprise', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      const lotId = await aFeedLot(a.farmId);
+
+      const fed = await service.recordFeed(
+        a.userId,
+        feedBody({
+          farmId: a.farmId,
+          landUnitId: camp,
+          enterpriseId: herd!.id,
+          inventoryLotId: lotId,
+        }),
+      );
+
+      expect(fed.mobId).toBeNull();
+      expect(fed.landUnitId).toBe(camp);
+      expect(fed.enterpriseId).toBe(herd!.id);
+    });
+
+    it('refuses a feed-out naming neither a camp nor a group', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, enterpriseId: herd!.id, inventoryLotId: lotId }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses a camp-only feed-out with no enterprise (FR-113) rather than filing it unherded', async () => {
+      const a = await tenant('Alpha');
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, landUnitId: camp, inventoryLotId: lotId }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('404s a group on another farm rather than feeding it', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const theirMob = await aMob(b.farmId);
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, mobId: theirMob, inventoryLotId: lotId }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('404s a camp on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const theirCamp = await aCamp(b.farmId, 'Camp 9');
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({
+            farmId: a.farmId,
+            landUnitId: theirCamp,
+            enterpriseId: herd!.id,
+            inventoryLotId: lotId,
+          }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('404s a feed lot on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const mobId = await aMob(a.farmId);
+      const theirLot = await aFeedLot(b.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, mobId, inventoryLotId: theirLot }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('is idempotent on the client id', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const lotId = await aFeedLot(a.farmId);
+      const body = feedBody({ farmId: a.farmId, mobId, inventoryLotId: lotId });
+
+      const first = await service.recordFeed(a.userId, body);
+      const again = await service.recordFeed(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.type, 'feed')),
       );
       expect(rows).toHaveLength(1);
     });
@@ -4099,6 +4486,52 @@ describe('weight capture (FR-140)', () => {
       // BOTH routes, in occurrence order.
       expect(entry!.treatments.map((t) => t.kind)).toEqual(['treatment', 'dip']);
       expect(entry!.treatments.every((t) => t.product.length > 0)).toBe(true);
+    });
+
+    it('⭐ carries a WHOLE-FLOCK WALK (FR-151) — an animal kept only WITH its mob is not "never moved"', async () => {
+      // The same gap the mob-dose reconstruction above already closed once, reopened by
+      // `recordMobMove` (4e·1): a mob-level move stores `animal_id = NULL`, so an animal walked
+      // only with its flock — never individually — would print "Movement history: None recorded"
+      // in the one document meant to show continuous possession (legal-compliance.md § 3.2).
+      const a = await tenant('Alpha');
+      const { animalId } = await anAnimalWithTrail(a.farmId);
+      const [flock] = await elevated.db
+        .insert(mobs)
+        .values({ farmId: a.farmId, name: 'Home flock', species: 'cattle' })
+        .returning();
+      const [home] = await elevated.db
+        .insert(landUnits)
+        .values({ farmId: a.farmId, kind: 'camp', code: 'HOME' })
+        .returning();
+      const [noord] = await elevated.db
+        .insert(landUnits)
+        .values({ farmId: a.farmId, kind: 'camp', code: 'NOORD' })
+        .returning();
+      await elevated.db.update(animals).set({ mobId: flock!.id }).where(eq(animals.id, animalId));
+      await elevated.db.update(mobs).set({ landUnitId: home!.id }).where(eq(mobs.id, flock!.id));
+
+      // The animal is never walked individually — only its whole flock is, and only via the new
+      // mob-move capture.
+      await service.recordMobMove(
+        a.userId,
+        schemas.recordMobMoveRequestSchema.parse({
+          id: uuidv7(),
+          farmId: a.farmId,
+          mobId: flock!.id,
+          occurredAt: '2026-07-14T06:00:00.000Z',
+          toLandUnitId: noord!.id,
+        }),
+      );
+
+      const incident = await service.createTheftIncident(
+        a.userId,
+        theftIncidentBody({ farmId: a.farmId, headCount: 1, animalIds: [animalId] }),
+      );
+      const pack = await service.buildEvidencePack(a.userId, incident.id);
+      const [entry] = pack.animals;
+
+      expect(entry!.movements).toHaveLength(1);
+      expect(entry!.movements[0]).toMatchObject({ from: 'HOME', to: 'NOORD' });
     });
 
     it('⭐ keeps a RETIRED identifier, flagged — it is the number the animal was wearing', async () => {

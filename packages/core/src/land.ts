@@ -15,3 +15,24 @@ export type LandUnitKind = (typeof LAND_UNIT_KINDS)[number];
 export function isLandUnitKind(value: string): value is LandUnitKind {
   return (LAND_UNIT_KINDS as readonly string[]).includes(value);
 }
+
+/**
+ * How a block is watered (FR-201). A closed set, not free text: a gloved farmer taps a choice
+ * rather than typing one, and a fixed vocabulary is what makes "irrigated blocks" a countable,
+ * reportable fact later. Stored in the same `irrigation` `text` column `soil_type` uses — this is
+ * an application-level closed set, not a Postgres enum type, so it carries no migration.
+ */
+export const IRRIGATION_TYPES = [
+  'dryland',
+  'flood',
+  'drip',
+  'micro',
+  'sprinkler',
+  'pivot',
+] as const;
+
+export type IrrigationType = (typeof IRRIGATION_TYPES)[number];
+
+export function isIrrigationType(value: string): value is IrrigationType {
+  return (IRRIGATION_TYPES as readonly string[]).includes(value);
+}

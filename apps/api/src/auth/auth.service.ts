@@ -442,6 +442,7 @@ export class AuthService {
           name: farms.name,
           enterpriseTypes: farms.enterpriseTypes,
           eventRetentionMonths: farms.eventRetentionMonths,
+          restPeriodDays: farms.restPeriodDays,
           role: farmUsers.role,
         })
         .from(farmUsers)

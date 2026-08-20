@@ -176,4 +176,12 @@ export const authApi = {
     accessToken: string,
     input: schemas.CreateFarmRequest,
   ): Promise<schemas.SessionFarm> => send('POST', '/farms', input, accessToken),
+
+  /** FR-152 (4e·2): set or clear the farm's rest-period warning threshold. */
+  updateRestPeriodDays: (
+    accessToken: string,
+    farmId: string,
+    input: schemas.UpdateRestPeriodDaysRequest,
+  ): Promise<schemas.SessionFarm> =>
+    send('PATCH', `/farms/${farmId}/rest-period-days`, input, accessToken),
 };

@@ -113,15 +113,17 @@ export async function bootWerfTestDatabase(): Promise<WerfTestDatabase> {
       // seeded by migration 0019 and written by no farm ever, so the seeded rows have to survive
       // between tests — the breeding suite projects due dates from exactly those figures.
       // Truncating it would empty the table and red every projection in a way that looks nothing
-      // like the cause. `regulatory_rates` and `veterinary_products` ARE here because tests insert
-      // their own rows into both through the elevated path.
+      // like the cause. `regulatory_rates`, `veterinary_products` and `chemical_products` ARE here
+      // because tests insert their own rows into each through the elevated path.
       await db.execute(sql`
         TRUNCATE TABLE
           auth_audit_log, audit_log, conflict_reviews, webauthn_challenges, user_sessions,
           user_passkeys,
           theft_incident_animals, theft_incidents,
+          inventory_lots, inventory_items,
           events, animal_identifiers, animals, branding_registers, mobs, land_units, farm_users,
-          enterprises, farms, businesses, users, regulatory_rates, veterinary_products
+          enterprises, farms, businesses, users, regulatory_rates, veterinary_products,
+          chemical_products
         RESTART IDENTITY CASCADE
       `);
     },

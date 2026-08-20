@@ -2300,6 +2300,11 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
   const WALK_ID = '0190f3a0-0000-7000-8000-0000000000fa';
   const MOVE2_ID = '0190f3a0-0000-7000-8000-0000000000fb';
   const THEFT_ID = '0190f3a0-0000-7000-8000-0000000000fc';
+  const PLANTING_ID = '0190f3a0-0000-7000-8000-0000000000fd';
+  const CHILD_BLOCK_ID = '0190f3a0-0000-7000-8000-0000000000fe';
+  const FERTILISER_ID = '0190f3a0-0000-7000-8000-0000000000ff';
+  const SPRAY_ID = '0190f3a0-0000-7000-8000-000000010000';
+  const SPRAY_PRODUCT_ID = '0190f3a0-0000-7000-8000-000000010001';
 
   function seedLandUnit(): void {
     window.localStorage.setItem(
@@ -2371,6 +2376,201 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(sent).not.toContain(WALK_ID);
   });
 
+  it('⭐ holds a planting behind a refused block — the same FK-only guard as a boundary walk', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-plantings:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: PLANTING_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-14T04:00:00.000Z',
+          crop: 'Maize',
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/land-units'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/plantings'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(PLANTING_ID);
+  });
+
+  it('⭐ holds a fertiliser application behind a refused block — the same FK-only guard as a planting', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-fertiliser:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: FERTILISER_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-20T06:15:00.000Z',
+          product: 'LAN 28%',
+          method: 'broadcast',
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/land-units'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/fertiliser-applications'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(FERTILISER_ID);
+  });
+
+  it('⭐ holds a spray behind a refused block — the same FK-only guard as a fertiliser application', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-sprays:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SPRAY_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-10-05T05:00:00.000Z',
+          sprayedOn: '2026-10-05',
+          productId: SPRAY_PRODUCT_ID,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/land-units'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/sprays'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(SPRAY_ID);
+  });
+
+  it('⭐ holds a spray behind a refused planting — legal-compliance.md § 4.3’s own evidence dependency, one guard earlier than the spray→harvest one above', async () => {
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-plantings:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: PLANTING_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-14T04:00:00.000Z',
+          crop: 'Table grapes',
+          expectedHarvestDate: '2026-03-15',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-sprays:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SPRAY_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-10-05T05:00:00.000Z',
+          sprayedOn: '2026-10-05',
+          productId: SPRAY_PRODUCT_ID,
+        },
+      ]),
+    );
+    // Land units land fine; the PLANTING is what gets refused this round — proving the spray waits
+    // on its own guard's evidence, not merely on the block existing (already covered above).
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method;
+      if (url.endsWith('/crops/plantings') && method === 'POST') {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ code: 'CONFLICT', message: 'a planting conflict' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/crops/plantings'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/sprays'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(SPRAY_ID);
+  });
+
+  it('⭐ holds a SPLIT CHILD behind its refused parent (FR-202, 4a·2) — a land unit can both provide and be guarded by a landrow:', async () => {
+    cachedSession();
+    // The parent AND its child are both still pending — the ordinary case for a split done and
+    // synced in one offline session. Seeded directly (not via `seedLandUnit`) because this is the
+    // one land-unit shape with a non-null `parentId`.
+    window.localStorage.setItem(
+      `werf-land:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LAND_UNIT_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: null,
+          kind: 'block',
+          code: 'B12',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+        {
+          id: CHILD_BLOCK_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: LAND_UNIT_ID,
+          kind: 'block',
+          code: 'B12-A',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    // Only the PARENT was ever attempted — the child, held behind it, never reached `fetch` at all,
+    // which is what proves it was held rather than sent-and-independently-refused.
+    const landUnitPosts = postedPaths(fetchMock).filter((p) => p.endsWith('/land-units'));
+    expect(landUnitPosts).toHaveLength(1);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(CHILD_BLOCK_ID);
+  });
+
   it('⭐ holds a mob created in a refused camp — the conditional guard on an optional field', async () => {
     cachedSession();
     seedLandUnit();
@@ -2431,6 +2631,80 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/moves'))).toBe(false);
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).not.toContain(MOVE2_ID);
+  });
+
+  it('⭐ holds a MOB move behind a refused camp (FR-151) — the group-level guard, not the animal one', async () => {
+    // The mob-move item's own `guardedBy` carries TWO subjects (`mobrow:`/`landrow:`), unlike an
+    // animal move's camp-only guard — proven here by marking the mob ALREADY sent (a prior round)
+    // so only the camp refusal is under test, isolating the `landrow:` half from the `mobrow:` one.
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        { id: MOB_ID, farmId: FARM_ID, name: 'Ossies', species: 'cattle', landUnitId: null },
+      ]),
+    );
+    window.localStorage.setItem(`werf-sent:${FARM_ID}`, JSON.stringify([MOB_ID]));
+    window.localStorage.setItem(
+      `werf-mob-moves:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOVE2_ID,
+          farmId: FARM_ID,
+          mobId: MOB_ID,
+          occurredAt: '2026-07-20T08:00:00.000Z',
+          toLandUnitId: LAND_UNIT_ID,
+        },
+      ]),
+    );
+    const fetchMock = landRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mob-moves'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(MOVE2_ID);
+  });
+
+  it('⭐ sends a mob move captured AFTER mount, with no other capture in the same round', async () => {
+    // Every OTHER test in this file that proves a mob move flushes pre-seeds `werf-mob-moves` into
+    // localStorage BEFORE render() — `useMemo` always runs on its first invocation regardless of
+    // its dependency list, so a pre-seeded value is picked up correctly whether or not `mobMoves`
+    // is actually a listed dependency of the `queue` memo. That made every such test blind to
+    // `mobMoves` being DROPPED from that dependency array: the memo would recompute once at mount
+    // (correctly, by luck) and never again for a LATER change. This test drives the capture
+    // through the real screen post-mount, with `werf-mob-moves` starting empty and nothing else in
+    // the queue to force a recompute via a different dependency (`sent` is the trap: if anything
+    // else sent in this round, the memo would recompute for an unrelated reason and this would pass
+    // against broken code) — the only thing that can make `queue` recompute is `mobMoves` itself
+    // changing after the capture, which is exactly the dependency the fix restores.
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        { id: MOB_ID, farmId: FARM_ID, name: 'Ossies', species: 'cattle', landUnitId: null },
+      ]),
+    );
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/move');
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /Ossies/ }));
+    await user.selectOptions(screen.getByLabelText(/move to which camp/i), LAND_UNIT_ID);
+    await user.click(screen.getByRole('button', { name: /move them/i }));
+
+    await waitFor(() => {
+      expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mob-moves'))).toBe(true);
+    });
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toBe('');
   });
 
   it('⭐ holds a theft incident behind BOTH a refused camp and a refused named animal', async () => {
@@ -2551,5 +2825,294 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
     expect(sent).toContain(LAND_UNIT_ID);
     expect(sent).toContain(MOB_ID);
+  });
+});
+
+describe('inventory (Phase 4e, FR-501): three FK-only tiers, no needsHead equivalent', () => {
+  const ITEM_ID = '0190f3a0-0000-7000-8000-0000000000i1';
+  const LOT_ID = '0190f3a0-0000-7000-8000-0000000000i2';
+  const MOVEMENT_ID = '0190f3a0-0000-7000-8000-0000000000i3';
+
+  function seedItem(): void {
+    window.localStorage.setItem(
+      `werf-inventory-items:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: ITEM_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          category: 'fertiliser',
+          name: 'Urea 46%',
+          unit: 'kg',
+        },
+      ]),
+    );
+  }
+
+  function seedLot(): void {
+    window.localStorage.setItem(
+      `werf-inventory-lots:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LOT_ID,
+          farmId: FARM_ID,
+          inventoryItemId: ITEM_ID,
+          batch: null,
+          expiryDate: null,
+          location: null,
+        },
+      ]),
+    );
+  }
+
+  function seedMovement(): void {
+    window.localStorage.setItem(
+      `werf-inventory-movements:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: MOVEMENT_ID,
+          farmId: FARM_ID,
+          inventoryLotId: LOT_ID,
+          occurredAt: '2026-09-14T04:30:00.000Z',
+          reason: 'received',
+          quantity: 40,
+          delta: 40,
+        },
+      ]),
+    );
+  }
+
+  it('sends the item, the lot and the movement, in that order, when the server accepts all three', async () => {
+    cachedSession();
+    seedItem();
+    seedLot();
+    seedMovement();
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 201, json: async () => ({}) }) as unknown as Response,
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    const order = postedPaths(fetchMock)
+      .filter((p) => p.includes('/inventory/'))
+      .map((p) => p.replace(/^.*\/inventory\//, '/inventory/'));
+    expect(order).toEqual(['/inventory/items', '/inventory/lots', '/inventory/movements']);
+  });
+
+  it('⭐ holds a lot behind a refused item — the same FK-only guard land-units gives a boundary walk', async () => {
+    cachedSession();
+    seedItem();
+    seedLot();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/inventory/items')) {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ code: 'CONFLICT', message: 'duplicate' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/inventory/items'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/inventory/lots'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(LOT_ID);
+  });
+
+  it('⭐ holds a movement behind a refused lot — never refuses the movement itself on quantity', async () => {
+    cachedSession();
+    seedItem();
+    seedLot();
+    seedMovement();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/inventory/lots')) {
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ code: 'NOT_FOUND', message: 'item not found' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/inventory/lots'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/inventory/movements'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(MOVEMENT_ID);
+  });
+});
+
+describe('inventory auto-decrement (Phase 4e, FR-502): a spray/fertiliser guarded by its OWN stock lot', () => {
+  const LAND_UNIT_ID = '0190f3a0-0000-7000-8000-000000010100';
+  const ITEM_ID = '0190f3a0-0000-7000-8000-000000010101';
+  const LOT_ID = '0190f3a0-0000-7000-8000-000000010102';
+  const FERTILISER_ID = '0190f3a0-0000-7000-8000-000000010103';
+  const SPRAY_ID = '0190f3a0-0000-7000-8000-000000010104';
+  const SPRAY_PRODUCT_ID = '0190f3a0-0000-7000-8000-000000010105';
+
+  function seedLandUnitAndLot(): void {
+    window.localStorage.setItem(
+      `werf-land:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LAND_UNIT_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          parentId: null,
+          kind: 'block',
+          code: 'B12',
+          name: null,
+          boundaryGeojson: null,
+          hectares: null,
+          carryingCapacityLsu: null,
+          soilType: null,
+          irrigation: null,
+          attributes: {},
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-inventory-items:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: ITEM_ID,
+          farmId: FARM_ID,
+          enterpriseId: null,
+          category: 'fertiliser',
+          name: 'Urea 46%',
+          unit: 'kg',
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-inventory-lots:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: LOT_ID,
+          farmId: FARM_ID,
+          inventoryItemId: ITEM_ID,
+          batch: null,
+          expiryDate: null,
+          location: null,
+        },
+      ]),
+    );
+  }
+
+  /** Everything succeeds EXCEPT the lot itself, which is refused this round. */
+  function lotRefusingFetch() {
+    return vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/inventory/lots')) {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({ code: 'CONFLICT', message: 'a lot conflict' }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 201, json: async () => ({}) } as unknown as Response;
+    });
+  }
+
+  it('⭐ holds a fertiliser application behind its OWN refused stock lot — a second FK, alongside the block', async () => {
+    cachedSession();
+    seedLandUnitAndLot();
+    window.localStorage.setItem(
+      `werf-fertiliser:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: FERTILISER_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-20T06:15:00.000Z',
+          product: 'Urea 46%',
+          method: 'broadcast',
+          inventoryLotId: LOT_ID,
+        },
+      ]),
+    );
+    const fetchMock = lotRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/inventory/lots'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/fertiliser-applications'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(FERTILISER_ID);
+  });
+
+  it('⭐ holds a spray behind its OWN refused stock lot — a second FK, alongside the block/planting chain', async () => {
+    cachedSession();
+    seedLandUnitAndLot();
+    window.localStorage.setItem(
+      `werf-sprays:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SPRAY_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-10-05T05:00:00.000Z',
+          sprayedOn: '2026-10-05',
+          productId: SPRAY_PRODUCT_ID,
+          inventoryLotId: LOT_ID,
+        },
+      ]),
+    );
+    const fetchMock = lotRefusingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText(/^1 not sent — needs your attention/)).toBeTruthy();
+    const paths = postedPaths(fetchMock);
+    expect(paths.some((p) => p.endsWith('/inventory/lots'))).toBe(true);
+    expect(paths.some((p) => p.endsWith('/crops/sprays'))).toBe(false);
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toContain(SPRAY_ID);
+  });
+
+  it('a spray/fertiliser with NO inventory lot is unaffected by an unrelated refused lot', async () => {
+    cachedSession();
+    seedLandUnitAndLot();
+    window.localStorage.setItem(
+      `werf-fertiliser:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: FERTILISER_ID,
+          farmId: FARM_ID,
+          landUnitId: LAND_UNIT_ID,
+          occurredAt: '2026-09-20T06:15:00.000Z',
+          product: 'Compost',
+          method: 'broadcast',
+          // Deliberately no `inventoryLotId` — this farm is not tracking stock for this application.
+        },
+      ]),
+    );
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 201, json: async () => ({}) }) as unknown as Response,
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByText('Saved and sent')).toBeTruthy();
+    expect(postedPaths(fetchMock).some((p) => p.endsWith('/crops/fertiliser-applications'))).toBe(
+      true,
+    );
   });
 });

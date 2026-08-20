@@ -202,7 +202,7 @@ Playwright with `context.setOffline(true)`. **This suite is the product's insura
 | O-9 | **Refresh token expires with 47 queued writes** | **Queue HELD, uploaded after login** | UC-050 A2.1 | ✅ `Outbox.test.tsx`'s invariant-5 test (fake-driven, pins the behaviour precisely); no real-stack variant built |
 | O-10 | Storage quota exceeded | Read set degrades, **queue intact** | UC-050 E7.1 | ✅ Unit/integration level (3f's durability coordinator); no real-browser-quota-exhaustion e2e |
 | O-11 | Old client → new schema | Applied or quarantined, **never lost** | offline-sync §6 | ✅ `livestock.integration.test.ts`'s additive-migration test, against real Postgres (3g) |
-| O-12 | PHI check offline | Blocked locally, no server round trip | US-030 | ⛔ Phase 4 (crops) — PHI does not exist yet |
+| O-12 | PHI check offline | Blocked locally, no server round trip | US-030 | ✅ 4d, `usePhiGuard.ts`/`phi-guard.ts`; `RecordHarvest.test.tsx`'s offline-preview-blocks test (fetch mocked failed, guard runs from the local spray/product cache only) — same "unit/integration level, no dedicated e2e" precedent as O-10 |
 | O-13 | Withdrawal check offline | Blocked locally | US-032 | ✅ FR-131 guard, extensively covered (`withdrawal.test.ts`, `AdjustMob.test.tsx`, `RecordLoss.test.tsx`) |
 | O-14 | Mark missing offline | GPS + timestamp captured locally | US-031 | ✅ Phase 2, `RecordLossScreen`'s missing-report path |
 | O-15 | Payroll offline | **Refuses, plainly, without losing attendance** | UC-020 E2 | ⛔ Phase 5 (labour) — not started |

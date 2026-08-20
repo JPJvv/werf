@@ -8,6 +8,7 @@
 
 import type { StoredVetProduct } from './LocalVetProducts';
 import type { StoredSpeciesGestation } from './LocalSpeciesGestation';
+import type { StoredChemicalProduct } from '../crops/LocalChemicalProducts';
 // The transport and the one error taxonomy every inbound read shares — the same file the outbound
 // half lives in, so the two cannot come to disagree about what a 401 or a dropped socket means.
 import { readFromApi as readReference } from '../sync/captureApi';
@@ -34,6 +35,22 @@ export const referenceApi = {
       `/reference/species-gestation?farmId=${encodeURIComponent(farmId)}`,
       accessToken,
       'Could not read the gestation figures',
+    );
+  },
+
+  /**
+   * The chemical products a spray may resolve a PHI against (FR-204/FR-508). Same P1.3 discipline
+   * as `listVeterinaryProducts`: no `onDay`, so the device holds every registered version this
+   * farm's jurisdiction has ever had.
+   */
+  async listChemicalProducts(
+    farmId: string,
+    accessToken: string,
+  ): Promise<StoredChemicalProduct[]> {
+    return readReference<StoredChemicalProduct[]>(
+      `/reference/chemical-products?farmId=${encodeURIComponent(farmId)}`,
+      accessToken,
+      'Could not read the chemical product register',
     );
   },
 };

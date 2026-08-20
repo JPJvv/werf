@@ -131,6 +131,13 @@ export const sessionFarmSchema = z.object({
    * a species instead; the next sign-in fills it in.
    */
   enterprises: z.array(sessionEnterpriseSchema).default([]),
+  /**
+   * FR-152's rest-period WARNING threshold (4e·2) — days a camp should rest before it is grazed
+   * again. `null` means unset: no warning is shown, rather than a guessed default presented as
+   * considered advice. DEFAULTED to null for the same cached-session-forward-compat reason as
+   * `eventRetentionMonths`/`enterprises` above.
+   */
+  restPeriodDays: z.number().int().positive().nullable().default(null),
   role: z.string().min(1),
 });
 export type SessionFarm = z.infer<typeof sessionFarmSchema>;

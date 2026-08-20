@@ -8,6 +8,18 @@ import { InstallPrompt } from '../pwa/InstallPrompt';
 import { FarmSwitcher } from './FarmSwitcher';
 import { LocalLandProvider } from '../land/LocalLand';
 import { HydratedLandProvider } from '../land/HydratedLand';
+import { LocalPlantingsProvider } from '../crops/LocalPlantings';
+import { HydratedCropsProvider } from '../crops/HydratedCrops';
+import { LocalFertiliserProvider } from '../crops/LocalFertiliser';
+import { HydratedFertiliserProvider } from '../crops/HydratedFertiliser';
+import { LocalSpraysProvider } from '../crops/LocalSprays';
+import { HydratedSpraysProvider } from '../crops/HydratedSprays';
+import { LocalHarvestProvider } from '../crops/LocalHarvest';
+import { HydratedHarvestProvider } from '../crops/HydratedHarvest';
+import { LocalPhiRegisterProvider } from '../crops/LocalPhiRegister';
+import { LocalChemicalProductsProvider } from '../crops/LocalChemicalProducts';
+import { LocalInventoryProvider } from '../inventory/LocalInventory';
+import { HydratedInventoryProvider } from '../inventory/HydratedInventory';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
 import { LocalMobsProvider } from '../livestock/LocalMobs';
 import { LocalTalliesProvider } from '../livestock/LocalTallies';
@@ -16,6 +28,8 @@ import { LocalIdentifiersProvider } from '../livestock/LocalIdentifiers';
 import { LocalWeightsProvider } from '../livestock/LocalWeights';
 import { LocalLifecycleProvider } from '../livestock/LocalLifecycle';
 import { LocalMovesProvider } from '../livestock/LocalMoves';
+import { LocalMobMovesProvider } from '../livestock/LocalMobMoves';
+import { LocalFeedProvider } from '../livestock/LocalFeed';
 import { LocalHealthProvider } from '../livestock/LocalHealth';
 import { LocalVetProductsProvider } from '../livestock/LocalVetProducts';
 import { LocalResidueRegisterProvider } from '../livestock/LocalResidueRegister';
@@ -52,6 +66,36 @@ const CAPTURE_STORES = [
   // closed 2026-08-14). `LocalLand.tsx`'s `useEffectiveLandUnits`/`useEffectiveBoundaryWalks` and
   // `Outbox.tsx` both read it, so it has to sit above both, same as `HydratedLivestockProvider` below.
   HydratedLandProvider,
+  LocalPlantingsProvider,
+  // Also not a capture store — the DOWN-SYNC half of crops (FR-203). `LocalPlantings.tsx`'s
+  // `useEffectivePlantings` reads it, so it has to sit above `LocalPlantingsProvider`, same as
+  // `HydratedLandProvider` above.
+  HydratedCropsProvider,
+  LocalFertiliserProvider,
+  // Also not a capture store — the DOWN-SYNC half of fertiliser applications (FR-206), the
+  // identical shape as `HydratedCropsProvider` above it.
+  HydratedFertiliserProvider,
+  LocalSpraysProvider,
+  // Also not a capture store — the DOWN-SYNC half of sprays (FR-204), the identical shape as
+  // `HydratedFertiliserProvider` above it, except the hydrated copy WINS on a shared id
+  // (`useEffectiveSprays`'s own doc) because it carries the server-resolved PHI fields a local
+  // capture never can.
+  HydratedSpraysProvider,
+  LocalHarvestProvider,
+  // Also not a capture store — the DOWN-SYNC half of harvests (FR-207), the identical shape as
+  // `HydratedSpraysProvider` above it: the hydrated copy WINS on a shared id (`useEffectiveHarvests`'s
+  // own doc) because it carries the server-resolved `phiOverride.by` a local capture never can.
+  HydratedHarvestProvider,
+  // Phase 4e, FR-501: items, lots and stock movements. Composes three stores in one provider (see
+  // its own header for why) — items/lots have no server-resolved field a local capture lacks, so
+  // `mergeById` (local-wins) is the right merge, the identical posture `HydratedFertiliserProvider`
+  // takes for the same reason.
+  LocalInventoryProvider,
+  HydratedInventoryProvider,
+  // Not a capture store — an INBOUND cache, the identical kind of thing as `LocalResidueRegisterProvider`
+  // below, one food-safety register over: the cross-device PHI race (4d·6), reached from `/attention`
+  // rather than a tile — the grid's tile set is fixed and generated from the enterprise types.
+  LocalPhiRegisterProvider,
   LocalMobsProvider,
   LocalTalliesProvider,
   LocalBrandingProvider,
@@ -60,8 +104,17 @@ const CAPTURE_STORES = [
   LocalWeightsProvider,
   LocalLifecycleProvider,
   LocalMovesProvider,
+  LocalMobMovesProvider,
+  // Phase 4e, FR-153: feed put out for a mob or a camp. Sits beside `LocalMobMovesProvider` —
+  // same herd-tier shape (references a mob and/or a camp) — and needs no hydrated-echo provider
+  // of its own here, unlike the reference registers above: nothing yet reads a feed-out back.
+  LocalFeedProvider,
   LocalHealthProvider,
   LocalVetProductsProvider,
+  // Not a capture store — an INBOUND cache, the identical kind of thing as `LocalVetProductsProvider`
+  // just above it, one reference table over: regulated reference data a spray capture selects FROM
+  // (FR-204/FR-508), never something a farmer writes.
+  LocalChemicalProductsProvider,
   // Not a capture store — an INBOUND cache, like the product register beside it. It is here rather
   // than around the one screen that reads it because the home link carries its count, and a count
   // that only appears once you have opened the screen is a count nobody sees.

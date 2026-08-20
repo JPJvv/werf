@@ -65,6 +65,12 @@ describe('landUnitSchema', () => {
   it('rejects negative hectares', () => {
     expect(() => landUnitSchema.shape.hectares.parse(-1)).toThrow();
   });
+
+  it('accepts irrigation only from the closed set (FR-201)', () => {
+    expect(landUnitSchema.shape.irrigation.parse('drip')).toBe('drip');
+    expect(landUnitSchema.shape.irrigation.parse(null)).toBeNull();
+    expect(() => landUnitSchema.shape.irrigation.parse('borehole')).toThrow();
+  });
 });
 
 describe('newLandUnitSchema', () => {

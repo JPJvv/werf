@@ -18,6 +18,7 @@ import { z } from 'zod';
 import {
   auditTimestampsSchema,
   geoJsonStringSchema,
+  irrigationTypeSchema,
   landUnitKindSchema,
   timestampSchema,
   uuidSchema,
@@ -44,7 +45,8 @@ export const landUnitSchema = z.object({
   /** Large-stock-unit carrying capacity — camps only. */
   carryingCapacityLsu: z.number().nonnegative().nullable(),
   soilType: z.string().min(1).nullable(),
-  irrigation: z.string().min(1).nullable(),
+  /** FR-201's "irrigation type" — a closed set (@werf/core), not free text. */
+  irrigation: irrigationTypeSchema.nullable(),
   attributes: z.record(z.string(), z.unknown()),
   ...auditTimestampsSchema,
 });

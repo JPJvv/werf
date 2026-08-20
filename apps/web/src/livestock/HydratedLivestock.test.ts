@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attachAnimalIds,
   mapHydratedBrandingRegister,
+  mapHydratedMobMove,
   mergeById,
   mergeByIdPreferHydrated,
   type HydratedTheftIncidentAnimalLink,
@@ -89,6 +90,47 @@ describe('branding-register hydration (FR-601)', () => {
         species: 'not-json',
       }),
     ).toBeNull();
+  });
+});
+
+/**
+ * `mapHydratedMobMove` (FR-151) — the structural risk `phase-checklists.md` 4e·1 named: an
+ * individual animal transferring INTO a mob also stamps that event's own `mob_id` to the
+ * destination, so the mapper must actively EXCLUDE any row carrying an `animal_id`, not merely key
+ * off `mob_id` being present.
+ */
+describe('mapHydratedMobMove', () => {
+  const row = (over: Partial<Record<string, unknown>> = {}): Record<string, unknown> => ({
+    id: '0190f3a0-0000-7000-8000-0000000000e1',
+    farm_id: '0190f3a0-0000-7000-8000-0000000000f1',
+    mob_id: '0190f3a0-0000-7000-8000-0000000000b1',
+    animal_id: null,
+    occurred_at: '2026-07-22T12:00:00.000Z',
+    payload: JSON.stringify({ fromLandUnitId: 'camp-a', toLandUnitId: 'camp-b' }),
+    ...over,
+  });
+
+  it('maps a genuine mob-level move', () => {
+    expect(mapHydratedMobMove(row())).toMatchObject({
+      id: '0190f3a0-0000-7000-8000-0000000000e1',
+      mobId: '0190f3a0-0000-7000-8000-0000000000b1',
+      toLandUnitId: 'camp-b',
+      fromLandUnitId: 'camp-a',
+    });
+  });
+
+  it('⭐ excludes a row carrying an animal_id — an individual transferring INTO the mob, not the mob itself moving', () => {
+    expect(
+      mapHydratedMobMove(row({ animal_id: '0190f3a0-0000-7000-8000-0000000000a9' })),
+    ).toBeNull();
+  });
+
+  it('excludes a row with no mob_id at all', () => {
+    expect(mapHydratedMobMove(row({ mob_id: null }))).toBeNull();
+  });
+
+  it('is tolerant of an unreadable payload rather than throwing', () => {
+    expect(mapHydratedMobMove(row({ payload: 'not-json' }))).toBeNull();
   });
 });
 

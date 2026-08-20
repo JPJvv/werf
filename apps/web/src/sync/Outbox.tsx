@@ -39,7 +39,7 @@ import {
 import { schemas } from '@werf/core';
 // The SAME fold the server runs, which is the point: the outbox asks whether a decrease would
 // underflow using the projection `deriveHeadCount` uses, not an approximation of it.
-import { projectHeadCount } from '@werf/domain';
+import { ancestorChainOf, projectHeadCount } from '@werf/domain';
 import { createSentLog, type SentLog } from '@werf/sync';
 import { useAuth } from '../auth/AuthProvider';
 import { AuthApiError, NetworkUnavailableError } from '../auth/api';
@@ -53,6 +53,22 @@ import {
 } from '../land/LocalLand';
 import { landApi } from '../land/landApi';
 import { useHydratedLandUnits } from '../land/HydratedLand';
+import {
+  usePlantings,
+  usePlantingsHydrationFailed,
+  usePlantingsSettled,
+} from '../crops/LocalPlantings';
+import { cropsApi } from '../crops/plantingApi';
+import {
+  useFertiliserApplications,
+  useFertiliserHydrationFailed,
+  useFertiliserSettled,
+} from '../crops/LocalFertiliser';
+import { fertiliserApi } from '../crops/fertiliserApi';
+import { useSprays, useSpraysHydrationFailed, useSpraysSettled } from '../crops/LocalSprays';
+import { sprayApi } from '../crops/sprayApi';
+import { useHarvests, useHarvestsHydrationFailed, useHarvestsSettled } from '../crops/LocalHarvest';
+import { harvestApi } from '../crops/harvestApi';
 import {
   useAttachments,
   useAttachmentsHydrationFailed,
@@ -107,6 +123,16 @@ import {
   type StoredLifecycleEvent,
 } from '../livestock/LocalLifecycle';
 import { useMoves, useMovesHydrationFailed, useMovesSettled } from '../livestock/LocalMoves';
+import {
+  useMobMoves,
+  useMobMovesHydrationFailed,
+  useMobMovesSettled,
+} from '../livestock/LocalMobMoves';
+import {
+  useFeedEvents,
+  useFeedEventsHydrationFailed,
+  useFeedEventsSettled,
+} from '../livestock/LocalFeed';
 import { animalDisposalSubjects, mobDisposalSubjects } from '../livestock/withdrawal';
 import { farmDay } from '../farmTime';
 import {
@@ -131,6 +157,18 @@ import {
   useRainfallSettled,
 } from '../rainfall/LocalRainfall';
 import { rainfallApi } from '../rainfall/rainfallApi';
+import {
+  useInventoryItems,
+  useInventoryItemsHydrationFailed,
+  useInventoryItemsSettled,
+  useInventoryLots,
+  useInventoryLotsHydrationFailed,
+  useInventoryLotsSettled,
+  useInventoryMovements,
+  useInventoryMovementsHydrationFailed,
+  useInventoryMovementsSettled,
+} from '../inventory/LocalInventory';
+import { inventoryApi } from '../inventory/inventoryApi';
 import { useSyncStatus, type SyncState } from './useSyncStatus';
 import { deriveSyncHealth, type SyncHealth } from './syncHealth';
 
@@ -225,6 +263,10 @@ function replaceSetIfChanged(
 export type CaptureKind =
   | 'landUnit'
   | 'boundaryWalk'
+  | 'planting'
+  | 'fertiliser'
+  | 'spray'
+  | 'harvest'
   | 'mob'
   | 'tally'
   | 'branding'
@@ -233,11 +275,16 @@ export type CaptureKind =
   | 'weight'
   | 'lifecycle'
   | 'move'
+  | 'mobMove'
+  | 'feed'
   | 'health'
   | 'breeding'
   | 'theft'
   | 'rainfall'
-  | 'attachment';
+  | 'attachment'
+  | 'inventoryItem'
+  | 'inventoryLot'
+  | 'inventoryMovement';
 
 /** One queued capture: its id (for the sent-log), what it is, and how to send it. */
 interface FlushItem {
@@ -446,6 +493,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const { session, activeFarm, refreshSession } = useAuth();
   const landUnits = useLandUnits();
   const boundaryWalks = useBoundaryWalks();
+  const plantings = usePlantings();
+  const fertiliserApplications = useFertiliserApplications();
+  const sprays = useSprays();
+  const harvests = useHarvests();
   // ⭐ The down-sync half of land (phase-checklists.md 3e, land hydration — closed 2026-08-14) — a
   // camp another device created, already replicated to this one. Read ONLY for `landUnitCodes`
   // below (display), never for the send-queue loops above: those stay on the raw local `landUnits`
@@ -480,10 +531,15 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const weights = useWeights();
   const events = useLifecycleEvents();
   const moves = useMoves();
+  const mobMoves = useMobMoves();
+  const feeds = useFeedEvents();
   const health = useHealthEvents();
   const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
   const rainfall = useRainfall();
+  const inventoryItems = useInventoryItems();
+  const inventoryLots = useInventoryLots();
+  const inventoryMovements = useInventoryMovements();
   const attachments = useAttachments();
   // Never a `FlushItem` field, never read outside `sendAttachment` — the outbox holds no blob
   // itself, only the handle to where the local capture store already keeps them.
@@ -508,6 +564,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // outright (the Rules of Hooks), not just this feature.
   const landUnitsSettled = useLandUnitsSettled();
   const boundaryWalksSettled = useBoundaryWalksSettled();
+  const plantingsSettled = usePlantingsSettled();
+  const fertiliserSettled = useFertiliserSettled();
+  const spraysSettled = useSpraysSettled();
+  const harvestsSettled = useHarvestsSettled();
   const mobsSettled = useMobsSettled();
   const talliesSettled = useTalliesSettled();
   // Same "not yet trustworthy" gate as every local store above, for the down-sync sources —
@@ -523,14 +583,23 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const weightsSettled = useWeightsSettled();
   const eventsSettled = useLifecycleEventsSettled();
   const movesSettled = useMovesSettled();
+  const mobMovesSettled = useMobMovesSettled();
+  const feedsSettled = useFeedEventsSettled();
   const healthSettled = useHealthEventsSettled();
   const breedingSettled = useBreedingEventsSettled();
   const theftSettled = useTheftIncidentsSettled();
   const rainfallSettled = useRainfallSettled();
+  const inventoryItemsSettled = useInventoryItemsSettled();
+  const inventoryLotsSettled = useInventoryLotsSettled();
+  const inventoryMovementsSettled = useInventoryMovementsSettled();
   const attachmentsSettled = useAttachmentsSettled();
   const allSettled =
     landUnitsSettled &&
     boundaryWalksSettled &&
+    plantingsSettled &&
+    fertiliserSettled &&
+    spraysSettled &&
+    harvestsSettled &&
     mobsSettled &&
     talliesSettled &&
     hydratedMobsSettled &&
@@ -543,10 +612,15 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     weightsSettled &&
     eventsSettled &&
     movesSettled &&
+    mobMovesSettled &&
+    feedsSettled &&
     healthSettled &&
     breedingSettled &&
     theftSettled &&
     rainfallSettled &&
+    inventoryItemsSettled &&
+    inventoryLotsSettled &&
+    inventoryMovementsSettled &&
     attachmentsSettled;
 
   // ⭐ FINDING 1 (sync-auditor, 2026-08-09): `settled()` flips true on EITHER outcome, by design
@@ -561,6 +635,10 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   // reason.
   const landUnitsHydrationFailed = useLandUnitsHydrationFailed();
   const boundaryWalksHydrationFailed = useBoundaryWalksHydrationFailed();
+  const plantingsHydrationFailed = usePlantingsHydrationFailed();
+  const fertiliserHydrationFailed = useFertiliserHydrationFailed();
+  const spraysHydrationFailed = useSpraysHydrationFailed();
+  const harvestsHydrationFailed = useHarvestsHydrationFailed();
   const mobsHydrationFailed = useMobsHydrationFailed();
   const talliesHydrationFailed = useTalliesHydrationFailed();
   const hydratedMobsHydrationFailed = useHydratedMobsHydrationFailed();
@@ -573,14 +651,23 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const weightsHydrationFailed = useWeightsHydrationFailed();
   const eventsHydrationFailed = useLifecycleEventsHydrationFailed();
   const movesHydrationFailed = useMovesHydrationFailed();
+  const mobMovesHydrationFailed = useMobMovesHydrationFailed();
+  const feedsHydrationFailed = useFeedEventsHydrationFailed();
   const healthHydrationFailed = useHealthEventsHydrationFailed();
   const breedingHydrationFailed = useBreedingEventsHydrationFailed();
   const theftHydrationFailed = useTheftIncidentsHydrationFailed();
   const rainfallHydrationFailed = useRainfallHydrationFailed();
+  const inventoryItemsHydrationFailed = useInventoryItemsHydrationFailed();
+  const inventoryLotsHydrationFailed = useInventoryLotsHydrationFailed();
+  const inventoryMovementsHydrationFailed = useInventoryMovementsHydrationFailed();
   const attachmentsHydrationFailed = useAttachmentsHydrationFailed();
   const anyHydrationFailed =
     landUnitsHydrationFailed ||
     boundaryWalksHydrationFailed ||
+    plantingsHydrationFailed ||
+    fertiliserHydrationFailed ||
+    spraysHydrationFailed ||
+    harvestsHydrationFailed ||
     mobsHydrationFailed ||
     talliesHydrationFailed ||
     hydratedMobsHydrationFailed ||
@@ -593,10 +680,15 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     weightsHydrationFailed ||
     eventsHydrationFailed ||
     movesHydrationFailed ||
+    mobMovesHydrationFailed ||
+    feedsHydrationFailed ||
     healthHydrationFailed ||
     breedingHydrationFailed ||
     theftHydrationFailed ||
     rainfallHydrationFailed ||
+    inventoryItemsHydrationFailed ||
+    inventoryLotsHydrationFailed ||
+    inventoryMovementsHydrationFailed ||
     attachmentsHydrationFailed;
 
   // Connectivity is the same signal the strip has always used; the outbox layers send-state on top.
@@ -689,6 +781,44 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           // `animalrow:`). Refused or held, everything naming this camp must wait rather than
           // each earning its own 404 for the same one cause.
           provides: [`landrow:${unit.id}`],
+          // ⭐ FR-202 (split, 4a·2): a child created by a split names its PARENT camp/block via
+          // `parentId`, and that reference is checked by the server the same way any other FK is
+          // (`assertOwnedReferences`) — a child sent ahead of a parent this device has not yet had
+          // accepted 404s for a cause a farmer cannot see. `landUnits` is the one store where a row
+          // can BOTH provide a `landrow:` and be guarded by one — the split screen never creates a
+          // parent and a child in the same save, so this cannot cycle on itself.
+          guardedBy: unit.parentId === null ? [] : [`landrow:${unit.parentId}`],
+        });
+      }
+    }
+    // Inventory items and lots (Phase 4e, FR-501) are queued HERE, right after land units and
+    // BEFORE any capture that can carry an OPTIONAL `inventoryLotId` reference (fertiliser/spray,
+    // FR-502, below) — deliberately not down beside the inventory MOVEMENT tier this pair used to
+    // sit with. `guardedBy` resolution taints a subject only once the item PROVIDING it has been
+    // attempted THIS round (`taint`, above); array order IS attempt order, so a lot queued after
+    // the spray that references it would still read as "not yet tainted" when the spray's own
+    // guard is checked, and the spray would wrongly send. Items/lots have no FK of their own to
+    // land, so moving them earlier costs nothing.
+    for (const item of inventoryItems) {
+      if (!sent.has(item.id)) {
+        items.push({
+          id: item.id,
+          kind: 'inventoryItem',
+          detail: item.name,
+          send: (token) => inventoryApi.recordItem(item, token),
+          provides: [`inventoryitemrow:${item.id}`],
+        });
+      }
+    }
+    for (const lot of inventoryLots) {
+      if (!sent.has(lot.id)) {
+        items.push({
+          id: lot.id,
+          kind: 'inventoryLot',
+          detail: lot.batch,
+          send: (token) => inventoryApi.recordLot(lot, token),
+          guardedBy: [`inventoryitemrow:${lot.inventoryItemId}`],
+          provides: [`inventorylotrow:${lot.id}`],
         });
       }
     }
@@ -712,6 +842,104 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           detail: landUnitCodes.get(walk.landUnitId) ?? null,
           send: (token) => landApi.recordBoundaryWalk(walk, token),
           guardedBy: [`landrow:${walk.landUnitId}`],
+        });
+      }
+    }
+    // A planting references the block it was sown in — same FK-only shape as a boundary walk, so
+    // `guardedBy` alone, no safety ordering of its OWN capture (FR-203 carries no compliance gate).
+    // It DOES `provide` a `plantingrow:` tag, though: the spray-capture PHI guard (legal-compliance.md
+    // § 4.3, below) reads a block's planted-in-the-ground `expectedHarvestDate` server-side, so a
+    // planting held this round (its own `landrow:` dependency unmet) must taint a spray that depends
+    // on it too — the identical evidence-before-the-act shape a spray already is for a harvest,
+    // one guard earlier in the chain. `landUnitId` is never null on a planting — a planting with no
+    // ground under it is not a planting (P2.7 shape).
+    for (const planting of plantings) {
+      if (!sent.has(planting.id)) {
+        items.push({
+          id: planting.id,
+          kind: 'planting',
+          detail: landUnitCodes.get(planting.landUnitId) ?? null,
+          send: (token) => cropsApi.recordPlanting(planting, token),
+          guardedBy: [`landrow:${planting.landUnitId}`],
+          provides: [`plantingrow:${planting.landUnitId}`],
+        });
+      }
+    }
+    // A fertiliser application is the identical FK-only shape as a planting, and for the identical
+    // reason: FR-206 carries no compliance gate, so `guardedBy` alone, no safety ordering. An
+    // OPTIONAL stock-lot reference (Phase 4e, FR-502) adds a second FK guard, conditionally: a lot
+    // created this same offline round has not synced yet, so an application drawing on it must wait
+    // behind the lot, the identical shape an inventory movement is already held behind its own lot.
+    for (const application of fertiliserApplications) {
+      if (!sent.has(application.id)) {
+        items.push({
+          id: application.id,
+          kind: 'fertiliser',
+          detail: landUnitCodes.get(application.landUnitId) ?? null,
+          send: (token) => fertiliserApi.recordFertiliser(application, token),
+          guardedBy: [
+            `landrow:${application.landUnitId}`,
+            ...(application.inventoryLotId === undefined
+              ? []
+              : [`inventorylotrow:${application.inventoryLotId}`]),
+          ],
+        });
+      }
+    }
+    // A spray is COMPLIANCE-GATED (FR-204) and is the EVIDENCE 4d's harvest guard reads — the
+    // identical shape a dose is to a disposal (16fbb6a). `provides` a `sprayrow:` tag per block so a
+    // spray HELD this round (its own `landrow:` dependency unmet, e.g. a block split moments ago)
+    // taints any harvest on that block or a descendant, holding it rather than letting it post
+    // ahead of evidence the server has not seen yet.
+    //
+    // ⭐ IT ALSO `guardedBy` a PLANTING, the other direction of § 4.3's own obligation: the spray's
+    // OWN server-side guard (`evaluateSprayPhiGuard`, `crops.service.ts`) reads the block's planted
+    // `expectedHarvestDate`, sourced by `currentPlantingFor`'s UNBOUNDED ancestor walk (the identical
+    // bound `useCurrentPlanting` reads for display, deliberately unlike the PER-HOP spray-evidence
+    // bound the harvest guard above uses — a different question, already decided in `planting.ts`'s
+    // own module note). Without this, a planting captured moments before its spray on the SAME
+    // device could still lose the race if the outbox ever sent them out of order: the spray's
+    // server guard would run against a planting the server had not seen yet, and either wrongly wave
+    // a should-be-blocked spray through, or drop a genuine override the client attached. Held, never
+    // refused — the same posture every `guardedBy` dependency in this queue takes.
+    for (const spray of sprays) {
+      if (!sent.has(spray.id)) {
+        items.push({
+          id: spray.id,
+          kind: 'spray',
+          detail: landUnitCodes.get(spray.landUnitId) ?? null,
+          send: (token) => sprayApi.recordSpray(spray, token),
+          guardedBy: [
+            `landrow:${spray.landUnitId}`,
+            ...ancestorChainOf(spray.landUnitId, landUnits).map((id) => `plantingrow:${id}`),
+            // An OPTIONAL stock-lot reference (Phase 4e, FR-502) — see the fertiliser tier's own
+            // note above for why this guard is conditional.
+            ...(spray.inventoryLotId === undefined
+              ? []
+              : [`inventorylotrow:${spray.inventoryLotId}`]),
+          ],
+          provides: [`sprayrow:${spray.landUnitId}`],
+        });
+      }
+    }
+    // A harvest sits AFTER every spray above — the safety-ordering rule `Outbox.tsx`'s own header
+    // documents (moves/health precede disposals), applied to crops: a point-in-time PHI guard
+    // cannot refuse a harvest against a spray that has not arrived yet. `guardedBy` walks the local
+    // ancestor chain (`ancestorChainOf`, unbounded — deliberately conservative here, unlike the
+    // guard's own precise per-hop bound: holding one extra round on an ancestor spray that might not
+    // even apply costs nothing, and is the safe direction) so a held spray on THIS block OR any
+    // ancestor taints the harvest too.
+    for (const harvest of harvests) {
+      if (!sent.has(harvest.id)) {
+        items.push({
+          id: harvest.id,
+          kind: 'harvest',
+          detail: landUnitCodes.get(harvest.landUnitId) ?? null,
+          send: (token) => harvestApi.recordHarvest(harvest, token),
+          guardedBy: [
+            `landrow:${harvest.landUnitId}`,
+            ...ancestorChainOf(harvest.landUnitId, landUnits).map((id) => `sprayrow:${id}`),
+          ],
         });
       }
     }
@@ -812,6 +1040,49 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           ...(typeof move.toLandUnitId === 'string'
             ? { guardedBy: [`landrow:${move.toLandUnitId}`] }
             : {}),
+        });
+      }
+    }
+    // A mob-level move (FR-151) — the whole group, not one animal. Same safety tier as the animal
+    // moves above (evidence before the disposals below judge anything against it), and `guardedBy`
+    // BOTH the mob itself (a mob created this same round has no accepted row yet) and the
+    // destination camp, mirroring the animal move's own camp guard.
+    for (const mobMove of mobMoves) {
+      if (!sent.has(mobMove.id)) {
+        items.push({
+          id: mobMove.id,
+          kind: 'mobMove',
+          detail: mobs.find((m) => m.id === mobMove.mobId)?.name ?? null,
+          send: (token) => livestockApi.recordMobMove(mobMove, token),
+          guardedBy: [
+            `mobrow:${mobMove.mobId}`,
+            ...(typeof mobMove.toLandUnitId === 'string'
+              ? [`landrow:${mobMove.toLandUnitId}`]
+              : []),
+          ],
+        });
+      }
+    }
+    // A feed-out (Phase 4e, FR-153) — no safety ordering (nothing here creates or reads evidence a
+    // guard judges), `guardedBy` only: the mob (a mob created this same round has no accepted row
+    // yet), the destination camp when this device knows one directly, and the feed lot it drew
+    // from. Named by the mob it fed when there is one, else by the camp — the same "say what a
+    // farmer would recognise" rule the mob-move item above follows.
+    for (const feed of feeds) {
+      if (!sent.has(feed.id)) {
+        items.push({
+          id: feed.id,
+          kind: 'feed',
+          detail:
+            feed.mobId === null
+              ? (landUnitCodes.get(feed.landUnitId ?? '') ?? null)
+              : (mobs.find((m) => m.id === feed.mobId)?.name ?? null),
+          send: (token) => livestockApi.recordFeed(feed, token),
+          guardedBy: [
+            ...(feed.mobId === null ? [] : [`mobrow:${feed.mobId}`]),
+            ...(typeof feed.landUnitId === 'string' ? [`landrow:${feed.landUnitId}`] : []),
+            `inventorylotrow:${feed.inventoryLotId}`,
+          ],
         });
       }
     }
@@ -1123,12 +1394,35 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
+    // The inventory MOVEMENT tier alone stays here — its item/lot tiers are queued much earlier
+    // now, right after land units (see that comment for why: `guardedBy` resolution needs the lot
+    // to have been ATTEMPTED before any dependent, spray/fertiliser included, is checked this same
+    // round). No SAFETY ordering applies to a movement itself (unlike a tally, `consumed` is never
+    // refused on its merits — `recordInventoryMovement`'s own module note — so there is no
+    // `needsHead` equivalent here to ask); its only dependency is FK-only, `guardedBy` the lot row
+    // directly above it, the identical shape a mob's tally is held behind `mobrow:`.
+    for (const movement of inventoryMovements) {
+      if (!sent.has(movement.id)) {
+        items.push({
+          id: movement.id,
+          kind: 'inventoryMovement',
+          detail: null,
+          send: (token) => inventoryApi.recordMovement(movement, token),
+          guardedBy: [`inventorylotrow:${movement.inventoryLotId}`],
+        });
+      }
+    }
     return items;
   }, [
     landUnits,
     landUnitCodes,
     boundaryWalks,
+    plantings,
+    fertiliserApplications,
+    sprays,
+    harvests,
     mobs,
+    mobMoves,
     brandingRegisters,
     tallies,
     foldMobs,
@@ -1140,10 +1434,14 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     weights,
     events,
     moves,
+    feeds,
     health,
     breeding,
     theftIncidents,
     rainfall,
+    inventoryItems,
+    inventoryLots,
+    inventoryMovements,
     attachments,
     attachmentBlobStore,
     sent,

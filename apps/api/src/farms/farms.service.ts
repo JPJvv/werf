@@ -57,6 +57,7 @@ export class FarmsService {
           name: farms.name,
           enterpriseTypes: farms.enterpriseTypes,
           eventRetentionMonths: farms.eventRetentionMonths,
+          restPeriodDays: farms.restPeriodDays,
           role: farmUsers.role,
         })
         .from(farmUsers)
@@ -121,6 +122,7 @@ export class FarmsService {
         name: farm!.name,
         enterpriseTypes: farm!.enterpriseTypes,
         eventRetentionMonths: farm!.eventRetentionMonths,
+        restPeriodDays: farm!.restPeriodDays,
         enterprises: created,
         role: 'owner',
       };
@@ -210,6 +212,50 @@ export class FarmsService {
         name: updated!.name,
         enterpriseTypes: updated!.enterpriseTypes,
         eventRetentionMonths: updated!.eventRetentionMonths,
+        restPeriodDays: updated!.restPeriodDays,
+        enterprises: herds.get(farmId) ?? [],
+        role: role!.role,
+      };
+    });
+  }
+
+  /**
+   * Sets or clears the FR-152 rest-period WARNING threshold (4e·2) — an owner-set agronomic
+   * preference, not a regulated figure, so there is no compliance gate on this write (contrast
+   * `updateEnterpriseTypes`, which the SAME owner-only role check protects for the same reason:
+   * this changes how the farm is configured, not what any individual worker captured).
+   */
+  async updateRestPeriodDays(
+    userId: string,
+    farmId: string,
+    input: schemas.UpdateRestPeriodDaysRequest,
+  ): Promise<schemas.SessionFarm> {
+    return this.app.asUser(userId, async (tx) => {
+      const [farm] = await tx.select().from(farms).where(eq(farms.id, farmId));
+      if (!farm) throw new NotFoundError('Farm not found');
+
+      await this.assertRole(tx, userId, farmId, ['owner']);
+
+      const [updated] = await tx
+        .update(farms)
+        .set({ restPeriodDays: input.restPeriodDays, updatedAt: new Date() })
+        .where(eq(farms.id, farmId))
+        .returning();
+
+      const [role] = await tx
+        .select({ role: farmUsers.role })
+        .from(farmUsers)
+        .where(and(eq(farmUsers.farmId, farmId), eq(farmUsers.userId, userId)));
+
+      const herds = await enterprisesByFarm(tx, [farmId]);
+
+      return {
+        id: updated!.id,
+        businessId: updated!.businessId,
+        name: updated!.name,
+        enterpriseTypes: updated!.enterpriseTypes,
+        eventRetentionMonths: updated!.eventRetentionMonths,
+        restPeriodDays: updated!.restPeriodDays,
         enterprises: herds.get(farmId) ?? [],
         role: role!.role,
       };

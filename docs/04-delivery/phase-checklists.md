@@ -1435,22 +1435,107 @@ and can ship independently (4b).
 
 ```
 Land — blocks & plantings
-□ 4a·1 FR-201 Define a block: capture screen reusing AddLandUnitScreen's `kind='block'` path —
+☑ 4a·1 FR-201 Define a block: capture screen reusing AddLandUnitScreen's `kind='block'` path —
   schema, RLS, TENANCY, geometry trigger are ALL already built (Phase 2). This is a UI/routing
-  slice, not a schema slice.
-□ 4a·2 FR-202 Split a block into sub-blocks without losing history — `parent_id` already exists;
+  slice, not a schema slice. **Done (18th session).** GPS boundary is `WalkBoundaryScreen`
+  (already worked pre-Phase-4); the actual gap was soil type + irrigation, both already columns on
+  `landUnitSchema`/the server insert/both derived sync artifacts but never asked for on the form.
+  Added: soil type (free text — descriptions vary too widely for a closed set) and irrigation (a
+  new closed set, `@werf/core` `IRRIGATION_TYPES`/`irrigationTypeSchema` — FR-201 says "irrigation
+  *type*", and a gloved farmer taps a choice rather than types one; no migration, same `text`
+  column). Both gated to `term === 'block'`, mirroring the existing camp-only `capacity` gate — a
+  camp is asked neither. `HydratedLand.tsx`'s tolerant row mapper validates the closed set on
+  read (a value outside it is dropped to `null`, not force-cast) rather than trusting raw SQLite
+  text, the same "tolerant per row" discipline the file already documents for `kind`.
+☑ 4a·2 FR-202 Split a block into sub-blocks without losing history — `parent_id` already exists;
   new is the split ACTION (a screen + server endpoint that creates children referencing the
   parent, closes nothing on the parent — closing loses history, which is the FR's own words).
-  ⚠️ SAFETY EDGE, decide now: a spray recorded against the parent BEFORE the split still applies
-  to every resulting child (the same soil and plants received it) — the harvest/PHI guard (4d)
-  for a child block MUST walk `parent_id` for spray events dated before the split's own
-  `occurred_at`, not just query the child's own `land_unit_id`. Undecided until 4d, but the
-  guard's query shape has to know this on day one or splitting silently launders a PHI.
-□ 4a·3 FR-203 Record a planting: crop, cultivar, planted date, density, seed source, expected
+  **Done (20th session).** No new server endpoint was needed: `POST /land-units` already accepts
+  an optional `parentId`, farm-scoped and validated (`assertOwnedReferences`'s `parentLandUnitId`
+  check), since Phase 2 — a split child is an ordinary land unit that happens to carry one, and
+  `SplitBlockScreen.tsx` (`/land/split?block=`) is a bulk-creation UI over the existing write path,
+  not a new mutation. Each child inherits the parent's `soilType`/`irrigation`/`enterpriseId`
+  automatically (no per-child override in this slice — no land-unit EDIT screen exists yet either
+  way, a pre-existing gap named rather than worked around) and asks fresh only for `code`/`name`/
+  `hectares`. Gated to `kind === 'block'` at the screen, same as `RecordPlantingScreen` — the
+  schema/service layer stays kind-agnostic, only the door is narrowed. `LandScreen.tsx` shows a
+  parent's own history (boundary, current planting) untouched after a split, and replaces its
+  "Split this block" action with "Split into: …" once children exist, so a farmer cannot
+  accidentally start a second split of ground already divided.
+  ⭐ **Found and fixed the same session: a genuinely live P2.7-class Outbox gap.** Land-unit
+  creation had never carried a `guardedBy` on its own `parentId` — harmless until this slice,
+  because nothing had ever set `parentId` on a real capture before. A split child sent ahead of a
+  parent this device has not yet had accepted would 404 for a cause a farmer cannot see; fixed by
+  guarding a land unit's own queue item on `landrow:${parentId}` when non-null, the same axis a
+  land unit's `provides: [landrow:${id}]` already sits on — proven fail-first (`Outbox.test.tsx`,
+  "holds a SPLIT CHILD behind its refused parent").
+  ✅ **The planting-inheritance question below is ANSWERED, not deferred**: YES, unbounded. New
+  shared `@werf/domain` primitive `ancestorChainOf` (`land/ancestry.ts`) walks `parent_id` to the
+  root; `LocalPlantings.tsx`'s `useCurrentPlanting`/`latestPlantingFor` now fold over a block AND
+  every ancestor's plantings, so a split vineyard block's children read as carrying the vines that
+  were always there, not "never planted". The total order `(occurred_at, id)` already makes a
+  later event win, so this costs nothing going forward — a fresh planting on the child supersedes
+  the inherited one automatically. `ancestorChainOf` is deliberately the SHARED graph walk only;
+  each caller applies its own temporal bound on top (see the next paragraph for why the PHI guard's
+  bound must differ from planting's unbounded one). Proven end-to-end in `SplitBlock.test.tsx`
+  ("a child shows the PARENT's planting as its own current one").
+  ⚠️ SAFETY EDGE, still decided but not yet BUILT (4d's job): a spray recorded against the parent
+  BEFORE the split still applies to every resulting child (the same soil and plants received it) —
+  the harvest/PHI guard (4d) for a child block MUST walk `parent_id` (now `ancestorChainOf`,
+  reused rather than re-invented) for spray events dated STRICTLY BEFORE the child's own
+  `createdAt`, unlike planting's unbounded walk — a spray filed against the parent AFTER the split
+  is not a fact about a child that by then existed as its own capturable unit, and an unbounded
+  walk would let a farmer file against "the old block" to dodge a guard the child's own history
+  would otherwise trigger. The guard's query shape now has a real, tested graph-walk to call; 4d
+  still has to add its own bound and wire it in.
+  ⭐ **ONE GENERATION ONLY, enforced by the picker, not just the LandScreen link.** An external
+  review of this slice caught that the picker's `blocks` list was every `kind === 'block'` unit,
+  with no children-check — so a farmer arriving at `/land/split` from a bookmark, the FirstRunGuide,
+  or the dropdown itself could pick an ALREADY-SPLIT block and create grandchildren, even though the
+  LandScreen link was deliberately withheld from that same block for exactly this reason. The
+  suppression was UI-only and the screen's own picker bypassed it. Fixed: `blocks` now excludes any
+  unit that is itself another unit's `parentId` (a leaf-only filter), so an already-split block is
+  unreachable from the picker too, not just from the row link — and a `?block=<already-split-id>`
+  query param no longer honours the request either, falling back to the first real leaf. This
+  matters beyond tidiness: the SAFETY EDGE above reasoned the PHI guard's bound for exactly ONE hop
+  (parent → child); a grandchild would need that bound re-derived per hop before 4d could trust it.
+  Proven fail-first (`SplitBlock.test.tsx`, "will not offer an ALREADY-SPLIT block as something to
+  split again"). If a real need for re-splitting shows up later, lift this restriction and revisit
+  4d's bound in the same change — never lift one without the other.
+  ⭐ Same review also caught the headline inheritance test (`SplitBlock.test.tsx`, "a child shows
+  the PARENT's planting as its own current one") asserting a raw count
+  (`findAllByText('Cabernet Sauvignon').length === 3`) rather than which rows carried it — a count
+  that would pass even if one child never rendered it at all, as long as the total came out right.
+  Fixed to scope the assertion to each unit's own `<li>` (parent, child A, child B individually) —
+  the same `within(row)` pattern already used elsewhere in this file. Fail-first proven separately:
+  temporarily reverting the ancestor walk to a single-id filter turned this specific test red (the
+  child row read "not planted yet"), confirming the assertion actually exercises the fold it claims
+  to.
+☑ 4a·3 FR-203 Record a planting: crop, cultivar, planted date, density, seed source, expected
   harvest — new `planting` event payload (Zod, @werf/core), capture screen `/crops/plant`,
   server write through the shared `insertEvent`/`assertHerdScoped`-equivalent path (crop events
   are land-scoped, not herd-scoped — `FARM_SCOPED_EVENT_TYPES`-style exception or a new
-  `LAND_SCOPED_EVENT_TYPES` list; decide which, name it in the domain layer).
+  `LAND_SCOPED_EVENT_TYPES` list; decide which, name it in the domain layer). **Done (19th
+  session).** DECIDED: `planting` was added to the EXISTING `FARM_SCOPED_EVENT_TYPES` list rather
+  than a new parallel one — `boundary_walk` already sits there despite carrying `land_unit_id`,
+  for the identical reasoning ("ground, not a herd"), and a second list would buy a second branch
+  in `assertHerdScoped` with behaviour identical to the first. New `apps/api/src/crops/` module
+  (`CropsController`/`CropsService`, `POST /crops/plantings`) — separate from `LandService`, the
+  same split `RainfallService` already draws from it: a fact ABOUT a block (FR-150/201/202) and a
+  fact about what's grown IN it (FR-203) are different domains sharing a foreign key. New
+  `packages/domain/src/crops/` (first module under Phase 4's own domain area, mirroring
+  `land/`/`livestock/`). Client: `apps/web/src/crops/` — `LocalPlantings.tsx` (capture store),
+  `HydratedCrops.tsx` (down-sync half, mirroring `HydratedLand.tsx`'s boundary-walk hydration —
+  the sync-hydration-blind-spot lesson (STATUS.md) means BOTH halves had to be built, not just the
+  local one), `RecordPlantingScreen.tsx` (`?block=` picker with the same live-reconciliation-
+  against-farm-switching fix `WalkBoundaryScreen` already carries). Outbox: guarded by
+  `landrow:${landUnitId}` exactly like a boundary walk (FK-only, no safety ordering — FR-203 has
+  no compliance gate), with BOTH `plantingsSettled`/`plantingsHydrationFailed` wired into the two
+  flush-gating aggregates. `LandScreen.tsx` gained a `PlantingRow` per block (gated on the unit's
+  own `kind === 'block'`, not the farm-wide vocabulary term, so a mixed farm's camps show only the
+  boundary row). Found and fixed in the same commit: `FirstRunGuide.tsx`'s crop step ("Record your
+  first planting") pointed at `/harvest`, an honest placeholder from before this slice existed —
+  now points at `/crops/plant`, the room the sentence actually promises.
   ⭐ DESIGN DECISION — the "current planting" READ PROJECTION: latest `planting` event per
   `land_unit_id`, ordered `(occurred_at, id)`, no status machine, no closing event. An annual
   crop gets a fresh `planting` event every season; a vineyard gets ONE that persists for years
@@ -1459,104 +1544,532 @@ Land — blocks & plantings
   planted"), NOT a safety dependency: the PHI guard (4d) reads the block's SPRAY HISTORY
   directly and never needs to know what's currently planted, so getting this wrong is a wrong
   label on a screen, not a compliance defect. Revisit if a real crop-rotation case breaks it
-  (FR-210, deferred, would need this same log).
+  (FR-210, deferred, would need this same log). Implemented as `latestPlantingFor`/`isLater` in
+  `apps/web/src/crops/LocalPlantings.tsx`, mirroring `LocalLand.tsx`'s `latestWalkFor` exactly —
+  NOT in `@werf/domain`, matching that precedent (the fold lives beside the store that reads it).
+  ✅ **RESOLVED in 4a·2 (20th session): YES, unbounded ancestor walk.** See that box for the
+  reasoning and the shared `ancestorChainOf` primitive it introduced.
 
 Reference data & spray capture
-□ 4c·1 FR-508 `chemical_products` migration + RLS (world-readable, `reference-sync`, filtered by
-  jurisdiction, NOT farm-scoped — same class as `veterinary_products`/`species_gestation`) +
-  TENANCY classification `reference-sync` (`database-schema.md:740` already names it) + seed rows
-  marked EXPLICITLY unverified for dev/test (see the ⛔ blocker below — mirrors `regulatory_rates`
-  dev placeholders).
-□ 4c·2 `ReferenceService.listChemicalProducts` — copy `listVeterinaryProducts` exactly, jurisdiction
-  filter, `onDay` optional, every version when omitted. `GET /reference/chemical-products`.
-  Client `createReferenceCache` sibling entry (same cache primitive Phase 2 already built).
-□ 4c·3 FR-204 Record a spray to GlobalGAP standard: registered product, active ingredient(s),
-  rate, water volume, operator, equipment, weather at application, target pest — capture screen
-  `/crops/spray`, `phiDays`/`earliestHarvestDate` resolved from the chemical_products registration
-  IN FORCE ON THE SPRAY DAY and stored ON THE EVENT (never recomputed on read — ADR-0005). What is
-  STORED is a `productId`, never a bare PHI number — the server resolves it, exactly as treatment
-  never stores a bare withdrawal period.
-□ 4c·4 FR-211 🇿🇦 Auditor-ready spray history report per block, per season — a read endpoint/screen
-  over `spray` events filtered by `land_unit_id` + season, NOT the full GlobalGAP checklist engine
-  (control points, non-conformances, corrective actions — that is `legal-compliance.md` §4.1's
-  Phase 6 build requirement, named here so it is not smuggled in). This is one report, not an
-  audit product.
+☑ 4c·1 FR-508 `chemical_products` migration (0032) + RLS (world-readable, `reference` classified
+  `reference-jurisdiction`, NOT farm-scoped — same class as `veterinary_products`) + TENANCY entry
+  + seed rows marked `(synthetic)` for dev/test (mirrors `VET_PRODUCTS`' discipline — see the ⛔
+  blocker below). **Done (21st session).** `registration_number` is NOT NULL here, unlike
+  `veterinary_products`' nullable one — every real Act 36/1947 registration carries one
+  (`chemical.ts`'s own module note). Both derived artifacts (`generate:schema`/`generate:sync-rules`)
+  regenerated in the same commit; `packages/db/src/schema/tables.ts`'s hand-maintained MODULE list
+  (not the table list, which is derived) needed the new `chemical.ts` import added by hand — missing
+  it fails `tenancy.spec.ts`'s classification-vocabulary test, the fail-first signal that caught it.
+  ⭐ Also found and fixed: `packages/db/src/testing.ts`'s real-Postgres test-reset `TRUNCATE` list
+  predates this table and is hand-maintained too — a fresh `chemical_products` row leaked across
+  tests (accumulating rows) until added, caught by the reference-register integration tests going
+  red on the second test in the file, not the first.
+☑ 4c·2 `ReferenceService.listChemicalProducts` — copies `listVeterinaryProducts` exactly (P1.3:
+  every version when `onDay` omitted), `GET /reference/chemical-products`. Client
+  `LocalChemicalProducts.tsx` is a `createReferenceCache` sibling to `LocalVetProducts.tsx`. **Done
+  (21st session).**
+☑ 4c·3 FR-204 Record a spray to GlobalGAP standard — `/crops/spray`. **Done (21st session).**
+  `phiDays`/`earliestHarvestDate` resolved from the chemical_products registration IN FORCE ON THE
+  SPRAY DAY and stored ON THE EVENT (ADR-0005); `productId` is what's stored, never a bare PHI
+  number (`crops.service.ts`'s `resolveChemicalProduct`, mirroring `resolveVetProduct`). ⭐
+  `sprayPayloadSchema` lives in the payload schema (mirroring `dosingFields`'s placement), but
+  `recordSprayRequestSchema` (the WIRE contract) enumerates fields one at a time rather than
+  spreading the payload shape — unlike `recordPlantingRequestSchema`/`recordFertiliserRequestSchema`
+  (no compliance gate, so the spread is safe there), spreading here would let a client dictate
+  `activeIngredients`/`phiDays` merely because the payload schema happens to carry those keys. ⭐ A
+  null `phi_days` is OMITTED from the event, never stored as 0 — a registered zero-day PHI and "no
+  PHI on record" are different facts, the same P1.3 lesson `attachDosing`'s `meatWithdrawalDays`
+  omission already proved for a zero-withdrawal vaccine; `earliestHarvestDateFor` (mirrors
+  `withholdUntil`) is the shared pure fn both the server and `RecordSprayScreen`'s PHI preview call.
+  ⭐ `LocalSprays.tsx` does NOT call the `@werf/domain` `recordSpray` builder locally, unlike
+  planting/fertiliser — that builder needs the resolved PHI as an INPUT this device does not have,
+  mirroring `LocalHealth.tsx`'s identical choice for treatment/vaccination/dip. `StoredSpray` carries
+  optional `activeIngredients`/`phiDays`/`earliestHarvestDate` fields a purely local capture never
+  sets, populated only once this device's own write round-trips down as a hydrated echo with the
+  same id (`HydratedSprays.tsx`, `mergeByIdPreferHydrated` — hydrated wins on a shared id, the same
+  choice `HydratedLivestock.tsx` makes for a move).
+☑ 4c·4 FR-211 🇿🇦 Auditor-ready spray history — `CropsService.listSprayHistory` +
+  `GET /crops/sprays`, filtered by block and/or a `from`/`to` date range on the spray day. **Done
+  (21st session).** No "season" filter: grepped first, and this codebase's one existing season
+  concept (`useSeasonRainfall`, calendar-year-to-date) is a rainfall-specific convenience, not a
+  general crop-season boundary (a real season varies by crop/region — FR-210's deferred rotation
+  work would need to name one properly). `SpraysScreen.tsx` (the home grid's `Sprays` tile
+  destination, wired for real from this slice) is built ENTIRELY from local cached data
+  (`useEffectiveSprays()` joined against the local chemical-product reference cache for the product
+  name) rather than calling the server report endpoint — "auditor-ready" does not mean "online-only"
+  in this product, and the server endpoint exists for future non-device consumers (a printed pack, a
+  desktop export). Not the GlobalGAP checklist engine (control points, non-conformances, evidence
+  completeness) — that is `legal-compliance.md` §4.1's Phase 6 build requirement.
+☑ **`compliance-checker` (+ `reviewer` + `sync-auditor`), whole-branch `main..HEAD` — CLEARS, run
+  2026-08-17 (21st session, JP-requested). 4c is MERGE-READY.** Two MED found and fixed as `3d10103`
+  (both fail-first proven): `listSprayHistory` ordered by `occurredAt` alone, so two same-day sprays
+  — an ordinary case, since `RecordSprayScreen` stamps every back-dated capture at the identical noon
+  instant — tied with no Postgres ordering guarantee (`sync-auditor` and `compliance-checker` found
+  this independently); `SpraysScreen.tsx` conflated "not yet hydrated" with "hydrated, product has no
+  PHI on record" under the shared `phiDays === undefined` check, so a fully GlobalGAP-clear spray
+  showed a permanent, wrong "PHI not yet confirmed" label on the one screen this slice exists to
+  produce — fixed by discriminating on `activeIngredients` (required non-empty on the wire, present
+  on every hydrated echo, absent on every local-only capture) instead. `SpraysScreen.test.tsx` added
+  — it had zero coverage before this pass, which is how the MED shipped unnoticed. One LOW-MED filed
+  rather than fixed (a schema-level `.refine()` co-occurrence guard on `phiDays`/`earliestHarvestDate`
+  — not reachable via the current write path, compliance-checker's own call). ⭐ `reviewer` also
+  caught a stale Turbo cache hit masking a real `exactOptionalPropertyTypes` typecheck failure that
+  two earlier `pnpm verify` runs this session had reported green on — see STATUS.md's top-of-file
+  note for the fix and the lesson (a `cache hit, replaying logs` line proves nothing changed, not that
+  nothing is broken). The outstanding PHI-block-at-capture guard (`legal-compliance.md` §4.3) is 4d's
+  own scope, not a 4c gap — compliance-checker confirmed 4c's write path (server-side PHI resolution,
+  date-in-force lookup, client-write-blocking) is otherwise sound.
 
-PHI guard + harvest — ONE slice, never split (see the note above)
-□ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
-  client-side (device has the cached chemical_products + this block's own local spray events —
-  O-12: blocked locally, no server round trip) AND server-side (a server-only rule arrives after
-  the truck has left). Message names the product, the spray date, and the earliest safe harvest
-  date (US-030's own gherkin — this is the acceptance test, use it verbatim).
-□ 4d·2 The override path: a written reason, audited, never silent (FR-205's own words) — mirrors
-  the sale-guard override PATTERN but is NOT the same mechanism as the cross-device race case
-  below; keep them distinct or 4d conflates a deliberate human override with an automatic flag.
-□ 4d·3 FR-207 Record a harvest: quantity, unit, grade, destination, date — the payload shape is
-  already sketched (`database-schema.md:359`) including `phiOverride?: { reason, by }`. Screen and
-  guard ship together (see slice-order note above).
-□ 4d·4 Both routes a PHI check must read, mirroring the dose-reaches-an-animal defect
-  (`713634b`, Phase 2): a block's own spray AND (per 4a·2) an ancestor's pre-split spray. A guard
-  reading only the child's own events is the same class of bug, just in the crop domain.
-□ 4d·5 Flush ordering: sprays flush before harvests, same reasoning as `16fbb6a` — a point-in-time
-  guard cannot refuse a harvest against a spray that has not arrived yet.
-□ 4d·6 Cross-device race (device A sprays, device B — never having seen it — harvests before
-  either syncs): apply the Phase 2 resolution VERBATIM — **FLAG, NEVER REFUSE** a disposal already
-  recorded; a retroactive compliance flag is DERIVED on read (order-independent) and surfaced on
-  `/attention`, the same screen the meat-withdrawal flag already uses. This is NOT the FR-205
-  override path (4d·2), which is a deliberate in-the-moment human decision — say which mechanism
-  covers which case so a reviewer doesn't conflate them.
-□ 4d·7 Idempotency checked BEFORE validation for a re-flushed harvest, same reasoning as the move
-  fix (`findEvent` pattern) — a harvest that already landed must not re-validate against the state
-  its own first flush wrote and refuse itself.
-□ 4d·8 A PHI refusal on flush is a 4xx: set the capture ASIDE, continue the round, never `return`.
-□ 4d·9 Day arithmetic through `farmLocalDay`, not `toISOString().slice(0,10)` — third recurrence
-  of this exact gotcha in this repo (STATUS.md memory), check it explicitly in review.
-□ 4d·10 Compliance-gated (FR-205/US-030, food-safety/export). No hardcoded PHI anywhere —
-  resolved by `(jurisdiction, productId, occurred_at)` through the reference cache, never a
-  literal in the domain function.
+PHI guard + harvest — ONE slice, never split (see the note above). ☑ **Done (22nd session).** All
+ten items closed together, on `phase-4/crops-fields`, `pnpm verify` forced-cold clean (typecheck
+12/12, test 137 files/1468 tests, build 7/7, 181.82 KB gz) and `pnpm test:e2e` 31/5 skipped — no
+regression. ✅ **CLEARED by `compliance-checker`, 25th session** — a spray-side gap found by the
+24th-session pass was closed as 4d·11 (below) and re-verified APPROVABLE this session; 4d is
+merge-ready.
+☑ 4d·1 FR-205 + US-030 Block a harvest within the pre-harvest interval AT CAPTURE. Guard runs
+  client-side (`usePhiGuard.ts` over `useEffectiveSprays()`/`useChemicalProducts()` — O-12: blocked
+  locally, no server round trip) AND server-side (`CropsService.recordHarvest`'s
+  `evaluatePhiGuard`). Both call the SAME shared `phiGuardFor` (`@werf/domain`) — see 4d·4's note on
+  why this is one implementation, not the client/server split FR-131 uses. Server's `ValidationError`
+  message names the product, the spray date and the earliest safe harvest date, US-030's own gherkin
+  verbatim.
+☑ 4d·2 The override path: a category (from a closed list) PLUS free text, combined into ONE audited
+  `reason` string (`RecordHarvestScreen.tsx`) — never silent (FR-205's own words). ⭐ **No prior
+  "sale-guard override pattern" actually existed to mirror** — FR-131's withdrawal guard is a hard,
+  non-overridable block; FR-205 is the first override-with-audit mechanism in this codebase, built
+  fresh here. The audit row reuses the EXISTING immutable `audit_log` table (migration 0026,
+  `crops.service.ts`'s `recordPhiOverride`) rather than `recordConflict` (that helper also enqueues a
+  `conflict_reviews` item for a human to CLOSE — a deliberate override has nothing left to review).
+  Kept distinct from the cross-device flag (4d·6) throughout — an overridden harvest is explicitly
+  excluded from the race register, never conflated with it.
+☑ 4d·3 FR-207 Record a harvest: quantity, unit, grade, destination, date — payload shape matches
+  `database-schema.md:359` (`phiOverride?: { reason, by }`, `by` optional in the schema/domain layer
+  since a LOCAL capture never has one to give — see 4d·2's note and `LocalHarvest.tsx`). Screen
+  (`RecordHarvestScreen.tsx`) and guard shipped together, plus a report screen
+  (`HarvestScreen.tsx`, `/harvest`) closing the home tile that already existed pointing at the
+  placeholder — an addition beyond the checklist's own wording, deliberately, to avoid a half-built
+  tile (CLAUDE.md's own rule).
+☑ 4d·4 Both routes a PHI check must read: a block's own spray AND an ancestor's pre-split spray,
+  bounded PER-HOP (not leaf-wide — a single leaf-wide bound is provably wrong, see `phi-guard.ts`'s
+  own header and its counter-example test). Server checks the FULL ancestor chain (real
+  `land_units.created_at`, `evaluatePhiGuard`). ⭐ **Client checks the LEAF ONLY** — a deliberate,
+  advisor-reviewed asymmetry: the local land-unit capture (`StoredLandUnit`) never carries a
+  `created_at` (server-assigned; a just-split offline block has none to give even from its own
+  memory), and extending the hydration projection to add it is real plumbing for a narrow case
+  (block split AND harvested, both still offline) — filed as a follow-up (STATUS.md), not built
+  here. `RecordHarvestScreen.tsx` discloses the gap unconditionally for any block with a non-null
+  `parentId`; the server is the authoritative backstop, same posture `withdrawal.ts` takes for its
+  own client/server split.
+☑ 4d·5 Flush ordering: sprays flush before harvests (`Outbox.tsx`, array order). Also, on top of
+  the checklist's own wording: each spray `provides` a `sprayrow:` tag per block, and each harvest's
+  `guardedBy` walks the (unbounded, deliberately conservative) local ancestor chain for it — so a
+  spray HELD this round (its own `landrow:` dependency unmet, not just one that flushes later)
+  taints a harvest on that block or a descendant too, closing the same class of bug `16fbb6a` fixed,
+  not just reproducing its array-order half.
+☑ 4d·6 Cross-device race: `crops.service.ts`'s `phiComplianceRegister` (re-derived on every read,
+  never a stored flag — mirrors `residueRegister`'s own reasoning) + `phiRegister.ts`'s
+  `useLocalPhiFlags` (this device's own unsent evidence) merged on `AttentionScreen.tsx` in a new
+  section, local-first/server-overwrites, the identical pattern the residue section already uses.
+  `HomeScreen.tsx`'s attention badge folds the count in, deduplicated on event id. An overridden
+  harvest is excluded (4d·2's decision was already deliberate and audited, not a race).
+☑ 4d·7 Idempotency checked BEFORE validation (`findEvent`, mirrors `recordMove`/`recordMobTally`) —
+  proven fail-first at the integration level (a re-flushed override does not re-validate or
+  double-write the audit row).
+☑ 4d·8 A PHI refusal on flush is a 4xx (`ValidationError`) — falls through the EXISTING generic
+  Outbox refusal machinery (`isRefusal`/`refusedThisRound`, already proven for every other capture
+  kind) with no new code needed; not given its own dedicated Outbox-level test, the same "reuses
+  already-proven generic machinery" call `4d·5`'s taint tags make explicit reasoning for.
+☑ 4d·9 Day arithmetic: the server never converts an instant to a day for harvest at all —
+  `harvestedOn` is a day string end to end, client to server, sidestepping the whole bug class
+  rather than needing to guard against it; the one place `phi-guard.ts` DOES compare an instant
+  (the ancestor-split bound) stays an instant-to-instant comparison, never converted. Client capture
+  screen uses `farmToday()`, mirroring `RecordSprayScreen.tsx`.
+☑ 4d·10 Compliance-gated. No hardcoded PHI: the harvest guard reads a spray's ALREADY-RESOLVED
+  `earliestHarvestDate` (ADR-0005 — never recomputed from `chemical_products` on read) when present,
+  falling back to a `(productId, phiDays)` PREVIEW from the local cache only for an unsent local
+  spray (the O-12 offline case) — mirrors `withdrawal.ts`'s `clearDateFor` exactly; an advisor
+  review caught and corrected an earlier draft that dropped this preview fallback entirely, which
+  would have broken the offline journey outright.
+☑ 4d·11 The OTHER half of § 4.3, missed by 4d·1–10 and caught by an owner-requested
+  compliance-checker pass (24th session): "Spraying a block within the PHI of its planned harvest
+  date must be **blocked at capture**" names the SPRAY as the capture to block, not only the
+  harvest — 4d·1 built the harvest-side (LATE) check and the doc's own spray-side (EARLY) check was
+  never built, disclosed nowhere, and read as a silent gap rather than a deferral. Closed same
+  session: `sprayPhiGuardFor` (`@werf/domain/crops/phi-guard.ts`) blocks `recordSpray` when
+  `sprayedOn + phiDays` would clear AFTER the block's own planned harvest date — sourced from
+  `currentPlantingFor` (moved from `LocalPlantings.tsx` into `@werf/domain/crops/planting.ts` so
+  client and server share ONE fold, the same posture `phiGuardFor` already takes; UNBOUNDED ancestor
+  walk, matching the display projection's own already-decided FR-202 semantics, deliberately NOT the
+  harvest guard's per-hop spray bound — a different question). Same override shape as 4d·2: a
+  category + free text reason, audited (`recordPhiOverride` generalised to serve both guards, keyed
+  by `eventId` rather than `harvestEventId`). Client: `useSprayPhiGuard`
+  (`usePhiGuard.ts`) blocks `RecordSprayScreen` offline, no server round trip, from the SAME local
+  planting cache `useCurrentPlanting` already reads for the land screen. Outbox: a spray now
+  `guardedBy` a `plantingrow:` tag per ancestor (mirroring harvest's own `sprayrow:` dependency one
+  guard earlier) — without it, an outbox that ever sent a same-device spray ahead of the planting
+  moments before it captured it could let the server's guard run blind and silently drop a farmer's
+  own override. ⚠️ Deliberately NOT built: a `phiComplianceRegister`-style cross-device race register
+  for the spray/planting pair (4d·6's counterpart) — the ordinary same-device race is closed by the
+  outbox dependency above, but two DIFFERENT devices racing a planting and a spray, both offline,
+  both landing out of order server-side, is not re-derived retroactively the way harvest's own race
+  is. Filed as a follow-up, not silently dropped a second time. Also unenforced still: `usePhiGuard`'s
+  own pre-existing `unresolved` dead-end (an offline harvest whose spray's product isn't cached
+  yet cannot be recorded at all) — JP decided (25th session) to leave it a hard stop, by choice.
+  ✅ **Re-verified APPROVABLE by `compliance-checker`, 25th session** — `sprayPhiGuardFor` genuinely
+  blocks, resolves PHI by the spray day, and the override is server-audited with `by`
+  client-unsettable; re-derived from the code, not assumed.
 
 Fertiliser (no compliance gate — ships independently of 4c/4d)
-□ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, method
-  field distinguishes fertigation from broadcast/band, capture screen `/crops/fertilise`. Feeds
-  the GlobalGAP evidence requirement (§4.1) as a record, nothing more, in this phase.
+☑ 4b FR-206 Record a fertiliser application including fertigation — `fertiliser` event, `method`
+  field (broadcast/band/fertigation/foliar) distinguishes fertigation from the rest, capture screen
+  `/crops/fertilise`. **Done (21st session), committed and verified before 4c started.** Filed
+  under `FARM_SCOPED_EVENT_TYPES` the identical way `planting` is (a block's `enterpriseId` is
+  nullable and 4a·1 never asks for one at block creation; a second filing strategy for the same
+  "fact about the ground" family was considered and rejected — one rule, named once). `rate` mirrors
+  `planting.density`'s generic `{ value, unit }` shape (kg/ha broadcast, L/ha fertigation, no closed
+  unit set). No reference product, no compliance gate, no PHI — `CropsService.recordFertiliser`
+  resolves nothing server-side beyond the ordinary tenancy/FK checks every capture gets.
 
 Grazing, feed & inventory — the one slice with real new schema
-□ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — a PURE projection over existing
-  `move` + `boundary_walk` events (no new event type): days between arrival and departure ×
-  hectares (from the boundary projection, 4a is not needed for this — land_units already has it)
-  gives grazing days; LSU-on-camp over that window gives stocking rate. Table-driven domain fn,
-  no I/O, same discipline as `averageDailyGain`.
-□ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — the rest-period NUMBER is
-  agronomic, not legal: it does not belong in `regulatory_rates` (that seam is for LAW, not
-  veld-management best practice — ADR-0006's own boundary). It is a per-camp or per-farm SETTING
-  the owner sets, never a literal in code, for the same "never hardcode a number the farmer might
-  reasonably disagree with" reasoning `CLAUDE.md` applies to regulated numbers, extended here on
-  product-design grounds rather than legal ones.
-□ 4e·3 FR-501 `inventory_items`/`inventory_lots` migration + RLS + TENANCY (farm-scoped, new
-  schema — chemicals, fertiliser, feed, medicine; batch, expiry, location). ⭐ Stock ON HAND is a
-  PROJECTION over an append-only movement log (received/consumed/adjusted/counted), the identical
-  pattern `mobs.head_count` already proved for exactly the same reason: two people recording
-  consumption on two phones in a dead zone must COMPOSE, and a stock count is an ABSOLUTE THAT
-  RESETS, never an edited field. Do not build a directly-edited `quantity_on_hand` column.
-□ 4e·4 FR-502 Inventory auto-decrements on use — spray (4c) and fertiliser (4b) capture gain an
-  OPTIONAL inventory-lot reference (additive to the schema already shipped in 4b/4c, no rework):
-  a farm without inventory tracking on can still spray/fertilise; one that does emits a
-  `consumed` movement. The chemical_products reference row (what the product IS, national,
-  read-only) and an inventory lot (how much of it THIS FARM has, farm-owned, mutable) are
-  deliberately two different tables — conflating them would make a farm's stock count sync-scoped
-  by jurisdiction instead of by farm.
-□ 4e·5 FR-503 Low-stock and expiry warnings — read model over the inventory projection; a
-  candidate Sprays/crop tile badge (see the home-metrics note below).
-□ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —
-  depends on 4e·3 existing; a `feed` consumption movement against a `land_unit_id`/`mob_id`, Money
-  in integer cents for the cost side.
+☑ 4e·1 FR-151 Grazing days / stocking rate / rest days per camp — mob-move capture BUILT (25th
+  session); the grazing-days/rest-days/stocking-rate READ PROJECTION closed 26th session — see the
+  remainder-closed entry below.
+  ✅ **RESOLVED, 25th session: JP chose (a) — a new mob-move capture**, reusing `type: 'move'`
+  with `animalId: null, mobId: <mob>`. `recordMobMove` (`@werf/domain/livestock/movement.ts`,
+  sibling to `recordMove`, not a variant of it — a mob has one dimension to move, a camp, not the
+  animal/mob pair an individual walk carries). Server: `LivestockService.recordMobMove` +
+  `mobPositionBefore` (mirrors `positionBefore` exactly — same total order, same "arrival order is
+  not `occurred_at` order" reasoning) + `POST /livestock/mob-moves`. ⭐ **The structural risk named
+  when this was blocked, closed and proven, not just asserted**: an individual animal transferring
+  INTO a mob also stamps that `move` event's own `mob_id` to the destination
+  (`recordMove`'s envelope convention), so a naive mob-position read scoped on `mobId` alone would
+  read that transfer as the WHOLE FLOCK relocating. Both `mobPositionBefore` (server) and
+  `MOB_MOVE_EVENTS_SQL`/`mapHydratedMobMove` (client hydration) scope on `animalId IS NULL`
+  instead — proven by an integration test that transfers an animal into a mob and asserts the
+  mob's own denormalised camp is untouched, and a unit test that asserts the mapper returns `null`
+  for a row carrying an `animal_id`. Client: `LocalMobMoves.tsx` (append-only local store,
+  destination-only, mirrors `LocalMoves.tsx`), `MoveMobScreen.tsx` (`/animals/groups/move`, one
+  mob + one destination per save — `AdjustMobScreen.tsx`'s single-select shape, not
+  `MoveAnimalsScreen.tsx`'s batch one, since a group move has no per-animal fan-out to select
+  over). Outbox: `guardedBy` BOTH `mobrow:${mobId}` and `landrow:${toLandUnitId}` — proven
+  fail-first (`Outbox.test.tsx`, "holds a MOB move behind a refused camp"). ⭐ **`herd.ts`'s
+  `useEffectiveMobs` gained a `positionByMob` fold** (the mob twin of `positionByAnimal`, same
+  `(occurredAt, id)` total order) — without it a just-captured, not-yet-flushed mob move would not
+  show on screen until the flush round-tripped a fresh `mobs.land_unit_id` back down, the identical
+  staleness class `positionByAnimal` already closes for an individual animal's walk; proven by
+  `MoveMob.test.tsx`'s own screen asserting the new camp with no reload. ⚠️ Deliberately NOT
+  built: a cross-device race register for a mob move (4d·6/4d·11's counterpart) — two DEVICES
+  moving the SAME mob to different camps, both offline, is not reconciled retroactively the way
+  those registers do; a same-device race is closed by the outbox `guardedBy` above. Filed, not
+  silently dropped.
+  ✅ **Swept by `compliance-checker` (25th session, JP-requested) — one HIGH found+fixed.** The new
+  capture stamps `animal_id = NULL` on a mob-level `move`, which made it invisible to
+  `possessionTrail` (`livestock.service.ts`, the FR-603 stock-theft evidence pack's movement
+  history) — an individually-identified animal walked only with its flock would have printed "no
+  movement history" in the document meant to prove continuous possession (legal-compliance.md
+  §3.2). Fixed by extending the SAME `mobMembership`-windowed reconstruction the file already uses
+  for whole-flock doses (the identical defect class, closed once before, reopened by this
+  capture) to also pull mob-scoped moves; proven fail-first (temporarily reverting just the new
+  block reproduced `expected [] to have length 1`).
+  ✅ **Remainder of 4e·1 closed (26th session)**: the grazing-days/rest-days/stocking-rate READ
+  PROJECTION, client-only and derived, never stored (4e·3's precedent — no evidence-pack consumer
+  the way `possessionTrail` needs one, so nothing to hydrate). `foldCampActivity`
+  (`@werf/domain/livestock/grazing.ts`) is a pure fold over the merged move + mob-move logs, same
+  `(occurredAt, id)` total order as `positionByAnimal`/`positionByMob`, producing per-entity arrival
+  timestamps and per-camp last-departure timestamps. ⭐ **Occupancy is decided by the caller, never
+  by the fold** — `campGrazingStatuses` (`apps/web/src/livestock/grazing.ts`) cross-checks arrivals
+  against `useEffectiveAnimals`/`useEffectiveMobs`'s own live/active list (the same one
+  `herd-summary.ts`'s `byLandUnit` trusts), because the move log alone has no idea an occupant died
+  or was sold out without ever being moved off the camp — a live/active-blind version was proven to
+  misreport "grazing ~700 days" off a dead animal's last position in a test, then fixed. ⭐ A move's
+  `toLandUnitId` can be `undefined` (an individual move that only changed the MOB, not the camp) — the
+  fold resolves against what it itself is holding for that entity, never the event's own
+  `fromLandUnitId`, for the same staleness reason `mergeByIdPreferHydrated` exists (a local capture's
+  `fromLandUnitId` is whatever the device last knew, which can be stale next to a co-worker's
+  not-yet-synced move). Two occupants in one camp report the LONGEST-present arrival (worst-case
+  grazing pressure), proven with a two-occupant test; a reoccupy-then-vacate-again cycle reports the
+  LATEST departure, proven through the full composition (not just the domain fold alone). "Two
+  absences are two facts" (`LandScreen.tsx`'s `BoundaryRow`) extends here in ONE variant, not two: an
+  occupant placed at creation and never moved (`grazingUnknown`) is honestly distinct from a real day
+  count. There is deliberately no `restUnknown` twin — a camp with no occupant AND no departure record
+  is simply absent from the map (a fourth status variant there would be unreachable dead code, the
+  same defect class `phiGuardFor`'s pruned fail-closed branch already named this phase), so the
+  screen's own `status === undefined` case carries that meaning, and it is honestly the SAME copy
+  ("No grazing recorded") a camp whose sole occupant died in place with no departure shows — this
+  projection cannot tell "never grazed" and "record went cold" apart from the move log alone, and
+  does not pretend to (caught in a completion `advisor()` pass, not self-caught). Stocking rate is
+  `head/ha` (no LSU conversion invented —
+  none exists in this codebase, and `carryingCapacityLsu` is a farmer-set figure with no established
+  per-species conversion to compare against honestly), denominator prefers the WALKED hectares over
+  the declared one, no rate shown when neither is known. Surface: `GrazingRow` in `LandScreen.tsx`,
+  gated on `unit.kind === 'camp'` (the mirror of the `kind === 'block'` rows), reached from the same
+  `/land` route already in the a11y sweep — 0 violations, both themes, with the row rendered. No
+  server projection, no migration, no home tile (deferred under its own heading). Not compliance-
+  gated (4e·2's own note: the rest-period NUMBER is agronomic, not legal).
+☑ 4e·2 FR-152 Camp rest-period tracking; warn on premature return — CLOSED (27th session). The
+  rest-period NUMBER is agronomic, not legal: it does not belong in `regulatory_rates` (that seam
+  is for LAW, not veld-management best practice — ADR-0006's own boundary). Owner decision (asked
+  this session): ONE farm-wide default (no per-camp override — YAGNI, add additively if a farmer
+  ever needs one), starts UNSET (`farms.rest_period_days`, nullable, no default — migration 0034 +
+  a CHECK it is positive when set) so no warning shows until the owner deliberately sets a number,
+  never a guessed default presented as considered advice.
+  ⭐ **Edited server-side only**, the SAME posture `updateEnterpriseTypes` already takes and for the
+  same reason: unlike a locale preference (`saveLocale`'s "device only, will catch up" shape, fine
+  because a locale is inherently per-device), a rest-period threshold is a shared farm fact every
+  device's warning should agree on — a device that "set" it only locally while offline would
+  silently diverge from a co-worker's phone. `PATCH /farms/:farmId/rest-period-days`
+  (`FarmsService.updateRestPeriodDays`, owner-role-gated, mirrors `updateEnterpriseTypes` exactly)
+  + Settings → Grazing (`GrazingSettings.tsx`, online-gated like `FarmsSettings.tsx`'s farm-add
+  flow, read-only for a non-owner). `AuthProvider.saveRestPeriodDays` resolves `false` rather than
+  throwing when it cannot reach the server (`saveLocale`'s contract) — the SCREEN is what enforces
+  "online only", not the provider method, so the method stays reusable/defensive on its own.
+  Advisory, never a block (contrast the PHI guard): `restPeriodWarning` (`grazing.ts`, pure,
+  unit-tested) returns non-null only for a currently-`resting` camp below the threshold — a
+  `grazing`/`grazingUnknown` camp is a fact about NOW, not a prospective return, and `undefined`
+  (no record) has nothing to compare a threshold to. It carries `daysRemaining`, not just a
+  boolean, so the copy answers "so when CAN I move them back?" directly rather than making a
+  farmer subtract two numbers — the same discipline `RecordSprayScreen.tsx`'s PHI panel set for
+  "so when CAN I harvest?" (an `advisor()` review caught the first draft making the farmer do that
+  arithmetic, and a second finding in the same pass — `saveRestPeriodDays` reading
+  `session.activeFarmId` directly instead of the SAME farms[0]-fallback `activeFarm` itself
+  resolves with — meant a session cached with no active farm id set could show the form, accept an
+  edit, and silently fail to save it while online; fixed by extracting one shared
+  `resolveActiveFarm` both call, with a regression test that pins the exact cached-session shape
+  that reproduced it). Checked at CAPTURE, not just displayed after the fact ("warn before the
+  truck leaves" — the same discipline CLAUDE.md applies to guards, extended here to an advisory
+  check): both `MoveMobScreen.tsx` and `MoveAnimalsScreen.tsx` show a klei-tinted warning panel for
+  the chosen destination camp, save stays enabled. `LandScreen.tsx`'s `GrazingRow` also carries an
+  ambient version — a farmer sees "Ready to graze again in 18 days" on a resting camp's own row,
+  before ever opening a move screen. `pnpm verify`: **1608/1608**
+  (+21), lint/typecheck clean, build 7/7, 189.69 KB gz. `e2e/a11y.spec.ts` (20/20, incl. new
+  Settings → Grazing entry, both themes) run in isolation — full `pnpm test:e2e` not re-run this
+  session, scope narrowed to the a11y sweep + the two move-screen React-level integration tests
+  (`MoveMob.test.tsx`/`MoveAnimals.test.tsx`), which already exercise the warning through the real
+  `<App/>` render. ⚠️ Not built: a POPULATED_SCREENS a11y entry that renders the warning panel
+  itself (would need the shared e2e fixture extended with a resting camp + a farm-level
+  `restPeriodDays` — disclosed as a scope cut, not a silent gap; the panel reuses the identical
+  klei-panel classes already audited elsewhere, e.g. `RecordSprayScreen.tsx`'s PHI block).
+  ⭐ A second `advisor()` pass, after the first round of fixes, caught a residue of its own #3 fix:
+  dropping `setSaved`/`setFailed` from the re-seed effect stopped the save-vs-effect race but left
+  a "Saved" banner from one farm surviving a genuine farm SWITCH while parked on the screen — split
+  into two effects (one re-seeds `days`, keyed on id+value; a second clears the banners, keyed on
+  id ALONE, so this device's own successful save — same id, only the value changes — does not
+  retrigger it), proven through the real shell/`FarmSwitcher`, not the standalone component.
+  ⚠️ **Disclosed, not a defect**: the warning reads `activeFarm.restPeriodDays` off the CACHED
+  session, so a co-worker's device keeps the old threshold until its own next
+  `refreshSession`/sign-in even though the `farms` row syncs down immediately — identical to how
+  `enterpriseTypes`/`eventRetentionMonths` already behave, and the warning is advisory. Noted here
+  so a later `sync-auditor` pass does not re-derive it as a finding.
+☑ 4e·3 FR-501 `inventory_items`/`inventory_lots` (migration 0033) + RLS + TENANCY (farm-scoped;
+  chemicals, fertiliser, feed, medicine; batch, expiry, location) — closed 23rd session. Stock ON
+  HAND is a PROJECTION over an append-only `inventory_movement` log (received/consumed/counted,
+  `events.inventory_lot_id`), the identical pattern `mobs.head_count` proved for exactly the same
+  reason: two people recording consumption on two phones in a dead zone must COMPOSE, and a stock
+  count is an ABSOLUTE THAT RESETS, never an edited field. No directly-edited `quantity_on_hand`
+  column. ⭐ Deliberately NOT cloned from `recordMobTally`: a `consumed` movement larger than the
+  recorded quantity is RECORDED, never refused — the spray happened whether or not the shed card
+  was accurate; the domain floors at zero and reports a `shortfall` a caller may act on. Client
+  route shipped with it (a server capability with no route is the half-built shape CLAUDE.md rules
+  against): `/inventory` (stock list, quantity re-projected client-side from local+hydrated
+  movements — never trusted off either copy of the lot row, same reasoning) and
+  `/inventory/receive`, reached from a secondary Home link (no tile — belongs to no one enterprise,
+  the same posture rainfall's link takes). `adjusted` (a free-sign correction reason) and lot
+  transfers are NOT built — YAGNI, nothing in this session's scope needed them; add additively.
+  `'adjusted'` deferred but `'counted'`/`'received'`/`'consumed'` are real, tested, and wired
+  through the outbox (three FK-only tiers — item → lot → movement — no `needsHead`-shaped
+  arithmetic guard needed, because a shortfall is never refused).
+☑ 4e·4 FR-502 Inventory auto-decrements on use — CLOSED (28th session). Spray (4c) and fertiliser
+  (4b) capture gain an OPTIONAL inventory-lot reference (additive to the schema already shipped
+  in 4b/4c, no rework, no new migration — `events.inventory_lot_id` shipped in 0033): a farm
+  without inventory tracking on can still spray/fertilise; one that does emits a `consumed`
+  movement. The chemical_products reference row (what the product IS, national, read-only) and an
+  inventory lot (how much of it THIS FARM has, farm-owned, mutable) stay two different tables, not
+  linked to each other — the farmer matches by name, the same filed-not-built gap 4c's product
+  picker already carries.
+  **Shape: TWO independent local commits, not one atomic write.** `recordSpray`/`recordFertiliser`
+  (`@werf/domain`) gained an optional `inventoryLotId` threaded onto the event's COLUMN (never the
+  payload — an unregulated reference, unlike `productId`); separately, the SAME capture that
+  already exists for 4e·3 (`useRecordInventoryMovement`) records a `consumed` movement when a lot
+  and a quantity were given. If the spray is later refused server-side (a stale-cache PHI guard
+  miss) the movement still lands — "the spray happened whether or not the shed card was accurate"
+  (`stock.ts`'s own module note) applies in this direction too; the reverse (movement refused,
+  spray accepted) does not arise since a movement is never refused on its merits. Ownership of the
+  referenced lot is validated for FREE — `insertEvent`'s existing `assertOwnedReferences` call
+  already checks `inventoryLotId` against the farm, added generically for 4e·3 and reused here
+  with no new server code.
+  ⭐ Two real gaps an `advisor()` design pass caught before writing code, both fixed and each
+  proven by a test that FAILED first: (1) `HydratedSprays.tsx`/`HydratedFertiliser.tsx`'s down-sync
+  SQL selected `payload` but never the top-level `inventory_lot_id` COLUMN — `useEffectiveSprays`'s
+  `mergeByIdPreferHydrated` merge means the hydrated copy wins once this device's own capture
+  round-trips, so the field would have silently vanished the moment sync completed; both mapping
+  functions now select and map it, exported (`mapHydratedSpray`/`mapHydratedFertiliser`, the same
+  precedent `mapHydratedMobMove` set) for a direct unit test. (2) The Outbox's `guardedBy`
+  resolution taints a subject only once the item PROVIDING it has been ATTEMPTED this same flush
+  round (array order is attempt order) — the inventory item/lot tiers were queued near the END of
+  the items array (after every crop capture), so a spray/fertiliser's new conditional
+  `inventorylotrow:` guard would never actually hold: by the time the guard was checked, the lot
+  had not been attempted yet, so nothing had tainted it. Fixed by moving the item/lot tiers to
+  right after land units (before any capture that can reference one); the inventory MOVEMENT tier
+  alone stays where it was, since nothing else depends on it. Caught by this slice's OWN new Outbox
+  test, not by inspection — the first version of the guard shipped, the test failed, the reorder
+  fixed it.
+  ⚠️ **Compliance scope note — the spray write path is touched, not re-opened.** FR-204's own PHI
+  logic is untouched; `inventoryLotId` is a plain, unregulated reference validated the same way
+  every other FK on this event already is. Flagged out loud per CLAUDE.md's rule (compliance
+  pass is owner-triggered, never spawned unprompted).
+  ✅ **`compliance-checker` pass CLEARED (29th session, JP-requested), scope `d331a2c..HEAD`
+  (4e·1 projection + 4e·2 + 4e·4 together — the range since the prior pass) — no SEV-1/SEV-2.**
+  Confirmed by re-deriving from the code, not from this document's own claims: `phi-guard.ts` is
+  untouched in the range; `assertOwnedReferences` genuinely rejects a lot on another farm on BOTH
+  the spray and fertiliser paths (integration-test-proven); the Outbox reorder holds a refused
+  lot's spray/fertiliser correctly across all four lot states (unsent, already-sent, hydrated-only,
+  refused-this-round). Two LOW found and fixed, each fail-first proven: (1) `GrazingSettings.tsx`'s
+  doc comment named a function that doesn't exist (`isRestPeriodPremature`, never built — the real
+  name is `restPeriodWarning`); fixed by correcting the reference. (2) `MoveAnimalsScreen.tsx`
+  gated its destination rest-period warning on "a destination is named" alone, unlike
+  `MoveMobScreen.tsx`, which gates on `wouldMove` — naming a resting camp before (or without)
+  selecting any animal that would actually go there still rendered the warning for a move that
+  cannot happen. The obvious reproduction ("select animals already standing in the destination")
+  turned out to be structurally impossible to construct — a camp holding a live selected occupant
+  is definitionally `grazing`, never `resting`, so `restPeriodWarning` can't fire there regardless
+  of the gate; the real, reproducible case is naming a resting destination with ZERO animals
+  selected yet. Fixed by gating `destinationStatus` on `wouldMove.length > 0`, matching
+  `MoveMobScreen.tsx`. One LOW disclosed, not actioned: the server enforces lot OWNERSHIP but not
+  lot CATEGORY, so a crafted request could attach a feed lot's id to a spray event — no
+  tenancy/compliance consequence (still farm-owned either way), category matching is a client-side
+  UX filter only. **4e·4 is now merge-ready.**
+  ⭐ Also closed a PRE-EXISTING a11y gap while touching these two screens: `e2e/a11y.spec.ts`'s
+  `CAPTURE_SCREENS` list had `/crops/harvest` (4d) but never `/crops/spray` or `/crops/fertilise`
+  (4b/4c) — the identical "missing from the list, not from the code" class `/attention` once was.
+  Added both; `pnpm test:e2e -- a11y` 20/20, both themes, including the new stock-lot controls.
+  `pnpm verify` (28th session): 1631/1631 unit tests passing — 1622 in the combined run; 2 suites
+  (`animals.integration.test.ts`, `theft.integration.test.ts` — untouched by this slice) hit a
+  transient Docker testcontainer health-check timeout in that run and were confirmed clean re-run
+  in isolation (9/9), no regression; lint/typecheck clean, build 7/7, 190.89 KB gz. `pnpm verify`
+  re-run clean after the 29th-session compliance fixes: 1632/1632 (+1), lint/typecheck clean,
+  build 7/7, 190.88 KB gz.
+☑ 4e·5 FR-503 Low-stock and expiry warnings — CLOSED (30th session). Two independent read models
+  over the inventory projection, `stock.ts`: `lowStockWarnings` (per-ITEM, summed across every lot
+  of that item against a per-item `reorder_point` — never per-lot, since one nearly-empty batch
+  beside two full ones is normal, not a warning) and `isExpired` (per-LOT, an objective fact
+  against `farmToday()`, no threshold). `StockScreen.tsx` restructured from a flat lot list to
+  items-with-nested-lots, both because a low-stock warning is inherently item-scoped and because
+  the reorder-point editor needed a home reachable for every item, not only a newly-created one.
+  ⭐ JP resolved BOTH design questions directly before code, mirroring 4e·2's "ask, don't guess"
+  precedent: (1) expiry ships **"expired" only this slice** — no farm-wide "warn N days before"
+  setting, so nothing here guesses a threshold; (2) low-stock is a genuine new mutable field
+  (`inventory_items.reorder_point`, migration `0035`, nullable, no seeded default), not folded into
+  a farm-wide number, because a reorder point cannot honestly be one figure across 5kg of dip and
+  2 tonnes of feed.
+  ⭐ An `advisor()` design pass caught the trap `newInventoryItemSchema`'s create-once shape would
+  have set: a threshold settable ONLY at item creation reaches nothing that already exists. Fixed
+  by a dedicated `PATCH /inventory/items/:itemId/reorder-point` (owner OR manager — routine stock
+  management, unlike `updateRestPeriodDays`'s owner-only farm policy), reachable for any item from
+  `StockScreen.tsx` itself, and by switching `useEffectiveInventoryItems`'s merge from `mergeById`
+  to `mergeByIdPreferHydrated` — `reorderPoint` is the first field on this table set AFTER
+  creation, which broke `mergeById`'s "no field here changes after creation" premise; local-wins
+  would have permanently shadowed a threshold set from another device, including this one's own
+  echo. Proven by `HydratedInventory.test.tsx`: a local item with no reorder point, then a hydrated
+  echo of the SAME id carrying one, must show the hydrated value.
+  ⭐ A second `advisor()` pass (post-implementation) caught two real gaps, both fixed: (1) the
+  client write path (`submit → useSetReorderPoint → inventoryApi.updateReorderPoint → "Saved"`/
+  `"failed"`, the `!canManage` read-only branch, and the offline-disabled state) had ZERO coverage
+  — the a11y pass only exercises the owner-online happy path, the same class of hole
+  `AttentionScreen`'s PHI section and `RecordHarvestScreen`'s `valid` were in 4d. Fixed:
+  `ReorderPoint.test.tsx`, 5 cases. (2) `pnpm verify` had never actually been run as the ONE
+  composite command — only its four pieces separately. Run for real; see the Verification line
+  below.
+  ⚠️ **Compliance scope note, out loud (CLAUDE.md's rule) — this is a warning-only slice, nothing
+  regulated.** `inventory_items.category` includes `medicine`/`chemical`, and "Expired" now renders
+  on those lots, but `phi-guard.ts`/`withdrawal.ts` are untouched — expiry here is informational,
+  it does **not** gate spray or treatment capture. Whether it should is a separate owner decision,
+  not something this slice silently declined.
+  ⚠️ **Surfacing is screen-local, disclosed so FR-503 is not later read as "shipped and visible
+  everywhere."** Both warnings render only on `/inventory`, reached by the secondary "Stock on
+  hand" link — no home-tile badge. A tile needs `HOME_TILE_KEYS` + terminology + enterprise gating,
+  its own decision, out of scope here; `inventory` currently has no home tile of its own at all
+  (`tiles.ts`'s own module note on why: shed inventory is farm-level, not enterprise-level).
+  `pnpm verify` (30th session, run as the ONE composite command, not four separate ones):
+  **1656/1656** unit tests passing (+24 over the 29th-session baseline: 8 pure-function, 4
+  hydration/merge, 5 client write-path, 7 API integration), lint/typecheck clean, build 7/7,
+  **192.32 KB gz**. `pnpm test:e2e -- a11y` 20/20 both themes, `/inventory` covered since 4e·4.
+☑ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —
+  CLOSED 31st session (2026-08-20). A new `feed` event type (`EVENT_TYPES`, migration `0036`,
+  `ALTER TYPE … ADD VALUE` appended last per the established discipline), not a new
+  `inventory_movement` reason — `projectQuantityOnHand` folds every movement for a lot, so a new
+  reason would change behaviour for every existing consumer of that projection, while a separate
+  `feed` event plus a plain `consumed` movement leaves inventory semantics untouched.
+  ⭐ Two `advisor()` passes shaped the design, before any code was written:
+  (1) The obvious first draft — a farmer-typed `costCents` field on the feed event — was refused.
+  It re-types a number the system can already derive (the lot's own received cost), which is
+  exactly the "an edited field does not compose" failure this codebase keeps re-finding: two
+  devices feeding from the same lot would produce two different costs for the same physical feed.
+  `ReceiveStockScreen.tsx` DOES collect `unitCostCents` at receipt (checked before deciding), so the
+  honest move is to DERIVE, not type: `estimatedUnitCostCents` (`packages/domain/src/inventory/
+  stock.ts`) computes a weighted average across a lot's own `received` movements, shown on
+  `RecordFeedScreen.tsx` as an at-capture preview only — never stored on the event or the movement.
+  Disclosed, not silently narrowed: there is no `/money` report screen yet for this figure to land
+  on, the identical "screen-local, disclosed" posture 4e·5 took for its own warnings.
+  (2) Cost-vs-scoping were entangled and had to be decided in order: dropping the stored cost meant
+  a camp-only feed-out could be treated as plainly land-scoped — but the existing
+  `FARM_SCOPED_EVENT_TYPES` list is specifically for GROUND facts shared across enterprises
+  (rainfall, a camp's shape, what's planted), and feeding is a HERD act, not a ground fact, so
+  `feed` was NOT added there. Instead `feed` stays an ordinary FR-113 herd-scoped type: a mob names
+  its own herd; a camp-only feed-out (no mob) requires a client-supplied `enterpriseId`, caught by
+  the EXISTING `assertHerdScoped` guard with no code change to `herd-scope.ts` at all.
+  ⭐ A mob's camp is DERIVED, never trusted from the client — `livestock.service.ts`'s `recordFeed`
+  reads the mob's own current `landUnitId`/`enterpriseId` row and overwrites whatever the client
+  sent, the identical "derive don't trust" reasoning `herdOfSubject` already applies elsewhere.
+  Proven by an integration test that sends a DECOY camp/enterprise and asserts they are ignored.
+  `inventoryLotId` is REQUIRED on this event (unlike spray's optional reference, 4e·4) — "deduct
+  from feed inventory" is the reason this event type exists, not an optional extra.
+  Shape: TWO independent local commits, the identical 4e·4 pattern — the `feed` event, then a
+  separate `consumed` `inventory_movement` recorded through the SAME local capture 4e·4 wired up.
+  The client store (`LocalFeed.tsx`) does NOT call the `@werf/domain` builder locally, mirroring
+  `LocalMobMoves.tsx`'s own precedent rather than `LocalInventory.tsx`'s: a mob-mode capture's
+  camp/enterprise are server-derived and genuinely unknown to the device, so a local `StoredFeedEvent`
+  simply omits them rather than guessing — the identical asymmetry `LocalMobMoves.tsx`'s
+  `fromLandUnitId` already documents.
+  ⚠️ A mob with no `enterpriseId` of its own (nullable — a mob predating the farm's own herd split)
+  feeds through with `enterprise_id` null on the event: `assertHerdScoped` still passes because
+  `mobId` alone satisfies it, the identical posture `herdOfSubject`'s own docstring documents for a
+  weight against a herdless animal. Consistent with existing precedent, not a new gap — but "cost to
+  enterprise" then attributes to nothing for that mob, disclosed rather than silent.
+  ⚠️ **Warning-only, unregulated — said out loud, no `compliance-checker` pass needed
+  (CLAUDE.md's rule).** Nothing here touches PHI, withdrawal, or any regulated figure; a farmer
+  feeding medicated feed with its own withdrawal period is a real surface this slice does NOT
+  build — disclosed, not declined silently.
+  `pnpm verify` (composite): **1675/1675 unit tests (+19: 4 domain `recordFeedOut`, 3 domain
+  `estimatedUnitCostCents`, 8 server integration incl. tenancy/idempotency/derive-not-trust, 4
+  client `RecordFeed.test.tsx`)**, lint/typecheck/build clean, **194.15 KB gz**.
+  `pnpm test:e2e -- a11y` 20/20 both themes — `/animals/feed` added to `CAPTURE_SCREENS` (the
+  "no feed in stock" empty state; the populated form was NOT separately audited at the time —
+  disclosed narrowing, not silent). ✅ **Closed in the Phase 4 exit-review sweep (32nd session)**:
+  see the crop-facing-home-metrics heading below and the Quality gates section — the mob/camp
+  toggle, lot picker and cost preview all now render under `POPULATED_SCREENS`, alongside the
+  matching gaps on `/crops/spray` (4d·11's PHI override + 4e·4's stock-lot picker) and
+  `/crops/fertilise` (4e·4's stock-lot picker).
 
 Crop-facing home metrics (FR-017's discipline: carry a number ONLY if it is true and computable)
-□ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks
+☑ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks
   currently inside an active pre-harvest interval, computed directly from spray events +
   chemical_products.phi_days, the exact "N withholding" precedent the Health tile already set
   (never the "N due" mistake that tile avoided for want of a schedule this domain doesn't have).
-□ Crop home metrics are derived from local cached data and never require signal to render.
+  **Done (32nd session).** New pure `blocksWithinPhi` (`apps/web/src/crops/usePhiGuard.ts`) runs the
+  IDENTICAL `phiGuardFor` every other PHI consumer in the file runs — never a second, narrower rule —
+  called per-block against `farmToday()` rather than a specific harvest date. `useBlocksWithinPhiCount`
+  wraps it over `useEffectiveLandUnits`/`useSprayFacts`/`useProductFacts` (all local+hydrated) and
+  feeds `HomeScreen.tsx`'s `badges.sprays`, the same `{count, label}` shape `tile.withholding` already
+  established for Health — badge wins over metric where a tile could carry both (`HomeGrid.tsx`,
+  pre-existing rule). ⭐ Deliberately excludes `reason: 'unresolved'`: an unconfirmed spray this
+  device cannot vouch for is disclosed elsewhere (the harvest guard itself blocks on it), but it is
+  not the fact "within PHI" states, so counting it in would overstate what this badge can actually
+  compute — proven in `usePhiGuard.test.ts` (`blocksWithinPhi`, pure-function tests, mirroring
+  `phiRegister.test.ts`'s `localPhiFlags` split). New `tile.withinPhi` dictionary key, en + af.
+☑ Crop home metrics are derived from local cached data and never require signal to render. True
+  already for land/herd counts; the new PHI badge above reads only local+hydrated caches and
+  `farmToday()` (no clock/network dependency), so this line closes with it rather than opening new
+  work of its own.
 
 ⛔ External blocker — production data source, same class as Phase 5's B-1/B-2. Do not seed
 production `chemical_products` from a fabricated or guessed table: `legal-compliance.md` §4.3
@@ -1566,19 +2079,56 @@ placeholder discipline); production seeding is BLOCKED until JP names a source, 
 in parallel with 4a–4c build — it blocks DEPLOYMENT, not development, the same shape as B-1/B-2.
 
 Quality gates
-□ Every write path works with the network off — no `if (!navigator.onLine) throw`
-□ Domain logic (grazing days, stocking rate, PHI resolution) pure, unit-tested, table-driven
-□ testing-strategy.md O-12 (PHI check offline, blocked locally, no server round trip) and the
+☑ Every write path works with the network off — no `if (!navigator.onLine) throw`. Re-verified
+  32nd session (exit-review sweep): grepped the whole tree, the only hits are in docs/rules
+  quoting the rule itself, none in application code
+☑ Domain logic (grazing days, stocking rate, PHI resolution) pure, unit-tested, table-driven —
+  re-confirmed 32nd session: `phi-guard.test.ts`/`grazing.test.ts` are real `@werf/domain` unit
+  suites, no I/O, no clock, same discipline every domain test in this repo already carries
+☑ testing-strategy.md O-12 (PHI check offline, blocked locally, no server round trip) and the
   "Spray → PHI → blocked harvest, Offline" journey row are the REQUIRED matrix for this phase —
-  O-12's `⛔ Phase 4 — PHI does not exist yet` marker clears when 4d lands
-□ Both derived artifacts regenerated in the SAME commit as any synced-table change
-  (`generate:schema` + `generate:sync-rules`) — verify fails on drift otherwise
-□ TENANCY classification written in the same commit as its table, every time
-□ `pnpm verify` and `pnpm test:e2e` green
-□ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
-  slice (the labour phase alone gets per-slice review). Say out loud when 4c/4d reach
-  merge-ready so JP decides when to trigger the pass — regulated code is not merge-ready until
-  it has happened (`CLAUDE.md`)
+  O-12 ✅ since 4d (22nd session); the journey row closes with it, 32nd session, on the SAME
+  "unit/integration level, no dedicated e2e" precedent O-10 already set — `RecordSpray.test.tsx`/
+  `RecordHarvest.test.tsx` both cover the offline-blocked path, no gap left once 4e closed
+☑ Both derived artifacts regenerated in the SAME commit as any synced-table change
+  (`generate:schema` + `generate:sync-rules`) — verified 32nd session by actually re-running both
+  generators against HEAD and diffing: zero drift (`git status --porcelain` empty after)
+☑ TENANCY classification written in the same commit as its table, every time — verified 32nd
+  session by running `packages/sync/test/tenancy.spec.ts` directly: 22/22 green, every 4a–4e
+  table classified, sync rules and RLS agree in both directions
+☑ `pnpm verify` and `pnpm test:e2e` green — re-run 32nd session (exit-review sweep, after closing
+  the a11y item below): `pnpm verify` **1680/1680**, lint/typecheck/build clean, 194.26 KB gz,
+  zero regenerated-artifact drift. `pnpm test:e2e` full suite: 32 passed, 5 skipped (real-stack,
+  expected offline in this lane); one `a11y.spec.ts` run hit a "tearing down context exceeded
+  30000ms" teardown timeout on the FULL-suite run twice in a row — re-run in isolation both times,
+  passed clean in ~16s each time, confirmed a resource-contention flake on this machine (the same
+  class STATUS.md already documents for testcontainer suites), not a regression
+☑ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
+  slice. **Whole-branch `reviewer` + `sync-auditor` + `compliance-checker`, `main..HEAD` on
+  `phase-4/crops-fields`, JP-requested 2026-08-20 (34th session) — closed.**
+  `sync-auditor`: **CLEARS**, no SEV-1/SEV-2 (tenancy/RLS/sync-rule triple agrees for every new
+  table, no hardcoded regulated numbers, aggregates genuinely re-derived from the log). `reviewer`:
+  one SEV-2, found and FIXED — `Outbox.tsx`'s `queue` useMemo read `mobMoves` but omitted it from
+  the dependency array, so a mob move captured after mount (no other capture in the same round)
+  silently never flushed and the sync strip falsely read "Saved and sent". Fixed (`mobMoves` added
+  to the deps) with a fail-first test (`Outbox.test.tsx`, "sends a mob move captured AFTER mount")
+  — watched red against the pre-fix code (UI showed the move locally, status strip lied "sent", no
+  POST fired), then green after the fix; the existing mob-move tests couldn't have caught this
+  because they all pre-seed `localStorage` before `render()`, and `useMemo` always runs its first
+  invocation regardless of the dependency array. `compliance-checker`: one SEV-1, **FILED not
+  fixed, JP decision** — a spray/harvest server-refused for an unresolved PHI block (client's local
+  guard passed on a stale cross-device cache; server's guard, re-evaluated at flush time, blocks
+  with no `phiOverride` attached) lands in `NotSentScreen`, whose "refusal clears when its cause
+  clears" model (Phase 2 design) has no edit/resubmit path — but a PHI override needs the payload
+  itself mutated with a written, audited reason, which nothing external will ever supply, so the
+  capture is stuck in Not Sent permanently and invisible to every later PHI check on that block.
+  Affects `recordSpray` (4c) and `recordHarvest` (4d) identically. Fixing it means new UI/flow on
+  regulated code, which needs its own compliance pass — JP chose to file it (issue #12) and merge
+  Phase 4 on the SEV-2 fix alone rather than open a second agent round this session; take-up timing
+  (a dedicated slice, Phase 5-adjacent or otherwise) is open, not mandated. Traced during the same
+  pass that Phase 2's FR-131 sale-during-withdrawal block has no override field at all and so never
+  hits this class — it's specific to captures with a legitimate but capture-time-only override.
+  `pnpm verify` re-run after the fix: see the line below.
 ```
 
 **Deferred — not in Phase 4, named so they are not mistaken for a miss (all priority-2 in the FR

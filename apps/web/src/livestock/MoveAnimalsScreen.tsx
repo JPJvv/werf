@@ -29,6 +29,7 @@ import { useEffectiveAnimals, useEffectiveMobs } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
 import { useRecordMoves, type StoredMove } from './LocalMoves';
 import { speciesLabel } from './AnimalsScreen';
+import { useCampGrazing, restPeriodWarning } from './grazing';
 
 /** Where an animal is now, in the farmer's words. */
 function whereLabel(
@@ -54,6 +55,8 @@ export function MoveAnimalsScreen() {
   const labels = useAnimalLabels();
   const recordMoves = useRecordMoves();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
+  // FR-152 (4e·2): the same "warn, never block" destination check `MoveMobScreen.tsx` runs.
+  const grazing = useCampGrazing();
 
   const term = useMemo(
     () => vocabularyFor((activeFarm?.enterpriseTypes as EnterpriseType[]) ?? []).land,
@@ -104,6 +107,11 @@ export function MoveAnimalsScreen() {
       (toMobId !== '' && a.mobId !== toMobId),
   );
   const blocked = !destinationNamed || wouldMove.length === 0;
+  // Gated on `wouldMove`, not just `toLandUnitId !== ''` — the same "nothing to warn about until
+  // there is a group to move" rule `MoveMobScreen.tsx` follows. Naming a resting camp before (or
+  // without) selecting anyone that would actually go there is not a move to warn against yet.
+  const destinationStatus = wouldMove.length === 0 ? undefined : grazing.get(toLandUnitId);
+  const destinationWarning = restPeriodWarning(destinationStatus, activeFarm.restPeriodDays);
 
   const save = async () => {
     if (blocked || saving) return;
@@ -279,6 +287,17 @@ export function MoveAnimalsScreen() {
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {destinationWarning !== null && (
+              <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                <p className="mb-1 font-ui font-semibold">{t('land.grazing.prematureMoveTitle')}</p>
+                <p>
+                  {t('land.grazing.readyIn')}{' '}
+                  <span className="font-data tabular-nums">{destinationWarning.daysRemaining}</span>{' '}
+                  {t('land.grazing.restTargetUnit')}
+                </p>
               </div>
             )}
 

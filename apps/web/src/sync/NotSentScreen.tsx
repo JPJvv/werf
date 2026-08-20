@@ -41,6 +41,10 @@ import {
 const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   landUnit: 'notSent.kind.landUnit',
   boundaryWalk: 'notSent.kind.boundaryWalk',
+  planting: 'notSent.kind.planting',
+  fertiliser: 'notSent.kind.fertiliser',
+  spray: 'notSent.kind.spray',
+  harvest: 'notSent.kind.harvest',
   mob: 'notSent.kind.mob',
   tally: 'notSent.kind.tally',
   branding: 'notSent.kind.branding',
@@ -49,11 +53,16 @@ const KIND_KEY: Record<CaptureKind, TranslationKey> = {
   weight: 'notSent.kind.weight',
   lifecycle: 'notSent.kind.lifecycle',
   move: 'notSent.kind.move',
+  mobMove: 'notSent.kind.mobMove',
+  feed: 'notSent.kind.feed',
   health: 'notSent.kind.health',
   breeding: 'notSent.kind.breeding',
   theft: 'notSent.kind.theft',
   rainfall: 'notSent.kind.rainfall',
   attachment: 'notSent.kind.attachment',
+  inventoryItem: 'notSent.kind.inventoryItem',
+  inventoryLot: 'notSent.kind.inventoryLot',
+  inventoryMovement: 'notSent.kind.inventoryMovement',
 };
 
 /**

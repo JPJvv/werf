@@ -77,6 +77,7 @@ export function recordWeight(input: WeightInput): schemas.NewEvent {
     landUnitId: null,
     employeeId: null,
     batchId: input.batchId ?? null,
+    inventoryLotId: null,
     locationGeojson: input.locationGeojson ?? null,
     notes: input.notes ?? null,
     createdBy: input.createdBy ?? null,

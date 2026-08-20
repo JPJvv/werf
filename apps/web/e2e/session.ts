@@ -71,6 +71,30 @@ export const FIXTURE = {
   mobId: '0190f3a0-0000-7000-8000-0000000000b1',
   productId: '0190f3a0-0000-7000-8000-0000000000d1',
   campId: '0190f3a0-0000-7000-8000-0000000000c1',
+  // A block (not a camp) plus a chemical product and an active-PHI spray on it — 4d's guard panel
+  // and override controls only render once a harvest is actually blocked, and the "Overridden" line
+  // on the harvest history list only renders once a harvest with a `phiOverride` exists.
+  blockId: '0190f3a0-0000-7000-8000-0000000000c2',
+  chemicalProductId: '0190f3a0-0000-7000-8000-0000000000d2',
+  sprayId: '0190f3a0-0000-7000-8000-0000000000f3',
+  overriddenHarvestId: '0190f3a0-0000-7000-8000-0000000000f4',
+  // Phase 4e (FR-501): a received lot, so `/inventory` renders a row rather than its empty state.
+  inventoryItemId: '0190f3a0-0000-7000-8000-0000000000g1',
+  inventoryLotId: '0190f3a0-0000-7000-8000-0000000000g2',
+  inventoryMovementId: '0190f3a0-0000-7000-8000-0000000000g3',
+  // Phase 4 exit-review sweep (STATUS.md): the disclosed POPULATED-state a11y gap on
+  // `/crops/spray`, `/crops/fertilise` and `/animals/feed` — none of the three had ever put their
+  // OWN newest controls (the stock-lot picker, 4d·11's spray-side PHI override, the mob/camp
+  // toggle) in front of axe, only their default/empty state. A planting due soon plus a chemical
+  // lot lets the spray screen block-and-override with no interaction beyond picking the product;
+  // a feed lot with a costed receipt lets the cost preview render for real, never a guessed figure.
+  plantingId: '0190f3a0-0000-7000-8000-0000000000h1',
+  chemicalInventoryItemId: '0190f3a0-0000-7000-8000-0000000000g4',
+  chemicalInventoryLotId: '0190f3a0-0000-7000-8000-0000000000g5',
+  chemicalInventoryMovementId: '0190f3a0-0000-7000-8000-0000000000g6',
+  feedInventoryItemId: '0190f3a0-0000-7000-8000-0000000000g7',
+  feedInventoryLotId: '0190f3a0-0000-7000-8000-0000000000g8',
+  feedInventoryMovementId: '0190f3a0-0000-7000-8000-0000000000g9',
 } as const;
 
 /** localStorage entries that put a farm's worth of stock on the device. */
@@ -96,6 +120,14 @@ function farmTodayForFixtures(): string {
   }).format(new Date());
 }
 
+/** `day` plus `delta` calendar days, UTC-only arithmetic — the fixture's own dates are day
+ *  strings with no timezone question left to answer once `farmTodayForFixtures` has already
+ *  resolved "today". */
+function addDays(day: string, delta: number): string {
+  const [year, month, date] = day.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, date + delta)).toISOString().slice(0, 10);
+}
+
 export function populatedStores(): Record<string, unknown> {
   const today = farmTodayForFixtures();
   return {
@@ -109,6 +141,19 @@ export function populatedStores(): Record<string, unknown> {
       '0190f3a0-0000-7000-8000-0000000000f1',
       '0190f3a0-0000-7000-8000-0000000000f2',
       '0190f3a0-0000-7000-8000-0000000000e1',
+      FIXTURE.blockId,
+      FIXTURE.sprayId,
+      FIXTURE.overriddenHarvestId,
+      FIXTURE.inventoryItemId,
+      FIXTURE.inventoryLotId,
+      FIXTURE.inventoryMovementId,
+      FIXTURE.plantingId,
+      FIXTURE.chemicalInventoryItemId,
+      FIXTURE.chemicalInventoryLotId,
+      FIXTURE.chemicalInventoryMovementId,
+      FIXTURE.feedInventoryItemId,
+      FIXTURE.feedInventoryLotId,
+      FIXTURE.feedInventoryMovementId,
     ],
     [`werf-land:${FARM_ID}`]: [
       {
@@ -118,6 +163,69 @@ export function populatedStores(): Record<string, unknown> {
         name: null,
         hectares: 12,
         kind: 'camp',
+      },
+      {
+        id: FIXTURE.blockId,
+        farmId: FARM_ID,
+        code: 'B12',
+        name: null,
+        hectares: 8,
+        kind: 'block',
+      },
+    ],
+    // A registered chemical product with a PHI (FR-204/FR-508), and a spray on the block that has
+    // NOT round-tripped through the server yet (no `activeIngredients` — `usePhiGuard`'s own
+    // `resolved` discriminator), so the offline PREVIEW path (O-12) is what a11y sees, not an
+    // already-resolved date.
+    [`werf-chemical-products:${FARM_ID}`]: [
+      {
+        id: FIXTURE.chemicalProductId,
+        jurisdiction: 'ZA',
+        name: 'Roundup PowerMax',
+        registrationNumber: 'L1234 Act 36/1947',
+        crop: 'maize',
+        phiDays: 21,
+        reentryHours: 24,
+        effectiveFrom: '2020-01-01',
+        effectiveTo: null,
+      },
+    ],
+    [`werf-sprays:${FARM_ID}`]: [
+      {
+        id: FIXTURE.sprayId,
+        farmId: FARM_ID,
+        landUnitId: FIXTURE.blockId,
+        occurredAt: new Date().toISOString(),
+        sprayedOn: today,
+        productId: FIXTURE.chemicalProductId,
+      },
+    ],
+    // A planned harvest 5 days out (FR-203) — inside the 21-day PHI a spray TODAY would carry, so
+    // `/crops/spray`'s own PHI guard (4d·11, § 4.3's EARLY half) blocks at capture with no
+    // interaction beyond picking the product, and its override controls (the newest markup on that
+    // screen, never before audited) render under the sweep.
+    [`werf-plantings:${FARM_ID}`]: [
+      {
+        id: FIXTURE.plantingId,
+        farmId: FARM_ID,
+        landUnitId: FIXTURE.blockId,
+        occurredAt: new Date().toISOString(),
+        crop: 'Maize',
+        expectedHarvestDate: addDays(today, 5),
+      },
+    ],
+    // A harvest this device already recorded with a written override (FR-205) — the only way the
+    // "Overridden — <reason>" line on the harvest history list ever renders.
+    [`werf-harvests:${FARM_ID}`]: [
+      {
+        id: FIXTURE.overriddenHarvestId,
+        farmId: FARM_ID,
+        landUnitId: FIXTURE.blockId,
+        occurredAt: new Date().toISOString(),
+        harvestedOn: today,
+        quantity: 4.5,
+        unit: 'ton',
+        phiOverride: { reason: 'Export deadline: contract ships Friday' },
       },
     ],
     [`werf-herd:${FARM_ID}`]: [
@@ -214,6 +322,96 @@ export function populatedStores(): Record<string, unknown> {
         reason: 'death',
         count: 3,
         delta: -3,
+      },
+    ],
+    // Phase 4e (FR-501): an item, an empty lot, and a `received` movement into it — so `/inventory`
+    // renders the stock row (name, quantity, batch/location) its empty state would otherwise hide.
+    // Also carries a `chemical`-category lot and a `feed`-category one (below), so `/crops/spray`'s
+    // and `/animals/feed`'s own OPTIONAL stock-lot pickers (FR-502/FR-153) have real stock to offer
+    // — a farm with only the fertiliser lot never renders either.
+    [`werf-inventory-items:${FARM_ID}`]: [
+      {
+        id: FIXTURE.inventoryItemId,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'fertiliser',
+        name: 'Urea 46%',
+        unit: 'kg',
+      },
+      {
+        id: FIXTURE.chemicalInventoryItemId,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'chemical',
+        name: 'Roundup PowerMax',
+        unit: 'L',
+      },
+      {
+        id: FIXTURE.feedInventoryItemId,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'feed',
+        name: 'Lucerne bales',
+        unit: 'kg',
+      },
+    ],
+    [`werf-inventory-lots:${FARM_ID}`]: [
+      {
+        id: FIXTURE.inventoryLotId,
+        farmId: FARM_ID,
+        inventoryItemId: FIXTURE.inventoryItemId,
+        batch: 'B-2026-01',
+        expiryDate: null,
+        location: 'Main store',
+      },
+      {
+        id: FIXTURE.chemicalInventoryLotId,
+        farmId: FARM_ID,
+        inventoryItemId: FIXTURE.chemicalInventoryItemId,
+        batch: 'C-2026-01',
+        expiryDate: null,
+        location: 'Chemical store',
+      },
+      {
+        id: FIXTURE.feedInventoryLotId,
+        farmId: FARM_ID,
+        inventoryItemId: FIXTURE.feedInventoryItemId,
+        batch: 'F-2026-01',
+        expiryDate: null,
+        location: 'Feed shed',
+      },
+    ],
+    [`werf-inventory-movements:${FARM_ID}`]: [
+      {
+        id: FIXTURE.inventoryMovementId,
+        farmId: FARM_ID,
+        inventoryLotId: FIXTURE.inventoryLotId,
+        occurredAt: new Date().toISOString(),
+        reason: 'received',
+        quantity: 40,
+        delta: 40,
+      },
+      {
+        id: FIXTURE.chemicalInventoryMovementId,
+        farmId: FARM_ID,
+        inventoryLotId: FIXTURE.chemicalInventoryLotId,
+        occurredAt: new Date().toISOString(),
+        reason: 'received',
+        quantity: 20,
+        delta: 20,
+      },
+      // Carries a cost (FR-153's estimate is derived, never typed — see RecordFeedScreen.tsx's
+      // own module note) so the feed screen's cost-preview panel, the newest control there, has a
+      // real number to show under the audit rather than staying silently absent.
+      {
+        id: FIXTURE.feedInventoryMovementId,
+        farmId: FARM_ID,
+        inventoryLotId: FIXTURE.feedInventoryLotId,
+        occurredAt: new Date().toISOString(),
+        reason: 'received',
+        quantity: 50,
+        delta: 50,
+        unitCostCents: 1500,
       },
     ],
   };

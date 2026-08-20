@@ -142,6 +142,54 @@ describe('adding a camp (FR-150)', () => {
     expect((await storedUnits())[0]).toMatchObject({ kind: 'block', code: 'B12' });
   });
 
+  it('asks a block its soil type and irrigation (FR-201), and asks a camp neither', async () => {
+    cachedSession(['vineyards']);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/land/new');
+    render(<App />);
+
+    expect(screen.getByLabelText(/soil type/i)).toBeTruthy();
+    expect(screen.getByLabelText(/irrigation/i)).toBeTruthy();
+
+    await user.type(screen.getByLabelText(/block name or number/i), 'B13');
+    await user.type(screen.getByLabelText(/soil type/i), 'Sandy loam');
+    await user.selectOptions(screen.getByLabelText(/irrigation/i), 'drip');
+    await user.click(screen.getByRole('button', { name: /save block/i }));
+
+    await waitFor(async () => {
+      expect(await storedUnits()).toHaveLength(1);
+    });
+    expect((await storedUnits())[0]).toMatchObject({
+      kind: 'block',
+      code: 'B13',
+      soilType: 'Sandy loam',
+      irrigation: 'drip',
+    });
+  });
+
+  it('does not ask a camp its soil type or irrigation, and saves neither', async () => {
+    cachedSession();
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/land/new');
+    render(<App />);
+
+    expect(screen.queryByLabelText(/soil type/i)).toBeNull();
+    expect(screen.queryByLabelText(/irrigation/i)).toBeNull();
+
+    await user.type(screen.getByLabelText(/camp name or number/i), 'Camp 5');
+    await user.click(screen.getByRole('button', { name: /save camp/i }));
+
+    await waitFor(async () => {
+      expect(await storedUnits()).toHaveLength(1);
+    });
+    expect((await storedUnits())[0]).toMatchObject({
+      kind: 'camp',
+      code: 'Camp 5',
+      soilType: null,
+      irrigation: null,
+    });
+  });
+
   it('refuses a name the farm already uses, and says what to do instead', async () => {
     cachedSession();
     const user = userEvent.setup();

@@ -91,6 +91,41 @@ const VET_PRODUCTS = [
   ],
 ];
 
+// Chemical products — regulated REFERENCE data (FR-204/FR-508), the pre-harvest-interval source the
+// crop slice's spray capture injects FROM (never a number typed into code). Same synthetic-data
+// discipline as VET_PRODUCTS above, and the SAME production caveat: a real deployment loads
+// registered Act 36 of 1947 remedies from a maintained source (STATUS.md's open decision), not this
+// seed. Shape: [id, name, registrationNumber, actives[], crop, phiDays, reentryHours].
+const CHEMICAL_PRODUCTS = [
+  [
+    '01900000-0000-7000-8000-000000000061',
+    'Cyprodinex 50 WG (synthetic)',
+    'L1234 (synthetic)',
+    ['cyprodinil'],
+    'grapes',
+    7,
+    12,
+  ],
+  [
+    '01900000-0000-7000-8000-000000000062',
+    'Glyfospray 360 (synthetic)',
+    'L2345 (synthetic)',
+    ['glyphosate'],
+    null,
+    null, // a burn-down herbicide with no registered PHI on this synthetic row
+    24,
+  ],
+  [
+    '01900000-0000-7000-8000-000000000063',
+    'Maizeguard Lambda (synthetic)',
+    'L3456 (synthetic)',
+    ['lambda-cyhalothrin'],
+    'maize',
+    21,
+    24,
+  ],
+];
+
 const pool = new pg.Pool({ connectionString: url });
 const client = await pool.connect();
 try {
@@ -145,10 +180,29 @@ try {
     );
   }
 
+  for (const [
+    id,
+    name,
+    registrationNumber,
+    actives,
+    crop,
+    phiDays,
+    reentryHours,
+  ] of CHEMICAL_PRODUCTS) {
+    await client.query(
+      `INSERT INTO chemical_products
+         (id, jurisdiction, name, registration_number, active_ingredients,
+          crop, phi_days, reentry_hours, effective_from)
+       VALUES ($1, 'ZA', $2, $3, $4::text[], $5, $6, $7, '2020-01-01')
+       ON CONFLICT (id) DO NOTHING`,
+      [id, name, registrationNumber, actives, crop, phiDays, reentryHours],
+    );
+  }
+
   await client.query('COMMIT');
   console.log(
     '[@werf/db] seeded 1 business, 3 farms (livestock/crop/mixed), 1 owner, ' +
-      `${VET_PRODUCTS.length} veterinary products ✓`,
+      `${VET_PRODUCTS.length} veterinary products, ${CHEMICAL_PRODUCTS.length} chemical products ✓`,
   );
 } catch (err) {
   await client.query('ROLLBACK');

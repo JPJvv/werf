@@ -51,6 +51,17 @@ export class FarmsController {
     return this.farms.updateEnterpriseTypes(auth.userId, farmId, body);
   }
 
+  /** Set or clear the FR-152 rest-period warning threshold (4e·2) — an owner-set preference. */
+  @Patch(':farmId/rest-period-days')
+  async updateRestPeriodDays(
+    @CurrentUser() auth: AuthContext,
+    @Param('farmId', ParseUUIDPipe) farmId: string,
+    @Body(new ZodValidationPipe(schemas.updateRestPeriodDaysRequestSchema))
+    body: schemas.UpdateRestPeriodDaysRequest,
+  ): Promise<schemas.SessionFarm> {
+    return this.farms.updateRestPeriodDays(auth.userId, farmId, body);
+  }
+
   /**
    * Invite someone with a role on THIS farm (FR-005). The invitation grants nothing until
    * the invitee accepts, and the response is identical whether or not they already had an

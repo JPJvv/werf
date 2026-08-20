@@ -5,7 +5,7 @@
  * screen shows rather than a unit test of the pure fold in isolation.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
@@ -197,6 +197,86 @@ describe('the register (FR-131) sees a withholding known only by HYDRATION', () 
 
     expect(await screen.findByText(/must not go into the food chain/i)).toBeTruthy();
     expect(screen.queryByText(/nothing needs your attention/i)).toBeNull();
+  });
+});
+
+describe('the PHI compliance register (FR-205/4d·6)', () => {
+  it('⭐ renders the section, the product/spray-date/earliest-date line, and folds it into the home badge', async () => {
+    // `phiRegister.test.ts` already covers `localPhiFlags` as a pure fold — this is the rendering
+    // gap `SpraysScreen.tsx` shipped a MED for having none of (STATUS.md, 21st session): nothing had
+    // ever mounted `AttentionScreen` with a PHI flag present, so a broken `t()` key or a dropped
+    // `<section>` here would pass every existing test.
+    const BLOCK_ID = '0190f3a0-0000-7000-8000-00000000c020';
+    const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d020';
+    const SPRAY_ID = '0190f3a0-0000-7000-8000-00000000e030';
+    const HARVEST_ID = '0190f3a0-0000-7000-8000-00000000e031';
+    cachedSession();
+    window.localStorage.setItem(
+      `werf-land:${FARM_ID}`,
+      JSON.stringify([
+        { id: BLOCK_ID, farmId: FARM_ID, code: 'B7', name: null, hectares: 6, kind: 'block' },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-chemical-products:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: PRODUCT_ID,
+          jurisdiction: 'ZA',
+          name: 'Roundup PowerMax',
+          registrationNumber: 'L1234 Act 36/1947',
+          crop: 'maize',
+          phiDays: 21,
+          reentryHours: 24,
+          effectiveFrom: '2020-01-01',
+          effectiveTo: null,
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      `werf-sprays:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: SPRAY_ID,
+          farmId: FARM_ID,
+          landUnitId: BLOCK_ID,
+          occurredAt: '2026-08-01T08:00:00.000Z',
+          sprayedOn: '2026-08-01',
+          productId: PRODUCT_ID,
+        },
+      ]),
+    );
+    // Harvested inside the 21-day PHI (earliest safe date is 2026-08-22), no `phiOverride` — the
+    // one shape `localPhiFlags` flags.
+    window.localStorage.setItem(
+      `werf-harvests:${FARM_ID}`,
+      JSON.stringify([
+        {
+          id: HARVEST_ID,
+          farmId: FARM_ID,
+          landUnitId: BLOCK_ID,
+          occurredAt: '2026-08-05T08:00:00.000Z',
+          harvestedOn: '2026-08-05',
+          quantity: 3,
+          unit: 'ton',
+        },
+      ]),
+    );
+
+    window.history.pushState({}, '', '/');
+    render(<App />);
+
+    // The home badge folds the PHI flag in alongside the residue register and conflict queue.
+    const attentionLink = await screen.findByRole('link', { name: /needs your attention/i });
+    expect(within(attentionLink.closest('p')!).getByText('1')).toBeTruthy();
+
+    window.history.pushState({}, '', '/attention');
+    render(<App />);
+
+    expect(await screen.findByText(/roundup powermax/i)).toBeTruthy();
+    expect(screen.getByText(/2026-08-01/)).toBeTruthy();
+    expect(screen.getByText(/2026-08-22/)).toBeTruthy();
+    expect(screen.getByText(/not sent yet/i)).toBeTruthy();
   });
 });
 

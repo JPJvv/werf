@@ -354,6 +354,59 @@ describe('farm management', () => {
     });
   });
 
+  describe('rest-period warning threshold (FR-152, 4e·2)', () => {
+    it('sets the threshold', async () => {
+      const a = await tenant('Alpha');
+
+      const updated = await service.updateRestPeriodDays(a.userId, a.farmId, {
+        restPeriodDays: 30,
+      });
+
+      expect(updated.restPeriodDays).toBe(30);
+      const [row] = await elevated.db.select().from(farms).where(eq(farms.id, a.farmId));
+      expect(row!.restPeriodDays).toBe(30);
+    });
+
+    it('clears the threshold back to null — a real choice, not a value the schema forbids', async () => {
+      const a = await tenant('Alpha');
+      await service.updateRestPeriodDays(a.userId, a.farmId, { restPeriodDays: 30 });
+
+      const cleared = await service.updateRestPeriodDays(a.userId, a.farmId, {
+        restPeriodDays: null,
+      });
+
+      expect(cleared.restPeriodDays).toBeNull();
+    });
+
+    it('refuses a stranger, exactly as if the farm did not exist', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+
+      await expect(
+        service.updateRestPeriodDays(b.userId, a.farmId, { restPeriodDays: 30 }),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('refuses a member whose role does not permit it', async () => {
+      const a = await tenant('Alpha');
+      await service.invite(a.userId, a.farmId, {
+        fullName: 'Sipho Ndlovu',
+        email: 'sipho@werf.test',
+        phone: null,
+        role: 'manager',
+      });
+      const [invitee] = await elevated.db
+        .select()
+        .from(users)
+        .where(eq(users.email, 'sipho@werf.test'));
+      await service.acceptInvitation(invitee!.id, a.farmId);
+
+      await expect(
+        service.updateRestPeriodDays(invitee!.id, a.farmId, { restPeriodDays: 30 }),
+      ).rejects.toThrow(TenancyError);
+    });
+  });
+
   describe('inviting people (FR-005)', () => {
     const SIPHO = {
       fullName: 'Sipho Ndlovu',

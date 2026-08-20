@@ -110,6 +110,7 @@ function buildHealthEvent(
     landUnitId: null,
     employeeId: null,
     batchId: base.batchId ?? null,
+    inventoryLotId: null,
     locationGeojson: base.locationGeojson ?? null,
     notes: base.notes ?? null,
     createdBy: base.createdBy ?? null,

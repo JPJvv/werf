@@ -225,6 +225,41 @@
       "when": 1786946378142,
       "tag": "0031_conflict_reviews_attachments_column_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786985636772,
+      "tag": "0032_chemical_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787062572886,
+      "tag": "0033_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787146596061,
+      "tag": "0034_farm_rest_period_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1787162075646,
+      "tag": "0035_inventory_item_reorder_point",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787204768701,
+      "tag": "0036_feed_event",
+      "breakpoints": true
     }
   ]
 }

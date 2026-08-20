@@ -187,6 +187,15 @@ export const TENANCY = {
     classification: 'reference',
     scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
   },
+  // Chemical products — the pre-harvest-interval source (Phase 4, FR-204/FR-508). Reference data,
+  // filtered by the FARM's jurisdiction so the PHI check works offline at the spray tank — the
+  // identical shape and reasoning as `veterinary_products` immediately above, one enterprise over.
+  // Read-only on the device; the registration is authored by the elevated admin path, never a
+  // farmer.
+  chemical_products: {
+    classification: 'reference',
+    scope: { kind: 'reference-jurisdiction', column: 'jurisdiction' },
+  },
   // Species gestation — the source a due-date projection is injected from (Phase 2, FR-121).
   // Reference data like the two above, but GLOBAL rather than jurisdiction-filtered: a withdrawal
   // period is a registration and stops at the border, a gestation period is biology and does not.
@@ -218,6 +227,18 @@ export const TENANCY = {
   // paths" is about AUTHORSHIP of the key, not about hiding it once the server has set it), and a
   // device reading its own attachments' status is how it knows which are still pending upload.
   attachments: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  // Inventory items and lots (Phase 4e, FR-501). Farm-scoped and bidirectional: a farmer records
+  // stock received or used offline, in the shed or at the spray tank, with no signal. No secrets
+  // and no PostGIS, so nothing is stripped — a lot's batch/expiry/location is exactly the kind of
+  // thing a co-member is entitled to see, the same posture `mobs` takes.
+  inventory_items: {
+    classification: 'farm-scoped',
+    scope: { kind: 'direct', column: 'farm_id' },
+  },
+  inventory_lots: {
     classification: 'farm-scoped',
     scope: { kind: 'direct', column: 'farm_id' },
   },

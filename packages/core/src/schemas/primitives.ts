@@ -9,10 +9,11 @@ import { z } from 'zod';
 import { SUPPORTED_JURISDICTIONS } from '../jurisdiction';
 import { ENTERPRISE_TYPES } from '../enterprise';
 import { USER_ROLES } from '../roles';
-import { LAND_UNIT_KINDS } from '../land';
+import { IRRIGATION_TYPES, LAND_UNIT_KINDS } from '../land';
 import { ANIMAL_SEXES, ANIMAL_STATUSES, IDENTIFIER_TYPES, SPECIES } from '../animals';
 import { EVENT_TYPES } from '../events';
 import { ATTACHMENT_STATUSES, ATTACHMENT_SUBJECT_TYPES } from '../attachments';
+import { INVENTORY_ITEM_CATEGORIES } from '../inventory';
 
 /** IDs are client-generated UUIDv7. We validate shape here; ordering is a storage concern. */
 export const uuidSchema = z.string().uuid();
@@ -43,6 +44,8 @@ export const userRoleSchema = z.enum(USER_ROLES);
 
 export const landUnitKindSchema = z.enum(LAND_UNIT_KINDS);
 
+export const irrigationTypeSchema = z.enum(IRRIGATION_TYPES);
+
 export const animalStatusSchema = z.enum(ANIMAL_STATUSES);
 
 export const animalSexSchema = z.enum(ANIMAL_SEXES);
@@ -56,6 +59,8 @@ export const eventTypeSchema = z.enum(EVENT_TYPES);
 export const attachmentSubjectTypeSchema = z.enum(ATTACHMENT_SUBJECT_TYPES);
 
 export const attachmentStatusSchema = z.enum(ATTACHMENT_STATUSES);
+
+export const inventoryItemCategorySchema = z.enum(INVENTORY_ITEM_CATEGORIES);
 
 /** Money on the wire is integer cents. */
 export const moneySchema = z.number().int();

@@ -68,6 +68,7 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
   events: { id: 'event-b', farm_id: FARM_B },
   regulatory_rates: { id: 'rate-za', jurisdiction: 'ZA' },
   veterinary_products: { id: 'vet-za', jurisdiction: 'ZA' },
+  chemical_products: { id: 'chem-za', jurisdiction: 'ZA' },
   species_gestation: { id: 'gest-cattle', species: 'cattle', gestation_days: 283 },
   theft_incidents: { id: 'theft-b', farm_id: FARM_B },
   theft_incident_animals: {
@@ -82,6 +83,8 @@ const farmBRows: Record<SyncedTable, Record<string, unknown>> = {
     subject_type: 'animal',
     subject_id: 'animal-b',
   },
+  inventory_items: { id: 'item-b', farm_id: FARM_B },
+  inventory_lots: { id: 'lot-b', farm_id: FARM_B, inventory_item_id: 'item-b' },
 };
 
 const userAFarms = [FARM_A];
@@ -242,6 +245,13 @@ describe('sync tenancy — reference data by jurisdiction', () => {
     expect(syncsToUser('veterinary_products', { jurisdiction: 'NA' }, userAFarms, graph)).toBe(
       false,
     );
+  });
+
+  it('syncs a ZA chemical product to a ZA farm, never another jurisdiction’s', () => {
+    // The pre-harvest-interval source (FR-204/FR-508) is filtered by the farm's jurisdiction,
+    // exactly like veterinary_products — the spray-tank PHI check works offline off ZA products only.
+    expect(syncsToUser('chemical_products', { jurisdiction: 'ZA' }, userAFarms, graph)).toBe(true);
+    expect(syncsToUser('chemical_products', { jurisdiction: 'NA' }, userAFarms, graph)).toBe(false);
   });
 });
 

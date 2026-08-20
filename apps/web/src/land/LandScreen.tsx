@@ -22,7 +22,10 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { termLabelKey, vocabularyFor, type LandTerm } from '../i18n/terminology';
 import { useAuth } from '../auth/AuthProvider';
 import { useHerdSummary } from '../livestock/herd';
-import { useCurrentBoundary, useEffectiveLandUnits } from './LocalLand';
+import { useCampGrazing, restPeriodWarning, type CampGrazingStatus } from '../livestock/grazing';
+import { useCurrentPlanting } from '../crops/LocalPlantings';
+import { useLatestFertiliser } from '../crops/LocalFertiliser';
+import { useCurrentBoundary, useEffectiveLandUnits, type StoredLandUnit } from './LocalLand';
 import { landKey } from './AddLandUnitScreen';
 
 export function LandScreen() {
@@ -33,11 +36,29 @@ export function LandScreen() {
   const units = useEffectiveLandUnits();
   // Live head per camp, individual animals and groups together (FR-705).
   const { byLandUnit } = useHerdSummary();
+  // FR-151: grazing/rest days per camp, derived from the mob-move + individual-move logs (4e·1).
+  const grazing = useCampGrazing();
 
   const term = useMemo(
     () => vocabularyFor((activeFarm?.enterpriseTypes as EnterpriseType[]) ?? []).land,
     [activeFarm],
   );
+
+  // FR-202: which blocks a split has already produced children for. Derived from the graph itself
+  // rather than a status column — the same "project it, don't store it" discipline every other
+  // aggregate here follows. A block with children is shown what it split into rather than offered
+  // "Split this block" again; the parent's own history (boundary, plantings) stays fully visible,
+  // it just stops being the door TO a new split.
+  const childrenOf = useMemo(() => {
+    const map = new Map<string, StoredLandUnit[]>();
+    for (const unit of units) {
+      if (unit.parentId === null) continue;
+      const siblings = map.get(unit.parentId) ?? [];
+      siblings.push(unit);
+      map.set(unit.parentId, siblings);
+    }
+    return map;
+  }, [units]);
 
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
@@ -93,6 +114,27 @@ export function LandScreen() {
                   term={term}
                   hasTypedBoundary={unit.boundaryGeojson !== null}
                 />
+                {/* FR-151, camps only: grazing/rest days + stocking rate — gated on `kind`, the
+                    mirror of the `kind === 'block'` rows below (a block is never grazed). */}
+                {unit.kind === 'camp' && (
+                  <GrazingRow
+                    landUnitId={unit.id}
+                    headCount={head}
+                    hectares={unit.hectares}
+                    status={grazing.get(unit.id)}
+                    restPeriodDays={activeFarm?.restPeriodDays ?? null}
+                  />
+                )}
+                {/* A camp is never planted (FR-203) — gated on the unit's own `kind`, not the farm's
+                    vocabulary, so a mixed farm's camps still show only the boundary row above. */}
+                {unit.kind === 'block' && <PlantingRow landUnitId={unit.id} />}
+                {/* FR-206: a camp is never fertilised in this product's model — gated on `kind`
+                    exactly as the planting row above, for the same "camps ask neither" reasoning. */}
+                {unit.kind === 'block' && <FertiliserRow landUnitId={unit.id} />}
+                {/* FR-202: splitting is a block action, mirroring the planting gate above. */}
+                {unit.kind === 'block' && (
+                  <SplitRow landUnitId={unit.id} childUnits={childrenOf.get(unit.id) ?? []} />
+                )}
               </li>
             );
           })}
@@ -153,6 +195,179 @@ function BoundaryRow({
         className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
       >
         {t(landKey(term, 'walkFrom'))}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * Grazing/rest days + stocking rate on this camp (FR-151, 4e·1's remainder). `status` is `undefined`
+ * for a camp `campGrazingStatuses` has no information about at all — never-grazed ground reads
+ * identically to ground whose only occupant died in place with no move ever taking it out, because
+ * this projection genuinely cannot tell those two apart from the move log alone
+ * (`grazing.ts`'s own module note) — an honest "nothing recorded" rather than a claim this ground
+ * was never grazed.
+ *
+ * The stocking rate's denominator prefers the WALKED hectares over the declared ones
+ * (`BoundaryRow`'s own two numbers) — the fence as it actually runs, not the title deed — and shows
+ * no rate at all rather than a zero or a NaN when neither is known, the same discipline
+ * `BoundaryRow`/`PlantingRow` already apply to their own absences.
+ *
+ * FR-152 (4e·2): an ambient warning panel appears BELOW the row when this camp is resting for
+ * fewer days than the farm's owner-set threshold — `restPeriodWarning`'s own note on why this is
+ * advisory, never a block, and why an unset threshold (`restPeriodDays === null`) shows nothing
+ * rather than a guessed default.
+ */
+function GrazingRow({
+  landUnitId,
+  headCount,
+  hectares,
+  status,
+  restPeriodDays,
+}: {
+  landUnitId: string;
+  headCount: number;
+  hectares: number | null;
+  status: CampGrazingStatus | undefined;
+  restPeriodDays: number | null;
+}) {
+  const { t } = useTranslation();
+  const walked = useCurrentBoundary(landUnitId);
+  const denominator = walked?.areaHectares ?? hectares;
+  const rate =
+    headCount > 0 && denominator !== null && denominator > 0 ? headCount / denominator : null;
+  const warning = restPeriodWarning(status, restPeriodDays);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-body text-soil-700">
+          {status === undefined ? (
+            t('land.grazing.noRecord')
+          ) : status.kind === 'grazingUnknown' ? (
+            t('land.grazing.arrivalUnknown')
+          ) : (
+            <>
+              <span className="font-data tabular-nums text-soil-900">{status.days}</span>{' '}
+              {t(
+                status.kind === 'grazing' ? 'land.grazing.daysGrazing' : 'land.grazing.daysResting',
+              )}
+            </>
+          )}
+        </span>
+        {rate !== null && (
+          <span className="font-data text-body tabular-nums text-soil-700">
+            {rate.toFixed(1)} {t('land.grazing.rateUnit')}
+          </span>
+        )}
+      </div>
+      {warning !== null && (
+        <p className="border-l-4 border-klei-700 bg-klei-100 p-2 text-body text-soil-900">
+          {t('land.grazing.readyIn')}{' '}
+          <span className="font-data tabular-nums text-soil-900">{warning.daysRemaining}</span>{' '}
+          {t('land.grazing.restTargetUnit')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What's currently in the ground on this block (FR-203), and the way in to recording a planting.
+ *
+ * Same "two absences are two facts" shape `BoundaryRow` already draws: "never planted" and "planted
+ * last season, still standing" are different sentences, and `useCurrentPlanting` is the same
+ * `(occurredAt, id)`-ordered projection over the append-only log that boundary uses for a walk (see
+ * `@werf/domain/crops/planting.ts`'s module note).
+ */
+function PlantingRow({ landUnitId }: { landUnitId: string }) {
+  const { t } = useTranslation();
+  const current = useCurrentPlanting(landUnitId);
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-body text-soil-700">
+        {current === undefined ? (
+          t('crops.notPlanted')
+        ) : (
+          <>
+            <span className="text-soil-900">{current.crop}</span> {t('crops.planted')}
+          </>
+        )}
+      </span>
+      <Link
+        to={`/crops/plant?block=${landUnitId}`}
+        className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
+      >
+        {t('crops.recordPlanting')}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * The most recent fertiliser application on this block (FR-206), and the way in to recording one.
+ *
+ * Display only, unlike `PlantingRow`'s "currently planted" — a fertiliser application has no
+ * ongoing state to project (`LocalFertiliser.tsx`'s module note): "last applied" is a convenience
+ * for the farmer, never a safety or compliance read.
+ */
+function FertiliserRow({ landUnitId }: { landUnitId: string }) {
+  const { t } = useTranslation();
+  const latest = useLatestFertiliser(landUnitId);
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-body text-soil-700">
+        {latest === undefined ? (
+          t('crops.fertilise.none')
+        ) : (
+          <>
+            <span className="text-soil-900">{latest.product}</span> {t('crops.fertilise.applied')}
+          </>
+        )}
+      </span>
+      <Link
+        to={`/crops/fertilise?block=${landUnitId}`}
+        className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
+      >
+        {t('crops.fertilise.record')}
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * FR-202: either the way in to splitting a block, or — once it has been — what it was split into.
+ *
+ * A parent is never closed by a split, so its own boundary/planting rows above stay exactly as
+ * useful as they were; this row only stops offering "Split this block" again once children exist,
+ * so a farmer does not accidentally start a second split of ground already divided.
+ */
+function SplitRow({
+  landUnitId,
+  childUnits,
+}: {
+  landUnitId: string;
+  childUnits: readonly StoredLandUnit[];
+}) {
+  const { t } = useTranslation();
+
+  if (childUnits.length > 0) {
+    return (
+      <p className="text-body text-soil-700">
+        {t('land.split.into')} {childUnits.map((c) => c.code).join(', ')}
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Link
+        to={`/land/split?block=${landUnitId}`}
+        className="min-h-touch-min flex items-center rounded border border-soil-200 px-3 text-body text-dam-700 no-underline"
+      >
+        {t('land.split.action')}
       </Link>
     </div>
   );

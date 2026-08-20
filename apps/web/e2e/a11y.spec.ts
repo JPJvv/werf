@@ -129,6 +129,22 @@ for (const theme of THEMES) {
     expect(results.violations).toEqual([]);
   });
 
+  // FR-152 (4e·2). The seeded farm's owner sees the input and the klei-tinted "needs a
+  // connection" panel is never shown here — `seed()`'s page starts online, and this is the one
+  // place that panel's own markup gets an axe pass, since `CAPTURE_SCREENS` never triggers it.
+  test(`settings → grazing has no accessibility violations in the ${theme} theme`, async ({
+    page,
+  }) => {
+    await seed(page, { theme });
+    await page.goto('/settings/grazing');
+
+    await expect(page.getByRole('heading', { name: /^grazing$/i })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
   test(`settings → language has no accessibility violations in the ${theme} theme`, async ({
     page,
   }) => {
@@ -190,6 +206,13 @@ const CAPTURE_SCREENS = [
   { path: '/animals/groups/new', heading: /record a group/i },
   { path: '/animals/groups/count', heading: /change a group’s numbers/i },
   { path: '/animals/move', heading: /move animals/i },
+  // FR-151. The seed's own single camp (NOORD) means every populated-screen click reveals the same
+  // widgets an axe pass needs to see — the controls are audited below, in POPULATED_SCREENS.
+  { path: '/animals/groups/move', heading: /move a group/i },
+  // FR-153. Audits the CAPTURE_SCREENS default seed's "no feed in stock" empty state; the
+  // POPULATED state (the group/camp toggle, the lot picker, the cost preview) is audited below,
+  // in POPULATED_SCREENS — closed in the Phase 4 exit-review sweep (STATUS.md).
+  { path: '/animals/feed', heading: /record feed/i },
   { path: '/animals/mating', heading: /record a service/i },
   { path: '/animals/pregnancy', heading: /pregnancy test/i },
   { path: '/animals/birth', heading: /record a birth/i },
@@ -212,6 +235,23 @@ const CAPTURE_SCREENS = [
   // or either state while the checklist claimed the sweep covered it. Its POPULATED state is audited
   // below, because a register with nothing on it is one sentence.
   { path: '/attention', heading: /^needs your attention$/i },
+  // 4d (FR-205/FR-207). The seed has no land at all here, so this audits the "no blocks yet" empty
+  // state — its POPULATED state (the PHI block panel and override controls) is audited below,
+  // because that is where the compliance-relevant markup actually is.
+  { path: '/crops/harvest', heading: /record a harvest/i },
+  { path: '/harvest', heading: /harvest history/i },
+  // ⛔ 4b/4c (FR-206/FR-204) were never added here — the sweep covered harvest (4d) but not the two
+  // OLDER crop-capture screens, the identical "missing from the list, not from the code" gap
+  // `/attention` (FR-131) once was. The seed has no land here either, so this audits the same
+  // "no blocks yet" empty state; the populated state (incl. 4e·4's optional stock-lot picker and,
+  // for spray, 4d·11's own PHI-override controls) is audited below, in POPULATED_SCREENS — closed
+  // in the Phase 4 exit-review sweep (STATUS.md).
+  { path: '/crops/fertilise', heading: /record a fertiliser application/i },
+  { path: '/crops/spray', heading: /record a spray/i },
+  // Phase 4e (FR-501). The seed has no stock yet, so this audits the empty state; the populated
+  // state (the item/lot form fields) is audited below, because that is where the controls are.
+  { path: '/inventory', heading: /^stock$/i },
+  { path: '/inventory/receive', heading: /receive stock/i },
 ] as const;
 
 /**
@@ -253,6 +293,22 @@ const POPULATED_SCREENS = [
         .click();
       await page.getByRole('button', { name: /^sold$/i }).click();
       await expect(page.getByText(/cannot go for slaughter or sale yet/i)).toBeVisible();
+    },
+  },
+  {
+    // FR-151, and the capture `phase-checklists.md` 4e·1 unblocks — the destination select only
+    // renders once a group is picked, which is the markup axe never saw before this slice existed.
+    // The seed's farm is mixed (cattle + row crops), so its word for a piece of ground is "block" —
+    // matching only "camp" here would be the wrong farm's vocabulary, the same trap this file's own
+    // CAPTURE_SCREENS header names for `/land`.
+    path: '/animals/groups/move',
+    heading: /move a group/i,
+    act: async (page: Page) => {
+      await page
+        .getByRole('button', { name: /ossies/i })
+        .first()
+        .click();
+      await expect(page.getByLabel(/move to which (camp|block)/i)).toBeVisible();
     },
   },
   {
@@ -331,6 +387,93 @@ const POPULATED_SCREENS = [
         .first()
         .click();
       await expect(page.getByLabel(/product/i)).toBeVisible();
+    },
+  },
+  {
+    // 4d (FR-205/US-030). The fixture's one block has an unresolved spray inside its product's
+    // 21-day PHI, and the screen defaults the harvest day to today — so the block panel renders with
+    // no interaction needed. The override reason select/textarea (the newest controls here, and the
+    // ones a compliance pass will look at first) only exist once "Override" is clicked.
+    path: '/crops/harvest',
+    heading: /record a harvest/i,
+    act: async (page: Page) => {
+      await expect(page.getByText(/inside a pre-harvest interval/i)).toBeVisible();
+      await page.getByRole('button', { name: /^override$/i }).click();
+      await expect(page.getByLabel(/reason/i)).toBeVisible();
+    },
+  },
+  {
+    // The harvest history list with a written override on it (FR-205) — the "Overridden — <reason>"
+    // line is the one piece of markup here that carries a compliance meaning.
+    path: '/harvest',
+    heading: /harvest history/i,
+    act: async (page: Page) => {
+      await expect(page.getByText(/overridden/i)).toBeVisible();
+    },
+  },
+  {
+    // Phase 4e (FR-501): a lot with stock on it — the quantity projected from the movement log,
+    // not the empty state. Asserts the quantity number itself, not just the item name, so a fold
+    // that silently returns zero (e.g. the hydrated movement never lands) still fails this check.
+    // `.first()`: 4e·5 shows the number TWICE for a single-lot item — the item-level total and the
+    // lot's own row — either is proof the fold landed.
+    path: '/inventory',
+    heading: /^stock$/i,
+    act: async (page: Page) => {
+      await expect(page.getByText(/urea 46%/i)).toBeVisible();
+      await expect(page.getByText(/40/).first()).toBeVisible();
+    },
+  },
+  {
+    // 4d·11 (legal-compliance.md § 4.3, the spray-side half of the PHI guard) + 4e·4's optional
+    // stock-lot picker (FR-502) — STATUS.md's own disclosed gap: this screen's newest controls,
+    // the ones a compliance pass looks at first, had never been in front of axe at all, only the
+    // "no blocks yet" empty state. The fixture's one block has a planting due in 5 days and this
+    // product carries a 21-day PHI, so picking it blocks at capture with no other interaction —
+    // mirroring `RecordHarvestScreen.tsx`'s own override UI exactly, one guard over (index 1 is
+    // the only real product option, after the "choose a product" placeholder).
+    path: '/crops/spray',
+    heading: /record a spray/i,
+    act: async (page: Page) => {
+      await page.getByLabel(/^product$/i).selectOption({ index: 1 });
+      await expect(page.getByText(/would clear after the planned harvest date/i)).toBeVisible();
+      await page.getByRole('button', { name: /^override$/i }).click();
+      await expect(page.getByLabel(/^reason$/i)).toBeVisible();
+      // The chemical-category lot — index 1 is the only real option, after "not tracking this
+      // one's stock". Picking it reveals the paired quantity-used field beside it.
+      await page.getByLabel(/from stock/i).selectOption({ index: 1 });
+      await expect(page.getByLabel(/quantity used/i)).toBeVisible();
+    },
+  },
+  {
+    // 4e·4's optional stock-lot picker (FR-502) — the same disclosed gap as spray, one guard
+    // lighter (fertiliser carries no PHI, so there is no override UI here to exercise). The picker
+    // renders unconditionally once ANY lot is in stock — no interaction needed to reveal it, only
+    // to reach the quantity-used field paired with it.
+    path: '/crops/fertilise',
+    heading: /record a fertiliser application/i,
+    act: async (page: Page) => {
+      await expect(page.getByLabel(/from stock/i)).toBeVisible();
+      await page.getByLabel(/from stock/i).selectOption({ index: 1 });
+      await expect(page.getByLabel(/quantity used/i)).toBeVisible();
+    },
+  },
+  {
+    // FR-153 — the third of the three screens STATUS.md's exit-review note named together: the
+    // mob/camp toggle, the lot picker and the cost preview had never been audited populated, only
+    // the "no feed in stock" empty state. The estimate is DERIVED from the seeded lot's own costed
+    // receipt, never typed (`RecordFeedScreen.tsx`'s own module note) — a real number, not a
+    // placeholder, is what a contrast rule needs to see under this panel.
+    path: '/animals/feed',
+    heading: /record feed/i,
+    act: async (page: Page) => {
+      await page
+        .getByRole('button', { name: /ossies/i })
+        .first()
+        .click();
+      await page.getByLabel(/from stock/i).selectOption({ index: 1 });
+      await page.getByLabel(/quantity/i).fill('10');
+      await expect(page.getByText(/estimated cost/i)).toBeVisible();
     },
   },
 ] as const;

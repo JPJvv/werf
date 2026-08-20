@@ -4,8 +4,10 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule, minutes, seconds } from '@nestjs/throttler';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AuthModule } from './auth/auth.module';
+import { CropsModule } from './crops/crops.module';
 import { DbModule } from './db/db.module';
 import { FarmsModule } from './farms/farms.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { LandModule } from './land/land.module';
 import { LivestockModule } from './livestock/livestock.module';
 import { RainfallModule } from './rainfall/rainfall.module';
@@ -44,6 +46,8 @@ import { ConflictsModule } from './conflicts/conflicts.module';
     LandModule,
     LivestockModule,
     ConflictsModule,
+    CropsModule,
+    InventoryModule,
     RainfallModule,
     ReferenceModule,
     SyncModule,

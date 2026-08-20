@@ -213,6 +213,7 @@ export function recordMobTally(input: MobTallyInput): MobTallyCapture {
       landUnitId: null,
       employeeId: null,
       batchId: input.batchId ?? null,
+      inventoryLotId: null,
       locationGeojson: input.locationGeojson ?? null,
       notes: input.notes ?? null,
       createdBy: input.createdBy ?? null,

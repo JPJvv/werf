@@ -20,6 +20,8 @@ import type {
 import type { StoredHealthEvent } from './LocalHealth';
 import type { StoredMating, StoredPregnancyTest } from './LocalBreeding';
 import type { StoredMove } from './LocalMoves';
+import type { StoredMobMove } from './LocalMobMoves';
+import type { StoredFeedEvent } from './LocalFeed';
 import type { StoredTally } from './LocalTallies';
 import type { StoredTheftIncident } from './LocalTheft';
 
@@ -141,6 +143,42 @@ export const livestockApi = {
         // "leave that dimension alone", and sending null instead would clear it.
         ...(move.toLandUnitId === undefined ? {} : { toLandUnitId: move.toLandUnitId }),
         ...(move.toMobId === undefined ? {} : { toMobId: move.toMobId }),
+      },
+      token,
+    ),
+
+  /** A mob-level move (FR-151). Only the destination is sent; the server reads where the mob is
+   *  from its own row, so the stored history cannot disagree with the mob. */
+  recordMobMove: (move: StoredMobMove, token: string): Promise<void> =>
+    post(
+      '/livestock/mob-moves',
+      {
+        id: move.id,
+        farmId: move.farmId,
+        mobId: move.mobId,
+        occurredAt: move.occurredAt,
+        toLandUnitId: move.toLandUnitId,
+      },
+      token,
+    ),
+
+  /**
+   * A feed-out (Phase 4e, FR-153). `landUnitId`/`enterpriseId` are sent only when this device
+   * knows them directly (a camp-only feed-out) — when a mob is named, the server derives both
+   * from the mob's own current row, so a stale/absent local guess is never sent instead.
+   */
+  recordFeed: (feed: StoredFeedEvent, token: string): Promise<void> =>
+    post(
+      '/livestock/feed',
+      {
+        id: feed.id,
+        farmId: feed.farmId,
+        mobId: feed.mobId,
+        occurredAt: feed.occurredAt,
+        inventoryLotId: feed.inventoryLotId,
+        quantity: feed.quantity,
+        ...(feed.landUnitId === undefined ? {} : { landUnitId: feed.landUnitId }),
+        ...(feed.enterpriseId === undefined ? {} : { enterpriseId: feed.enterpriseId }),
       },
       token,
     ),

@@ -19,6 +19,7 @@ import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { eq } from 'drizzle-orm';
 import {
+  chemicalProducts,
   createAppDb,
   createElevatedDb,
   users,
@@ -227,5 +228,109 @@ describe('the veterinary product register (FR-131)', () => {
     await expect(service.listVeterinaryProducts(b.userId, a.farmId, '2026-07-25')).rejects.toThrow(
       NotFoundError,
     );
+  });
+
+  describe('the chemical product register (FR-204/FR-508)', () => {
+    /** Reference data is written by the elevated admin path, never by a farmer. */
+    async function aChemicalProduct(over: Partial<typeof chemicalProducts.$inferInsert>) {
+      const [row] = await elevated.db
+        .insert(chemicalProducts)
+        .values({
+          jurisdiction: 'ZA',
+          name: 'Cyprodinex 50 WG',
+          registrationNumber: 'L1234',
+          activeIngredients: ['cyprodinil'],
+          crop: 'grapes',
+          phiDays: 7,
+          effectiveFrom: '2020-01-01',
+          ...over,
+        })
+        .returning();
+      return row!;
+    }
+
+    it('returns the products registered in this farm’s jurisdiction', async () => {
+      const a = await tenant('CropRef');
+      await aChemicalProduct({ name: 'Cyprodinex 50 WG' });
+
+      const products = await service.listChemicalProducts(a.userId, a.farmId, '2026-10-05');
+
+      expect(products.map((p) => p.name)).toEqual(['Cyprodinex 50 WG']);
+      expect(products[0]!.phiDays).toBe(7);
+    });
+
+    it('never offers another country’s registration, however short its PHI', async () => {
+      const a = await tenant('CropRef');
+      await aChemicalProduct({ name: 'ZA product' });
+      await aChemicalProduct({ name: 'Elsewhere product', jurisdiction: 'NA', phiDays: 1 });
+
+      const products = await service.listChemicalProducts(a.userId, a.farmId, '2026-10-05');
+
+      expect(products.map((p) => p.name)).toEqual(['ZA product']);
+    });
+
+    it('offers only the registration in force on the day asked about', async () => {
+      const a = await tenant('CropRef');
+      await aChemicalProduct({
+        name: 'Cyprodinex 50 WG',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: '2026-04-01',
+        phiDays: 14,
+      });
+      await aChemicalProduct({
+        name: 'Cyprodinex 50 WG',
+        effectiveFrom: '2026-04-01',
+        phiDays: 7,
+      });
+
+      const now = await service.listChemicalProducts(a.userId, a.farmId, '2026-10-05');
+      expect(now).toHaveLength(1);
+      expect(now[0]!.phiDays).toBe(7);
+
+      const before = await service.listChemicalProducts(a.userId, a.farmId, '2026-03-01');
+      expect(before).toHaveLength(1);
+      expect(before[0]!.phiDays).toBe(14);
+    });
+
+    it('[P1.3] returns EVERY version for the jurisdiction when no day is given, not just today’s', async () => {
+      const a = await tenant('CropAllVersions');
+      await aChemicalProduct({
+        name: 'Cyprodinex 50 WG',
+        effectiveFrom: '2020-01-01',
+        effectiveTo: '2026-04-01',
+        phiDays: 14,
+      });
+      await aChemicalProduct({
+        name: 'Cyprodinex 50 WG',
+        effectiveFrom: '2026-04-01',
+        phiDays: 7,
+      });
+
+      const all = await service.listChemicalProducts(a.userId, a.farmId);
+
+      expect(all).toHaveLength(2);
+      expect(all.map((p) => p.phiDays).sort((x, y) => (x ?? 0) - (y ?? 0))).toEqual([7, 14]);
+    });
+
+    it('a product with no PHI on record reads as null, never as zero', async () => {
+      // The P1.3 lesson (this class's header) applied here: a nullable phi_days is a real distinct
+      // state from a registered zero — the client-facing register must not collapse the two.
+      const a = await tenant('CropRef');
+      await aChemicalProduct({ name: 'Glyfospray 360', phiDays: null });
+
+      const products = await service.listChemicalProducts(a.userId, a.farmId, '2026-10-05');
+
+      expect(products[0]!.phiDays).toBeNull();
+    });
+
+    it('refuses a stranger as "no such farm" rather than answering for it', async () => {
+      const a = await tenant('CropRef');
+      const b = await tenant('CropOther');
+      await aChemicalProduct({});
+
+      await expect(service.listChemicalProducts(b.userId, a.farmId, '2026-10-05')).rejects.toThrow(
+        NotFoundError,
+      );
+    });
   });
 });

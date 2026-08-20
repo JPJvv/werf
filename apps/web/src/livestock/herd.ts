@@ -35,11 +35,13 @@ import {
   useHydratedLifecycleEventsSettled,
   useHydratedMoves,
   useHydratedMovesSettled,
+  useHydratedMobMoves,
   useHydratedHealthEvents,
   mergeById,
   mergeByIdPreferHydrated,
 } from './HydratedLivestock';
 import { useMoves, useMovesSettled, type StoredMove } from './LocalMoves';
+import { useMobMoves, type StoredMobMove } from './LocalMobMoves';
 import { useHealthEvents } from './LocalHealth';
 import { useVetProducts } from './LocalVetProducts';
 import { meatWithdrawalFor, type WithholdDose } from './withdrawal';
@@ -105,6 +107,21 @@ function positionByAnimal(
       mobId: move.toMobId === undefined ? (held?.mobId ?? null) : move.toMobId,
     });
   }
+  return map;
+}
+
+/**
+ * The mob twin of `positionByAnimal` (FR-151): folds a mob's own camp-move log forward in the same
+ * total order, so a just-captured, not-yet-flushed mob move is reflected on screen immediately
+ * instead of waiting for the flush to round-trip a fresh `mobs.land_unit_id` back down. Without this
+ * a farmer who moves a flock offline would see it still listed in the old camp until reconnecting —
+ * the same staleness `positionByAnimal` exists to close for an individual animal's walk.
+ */
+export function positionByMob(moves: readonly StoredMobMove[]): ReadonlyMap<string, string | null> {
+  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  const ordered = [...moves].sort((a, b) => cmp(a.occurredAt, b.occurredAt) || cmp(a.id, b.id));
+  const map = new Map<string, string | null>();
+  for (const move of ordered) map.set(move.mobId, move.toLandUnitId);
   return map;
 }
 
@@ -275,12 +292,21 @@ export function useEffectiveMobs(herdId?: string): readonly StoredMob[] {
   const tallies = useTallies();
   const hydratedMobs = useHydratedMobs();
   const hydratedTallies = useHydratedTallies();
+  // ⭐ FR-151: a mob's own camp-move log, local + hydrated, `mergeByIdPreferHydrated` for the same
+  // reason `useEffectiveAnimals` prefers it for animal moves — the hydrated echo carries the
+  // server-resolved `fromLandUnitId` a local capture never can.
+  const mobMoves = useMobMoves();
+  const hydratedMobMoves = useHydratedMobMoves();
   return useMemo(() => {
     const foldMobs = mergeById(mobs, hydratedMobs);
     const foldTallies = mergeById(tallies, hydratedTallies);
-    const projected = projectMobs(foldMobs, foldTallies);
+    const positions = positionByMob(mergeByIdPreferHydrated(mobMoves, hydratedMobMoves));
+    const projected = projectMobs(foldMobs, foldTallies).map((mob) => {
+      const landUnitId = positions.get(mob.id);
+      return landUnitId === undefined ? mob : { ...mob, landUnitId };
+    });
     return herdId === undefined ? projected : projected.filter((m) => m.enterpriseId === herdId);
-  }, [mobs, hydratedMobs, tallies, hydratedTallies, herdId]);
+  }, [mobs, hydratedMobs, tallies, hydratedTallies, mobMoves, hydratedMobMoves, herdId]);
 }
 
 /** The herd summary (FR-705/017), for one herd or (unfiltered) the whole farm. */

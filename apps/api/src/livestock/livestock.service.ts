@@ -47,8 +47,10 @@ import {
   recordBirth,
   recordDeath,
   recordDip,
+  recordFeedOut,
   recordMating,
   recordMissing,
+  recordMobMove,
   recordMobTally,
   recordMove,
   recordPregnancyDiagnosis,
@@ -64,6 +66,7 @@ import { APP_DB } from '../db/db.module';
 import {
   assertCanCapture,
   assertOwnedReferences,
+  farmJurisdiction,
   findEvent,
   herdOfSubject,
   insertEvent,
@@ -678,6 +681,127 @@ export class LivestockService {
       await detectMoveConflicts(tx, stored, userId, sourceSessionId);
 
       return stored;
+    });
+  }
+
+  /**
+   * Records a mob-level move (FR-151) — the whole group walks to another camp. Idempotent on the
+   * client-generated id, same rule as `recordMove` above: a re-flush after a lost 201 must be a
+   * no-op, and idempotency is checked FIRST because this capture overwrites the mob's own position.
+   *
+   * The FROM side is reconstructed from the move log at THIS event's place in it
+   * (`mobPositionBefore`), not read off `mobs.land_unit_id` — the same "arrival order is not
+   * `occurred_at` order" reasoning `positionBefore` documents for an individual animal.
+   */
+  async recordMobMove(
+    userId: string,
+    input: schemas.RecordMobMoveRequest,
+    sourceSessionId?: string,
+  ) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+
+      const already = await findEvent(tx, input.farmId, input.id);
+      if (already) return already;
+
+      // The destination must be on this farm — "walk the flock into the neighbour's camp" is not a
+      // move (same check `recordMove` runs on the animal path).
+      await assertOwnedReferences(tx, input.farmId, { landUnitId: input.toLandUnitId });
+
+      const [mob] = await tx
+        .select({ landUnitId: mobs.landUnitId, enterpriseId: mobs.enterpriseId })
+        .from(mobs)
+        .where(
+          and(eq(mobs.id, input.mobId), eq(mobs.farmId, input.farmId), isNull(mobs.deletedAt)),
+        );
+      if (!mob) throw new NotFoundError('Group not found');
+
+      const before = await mobPositionBefore(
+        tx,
+        input.farmId,
+        input.mobId,
+        { occurredAt: input.occurredAt, id: input.id },
+        mob.landUnitId,
+      );
+
+      const { event, landUnitId } = recordMobMove({
+        id: input.id,
+        farmId: input.farmId,
+        mobId: input.mobId,
+        occurredAt: input.occurredAt,
+        enterpriseId: mob.enterpriseId,
+        fromLandUnitId: before.landUnitId,
+        toLandUnitId: input.toLandUnitId,
+        locationGeojson: input.locationGeojson,
+        notes: input.notes,
+        createdBy: userId,
+      });
+
+      const stored = await insertEvent(tx, event, { sourceSessionId });
+
+      // The denormalised position follows the LATEST move in the log, not the last one to arrive —
+      // same reasoning as the animal path: a back-dated move landing behind one already stored
+      // describes where the mob was, not where it is.
+      if (before.isLatest) {
+        await tx
+          .update(mobs)
+          .set({ landUnitId, updatedBy: userId, updatedAt: new Date() })
+          .where(and(eq(mobs.id, input.mobId), eq(mobs.farmId, input.farmId)));
+      }
+
+      return stored;
+    });
+  }
+
+  /**
+   * Records a feed-out (Phase 4e, FR-153) — how much of a tracked feed lot went to a mob or a
+   * camp. "Deduct from feed inventory" is a SEPARATE `inventory_movement` the client outbox
+   * records independently (the same two-independent-commits shape 4e·4 established for spray/
+   * fertiliser); this endpoint only writes the ACT.
+   *
+   * When a mob is named, its camp AND enterprise are DERIVED from the mob's own current row,
+   * never trusted from the client — the identical reasoning `herdOfSubject` already applies to
+   * every other mob-scoped capture (feeding mob X is meaningless if the event disagrees with mob
+   * X's actual camp). A camp-only feed-out (no mob) has no subject to derive from, so it relies on
+   * a client-supplied `enterpriseId`, checked for tenancy by `insertEvent`'s own
+   * `assertOwnedReferences` and for PRESENCE by `assertHerdScoped` (FR-113: a feed-out concerns a
+   * herd exactly as a dip or a treatment does).
+   */
+  async recordFeed(userId: string, input: schemas.RecordFeedRequest, sourceSessionId?: string) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+
+      const already = await findEvent(tx, input.farmId, input.id);
+      if (already) return already;
+
+      let landUnitId = input.landUnitId;
+      let enterpriseId = input.enterpriseId;
+      if (input.mobId !== null) {
+        const [mob] = await tx
+          .select({ landUnitId: mobs.landUnitId, enterpriseId: mobs.enterpriseId })
+          .from(mobs)
+          .where(
+            and(eq(mobs.id, input.mobId), eq(mobs.farmId, input.farmId), isNull(mobs.deletedAt)),
+          );
+        if (!mob) throw new NotFoundError('Group not found');
+        landUnitId = mob.landUnitId;
+        enterpriseId = mob.enterpriseId;
+      }
+
+      const event = recordFeedOut({
+        id: input.id,
+        farmId: input.farmId,
+        occurredAt: input.occurredAt,
+        landUnitId,
+        mobId: input.mobId,
+        enterpriseId,
+        inventoryLotId: input.inventoryLotId,
+        quantity: input.quantity,
+        notes: input.notes,
+        createdBy: userId,
+      });
+
+      return insertEvent(tx, event, { sourceSessionId });
     });
   }
 
@@ -1785,17 +1909,6 @@ async function deriveHeadCount(
   );
 }
 
-/** The law this farm operates under, through the RLS-bound connection. Jurisdiction is the FARM's,
- *  never the user's or the browser's (.claude/rules/domain.md, FR-019). */
-async function farmJurisdiction(tx: CaptureTx, farmId: string): Promise<string> {
-  const [row] = await tx
-    .select({ jurisdiction: farms.jurisdiction })
-    .from(farms)
-    .where(eq(farms.id, farmId));
-  if (!row) throw new NotFoundError('Farm not found');
-  return row.jurisdiction;
-}
-
 /**
  * FR-131 sale guard: refuses a sale whose farm-local day falls inside an active MEAT withdrawal.
  * It reads the `meatWithholdUntil` dates already stored on the animal's health events (computed at
@@ -2280,6 +2393,51 @@ async function possessionTrail(
       list.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
       treatments.set(animalId, list);
     }
+
+    // ⭐ AND THE WHOLE-FLOCK WALKS (FR-151), the same class of gap the dose block above already
+    // closed once for treatments, reopened by `recordMobMove`: a mob-level move stores
+    // `animal_id = NULL`, so an individually-tagged animal kept and walked only WITH its flock
+    // would print "Movement history: None recorded" — the possession trail's whole purpose
+    // (legal-compliance.md §3.2, the reverse-onus defence) is to show continuous possession, and a
+    // blank history reads as the opposite of what actually happened. Same `wasIn` windows the dose
+    // reconstruction above already computed — a mob move only counts for an animal on a day that
+    // animal's own membership window covers it.
+    const mobMoves = await tx
+      .select({ occurredAt: events.occurredAt, payload: events.payload, mobId: events.mobId })
+      .from(events)
+      .where(
+        and(
+          eq(events.farmId, farmId),
+          inArray(
+            events.mobId,
+            wasIn.map((m) => m.mobId),
+          ),
+          eq(events.type, 'move'),
+          isNull(events.animalId),
+          isNull(events.deletedAt),
+        ),
+      )
+      .orderBy(events.occurredAt, events.id);
+
+    const moveList = movements.get(animalId) ?? [];
+    for (const move of mobMoves) {
+      const day = farmLocalDay(move.occurredAt, jurisdiction);
+      const reached = wasIn.some(
+        (m) => m.mobId === move.mobId && day >= m.fromDay && (m.toDay === null || day <= m.toDay),
+      );
+      if (!reached) continue;
+      const p = move.payload as StoredMovePayload;
+      moveList.push({
+        occurredAt: move.occurredAt,
+        from: named(p.fromLandUnitId),
+        to: named(p.toLandUnitId),
+      });
+    }
+    if (moveList.length > 0) {
+      // Same "one history, however given" discipline as the treatments merge above.
+      moveList.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+      movements.set(animalId, moveList);
+    }
   }
 
   return { movements, treatments };
@@ -2348,6 +2506,56 @@ async function positionBefore(
     mobId: earliest.fromMobId ?? null,
     isLatest,
   };
+}
+
+/**
+ * Where a MOB was immediately BEFORE `at`, reconstructed from its own camp-move log (FR-151),
+ * mirroring `positionBefore` above exactly — same total order, same "nothing precedes it" fallback
+ * to the earliest move's own FROM side, same reason arrival order cannot be trusted.
+ *
+ * ⭐ Scoped by `isNull(events.animalId)`, not `mobId` alone. An individual animal moving INTO this
+ * mob also stamps the event's own `mob_id` column to the destination (`recordMove`'s envelope
+ * convention) — without the `animalId IS NULL` filter, that transfer would read as the WHOLE group
+ * relocating, which is a different fact recorded by a different farmer action. `recordMobMove`'s own
+ * header documents the same distinction from the write side.
+ */
+async function mobPositionBefore(
+  tx: CaptureTx,
+  farmId: string,
+  mobId: string,
+  at: { readonly occurredAt: Date; readonly id: string },
+  currentLandUnitId: string | null,
+): Promise<{ landUnitId: string | null; isLatest: boolean }> {
+  const moves = await tx
+    .select({ id: events.id, occurredAt: events.occurredAt, payload: events.payload })
+    .from(events)
+    .where(
+      and(
+        eq(events.farmId, farmId),
+        eq(events.mobId, mobId),
+        isNull(events.animalId),
+        eq(events.type, 'move'),
+        isNull(events.deletedAt),
+      ),
+    )
+    .orderBy(events.occurredAt, events.id);
+
+  if (moves.length === 0) return { landUnitId: currentLandUnitId, isLatest: true };
+
+  const precedes = (move: { occurredAt: Date; id: string }) =>
+    move.occurredAt < at.occurredAt ||
+    (move.occurredAt.getTime() === at.occurredAt.getTime() && move.id < at.id);
+
+  const prior = moves.filter(precedes);
+  const isLatest = prior.length === moves.length;
+
+  if (prior.length > 0) {
+    const p = prior[prior.length - 1]!.payload as StoredMovePayload;
+    return { landUnitId: p.toLandUnitId ?? null, isLatest };
+  }
+
+  const earliest = moves[0]!.payload as StoredMovePayload;
+  return { landUnitId: earliest.fromLandUnitId ?? null, isLatest };
 }
 
 /**

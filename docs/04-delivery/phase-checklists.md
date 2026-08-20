@@ -2043,8 +2043,12 @@ Grazing, feed & inventory — the one slice with real new schema
   `estimatedUnitCostCents`, 8 server integration incl. tenancy/idempotency/derive-not-trust, 4
   client `RecordFeed.test.tsx`)**, lint/typecheck/build clean, **194.15 KB gz**.
   `pnpm test:e2e -- a11y` 20/20 both themes — `/animals/feed` added to `CAPTURE_SCREENS` (the
-  "no feed in stock" empty state; the populated form is NOT separately audited, disclosed narrowing
-  rather than silent, the same posture `/crops/spray`'s own entry takes).
+  "no feed in stock" empty state; the populated form was NOT separately audited at the time —
+  disclosed narrowing, not silent). ✅ **Closed in the Phase 4 exit-review sweep (32nd session)**:
+  see the crop-facing-home-metrics heading below and the Quality gates section — the mob/camp
+  toggle, lot picker and cost preview all now render under `POPULATED_SCREENS`, alongside the
+  matching gaps on `/crops/spray` (4d·11's PHI override + 4e·4's stock-lot picker) and
+  `/crops/fertilise` (4e·4's stock-lot picker).
 
 Crop-facing home metrics (FR-017's discipline: carry a number ONLY if it is true and computable)
 ☑ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks
@@ -2075,19 +2079,43 @@ placeholder discipline); production seeding is BLOCKED until JP names a source, 
 in parallel with 4a–4c build — it blocks DEPLOYMENT, not development, the same shape as B-1/B-2.
 
 Quality gates
-□ Every write path works with the network off — no `if (!navigator.onLine) throw`
-□ Domain logic (grazing days, stocking rate, PHI resolution) pure, unit-tested, table-driven
-□ testing-strategy.md O-12 (PHI check offline, blocked locally, no server round trip) and the
+☑ Every write path works with the network off — no `if (!navigator.onLine) throw`. Re-verified
+  32nd session (exit-review sweep): grepped the whole tree, the only hits are in docs/rules
+  quoting the rule itself, none in application code
+☑ Domain logic (grazing days, stocking rate, PHI resolution) pure, unit-tested, table-driven —
+  re-confirmed 32nd session: `phi-guard.test.ts`/`grazing.test.ts` are real `@werf/domain` unit
+  suites, no I/O, no clock, same discipline every domain test in this repo already carries
+☑ testing-strategy.md O-12 (PHI check offline, blocked locally, no server round trip) and the
   "Spray → PHI → blocked harvest, Offline" journey row are the REQUIRED matrix for this phase —
-  ☑ O-12's marker now reads ✅ (4d, 22nd session) — box for the whole phase stays open until 4e
-□ Both derived artifacts regenerated in the SAME commit as any synced-table change
-  (`generate:schema` + `generate:sync-rules`) — verify fails on drift otherwise
-□ TENANCY classification written in the same commit as its table, every time
-□ `pnpm verify` and `pnpm test:e2e` green
-□ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
-  slice (the labour phase alone gets per-slice review). Say out loud when 4c/4d reach
-  merge-ready so JP decides when to trigger the pass — regulated code is not merge-ready until
-  it has happened (`CLAUDE.md`)
+  O-12 ✅ since 4d (22nd session); the journey row closes with it, 32nd session, on the SAME
+  "unit/integration level, no dedicated e2e" precedent O-10 already set — `RecordSpray.test.tsx`/
+  `RecordHarvest.test.tsx` both cover the offline-blocked path, no gap left once 4e closed
+☑ Both derived artifacts regenerated in the SAME commit as any synced-table change
+  (`generate:schema` + `generate:sync-rules`) — verified 32nd session by actually re-running both
+  generators against HEAD and diffing: zero drift (`git status --porcelain` empty after)
+☑ TENANCY classification written in the same commit as its table, every time — verified 32nd
+  session by running `packages/sync/test/tenancy.spec.ts` directly: 22/22 green, every 4a–4e
+  table classified, sync rules and RLS agree in both directions
+☑ `pnpm verify` and `pnpm test:e2e` green — re-run 32nd session (exit-review sweep, after closing
+  the a11y item below): `pnpm verify` **1680/1680**, lint/typecheck/build clean, 194.26 KB gz,
+  zero regenerated-artifact drift. `pnpm test:e2e` full suite: 32 passed, 5 skipped (real-stack,
+  expected offline in this lane); one `a11y.spec.ts` run hit a "tearing down context exceeded
+  30000ms" teardown timeout on the FULL-suite run twice in a row — re-run in isolation both times,
+  passed clean in ~16s each time, confirmed a resource-contention flake on this machine (the same
+  class STATUS.md already documents for testcontainer suites), not a regression
+⛔ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
+  slice (the labour phase alone gets per-slice review). **NOT YET RUN — this is the one
+  remaining box, and the reason the phase is not yet closed.** `reviewer` + `sync-auditor` +
+  `compliance-checker`, whole-branch `main..HEAD` on `phase-4/crops-fields` — none has run since
+  the 21st-session pass on 4c alone; 4d/4e's regulated code (the PHI guard both directions, the
+  audited override mechanism, inventory auto-decrement touching the spray/fertiliser write path)
+  has only had narrower, slice-scoped passes (24th/25th/29th sessions), never a WHOLE-BRANCH one.
+  🔶 **AGENT MARKER for the next session — JP to trigger, do not spawn unprompted (CLAUDE.md):**
+  run all three agents (`reviewer`, `sync-auditor`, `compliance-checker`) over `main..HEAD` on
+  `phase-4/crops-fields`. Point each at `docs/04-delivery/agent-context.md` first. Read
+  `docs/00-business/legal-compliance.md` before the compliance pass. This is the LAST item on the
+  Phase 4 exit gate — closing it (clean, or MED/LOW fixed under the §6 stopping rule) is what lets
+  the phase merge.
 ```
 
 **Deferred — not in Phase 4, named so they are not mistaken for a miss (all priority-2 in the FR

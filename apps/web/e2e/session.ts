@@ -82,6 +82,19 @@ export const FIXTURE = {
   inventoryItemId: '0190f3a0-0000-7000-8000-0000000000g1',
   inventoryLotId: '0190f3a0-0000-7000-8000-0000000000g2',
   inventoryMovementId: '0190f3a0-0000-7000-8000-0000000000g3',
+  // Phase 4 exit-review sweep (STATUS.md): the disclosed POPULATED-state a11y gap on
+  // `/crops/spray`, `/crops/fertilise` and `/animals/feed` — none of the three had ever put their
+  // OWN newest controls (the stock-lot picker, 4d·11's spray-side PHI override, the mob/camp
+  // toggle) in front of axe, only their default/empty state. A planting due soon plus a chemical
+  // lot lets the spray screen block-and-override with no interaction beyond picking the product;
+  // a feed lot with a costed receipt lets the cost preview render for real, never a guessed figure.
+  plantingId: '0190f3a0-0000-7000-8000-0000000000h1',
+  chemicalInventoryItemId: '0190f3a0-0000-7000-8000-0000000000g4',
+  chemicalInventoryLotId: '0190f3a0-0000-7000-8000-0000000000g5',
+  chemicalInventoryMovementId: '0190f3a0-0000-7000-8000-0000000000g6',
+  feedInventoryItemId: '0190f3a0-0000-7000-8000-0000000000g7',
+  feedInventoryLotId: '0190f3a0-0000-7000-8000-0000000000g8',
+  feedInventoryMovementId: '0190f3a0-0000-7000-8000-0000000000g9',
 } as const;
 
 /** localStorage entries that put a farm's worth of stock on the device. */
@@ -107,6 +120,14 @@ function farmTodayForFixtures(): string {
   }).format(new Date());
 }
 
+/** `day` plus `delta` calendar days, UTC-only arithmetic — the fixture's own dates are day
+ *  strings with no timezone question left to answer once `farmTodayForFixtures` has already
+ *  resolved "today". */
+function addDays(day: string, delta: number): string {
+  const [year, month, date] = day.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, date + delta)).toISOString().slice(0, 10);
+}
+
 export function populatedStores(): Record<string, unknown> {
   const today = farmTodayForFixtures();
   return {
@@ -126,6 +147,13 @@ export function populatedStores(): Record<string, unknown> {
       FIXTURE.inventoryItemId,
       FIXTURE.inventoryLotId,
       FIXTURE.inventoryMovementId,
+      FIXTURE.plantingId,
+      FIXTURE.chemicalInventoryItemId,
+      FIXTURE.chemicalInventoryLotId,
+      FIXTURE.chemicalInventoryMovementId,
+      FIXTURE.feedInventoryItemId,
+      FIXTURE.feedInventoryLotId,
+      FIXTURE.feedInventoryMovementId,
     ],
     [`werf-land:${FARM_ID}`]: [
       {
@@ -170,6 +198,20 @@ export function populatedStores(): Record<string, unknown> {
         occurredAt: new Date().toISOString(),
         sprayedOn: today,
         productId: FIXTURE.chemicalProductId,
+      },
+    ],
+    // A planned harvest 5 days out (FR-203) — inside the 21-day PHI a spray TODAY would carry, so
+    // `/crops/spray`'s own PHI guard (4d·11, § 4.3's EARLY half) blocks at capture with no
+    // interaction beyond picking the product, and its override controls (the newest markup on that
+    // screen, never before audited) render under the sweep.
+    [`werf-plantings:${FARM_ID}`]: [
+      {
+        id: FIXTURE.plantingId,
+        farmId: FARM_ID,
+        landUnitId: FIXTURE.blockId,
+        occurredAt: new Date().toISOString(),
+        crop: 'Maize',
+        expectedHarvestDate: addDays(today, 5),
       },
     ],
     // A harvest this device already recorded with a written override (FR-205) — the only way the
@@ -284,6 +326,9 @@ export function populatedStores(): Record<string, unknown> {
     ],
     // Phase 4e (FR-501): an item, an empty lot, and a `received` movement into it — so `/inventory`
     // renders the stock row (name, quantity, batch/location) its empty state would otherwise hide.
+    // Also carries a `chemical`-category lot and a `feed`-category one (below), so `/crops/spray`'s
+    // and `/animals/feed`'s own OPTIONAL stock-lot pickers (FR-502/FR-153) have real stock to offer
+    // — a farm with only the fertiliser lot never renders either.
     [`werf-inventory-items:${FARM_ID}`]: [
       {
         id: FIXTURE.inventoryItemId,
@@ -291,6 +336,22 @@ export function populatedStores(): Record<string, unknown> {
         enterpriseId: null,
         category: 'fertiliser',
         name: 'Urea 46%',
+        unit: 'kg',
+      },
+      {
+        id: FIXTURE.chemicalInventoryItemId,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'chemical',
+        name: 'Roundup PowerMax',
+        unit: 'L',
+      },
+      {
+        id: FIXTURE.feedInventoryItemId,
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'feed',
+        name: 'Lucerne bales',
         unit: 'kg',
       },
     ],
@@ -303,6 +364,22 @@ export function populatedStores(): Record<string, unknown> {
         expiryDate: null,
         location: 'Main store',
       },
+      {
+        id: FIXTURE.chemicalInventoryLotId,
+        farmId: FARM_ID,
+        inventoryItemId: FIXTURE.chemicalInventoryItemId,
+        batch: 'C-2026-01',
+        expiryDate: null,
+        location: 'Chemical store',
+      },
+      {
+        id: FIXTURE.feedInventoryLotId,
+        farmId: FARM_ID,
+        inventoryItemId: FIXTURE.feedInventoryItemId,
+        batch: 'F-2026-01',
+        expiryDate: null,
+        location: 'Feed shed',
+      },
     ],
     [`werf-inventory-movements:${FARM_ID}`]: [
       {
@@ -313,6 +390,28 @@ export function populatedStores(): Record<string, unknown> {
         reason: 'received',
         quantity: 40,
         delta: 40,
+      },
+      {
+        id: FIXTURE.chemicalInventoryMovementId,
+        farmId: FARM_ID,
+        inventoryLotId: FIXTURE.chemicalInventoryLotId,
+        occurredAt: new Date().toISOString(),
+        reason: 'received',
+        quantity: 20,
+        delta: 20,
+      },
+      // Carries a cost (FR-153's estimate is derived, never typed — see RecordFeedScreen.tsx's
+      // own module note) so the feed screen's cost-preview panel, the newest control there, has a
+      // real number to show under the audit rather than staying silently absent.
+      {
+        id: FIXTURE.feedInventoryMovementId,
+        farmId: FARM_ID,
+        inventoryLotId: FIXTURE.feedInventoryLotId,
+        occurredAt: new Date().toISOString(),
+        reason: 'received',
+        quantity: 50,
+        delta: 50,
+        unitCostCents: 1500,
       },
     ],
   };

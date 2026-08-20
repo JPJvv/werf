@@ -3,31 +3,51 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-20 (thirty-second session). ✅ **Crop home-metrics checklist item CLOSED
-— the Sprays tile's "N within PHI" badge, the last item under Phase 4's own "crop-facing home
-metrics" heading.** New pure `blocksWithinPhi` (`apps/web/src/crops/usePhiGuard.ts`) runs the
-IDENTICAL `phiGuardFor` every other PHI consumer in the file runs — never a second, narrower rule —
-called per-block against `farmToday()` rather than a specific harvest date; `useBlocksWithinPhiCount`
-wraps it over local+hydrated caches (land units, sprays, chemical products) and feeds
-`HomeScreen.tsx`'s `badges.sprays`, the exact `{count, label}` shape `tile.withholding` already
-established for Health. ⭐ Deliberately excludes `reason: 'unresolved'` — an unconfirmed spray this
-device cannot vouch for is a real gap disclosed elsewhere (the harvest guard blocks on it), but it
-is not the fact "within PHI" states, so counting it in would overstate what this badge can actually
-compute — proven fail-first in `usePhiGuard.test.ts`, mirroring `phiRegister.test.ts`'s
-`localPhiFlags` pure-function split. New `tile.withinPhi` dictionary key, en + af. Both boxes under
-Phase 4's "Crop-facing home metrics" heading now ☑ — full account in `phase-checklists.md`.
-`pnpm verify` (composite): **1680/1680** (+5), lint/typecheck/build clean, **194.26 KB gz**.
-`pnpm test:e2e -- a11y` 33/33 (5 real-stack specs skipped, as expected). Phase 3 MERGED to `main`
-as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, or either compliance-checker pass
-(25th/29th sessions).
-**Next: Phase 4 exit review — checklist sweep on the "Quality gates" heading + whole-branch
-compliance-checker pass for 4c/4d's regulated code (JP to trigger), then close the phase.** ⭐
-Standing gap to close in that review, not before: three 4e slices (spray's stock-lot picker,
-harvest's override UI, feed's mob/camp toggle) have each disclosed rather than closed their
-POPULATED-state a11y coverage — worth one sweep across all three rather than three more one-off
-fixes. The Sprays-tile badge's own populated-state (badge actually showing) is the identical
-disclosed-not-audited posture the pre-existing `tile.withholding` badge already carries — named
-here so it reads as consistent with precedent, not a new gap.
+**Last updated:** 2026-08-20 (thirty-third session — Phase 4 exit-review sweep). 🔶 **Phase 4 is
+feature-complete and the exit-review sweep is DONE except one item — this session closed
+everything mechanically checkable and left ONE explicit agent marker for the next session.**
+
+✅ **Closed this session, all re-derived from the code, not assumed:**
+1. **`pnpm verify` re-run clean: 1680/1680, lint/typecheck/build clean, 194.26 KB gz** — no code
+   changed since the 32nd session's own green run, confirmed by re-running rather than trusting
+   the prior claim.
+2. **Regenerated-artifact drift check** — actually ran `generate:schema` + `generate:sync-rules`
+   against HEAD and diffed: `git status --porcelain` empty after. Both derived artifacts are
+   genuinely current, not merely claimed current slice-by-slice.
+3. **TENANCY classification** — ran `packages/sync/test/tenancy.spec.ts` directly: 22/22 green,
+   every 4a–4e table classified, sync rules and RLS agree both directions.
+4. **Offline-write discipline** — grepped the whole tree for `if (!navigator.onLine) throw`: the
+   only hits are in docs/rules quoting the anti-pattern itself, none in application code.
+5. **Domain-logic purity** — confirmed `phi-guard.test.ts`/`grazing.test.ts` are real `@werf/domain`
+   unit suites (no I/O, no clock), and closed the testing-strategy.md O-12/"Spray → PHI → blocked
+   harvest, Offline" journey-row box on the same "unit/integration level, no dedicated e2e"
+   precedent O-10 already set (`RecordSpray.test.tsx`/`RecordHarvest.test.tsx` both cover it).
+6. **The standing a11y gap, closed in one sweep as anticipated**: `/crops/spray` (4d·11's PHI
+   override UI + 4e·4's stock-lot picker), `/crops/fertilise` (4e·4's stock-lot picker), and
+   `/animals/feed` (the mob/camp toggle, lot picker, cost preview) each gained a real
+   `POPULATED_SCREENS` entry in `a11y.spec.ts` — zero axe violations, both themes, first try. New
+   e2e fixture data: a planting due in 5 days on the seeded block (so today's spray blocks at
+   capture with no interaction beyond picking the product, exercising the override exactly the way
+   `RecordHarvestScreen.tsx`'s own entry already does) plus a chemical lot and a costed feed lot.
+   `pnpm test:e2e -- a11y` full suite: 20/20. Full `pnpm test:e2e`: 32 passed, 5 skipped
+   (real-stack, expected); one teardown-timeout flake on the same test twice on the FULL-suite run,
+   confirmed transient by re-running in isolation both times (~16s clean pass each) — the same
+   resource-contention class already documented for testcontainer suites, not a regression.
+
+⛔ **ONE box left, and it is the reason the phase is not yet closed: the whole-branch
+`reviewer` + `sync-auditor` + `compliance-checker` pass has never run over 4d/4e.** The 21st-session
+pass covered 4c alone; 4d/4e's regulated code (both directions of the PHI guard, the audited
+override mechanism, inventory auto-decrement touching the spray/fertiliser write path) has only had
+narrower, slice-scoped passes (24th/25th/29th sessions) — never one whole-branch pass since. This
+was intentionally NOT run this session (JP wants agent work in its own separate session).
+🔶 **AGENT MARKER for next session — JP to trigger, do not spawn unprompted (CLAUDE.md):** run all
+three agents over `main..HEAD` on `phase-4/crops-fields`. Point each at
+`docs/04-delivery/agent-context.md` first; read `docs/00-business/legal-compliance.md` before the
+compliance pass. Closing this (clean, or MED/LOW fixed under §6's stopping rule) is what lets Phase
+4 merge — full detail in `phase-checklists.md`'s Quality gates section for Phase 4.
+
+Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, either
+compliance-checker pass (25th/29th sessions), or this session's own mechanical checks above.
 
 ✅ **4a/4b/4c/4d/4e·1–4e·6 condensed (18th–31st sessions) — fully closed, full accounts in
 `phase-checklists.md`'s Phase 4 section.** 4e·6 (31st session): FR-153 feed consumption — new
@@ -65,7 +85,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **Feature-complete, exit review next** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·1 ☑, 4e·2 ☑, 4e·3 ☑, 4e·4 ☑ **merge-ready, compliance-checker CLEARS 29th session**; 4e·5 ☑ closed 30th session, warning-only; 4e·6 ☑ closed 31st session, warning-only/unregulated; crop home-metrics badge ☑ closed 32nd session), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1 closed 26th session, projection covered by the 29th-session pass. 4e·2 closed 27th session (rest-period warning, FR-152). 4e·4 closed 28th session (inventory auto-decrement, FR-502), **compliance-checker CLEARED 29th session — merge-ready**. 4e·5 closed 30th session (low-stock/expiry warnings, FR-503). 4e·6 closed 31st session (feed consumption, FR-153) — every 4e sub-item now done. 32nd session closed the "crop-facing home metrics" checklist heading (Sprays tile's "N within PHI" badge) — every PER-SLICE box in the Phase 4 checklist is now ☑; the "Quality gates" heading's six boxes are still open, by design (they are exit-review sweep items, not slice work — `pnpm verify`/`test:e2e` green, TENANCY/sync-artifact discipline, offline-write discipline, and the batched compliance-checker pass itself); next session is that whole-branch exit review |
+| 4 — Crops & fields | 🔶 **Feature-complete, exit-review sweep DONE except the compliance/review pass** (every per-slice box ☑; five of six Quality-gates boxes closed 33rd session; the sixth — whole-branch `reviewer`+`sync-auditor`+`compliance-checker` on 4d/4e — is the one remaining item, JP to trigger), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan and the Quality gates section's per-box evidence. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3, but only at slice scope, not whole-branch. 4e·1–4e·6 all closed (23rd–31st sessions), 4e·4 compliance-CLEARED 29th session at slice scope. 32nd session closed crop-facing home metrics. **33rd session (this one): closed the five mechanically-verifiable Quality-gates boxes (offline-write grep, domain-logic purity, O-12/journey-row, artifact-drift re-check, TENANCY re-run) and the standing a11y populated-state gap on `/crops/spray`+`/crops/fertilise`+`/animals/feed`. The whole-branch compliance/review pass has NEVER run over 4d/4e — only narrower slice-scoped passes have — and is the ONE thing blocking the merge.** |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -206,7 +226,8 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` — crop home-metrics PHI badge (2026-08-20, 32nd session, composite command, **the number to trust**) | ✅ **1680/1680 (+5), lint/typecheck/build clean, 194.26 KB gz.** `pnpm test:e2e -- a11y` 33/33 (5 real-stack specs skipped, expected) |
+| Phase 4 exit-review sweep (2026-08-20, 33rd session, **the number to trust**) | ✅ `pnpm verify` **1680/1680, lint/typecheck/build clean, 194.26 KB gz** — re-run, no code change since 32nd session. Regenerated-artifact drift: re-ran both generators, `git status --porcelain` empty. `tenancy.spec.ts` re-run standalone: 22/22. Offline-write grep: clean, no hits outside docs. `pnpm test:e2e -- a11y` full suite 20/20 both themes (new spray/fertilise/feed populated-state entries included). Full `pnpm test:e2e`: 32 passed/5 skipped, one teardown-timeout flake confirmed transient on isolated re-run (twice) |
+| `pnpm verify` — crop home-metrics PHI badge (2026-08-20, 32nd session, composite command) | ✅ **1680/1680 (+5), lint/typecheck/build clean, 194.26 KB gz.** `pnpm test:e2e -- a11y` 33/33 (5 real-stack specs skipped, expected) |
 | `pnpm verify` — 4e·6 feed consumption (2026-08-20, 31st session) | ✅ **1675/1675 (+19), lint/typecheck/build clean, 194.15 KB gz.** `pnpm test:e2e -- a11y` 20/20 both themes |
 | `pnpm verify` — 4e·5 low-stock/expiry (2026-08-19, 30th session) | ✅ **1656/1656 (+24), lint/typecheck clean, 7/7 builds, 192.32 KB gz.** `pnpm test:e2e -- a11y` 20/20 both themes |
 | `compliance-checker` on `d331a2c..HEAD` (4e·1/4e·2/4e·4), 29th session | ✅ CLEARS, no SEV-1/SEV-2. Two LOW fixed (stale doc reference; rest-period warning gating) — full account in §3 |

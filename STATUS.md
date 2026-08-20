@@ -15,11 +15,9 @@ spray/harvest refused server-side for an unresolved PHI block has no override-re
 stuck in `/not-sent` permanently, invisible to every later PHI check) — **filed as issue #12, not
 fixed, JP's explicit decision** (merge on the SEV-2 fix alone; take-up timing open, Phase-5-adjacent
 acceptable). Full account in §3 and `phase-checklists.md`'s Quality gates section. `pnpm verify`
-re-run clean after the fix: 1630 tests green in the full pass + 1 suite that hit a transient
-testcontainer timeout, re-run in isolation (51/51) — 1681 total, 0 real failures; `pnpm build`
-7/7, 194.26 KB gz; `pnpm test:e2e` re-run too (the flush core changed): 33 passed/5 skipped
-(real-stack, expected offline), 0 failed, including `offline-capture.spec.ts` against the built PWA.
-`phase-4/crops-fields` retained (not deleted) after merge, matching Phase 2/3 precedent.
+re-run clean after the fix (1681/1681, one transient testcontainer flake re-run clean in
+isolation), `pnpm build` 7/7 194.26 KB gz, `pnpm test:e2e` re-run since the flush core changed
+(33 passed/5 skipped, 0 failed). `phase-4/crops-fields` retained after merge, matching precedent.
 
 Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, either
 compliance-checker pass (25th/29th sessions), or this session's own mechanical checks above.
@@ -61,7 +59,7 @@ merged to `main` via PR #13 (`580c611`, 2026-08-20) — 3/3 CI checks green at m
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | ✅ **Merged** | `main` @ `580c611` (PR #13, 2026-08-20). Every checklist box ☑, all six Quality-gates boxes closed, whole-branch `reviewer`+`sync-auditor`+`compliance-checker` closed 34th session (SEV-2 fixed, SEV-1 filed as issue #12 per JP), CI green (Lint·Typecheck·Test·Build, Dependency audit, E2E·axe both themes). ⛔ Production `chemical_products` source still unnamed (18th session) — blocks deployment, not the merge. ⛔ Issue #12 (PHI-refusal resubmit gap) filed, not fixed — JP decision. |
+| 4 — Crops & fields | ✅ **Merged** | `main` @ `580c611` (PR #13, 2026-08-20). Whole-branch review closed 34th session (SEV-2 fixed, SEV-1 filed as issue #12 per JP), CI green — full account in §3. ⛔ `chemical_products` production source still unnamed |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -292,3 +290,10 @@ one found one SEV-2 + two LOW across three agents; pass two, narrowed to the fix
 - Attachment storage is a Phase 3 shared foundation: OPFS + SQLite locally, MinIO in dev/test, S3 in
   `af-south-1` in production; uploads are deferred and never block capture. The capture/upload
   pipeline itself (3i(c)) is now built — see §3.
+- ⛔ **Every `main`-bound change goes through a PR, no exceptions** (`github-strategy.md`: PR
+  required even solo). One exception exists on record: `1dc00ef` (2026-08-20, Phase 4's post-merge
+  STATUS.md reconcile) was pushed straight to `main` — the token has an admin bypass on branch
+  protection and it went unnoticed until after push. Content was correct and low-risk; left as-is
+  rather than force-pushing `main` to erase it (JP's call). The actual Phase 2→3/3→4 precedent for
+  a post-merge reconcile note is to make it the FIRST commit of the NEXT phase's branch, not push
+  to `main` directly at all — follow that shape once Phase 5 branches, not this one's shortcut.

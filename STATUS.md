@@ -16,7 +16,8 @@ JP's explicit decision** (merge on the SEV-2 fix alone; take-up timing open, Pha
 acceptable). Full account in §3 and `phase-checklists.md`'s Quality gates section. `pnpm verify`
 re-run clean after the fix: 1630 tests green in the full pass + 1 suite that hit a transient
 testcontainer timeout, re-run in isolation (51/51) — 1681 total, 0 real failures; `pnpm build`
-7/7, 194.26 KB gz.
+7/7, 194.26 KB gz; `pnpm test:e2e` re-run too (the flush core changed): 33 passed/5 skipped
+(real-stack, expected offline), 0 failed, including `offline-capture.spec.ts` against the built PWA.
 
 Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, either
 compliance-checker pass (25th/29th sessions), or this session's own mechanical checks above.

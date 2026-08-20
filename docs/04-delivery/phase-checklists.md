@@ -2047,16 +2047,25 @@ Grazing, feed & inventory — the one slice with real new schema
   rather than silent, the same posture `/crops/spray`'s own entry takes).
 
 Crop-facing home metrics (FR-017's discipline: carry a number ONLY if it is true and computable)
-□ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks
+☑ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks
   currently inside an active pre-harvest interval, computed directly from spray events +
   chemical_products.phi_days, the exact "N withholding" precedent the Health tile already set
   (never the "N due" mistake that tile avoided for want of a schedule this domain doesn't have).
-  **Deliberately deferred past 4c (21st session)**: the tile now routes to a real `SpraysScreen`
-  (4c·4) instead of the placeholder, but still carries no badge — this line sits under its own
-  heading, not under 4b/4c/4d, and a "within PHI" badge is the kind of thing worth building
-  alongside the 4d harvest guard that gives the same computation a second, safety-critical consumer,
-  rather than twice.
-□ Crop home metrics are derived from local cached data and never require signal to render.
+  **Done (32nd session).** New pure `blocksWithinPhi` (`apps/web/src/crops/usePhiGuard.ts`) runs the
+  IDENTICAL `phiGuardFor` every other PHI consumer in the file runs — never a second, narrower rule —
+  called per-block against `farmToday()` rather than a specific harvest date. `useBlocksWithinPhiCount`
+  wraps it over `useEffectiveLandUnits`/`useSprayFacts`/`useProductFacts` (all local+hydrated) and
+  feeds `HomeScreen.tsx`'s `badges.sprays`, the same `{count, label}` shape `tile.withholding` already
+  established for Health — badge wins over metric where a tile could carry both (`HomeGrid.tsx`,
+  pre-existing rule). ⭐ Deliberately excludes `reason: 'unresolved'`: an unconfirmed spray this
+  device cannot vouch for is disclosed elsewhere (the harvest guard itself blocks on it), but it is
+  not the fact "within PHI" states, so counting it in would overstate what this badge can actually
+  compute — proven in `usePhiGuard.test.ts` (`blocksWithinPhi`, pure-function tests, mirroring
+  `phiRegister.test.ts`'s `localPhiFlags` split). New `tile.withinPhi` dictionary key, en + af.
+☑ Crop home metrics are derived from local cached data and never require signal to render. True
+  already for land/herd counts; the new PHI badge above reads only local+hydrated caches and
+  `farmToday()` (no clock/network dependency), so this line closes with it rather than opening new
+  work of its own.
 
 ⛔ External blocker — production data source, same class as Phase 5's B-1/B-2. Do not seed
 production `chemical_products` from a fabricated or guessed table: `legal-compliance.md` §4.3

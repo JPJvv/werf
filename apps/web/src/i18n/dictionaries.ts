@@ -294,6 +294,11 @@ const en = {
   // needs a vaccination programme schedule that does not exist yet, and a tile carrying a number
   // the app cannot compute is worse than a tile carrying none.
   'tile.withholding': 'withholding',
+  // The Sprays tile's own attention badge (FR-017, phase-checklists.md's Phase 4 "crop home
+  // metrics" line) — the exact "N withholding" precedent above, one domain over: a block is
+  // either inside an active pre-harvest interval or it is not, computed straight from spray
+  // events + chemical_products.phi_days, never a schedule this domain doesn't have.
+  'tile.withinPhi': 'within PHI',
   'module.comingSoon': 'This part of the farm arrives in a later phase.',
   'module.notFound.title': 'Not found',
   'module.notFound.body': 'There is nothing here.',
@@ -1424,6 +1429,7 @@ const af: Record<TranslationKey, string> = {
   'tile.money': 'Geld',
   'tile.compliance': 'Nakoming',
   'tile.withholding': 'weerhou',
+  'tile.withinPhi': 'binne voor-oes-tydperk',
   'module.comingSoon': 'Hierdie deel van die plaas kom in ’n latere fase.',
   'module.notFound.title': 'Nie gevind nie',
   'module.notFound.body': 'Daar is niks hier nie.',

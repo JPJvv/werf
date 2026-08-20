@@ -8,6 +8,7 @@ import { useResidueRegister } from '../livestock/LocalResidueRegister';
 import { useLocalResidueFlags } from '../livestock/residue';
 import { usePhiRegister } from '../crops/LocalPhiRegister';
 import { useLocalPhiFlags } from '../crops/phiRegister';
+import { useBlocksWithinPhiCount } from '../crops/usePhiGuard';
 import { useLandUnits } from '../land/LocalLand';
 import { useSeasonRainfall } from '../rainfall/LocalRainfall';
 import { FirstRunGuide } from './FirstRunGuide';
@@ -32,6 +33,10 @@ export function HomeScreen() {
   // an empty tile is honest, and a tile carrying a number the app cannot actually compute is the
   // failure the requirement exists to prevent. See `useWithholdingCount`.
   const withholding = useWithholdingCount();
+  // The Sprays tile's own attention badge, one domain over from the Health tile's withholding
+  // count above — see `useBlocksWithinPhiCount`'s own docstring for why "N within PHI", never
+  // "N due".
+  const withinPhi = useBlocksWithinPhiCount();
   const camps = useLandUnits();
   const seasonRain = useSeasonRainfall();
   // FR-131. The register is deliberately not a tile: the grid is generated from the farm's
@@ -73,11 +78,15 @@ export function HomeScreen() {
           animals: String(herd.liveTotal),
           land: String(camps.length),
         }}
-        // A badge, not a metric: animals inside a withholding are an ATTENTION state, not a
-        // measurement, and the form has to say so on its own (NFR-411 — never colour alone).
-        badges={
-          withholding > 0 ? { health: { count: withholding, label: t('tile.withholding') } } : {}
-        }
+        // A badge, not a metric: animals inside a withholding, or blocks inside a PHI, are an
+        // ATTENTION state, not a measurement, and the form has to say so on its own (NFR-411 —
+        // never colour alone).
+        badges={{
+          ...(withholding > 0
+            ? { health: { count: withholding, label: t('tile.withholding') } }
+            : {}),
+          ...(withinPhi > 0 ? { sprays: { count: withinPhi, label: t('tile.withinPhi') } } : {}),
+        }}
       />
       {/* Rainfall (FR-213) is reached from here, as a SECONDARY link and never as a tile. The
           grid's tile set and order are fixed — muscle memory is its entire value — and rain is a

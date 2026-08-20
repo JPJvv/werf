@@ -2030,6 +2030,11 @@ Grazing, feed & inventory — the one slice with real new schema
   camp/enterprise are server-derived and genuinely unknown to the device, so a local `StoredFeedEvent`
   simply omits them rather than guessing — the identical asymmetry `LocalMobMoves.tsx`'s
   `fromLandUnitId` already documents.
+  ⚠️ A mob with no `enterpriseId` of its own (nullable — a mob predating the farm's own herd split)
+  feeds through with `enterprise_id` null on the event: `assertHerdScoped` still passes because
+  `mobId` alone satisfies it, the identical posture `herdOfSubject`'s own docstring documents for a
+  weight against a herdless animal. Consistent with existing precedent, not a new gap — but "cost to
+  enterprise" then attributes to nothing for that mob, disclosed rather than silent.
   ⚠️ **Warning-only, unregulated — said out loud, no `compliance-checker` pass needed
   (CLAUDE.md's rule).** Nothing here touches PHI, withdrawal, or any regulated figure; a farmer
   feeding medicated feed with its own withdrawal period is a real surface this slice does NOT

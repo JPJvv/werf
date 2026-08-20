@@ -25,7 +25,10 @@ states; populated form not separately audited, disclosed). Full account in `phas
 4e·6. Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, or either
 compliance-checker pass (25th/29th sessions).
 **Next: Phase 4 exit review — checklist sweep + whole-branch compliance-checker pass for 4c/4d's
-regulated code (JP to trigger), then close the phase.**
+regulated code (JP to trigger), then close the phase.** ⭐ Standing gap to close in that review, not
+before: three 4e slices running (spray's stock-lot picker, harvest's override UI, now feed's
+mob/camp toggle) have each disclosed rather than closed their POPULATED-state a11y coverage —
+worth one sweep across all three rather than three more one-off fixes.
 
 ✅ **4a/4b/4c/4d/4e·1–4e·5 condensed (18th–30th sessions) — fully closed, full accounts in
 `phase-checklists.md`'s Phase 4 section.** 4a: blocks + plantings. 4b: fertiliser, no compliance

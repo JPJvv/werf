@@ -280,6 +280,34 @@ export const recordMobMoveRequestSchema = z.object({
 export type RecordMobMoveRequest = z.infer<typeof recordMobMoveRequestSchema>;
 
 /**
+ * Record a feed-out (Phase 4e, FR-153): how much of a tracked feed lot went to a mob or a camp.
+ * Mob XOR camp is not enforced HERE — both are nullable and either or both may be sent — because
+ * the rule is enforced once, at the domain capture boundary (`recordFeedOut`, @werf/domain), the
+ * same posture `recordMoveRequestSchema` takes for its own cross-field rule.
+ *
+ * `landUnitId`/`enterpriseId` are only ever TRUSTED from the client when `mobId` is absent: with a
+ * mob named, the server DERIVES both from the mob's own current row (`livestock.service.ts`), the
+ * identical reasoning `herdOfSubject` already applies to every other mob-scoped capture — feeding
+ * mob X is meaningless if the event disagrees with mob X's actual camp. A camp-only feed-out (no
+ * mob) has no subject to derive from, so `enterpriseId` is required THEN — enforced by FR-113's
+ * existing `assertHerdScoped` guard at `insertEvent`, not duplicated here.
+ *
+ * There is no farmer-typed cost anywhere on this wire contract — see `feedPayloadSchema`'s own note.
+ */
+export const recordFeedRequestSchema = z.object({
+  id: uuidV7Schema,
+  farmId: uuidSchema,
+  mobId: uuidSchema.nullable().default(null),
+  landUnitId: uuidSchema.nullable().default(null),
+  enterpriseId: uuidSchema.nullable().default(null),
+  occurredAt: timestampSchema,
+  inventoryLotId: uuidSchema,
+  quantity: z.number().positive().finite(),
+  notes: z.string().min(1).nullable().default(null),
+});
+export type RecordFeedRequest = z.infer<typeof recordFeedRequestSchema>;
+
+/**
  * Health capture (FR-130/131/132/133) — COMPLIANCE-GATED (legal-compliance.md § 3). The fields
  * every treatment / vaccination / dip carries. The sharp part: the client sends a `productId`, NOT
  * the withdrawal period. The server resolves the veterinary product's REGISTERED meat/milk

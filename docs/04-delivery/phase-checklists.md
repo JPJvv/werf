@@ -1993,9 +1993,53 @@ Grazing, feed & inventory — the one slice with real new schema
   **1656/1656** unit tests passing (+24 over the 29th-session baseline: 8 pure-function, 4
   hydration/merge, 5 client write-path, 7 API integration), lint/typecheck clean, build 7/7,
   **192.32 KB gz**. `pnpm test:e2e -- a11y` 20/20 both themes, `/inventory` covered since 4e·4.
-□ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —
-  depends on 4e·3 existing; a `feed` consumption movement against a `land_unit_id`/`mob_id`, Money
-  in integer cents for the cost side.
+☑ 4e·6 FR-153 Record feed put out per camp/group; deduct from feed inventory; cost to enterprise —
+  CLOSED 31st session (2026-08-20). A new `feed` event type (`EVENT_TYPES`, migration `0036`,
+  `ALTER TYPE … ADD VALUE` appended last per the established discipline), not a new
+  `inventory_movement` reason — `projectQuantityOnHand` folds every movement for a lot, so a new
+  reason would change behaviour for every existing consumer of that projection, while a separate
+  `feed` event plus a plain `consumed` movement leaves inventory semantics untouched.
+  ⭐ Two `advisor()` passes shaped the design, before any code was written:
+  (1) The obvious first draft — a farmer-typed `costCents` field on the feed event — was refused.
+  It re-types a number the system can already derive (the lot's own received cost), which is
+  exactly the "an edited field does not compose" failure this codebase keeps re-finding: two
+  devices feeding from the same lot would produce two different costs for the same physical feed.
+  `ReceiveStockScreen.tsx` DOES collect `unitCostCents` at receipt (checked before deciding), so the
+  honest move is to DERIVE, not type: `estimatedUnitCostCents` (`packages/domain/src/inventory/
+  stock.ts`) computes a weighted average across a lot's own `received` movements, shown on
+  `RecordFeedScreen.tsx` as an at-capture preview only — never stored on the event or the movement.
+  Disclosed, not silently narrowed: there is no `/money` report screen yet for this figure to land
+  on, the identical "screen-local, disclosed" posture 4e·5 took for its own warnings.
+  (2) Cost-vs-scoping were entangled and had to be decided in order: dropping the stored cost meant
+  a camp-only feed-out could be treated as plainly land-scoped — but the existing
+  `FARM_SCOPED_EVENT_TYPES` list is specifically for GROUND facts shared across enterprises
+  (rainfall, a camp's shape, what's planted), and feeding is a HERD act, not a ground fact, so
+  `feed` was NOT added there. Instead `feed` stays an ordinary FR-113 herd-scoped type: a mob names
+  its own herd; a camp-only feed-out (no mob) requires a client-supplied `enterpriseId`, caught by
+  the EXISTING `assertHerdScoped` guard with no code change to `herd-scope.ts` at all.
+  ⭐ A mob's camp is DERIVED, never trusted from the client — `livestock.service.ts`'s `recordFeed`
+  reads the mob's own current `landUnitId`/`enterpriseId` row and overwrites whatever the client
+  sent, the identical "derive don't trust" reasoning `herdOfSubject` already applies elsewhere.
+  Proven by an integration test that sends a DECOY camp/enterprise and asserts they are ignored.
+  `inventoryLotId` is REQUIRED on this event (unlike spray's optional reference, 4e·4) — "deduct
+  from feed inventory" is the reason this event type exists, not an optional extra.
+  Shape: TWO independent local commits, the identical 4e·4 pattern — the `feed` event, then a
+  separate `consumed` `inventory_movement` recorded through the SAME local capture 4e·4 wired up.
+  The client store (`LocalFeed.tsx`) does NOT call the `@werf/domain` builder locally, mirroring
+  `LocalMobMoves.tsx`'s own precedent rather than `LocalInventory.tsx`'s: a mob-mode capture's
+  camp/enterprise are server-derived and genuinely unknown to the device, so a local `StoredFeedEvent`
+  simply omits them rather than guessing — the identical asymmetry `LocalMobMoves.tsx`'s
+  `fromLandUnitId` already documents.
+  ⚠️ **Warning-only, unregulated — said out loud, no `compliance-checker` pass needed
+  (CLAUDE.md's rule).** Nothing here touches PHI, withdrawal, or any regulated figure; a farmer
+  feeding medicated feed with its own withdrawal period is a real surface this slice does NOT
+  build — disclosed, not declined silently.
+  `pnpm verify` (composite): **1675/1675 unit tests (+19: 4 domain `recordFeedOut`, 3 domain
+  `estimatedUnitCostCents`, 8 server integration incl. tenancy/idempotency/derive-not-trust, 4
+  client `RecordFeed.test.tsx`)**, lint/typecheck/build clean, **194.15 KB gz**.
+  `pnpm test:e2e -- a11y` 20/20 both themes — `/animals/feed` added to `CAPTURE_SCREENS` (the
+  "no feed in stock" empty state; the populated form is NOT separately audited, disclosed narrowing
+  rather than silent, the same posture `/crops/spray`'s own entry takes).
 
 Crop-facing home metrics (FR-017's discipline: carry a number ONLY if it is true and computable)
 □ The Sprays/crop tile carries an attention badge, not a raw count: **"N within PHI"** — blocks

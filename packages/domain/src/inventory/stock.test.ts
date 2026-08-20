@@ -8,8 +8,10 @@
 import { describe, expect, it } from 'vitest';
 import { ValidationError } from '@werf/core';
 import {
+  estimatedUnitCostCents,
   projectQuantityOnHand,
   recordInventoryMovement,
+  type CostedReceipt,
   type InventoryMovementInput,
   type InventoryMovementRecord,
 } from './stock';
@@ -295,5 +297,31 @@ describe('projectQuantityOnHand (FR-501) — the fold two offline phones depend 
     const quantity = projectQuantityOnHand([movement({ reason: 'consumed', delta: -50 })]);
 
     expect(quantity).toBe(0);
+  });
+});
+
+describe('estimatedUnitCostCents (Phase 4e, FR-153) — a cost basis two devices derive identically', () => {
+  const receipt = (over: Partial<CostedReceipt>): CostedReceipt => ({
+    quantity: 10,
+    unitCostCents: 500,
+    ...over,
+  });
+
+  it('is exactly the unit cost for a single receipt', () => {
+    expect(estimatedUnitCostCents([receipt({ quantity: 40, unitCostCents: 1250 })])).toBe(1250);
+  });
+
+  it('weights across several receipts by quantity, not a plain average', () => {
+    // 10 units at R5 and 40 units at R10 — a plain average would say R7.50, the weighted answer
+    // leans toward the LARGER receipt.
+    const cents = estimatedUnitCostCents([
+      receipt({ quantity: 10, unitCostCents: 500 }),
+      receipt({ quantity: 40, unitCostCents: 1000 }),
+    ]);
+    expect(cents).toBe(900); // (10*500 + 40*1000) / 50
+  });
+
+  it('is undefined for no receipts at all — an honest absence, never a guessed zero', () => {
+    expect(estimatedUnitCostCents([])).toBeUndefined();
   });
 });

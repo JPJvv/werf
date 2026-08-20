@@ -3,42 +3,43 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-19 (thirtieth session). ✅ **4e·5 CLOSED — FR-503 low-stock/expiry
-warnings.** Two read models over the inventory projection (`stock.ts`): `lowStockWarnings`
-(per-ITEM, summed across every lot against a new `inventory_items.reorder_point`, migration
-`0035`, nullable/no seeded default) and `isExpired` (per-LOT, an objective fact, no threshold —
-JP chose "expired only" this slice over a guessed/farm-wide expiry window). `StockScreen.tsx`
-restructured to items-with-nested-lots. Two `advisor()` passes shaped this: pre-code, caught that
-a creation-only reorder-point field would be unreachable for every EXISTING item — fixed with a
-dedicated owner/manager `PATCH .../reorder-point` endpoint plus switching the item merge to
-`mergeByIdPreferHydrated` (the field is now set AFTER creation, breaking `mergeById`'s old
-premise); post-code, caught the client write path (Saved/failed/offline/read-only branches) had
-zero test coverage and that `pnpm verify` had only ever been run as four separate commands, not
-the one composite — both fixed. Warning-only, disclosed: no gate on spray/treatment capture,
-no home-tile badge (screen-local, `/inventory` only). Full account in `phase-checklists.md` 4e·5.
-`pnpm verify` (run as the real composite command): **1656/1656** (+24), lint/typecheck clean,
-build 7/7, **192.32 KB gz**. `pnpm test:e2e -- a11y` 20/20 both themes.
-✅ **`compliance-checker` pass on `d331a2c..HEAD` (4e·1 projection, 4e·2, 4e·4), 29th session —
-CLEARS.** No SEV-1/SEV-2. Two LOW fixed, fail-first proven (stale doc comment in
-`GrazingSettings.tsx`; `MoveAnimalsScreen.tsx`'s rest-period warning gated on "destination named"
-alone rather than `wouldMove.length > 0`). Full account in §3. **4e·4 is merge-ready.**
-Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a/4b/4c, 4e·1–4e·5, or
-either compliance-checker pass (25th/29th sessions).
-**Next: 4e·6 (feed consumption) — the last open 4e sub-item, then Phase 4 exit review.**
+**Last updated:** 2026-08-20 (thirty-first session). ✅ **4e·6 CLOSED — FR-153 feed consumption,
+the last open 4e sub-item.** New `feed` event type (migration `0036`) targets a mob and/or a camp —
+"per camp/group" enforced in `recordFeedOut` (@werf/domain), never both defaulted away. Mob mode:
+camp AND enterprise DERIVED server-side from the mob's own current row, never trusted from the
+client (mirrors `herdOfSubject`'s derive-don't-trust precedent) — a decoy camp/enterprise the
+client sends is ignored, integration-test-proven. Camp-only mode has no mob to derive from, so
+FR-113's existing `assertHerdScoped` guard requires a client-supplied `enterpriseId` (single-herd
+farms skip the picker). `inventoryLotId` is REQUIRED (unlike spray's optional reference) —
+"deduct from feed inventory" is why this event type exists. Two independent local commits, the
+4e·4 shape: the `feed` event, then a separate `consumed` `inventory_movement` — the "only a
+receipt carries a cost" invariant untouched. **"Cost to enterprise" is NEVER farmer-typed** —
+`estimatedUnitCostCents` (@werf/domain) derives a weighted average from the lot's own `received`
+movements, shown as an at-capture preview only (no report surface exists yet, disclosed rather
+than half-built). An `advisor()` design pass before code caught this: a draft letting the farmer
+type a cost would have been the "edited field doesn't compose" defect this codebase keeps
+re-finding. ⚠️ **Warning-only, unregulated — no compliance-checker needed, said out loud per
+CLAUDE.md.** `pnpm verify` (composite): **1675/1675** (+19), lint/typecheck/build clean,
+**194.15 KB gz**. `pnpm test:e2e -- a11y` 20/20 both themes, `/animals/feed` covered (empty/no-lots
+states; populated form not separately audited, disclosed). Full account in `phase-checklists.md`
+4e·6. Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, or either
+compliance-checker pass (25th/29th sessions).
+**Next: Phase 4 exit review — checklist sweep + whole-branch compliance-checker pass for 4c/4d's
+regulated code (JP to trigger), then close the phase.**
 
-✅ **4a/4b/4c/4d/4e·1/4e·2/4e·3/4e·4 condensed (18th–28th sessions) — fully closed, full accounts in
+✅ **4a/4b/4c/4d/4e·1–4e·5 condensed (18th–30th sessions) — fully closed, full accounts in
 `phase-checklists.md`'s Phase 4 section.** 4a: blocks + plantings. 4b: fertiliser, no compliance
 gate. 4c: chemical-products reference + spray capture (PHI resolved server-side, ADR-0005) +
 FR-211 report — **whole-branch review CLEARED** (21st session, `3d10103`). 4d: PHI guard
 (`phiGuardFor`, shared client+server) + harvest capture + FR-205 override + cross-device race
-register (22nd session). 4e·1: grazing-days/rest-days/stocking-rate projection (FR-151),
-cross-checked against live occupancy rather than the move log alone (26th session). 4e·2: camp
-rest-period warning threshold (FR-152), farm-wide setting, warns never blocks (27th session). 4e·3:
-inventory items/lots/movements (FR-501), migration `0033` (23rd session). 4e·4: inventory
-auto-decrement on spray/fertiliser capture (FR-502, 28th session), cleared by the 29th-session
-compliance pass. ⭐ The 21st-session pass caught a stale Turbo cache hit masking a real compile
-error behind two earlier "green" `pnpm verify` runs — a `cache hit, replaying logs` line on a
-package just touched proves nothing changed, not that nothing is broken.
+register (22nd session). 4e·1: grazing-days/rest-days/stocking-rate projection (FR-151, 26th
+session). 4e·2: camp rest-period warning threshold (FR-152, farm-wide, warns never blocks, 27th
+session). 4e·3: inventory items/lots/movements (FR-501), migration `0033` (23rd session). 4e·4:
+inventory auto-decrement on spray/fertiliser capture (FR-502, 28th session), cleared by the
+29th-session compliance pass. 4e·5: low-stock/expiry warnings (FR-503, migration `0035`,
+warning-only, 30th session). ⭐ The 21st-session pass caught a stale Turbo cache hit masking a real
+compile error behind two earlier "green" `pnpm verify` runs — a `cache hit, replaying logs` line on
+a package just touched proves nothing changed, not that nothing is broken.
 
 🔶 **Open decision — chemical_products production data source, asked 2026-08-17 (18th session).**
 JP: not decided yet, flag and move on. Dev/test rows ship as explicitly unverified placeholders
@@ -57,7 +58,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **In progress** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·1 ☑, 4e·2 ☑, 4e·3 ☑, 4e·4 ☑ **merge-ready, compliance-checker CLEARS 29th session**; 4e·5 ☑ closed 30th session, warning-only, no compliance gate; 4e·6 open, unblocked), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1 closed 26th session, projection covered by the 29th-session pass. 4e·2 closed 27th session (rest-period warning, FR-152). 4e·4 closed 28th session (inventory auto-decrement, FR-502), **compliance-checker CLEARED 29th session — merge-ready**. 4e·5 closed 30th session (low-stock/expiry warnings, FR-503), warning-only — see §3 |
+| 4 — Crops & fields | 🔶 **Feature-complete, exit review next** (4a ☑, 4b ☑, 4c ☑ merge-ready, 4d ☑ **compliance-checker APPROVABLE 25th session (4d·11 re-verified)**; 4e·1 ☑, 4e·2 ☑, 4e·3 ☑, 4e·4 ☑ **merge-ready, compliance-checker CLEARS 29th session**; 4e·5 ☑ closed 30th session, warning-only; 4e·6 ☑ closed 31st session, warning-only/unregulated), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3. 4e·3 closed 23rd session, no gate of its own. 4e·1 closed 26th session, projection covered by the 29th-session pass. 4e·2 closed 27th session (rest-period warning, FR-152). 4e·4 closed 28th session (inventory auto-decrement, FR-502), **compliance-checker CLEARED 29th session — merge-ready**. 4e·5 closed 30th session (low-stock/expiry warnings, FR-503). 4e·6 closed 31st session (feed consumption, FR-153) — every 4e sub-item now done; next session is the whole-branch exit review |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -198,7 +199,8 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| `pnpm verify` — 4e·5 low-stock/expiry (2026-08-19, 30th session, run as the ONE composite command, **the number to trust**) | ✅ **1656/1656 unit tests passing (+24), lint/typecheck clean, 7/7 builds, 192.32 KB gz.** `pnpm test:e2e -- a11y` 20/20 both themes |
+| `pnpm verify` — 4e·6 feed consumption (2026-08-20, 31st session, composite command, **the number to trust**) | ✅ **1675/1675 (+19), lint/typecheck/build clean, 194.15 KB gz.** `pnpm test:e2e -- a11y` 20/20 both themes |
+| `pnpm verify` — 4e·5 low-stock/expiry (2026-08-19, 30th session) | ✅ **1656/1656 (+24), lint/typecheck clean, 7/7 builds, 192.32 KB gz.** `pnpm test:e2e -- a11y` 20/20 both themes |
 | `compliance-checker` on `d331a2c..HEAD` (4e·1/4e·2/4e·4), 29th session | ✅ CLEARS, no SEV-1/SEV-2. Two LOW fixed (stale doc reference; rest-period warning gating) — full account in §3 |
 | `pnpm verify` — 4e·4 (28th)/4e·2 (27th)/4e·1+4d·11 (26th/25th) sessions | ✅ All green, condensed — full per-session numbers in git history and `phase-checklists.md` Phase 4. 25th session hit transient Postgres contention, confirmed not a regression |
 | `compliance-checker` on 4d·11+mob-move (25th) / 4d+4e·3 (24th) | ✅ 4d·11 APPROVABLE after one HIGH fixed — full account in §3 |

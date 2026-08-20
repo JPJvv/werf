@@ -209,6 +209,10 @@ const CAPTURE_SCREENS = [
   // FR-151. The seed's own single camp (NOORD) means every populated-screen click reveals the same
   // widgets an axe pass needs to see — the controls are audited below, in POPULATED_SCREENS.
   { path: '/animals/groups/move', heading: /move a group/i },
+  // FR-153. The seed has no feed in stock yet, so this audits the "no feed" empty state — its
+  // POPULATED state (the group/camp toggle, the lot picker, the cost preview) is NOT separately
+  // audited — narrowing disclosed, not silent, the same posture `/crops/spray`'s own note takes.
+  { path: '/animals/feed', heading: /record feed/i },
   { path: '/animals/mating', heading: /record a service/i },
   { path: '/animals/pregnancy', heading: /pregnancy test/i },
   { path: '/animals/birth', heading: /record a birth/i },

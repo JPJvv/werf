@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { projectQuantityOnHand } from '@werf/domain';
+import { estimatedUnitCostCents, projectQuantityOnHand } from '@werf/domain';
 import { mergeById, mergeByIdPreferHydrated } from '../livestock/HydratedLivestock';
 import { useAuth } from '../auth/AuthProvider';
 import { inventoryApi } from './inventoryApi';
@@ -75,6 +75,36 @@ export function useEffectiveInventoryLots(): readonly EffectiveInventoryLot[] {
 export function useCurrentQuantity(inventoryLotId: string): number {
   const lots = useEffectiveInventoryLots();
   return lots.find((lot) => lot.id === inventoryLotId)?.quantityOnHand ?? 0;
+}
+
+/**
+ * FR-153's cost preview: this lot's own weighted-average RECEIVED cost per unit, or `undefined`
+ * when it has never been received with a cost attached (`estimatedUnitCostCents`, @werf/domain —
+ * an honest absence, never a guessed figure). Reads the SAME merged movement log
+ * `useEffectiveInventoryLots` projects quantity from, so a receipt captured on another device
+ * counts the moment it hydrates down.
+ */
+export function useEstimatedUnitCostCents(inventoryLotId: string): number | undefined {
+  const movements = useInventoryMovements();
+  const hydratedMovements = useHydratedInventoryMovements();
+  const merged = useMemo(
+    () => mergeById(movements, hydratedMovements),
+    [movements, hydratedMovements],
+  );
+  return useMemo(() => {
+    const receipts = merged
+      .filter(
+        (movement) =>
+          movement.inventoryLotId === inventoryLotId &&
+          movement.reason === 'received' &&
+          movement.unitCostCents !== undefined,
+      )
+      .map((movement) => ({
+        quantity: movement.quantity,
+        unitCostCents: movement.unitCostCents as number,
+      }));
+    return estimatedUnitCostCents(receipts);
+  }, [merged, inventoryLotId]);
 }
 
 /** Pure: fold the merged movement log onto each lot. Exported for tests. */

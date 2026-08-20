@@ -129,6 +129,18 @@ export function AnimalsScreen() {
         </Link>
       )}
 
+      {/* FR-153: feed put out for a camp or a group. Gated the same "somewhere for it to go" way
+          as the move-group link above, except a target is EITHER dimension (a mob OR a camp), so
+          the gate is OR rather than AND. */}
+      {(mobs.length > 0 || landUnits.length > 0) && (
+        <Link
+          to="/animals/feed"
+          className="mb-3 flex min-h-touch-min items-center justify-center rounded border border-soil-200 px-4 font-ui text-body text-soil-900 no-underline"
+        >
+          {t('animals.feed')}
+        </Link>
+      )}
+
       {/* FR-705. The breakdown a farmer actually thinks in: nobody has "42 female cattle", they
           have 18 cows, 9 heifers and 15 weaners. Zero classes are not shown — an empty row is
           noise — but 'unknown' IS, because animals with no recorded birth date are a real group

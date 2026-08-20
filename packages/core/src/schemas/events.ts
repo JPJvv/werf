@@ -603,6 +603,26 @@ export const inventoryMovementPayloadSchema = z
 export type InventoryMovementPayload = z.infer<typeof inventoryMovementPayloadSchema>;
 
 /**
+ * Feed put out for a camp or a mob/group (Phase 4e, FR-153). `landUnitId`/`mobId` on the envelope
+ * name WHERE it went — at least one is required, enforced at the domain capture boundary
+ * (`recordFeedOut`, @werf/domain), never in this shape.
+ *
+ * `inventoryLotId` (envelope) is REQUIRED here, unlike `sprayPayloadSchema`'s optional reference:
+ * "deduct from feed inventory" is the reason this event type exists at all, not an optional extra.
+ * The unit is read from the lot's own item (`inventory_items.unit`), so `quantity` alone is enough
+ * — the identical shape `InventoryMovementInput.quantity` already takes.
+ *
+ * There is no farmer-typed cost anywhere in this payload. "Cost to enterprise" is a DERIVED read —
+ * the linked lot's own weighted-average `received` cost × quantity (`estimatedUnitCostCents`,
+ * @werf/domain) — never a stored figure two devices could disagree about, the same "an edited
+ * field does not compose" discipline every aggregate in this codebase already follows.
+ */
+export const feedPayloadSchema = z.object({
+  quantity: z.number().positive().finite(),
+});
+export type FeedPayload = z.infer<typeof feedPayloadSchema>;
+
+/**
  * A crop planted in a block (FR-203): what, from what seed, and how thick. `landUnitId` is not part
  * of this payload — like every event, it is a field on the envelope (`eventObjectSchema`), never
  * duplicated into the type-specific shape.
@@ -760,6 +780,7 @@ const CONCRETE_PAYLOADS = {
   spray: sprayPayloadSchema,
   harvest: harvestPayloadSchema,
   inventory_movement: inventoryMovementPayloadSchema,
+  feed: feedPayloadSchema,
 } satisfies Partial<Record<EventType, z.ZodType>>;
 
 /**

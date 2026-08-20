@@ -167,3 +167,28 @@ export function projectQuantityOnHand(movements: readonly InventoryMovementRecor
   }
   return Math.max(0, quantity);
 }
+
+/** One `received` movement carrying a cost — the input `estimatedUnitCostCents` weighs. */
+export interface CostedReceipt {
+  readonly quantity: number;
+  readonly unitCostCents: number;
+}
+
+/**
+ * Weighted-average cost per unit across a lot's own costed receipts (Phase 4e, FR-153) — the ONLY
+ * cost basis a feed-out (or any future consumption) may show, and only as an ESTIMATE, never a
+ * farmer-typed figure: two devices feeding from the same lot must derive the identical answer, the
+ * same "an edited field does not compose" discipline every other aggregate in this codebase
+ * follows. `undefined` when the lot has no costed receipt at all — an honest absence, never a
+ * guessed zero (the same "omit, don't zero" rule `attachDosing` follows for a regulated figure).
+ */
+export function estimatedUnitCostCents(receipts: readonly CostedReceipt[]): number | undefined {
+  let totalQuantity = 0;
+  let totalCostCents = 0;
+  for (const receipt of receipts) {
+    totalQuantity += receipt.quantity;
+    totalCostCents += receipt.quantity * receipt.unitCostCents;
+  }
+  if (totalQuantity <= 0) return undefined;
+  return Math.round(totalCostCents / totalQuantity);
+}

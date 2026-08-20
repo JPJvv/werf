@@ -15,6 +15,7 @@ import { AddMobScreen } from './livestock/AddMobScreen';
 import { AdjustMobScreen } from './livestock/AdjustMobScreen';
 import { MoveAnimalsScreen } from './livestock/MoveAnimalsScreen';
 import { MoveMobScreen } from './livestock/MoveMobScreen';
+import { RecordFeedScreen } from './livestock/RecordFeedScreen';
 import { RecordMatingScreen } from './livestock/RecordMatingScreen';
 import { RecordPregnancyScreen } from './livestock/RecordPregnancyScreen';
 import { RecordBirthScreen } from './livestock/RecordBirthScreen';
@@ -85,6 +86,7 @@ export function App() {
                 <Route path="animals/groups/new" element={<AddMobScreen />} />
                 <Route path="animals/groups/count" element={<AdjustMobScreen />} />
                 <Route path="animals/groups/move" element={<MoveMobScreen />} />
+                <Route path="animals/feed" element={<RecordFeedScreen />} />
                 <Route path="animals/move" element={<MoveAnimalsScreen />} />
                 <Route path="animals/mating" element={<RecordMatingScreen />} />
                 <Route path="animals/pregnancy" element={<RecordPregnancyScreen />} />

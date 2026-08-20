@@ -68,6 +68,11 @@ export const EVENT_TYPES = [
   // to `mobs.head_count` — the quantity is a PROJECTION of this append-only log, never an edited
   // column (`inventory_lots.quantity_on_hand`).
   'inventory_movement',
+  // Feed put out for a camp or a mob/group (Phase 4e, FR-153). Appended last for the same
+  // `ALTER TYPE … ADD VALUE` reason as `inventory_movement` above — a feed-out is the ACT; the
+  // stock consequence is a SEPARATE `inventory_movement` a caller records independently
+  // (`recordFeedOut`, @werf/domain), never invented here.
+  'feed',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 

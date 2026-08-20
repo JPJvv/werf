@@ -25,6 +25,8 @@ import {
   enterprises,
   events,
   farmUsers,
+  inventoryItems,
+  inventoryLots,
   landUnits,
   mobs,
   speciesGestation,
@@ -295,6 +297,21 @@ describe('weight capture (FR-140)', () => {
       .values({ farmId, kind: 'camp', code })
       .returning();
     return row!.id;
+  }
+
+  /** A feed lot this tenant's own catalogue already holds (Phase 4e, FR-153) — created directly
+   *  through Drizzle, the identical shortcut `crops.integration.test.ts`'s own `anInventoryLot`
+   *  takes, since this describe wires `LivestockService` alone, not `InventoryService`. */
+  async function aFeedLot(farmId: string): Promise<string> {
+    const [item] = await elevated.db
+      .insert(inventoryItems)
+      .values({ farmId, category: 'feed', name: 'Lucerne hay', unit: 'kg' })
+      .returning();
+    const [lot] = await elevated.db
+      .insert(inventoryLots)
+      .values({ farmId, inventoryItemId: item!.id })
+      .returning();
+    return lot!.id;
   }
 
   /** A ZA veterinary product — reference data, written by the elevated admin path, never a farmer.
@@ -1712,6 +1729,182 @@ describe('weight capture (FR-140)', () => {
           .select()
           .from(events)
           .where(and(eq(events.type, 'move'), eq(events.mobId, mobId), isNull(events.animalId))),
+      );
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  // ── Feed capture (Phase 4e, FR-153) ─────────────────────────────────────────────────
+  describe('feed capture (FR-153)', () => {
+    const feedBody = (
+      over: Partial<ZodInput<typeof schemas.recordFeedRequestSchema>> & {
+        farmId: string;
+        inventoryLotId: string;
+      },
+    ): schemas.RecordFeedRequest =>
+      schemas.recordFeedRequestSchema.parse({
+        id: uuidv7(),
+        occurredAt: '2026-04-02T06:00:00.000Z',
+        quantity: 12,
+        ...over,
+      });
+
+    it('derives the camp and enterprise from the MOB, ignoring whatever the client sends', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const mobId = await aMob(a.farmId);
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      const decoyCamp = await aCamp(a.farmId, 'Camp 9');
+      const [decoyHerd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha cattle', type: 'beef_cattle' })
+        .returning();
+      await elevated.db
+        .update(mobs)
+        .set({ landUnitId: camp, enterpriseId: herd!.id })
+        .where(eq(mobs.id, mobId));
+      const lotId = await aFeedLot(a.farmId);
+
+      const fed = await service.recordFeed(
+        a.userId,
+        feedBody({
+          farmId: a.farmId,
+          mobId,
+          inventoryLotId: lotId,
+          // A decoy camp/enterprise the client sends — both must be IGNORED in favour of the
+          // mob's own row.
+          landUnitId: decoyCamp,
+          enterpriseId: decoyHerd!.id,
+        }),
+      );
+
+      expect(fed.type).toBe('feed');
+      expect(fed.mobId).toBe(mobId);
+      expect(fed.landUnitId).toBe(camp);
+      expect(fed.enterpriseId).toBe(herd!.id);
+      expect(fed.inventoryLotId).toBe(lotId);
+      expect(fed.payload).toMatchObject({ quantity: 12 });
+    });
+
+    it('records a camp-only feed-out with the client-supplied enterprise', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      const lotId = await aFeedLot(a.farmId);
+
+      const fed = await service.recordFeed(
+        a.userId,
+        feedBody({
+          farmId: a.farmId,
+          landUnitId: camp,
+          enterpriseId: herd!.id,
+          inventoryLotId: lotId,
+        }),
+      );
+
+      expect(fed.mobId).toBeNull();
+      expect(fed.landUnitId).toBe(camp);
+      expect(fed.enterpriseId).toBe(herd!.id);
+    });
+
+    it('refuses a feed-out naming neither a camp nor a group', async () => {
+      const a = await tenant('Alpha');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, enterpriseId: herd!.id, inventoryLotId: lotId }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses a camp-only feed-out with no enterprise (FR-113) rather than filing it unherded', async () => {
+      const a = await tenant('Alpha');
+      const camp = await aCamp(a.farmId, 'Camp 1');
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, landUnitId: camp, inventoryLotId: lotId }),
+        ),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('404s a group on another farm rather than feeding it', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const theirMob = await aMob(b.farmId);
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, mobId: theirMob, inventoryLotId: lotId }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('404s a camp on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const [herd] = await elevated.db
+        .insert(enterprises)
+        .values({ farmId: a.farmId, name: 'Alpha sheep', type: 'sheep' })
+        .returning();
+      const theirCamp = await aCamp(b.farmId, 'Camp 9');
+      const lotId = await aFeedLot(a.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({
+            farmId: a.farmId,
+            landUnitId: theirCamp,
+            enterpriseId: herd!.id,
+            inventoryLotId: lotId,
+          }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('404s a feed lot on another farm', async () => {
+      const a = await tenant('Alpha');
+      const b = await tenant('Bravo');
+      const mobId = await aMob(a.farmId);
+      const theirLot = await aFeedLot(b.farmId);
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, mobId, inventoryLotId: theirLot }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
+    it('is idempotent on the client id', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const lotId = await aFeedLot(a.farmId);
+      const body = feedBody({ farmId: a.farmId, mobId, inventoryLotId: lotId });
+
+      const first = await service.recordFeed(a.userId, body);
+      const again = await service.recordFeed(a.userId, body);
+
+      expect(again.id).toBe(first.id);
+      const rows = await app.asUser(a.userId, (tx) =>
+        tx.select().from(events).where(eq(events.type, 'feed')),
       );
       expect(rows).toHaveLength(1);
     });

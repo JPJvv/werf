@@ -253,6 +253,13 @@
       "when": 1787162075646,
       "tag": "0035_inventory_item_reorder_point",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787204768701,
+      "tag": "0036_feed_event",
+      "breakpoints": true
     }
   ]
 }

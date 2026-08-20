@@ -1,0 +1,16 @@
+-- Feed put out for a camp or a mob/group (Phase 4e, FR-153): add 'feed' to the event_type enum.
+--
+-- The ACT is this event; the STOCK CONSEQUENCE is a SEPARATE `inventory_movement` a caller records
+-- independently (`recordInventoryMovement`), the identical two-independent-commits shape 4e·4
+-- already established for spray/fertiliser. No new column: `landUnitId`/`mobId`/`enterpriseId`/
+-- `inventoryLotId` all already exist on `events` for other types.
+--
+-- Additive in the one way that is safe here (0014/0017/0020/0033's own note): `events` is
+-- PARTITIONED BY LIST(farm_id), so any DDL that rewrote the table would take an exclusive lock
+-- across every farm's partition. `ALTER TYPE … ADD VALUE` rewrites nothing. The value is appended
+-- at the END of EVENT_TYPES in @werf/core to match, so a later schema diff sees no change.
+--
+-- No entry in FARM_SCOPED_EVENT_TYPES: a feed-out concerns a herd exactly as a dip or a treatment
+-- does (FR-113) — a camp-only feed-out (no mob) still requires a client-supplied `enterpriseId`,
+-- enforced by the existing `assertHerdScoped` guard, not a new exception.
+ALTER TYPE "public"."event_type" ADD VALUE 'feed';

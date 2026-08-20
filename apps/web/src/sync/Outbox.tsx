@@ -128,6 +128,11 @@ import {
   useMobMovesHydrationFailed,
   useMobMovesSettled,
 } from '../livestock/LocalMobMoves';
+import {
+  useFeedEvents,
+  useFeedEventsHydrationFailed,
+  useFeedEventsSettled,
+} from '../livestock/LocalFeed';
 import { animalDisposalSubjects, mobDisposalSubjects } from '../livestock/withdrawal';
 import { farmDay } from '../farmTime';
 import {
@@ -271,6 +276,7 @@ export type CaptureKind =
   | 'lifecycle'
   | 'move'
   | 'mobMove'
+  | 'feed'
   | 'health'
   | 'breeding'
   | 'theft'
@@ -526,6 +532,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const events = useLifecycleEvents();
   const moves = useMoves();
   const mobMoves = useMobMoves();
+  const feeds = useFeedEvents();
   const health = useHealthEvents();
   const breeding = useBreedingEvents();
   const theftIncidents = useTheftIncidents();
@@ -577,6 +584,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const eventsSettled = useLifecycleEventsSettled();
   const movesSettled = useMovesSettled();
   const mobMovesSettled = useMobMovesSettled();
+  const feedsSettled = useFeedEventsSettled();
   const healthSettled = useHealthEventsSettled();
   const breedingSettled = useBreedingEventsSettled();
   const theftSettled = useTheftIncidentsSettled();
@@ -605,6 +613,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     eventsSettled &&
     movesSettled &&
     mobMovesSettled &&
+    feedsSettled &&
     healthSettled &&
     breedingSettled &&
     theftSettled &&
@@ -643,6 +652,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
   const eventsHydrationFailed = useLifecycleEventsHydrationFailed();
   const movesHydrationFailed = useMovesHydrationFailed();
   const mobMovesHydrationFailed = useMobMovesHydrationFailed();
+  const feedsHydrationFailed = useFeedEventsHydrationFailed();
   const healthHydrationFailed = useHealthEventsHydrationFailed();
   const breedingHydrationFailed = useBreedingEventsHydrationFailed();
   const theftHydrationFailed = useTheftIncidentsHydrationFailed();
@@ -671,6 +681,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     eventsHydrationFailed ||
     movesHydrationFailed ||
     mobMovesHydrationFailed ||
+    feedsHydrationFailed ||
     healthHydrationFailed ||
     breedingHydrationFailed ||
     theftHydrationFailed ||
@@ -1052,6 +1063,29 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
+    // A feed-out (Phase 4e, FR-153) — no safety ordering (nothing here creates or reads evidence a
+    // guard judges), `guardedBy` only: the mob (a mob created this same round has no accepted row
+    // yet), the destination camp when this device knows one directly, and the feed lot it drew
+    // from. Named by the mob it fed when there is one, else by the camp — the same "say what a
+    // farmer would recognise" rule the mob-move item above follows.
+    for (const feed of feeds) {
+      if (!sent.has(feed.id)) {
+        items.push({
+          id: feed.id,
+          kind: 'feed',
+          detail:
+            feed.mobId === null
+              ? (landUnitCodes.get(feed.landUnitId ?? '') ?? null)
+              : (mobs.find((m) => m.id === feed.mobId)?.name ?? null),
+          send: (token) => livestockApi.recordFeed(feed, token),
+          guardedBy: [
+            ...(feed.mobId === null ? [] : [`mobrow:${feed.mobId}`]),
+            ...(typeof feed.landUnitId === 'string' ? [`landrow:${feed.landUnitId}`] : []),
+            `inventorylotrow:${feed.inventoryLotId}`,
+          ],
+        });
+      }
+    }
     // A mob-subject event has no tag number to show; the mob's name is not in `labels`, which is an
     // animal register, so the row simply carries no detail rather than a misleading one.
     for (const event of health) {
@@ -1399,6 +1433,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     weights,
     events,
     moves,
+    feeds,
     health,
     breeding,
     theftIncidents,

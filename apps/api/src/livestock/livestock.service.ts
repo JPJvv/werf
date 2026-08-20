@@ -47,6 +47,7 @@ import {
   recordBirth,
   recordDeath,
   recordDip,
+  recordFeedOut,
   recordMating,
   recordMissing,
   recordMobMove,
@@ -749,6 +750,58 @@ export class LivestockService {
       }
 
       return stored;
+    });
+  }
+
+  /**
+   * Records a feed-out (Phase 4e, FR-153) — how much of a tracked feed lot went to a mob or a
+   * camp. "Deduct from feed inventory" is a SEPARATE `inventory_movement` the client outbox
+   * records independently (the same two-independent-commits shape 4e·4 established for spray/
+   * fertiliser); this endpoint only writes the ACT.
+   *
+   * When a mob is named, its camp AND enterprise are DERIVED from the mob's own current row,
+   * never trusted from the client — the identical reasoning `herdOfSubject` already applies to
+   * every other mob-scoped capture (feeding mob X is meaningless if the event disagrees with mob
+   * X's actual camp). A camp-only feed-out (no mob) has no subject to derive from, so it relies on
+   * a client-supplied `enterpriseId`, checked for tenancy by `insertEvent`'s own
+   * `assertOwnedReferences` and for PRESENCE by `assertHerdScoped` (FR-113: a feed-out concerns a
+   * herd exactly as a dip or a treatment does).
+   */
+  async recordFeed(userId: string, input: schemas.RecordFeedRequest, sourceSessionId?: string) {
+    return this.app.asUser(userId, async (tx) => {
+      await assertCanCapture(tx, userId, input.farmId);
+
+      const already = await findEvent(tx, input.farmId, input.id);
+      if (already) return already;
+
+      let landUnitId = input.landUnitId;
+      let enterpriseId = input.enterpriseId;
+      if (input.mobId !== null) {
+        const [mob] = await tx
+          .select({ landUnitId: mobs.landUnitId, enterpriseId: mobs.enterpriseId })
+          .from(mobs)
+          .where(
+            and(eq(mobs.id, input.mobId), eq(mobs.farmId, input.farmId), isNull(mobs.deletedAt)),
+          );
+        if (!mob) throw new NotFoundError('Group not found');
+        landUnitId = mob.landUnitId;
+        enterpriseId = mob.enterpriseId;
+      }
+
+      const event = recordFeedOut({
+        id: input.id,
+        farmId: input.farmId,
+        occurredAt: input.occurredAt,
+        landUnitId,
+        mobId: input.mobId,
+        enterpriseId,
+        inventoryLotId: input.inventoryLotId,
+        quantity: input.quantity,
+        notes: input.notes,
+        createdBy: userId,
+      });
+
+      return insertEvent(tx, event, { sourceSessionId });
     });
   }
 

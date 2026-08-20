@@ -3,21 +3,23 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-20 (thirty-fourth session — whole-branch agent pass, JP-requested). ✅
-**Phase 4's exit gate is now fully closed — MERGE-READY.** The last remaining box (whole-branch
-`reviewer`+`sync-auditor`+`compliance-checker` over `main..HEAD`) ran and closed this session:
-`sync-auditor` CLEARS outright; `reviewer` found one SEV-2 (`Outbox.tsx`'s `queue` useMemo read
-`mobMoves` but omitted it from the dependency array — a mob move captured after mount, with
-nothing else in the same round, silently never flushed while the strip falsely read "Saved and
-sent"), fixed with a fail-first test; `compliance-checker` found one SEV-1 (a spray/harvest
-refused server-side for an unresolved PHI block has no override-resubmit path and is stuck in
-`/not-sent` permanently, invisible to every later PHI check) — **filed as issue #12, not fixed,
-JP's explicit decision** (merge on the SEV-2 fix alone; take-up timing open, Phase-5-adjacent
+**Last updated:** 2026-08-20 (thirty-fourth session — whole-branch agent pass + merge,
+JP-requested). ✅ **PHASE 4 MERGED TO `main` AS `580c611` (PR #13), CI green (Lint·Typecheck·
+Test·Build, Dependency audit, E2E·axe both themes, all pass).** The exit gate's last remaining box
+(whole-branch `reviewer`+`sync-auditor`+`compliance-checker` over `main..HEAD`) ran and closed this
+session: `sync-auditor` CLEARS outright; `reviewer` found one SEV-2 (`Outbox.tsx`'s `queue`
+useMemo read `mobMoves` but omitted it from the dependency array — a mob move captured after
+mount, with nothing else in the same round, silently never flushed while the strip falsely read
+"Saved and sent"), fixed with a fail-first test; `compliance-checker` found one SEV-1 (a
+spray/harvest refused server-side for an unresolved PHI block has no override-resubmit path and is
+stuck in `/not-sent` permanently, invisible to every later PHI check) — **filed as issue #12, not
+fixed, JP's explicit decision** (merge on the SEV-2 fix alone; take-up timing open, Phase-5-adjacent
 acceptable). Full account in §3 and `phase-checklists.md`'s Quality gates section. `pnpm verify`
 re-run clean after the fix: 1630 tests green in the full pass + 1 suite that hit a transient
 testcontainer timeout, re-run in isolation (51/51) — 1681 total, 0 real failures; `pnpm build`
 7/7, 194.26 KB gz; `pnpm test:e2e` re-run too (the flush core changed): 33 passed/5 skipped
 (real-stack, expected offline), 0 failed, including `offline-capture.spec.ts` against the built PWA.
+`phase-4/crops-fields` retained (not deleted) after merge, matching Phase 2/3 precedent.
 
 Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, either
 compliance-checker pass (25th/29th sessions), or this session's own mechanical checks above.
@@ -45,10 +47,11 @@ a package just touched proves nothing changed, not that nothing is broken.
 JP: not decided yet, flag and move on. Dev/test rows ship as explicitly unverified placeholders
 (mirrors `regulatory_rates`); blocks production seeding/deployment only, not 4a–4e development.
 
-**Active branch:** `phase-4/crops-fields`, off `main` @ `6823858` (Phase 3 merge commit).
+**Active branch:** `main` @ `580c611` (Phase 4 merge commit). Phase 5 not yet branched.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`). Phase 3 merged to `main` via
-PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fixes needed.
+PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fixes needed. Phase 4
+merged to `main` via PR #13 (`580c611`, 2026-08-20) — 3/3 CI checks green at merge.
 
 ## 1. Delivery position
 
@@ -58,7 +61,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | ✅ **MERGE-READY** — every checklist box ☑, all six Quality-gates boxes closed, whole-branch `reviewer`+`sync-auditor`+`compliance-checker` closed 34th session (SEV-2 fixed, SEV-1 filed as issue #12 per JP), `phase-4/crops-fields` off `main` @ `6823858`, not yet merged | `phase-checklists.md` §Phase 4 has the full slice plan and the Quality gates section's per-box evidence. ⛔ Production `chemical_products` source still unnamed (18th session) — blocks deployment, not the merge. ⛔ Issue #12 (PHI-refusal resubmit gap) filed, not fixed — JP decision, does not block merge. Full slice history condensed in §3. |
+| 4 — Crops & fields | ✅ **Merged** | `main` @ `580c611` (PR #13, 2026-08-20). Every checklist box ☑, all six Quality-gates boxes closed, whole-branch `reviewer`+`sync-auditor`+`compliance-checker` closed 34th session (SEV-2 fixed, SEV-1 filed as issue #12 per JP), CI green (Lint·Typecheck·Test·Build, Dependency audit, E2E·axe both themes). ⛔ Production `chemical_products` source still unnamed (18th session) — blocks deployment, not the merge. ⛔ Issue #12 (PHI-refusal resubmit gap) filed, not fixed — JP decision. |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |

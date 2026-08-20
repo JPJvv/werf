@@ -2145,6 +2145,11 @@ harvest journey; every checklist line ☑ or ◐ with its remainder named; `revi
 define a block, plant, spray, and be blocked from harvesting inside the PHI, with the network off,
 and can override with a reason when they choose to.
 
+✅ **MET — Phase 4 merged to `main` as `580c611` (PR #13, 2026-08-20), CI green (3/3 checks:
+Lint·Typecheck·Test·Build, Dependency audit, E2E·axe both themes).** One SEV-1 (issue #12,
+PHI-blocked spray/harvest refused server-side has no override-resubmit path) filed rather than
+fixed — JP's explicit decision, evidence and reasoning in `STATUS.md` §3.
+
 ---
 
 ## Phase 5 — Labour & wages 🇿🇦 — CRITICAL PATH

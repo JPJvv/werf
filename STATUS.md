@@ -3,48 +3,31 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-20 (thirty-third session — Phase 4 exit-review sweep). 🔶 **Phase 4 is
-feature-complete and the exit-review sweep is DONE except one item — this session closed
-everything mechanically checkable and left ONE explicit agent marker for the next session.**
+**Last updated:** 2026-08-20 (thirty-third session — Phase 4 exit-review sweep). 🔶 **Phase 4's
+exit-review sweep is DONE except ONE item.** Closed, all re-derived from the code rather than
+assumed: `pnpm verify` re-run clean (1680/1680, 194.26 KB gz, no code change since 32nd session);
+regenerated-artifact drift check (re-ran `generate:schema`+`generate:sync-rules`, `git status
+--porcelain` empty); `tenancy.spec.ts` re-run standalone (22/22); offline-write grep (clean, no
+hits outside docs); O-12/"Spray → PHI → blocked harvest, Offline" journey row (closes on the same
+"unit/integration, no dedicated e2e" precedent O-10 set — `RecordSpray.test.tsx`/
+`RecordHarvest.test.tsx` cover it). ✅ **The standing a11y gap closed in one sweep, as
+anticipated**: `/crops/spray` (4d·11's PHI override UI + 4e·4's stock-lot picker),
+`/crops/fertilise` (stock-lot picker), `/animals/feed` (mob/camp toggle, lot picker, cost preview)
+each gained a real `POPULATED_SCREENS` entry — zero axe violations, both themes, first try. New
+e2e fixture: a planting due in 5 days (so a same-day spray blocks at capture, exercising the
+override with no extra interaction) plus a chemical lot and a costed feed lot. `pnpm test:e2e --
+a11y` 20/20; full suite 32 passed/5 skipped, one teardown-timeout flake confirmed transient on
+isolated re-run (twice).
 
-✅ **Closed this session, all re-derived from the code, not assumed:**
-1. **`pnpm verify` re-run clean: 1680/1680, lint/typecheck/build clean, 194.26 KB gz** — no code
-   changed since the 32nd session's own green run, confirmed by re-running rather than trusting
-   the prior claim.
-2. **Regenerated-artifact drift check** — actually ran `generate:schema` + `generate:sync-rules`
-   against HEAD and diffed: `git status --porcelain` empty after. Both derived artifacts are
-   genuinely current, not merely claimed current slice-by-slice.
-3. **TENANCY classification** — ran `packages/sync/test/tenancy.spec.ts` directly: 22/22 green,
-   every 4a–4e table classified, sync rules and RLS agree both directions.
-4. **Offline-write discipline** — grepped the whole tree for `if (!navigator.onLine) throw`: the
-   only hits are in docs/rules quoting the anti-pattern itself, none in application code.
-5. **Domain-logic purity** — confirmed `phi-guard.test.ts`/`grazing.test.ts` are real `@werf/domain`
-   unit suites (no I/O, no clock), and closed the testing-strategy.md O-12/"Spray → PHI → blocked
-   harvest, Offline" journey-row box on the same "unit/integration level, no dedicated e2e"
-   precedent O-10 already set (`RecordSpray.test.tsx`/`RecordHarvest.test.tsx` both cover it).
-6. **The standing a11y gap, closed in one sweep as anticipated**: `/crops/spray` (4d·11's PHI
-   override UI + 4e·4's stock-lot picker), `/crops/fertilise` (4e·4's stock-lot picker), and
-   `/animals/feed` (the mob/camp toggle, lot picker, cost preview) each gained a real
-   `POPULATED_SCREENS` entry in `a11y.spec.ts` — zero axe violations, both themes, first try. New
-   e2e fixture data: a planting due in 5 days on the seeded block (so today's spray blocks at
-   capture with no interaction beyond picking the product, exercising the override exactly the way
-   `RecordHarvestScreen.tsx`'s own entry already does) plus a chemical lot and a costed feed lot.
-   `pnpm test:e2e -- a11y` full suite: 20/20. Full `pnpm test:e2e`: 32 passed, 5 skipped
-   (real-stack, expected); one teardown-timeout flake on the same test twice on the FULL-suite run,
-   confirmed transient by re-running in isolation both times (~16s clean pass each) — the same
-   resource-contention class already documented for testcontainer suites, not a regression.
-
-⛔ **ONE box left, and it is the reason the phase is not yet closed: the whole-branch
-`reviewer` + `sync-auditor` + `compliance-checker` pass has never run over 4d/4e.** The 21st-session
-pass covered 4c alone; 4d/4e's regulated code (both directions of the PHI guard, the audited
-override mechanism, inventory auto-decrement touching the spray/fertiliser write path) has only had
-narrower, slice-scoped passes (24th/25th/29th sessions) — never one whole-branch pass since. This
-was intentionally NOT run this session (JP wants agent work in its own separate session).
+⛔ **ONE box left, and it is why the phase is not yet closed: the whole-branch `reviewer` +
+`sync-auditor` + `compliance-checker` pass has never run over 4d/4e** — only narrower slice-scoped
+passes have (24th/25th/29th sessions); the 21st-session whole-branch pass covered 4c alone.
+Deliberately NOT run this session (JP wants agent work in its own separate session).
 🔶 **AGENT MARKER for next session — JP to trigger, do not spawn unprompted (CLAUDE.md):** run all
-three agents over `main..HEAD` on `phase-4/crops-fields`. Point each at
-`docs/04-delivery/agent-context.md` first; read `docs/00-business/legal-compliance.md` before the
-compliance pass. Closing this (clean, or MED/LOW fixed under §6's stopping rule) is what lets Phase
-4 merge — full detail in `phase-checklists.md`'s Quality gates section for Phase 4.
+three agents over `main..HEAD` on `phase-4/crops-fields`, each pointed at
+`docs/04-delivery/agent-context.md` first (compliance-checker also reads `legal-compliance.md`
+first). Closing this — clean, or MED/LOW fixed under §6's stopping rule — is what lets Phase 4
+merge; full evidence is in `phase-checklists.md`'s Quality gates section.
 
 Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, either
 compliance-checker pass (25th/29th sessions), or this session's own mechanical checks above.
@@ -227,9 +210,7 @@ per-farm events partitioning retired (migration 0021).
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
 | Phase 4 exit-review sweep (2026-08-20, 33rd session, **the number to trust**) | ✅ `pnpm verify` **1680/1680, lint/typecheck/build clean, 194.26 KB gz** — re-run, no code change since 32nd session. Regenerated-artifact drift: re-ran both generators, `git status --porcelain` empty. `tenancy.spec.ts` re-run standalone: 22/22. Offline-write grep: clean, no hits outside docs. `pnpm test:e2e -- a11y` full suite 20/20 both themes (new spray/fertilise/feed populated-state entries included). Full `pnpm test:e2e`: 32 passed/5 skipped, one teardown-timeout flake confirmed transient on isolated re-run (twice) |
-| `pnpm verify` — crop home-metrics PHI badge (2026-08-20, 32nd session, composite command) | ✅ **1680/1680 (+5), lint/typecheck/build clean, 194.26 KB gz.** `pnpm test:e2e -- a11y` 33/33 (5 real-stack specs skipped, expected) |
-| `pnpm verify` — 4e·6 feed consumption (2026-08-20, 31st session) | ✅ **1675/1675 (+19), lint/typecheck/build clean, 194.15 KB gz.** `pnpm test:e2e -- a11y` 20/20 both themes |
-| `pnpm verify` — 4e·5 low-stock/expiry (2026-08-19, 30th session) | ✅ **1656/1656 (+24), lint/typecheck clean, 7/7 builds, 192.32 KB gz.** `pnpm test:e2e -- a11y` 20/20 both themes |
+| `pnpm verify` — 32nd (crop-metrics)/31st (4e·6)/30th (4e·5) sessions | ✅ All green, condensed — full per-session numbers in `phase-checklists.md` Phase 4 and git history |
 | `compliance-checker` on `d331a2c..HEAD` (4e·1/4e·2/4e·4), 29th session | ✅ CLEARS, no SEV-1/SEV-2. Two LOW fixed (stale doc reference; rest-period warning gating) — full account in §3 |
 | `pnpm verify` — 4e·4 (28th)/4e·2 (27th)/4e·1+4d·11 (26th/25th) sessions | ✅ All green, condensed — full per-session numbers in git history and `phase-checklists.md` Phase 4. 25th session hit transient Postgres contention, confirmed not a regression |
 | `compliance-checker` on 4d·11+mob-move (25th) / 4d+4e·3 (24th) | ✅ 4d·11 APPROVABLE after one HIGH fixed — full account in §3 |

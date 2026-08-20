@@ -1422,6 +1422,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
     sprays,
     harvests,
     mobs,
+    mobMoves,
     brandingRegisters,
     tallies,
     foldMobs,

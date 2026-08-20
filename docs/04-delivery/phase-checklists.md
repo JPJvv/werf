@@ -2103,19 +2103,32 @@ Quality gates
   30000ms" teardown timeout on the FULL-suite run twice in a row — re-run in isolation both times,
   passed clean in ~16s each time, confirmed a resource-contention flake on this machine (the same
   class STATUS.md already documents for testcontainer suites), not a regression
-⛔ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
-  slice (the labour phase alone gets per-slice review). **NOT YET RUN — this is the one
-  remaining box, and the reason the phase is not yet closed.** `reviewer` + `sync-auditor` +
-  `compliance-checker`, whole-branch `main..HEAD` on `phase-4/crops-fields` — none has run since
-  the 21st-session pass on 4c alone; 4d/4e's regulated code (the PHI guard both directions, the
-  audited override mechanism, inventory auto-decrement touching the spray/fertiliser write path)
-  has only had narrower, slice-scoped passes (24th/25th/29th sessions), never a WHOLE-BRANCH one.
-  🔶 **AGENT MARKER for the next session — JP to trigger, do not spawn unprompted (CLAUDE.md):**
-  run all three agents (`reviewer`, `sync-auditor`, `compliance-checker`) over `main..HEAD` on
-  `phase-4/crops-fields`. Point each at `docs/04-delivery/agent-context.md` first. Read
-  `docs/00-business/legal-compliance.md` before the compliance pass. This is the LAST item on the
-  Phase 4 exit gate — closing it (clean, or MED/LOW fixed under the §6 stopping rule) is what lets
-  the phase merge.
+☑ Compliance review for this phase is BATCHED — once over the branch before the PR, not per
+  slice. **Whole-branch `reviewer` + `sync-auditor` + `compliance-checker`, `main..HEAD` on
+  `phase-4/crops-fields`, JP-requested 2026-08-20 (34th session) — closed.**
+  `sync-auditor`: **CLEARS**, no SEV-1/SEV-2 (tenancy/RLS/sync-rule triple agrees for every new
+  table, no hardcoded regulated numbers, aggregates genuinely re-derived from the log). `reviewer`:
+  one SEV-2, found and FIXED — `Outbox.tsx`'s `queue` useMemo read `mobMoves` but omitted it from
+  the dependency array, so a mob move captured after mount (no other capture in the same round)
+  silently never flushed and the sync strip falsely read "Saved and sent". Fixed (`mobMoves` added
+  to the deps) with a fail-first test (`Outbox.test.tsx`, "sends a mob move captured AFTER mount")
+  — watched red against the pre-fix code (UI showed the move locally, status strip lied "sent", no
+  POST fired), then green after the fix; the existing mob-move tests couldn't have caught this
+  because they all pre-seed `localStorage` before `render()`, and `useMemo` always runs its first
+  invocation regardless of the dependency array. `compliance-checker`: one SEV-1, **FILED not
+  fixed, JP decision** — a spray/harvest server-refused for an unresolved PHI block (client's local
+  guard passed on a stale cross-device cache; server's guard, re-evaluated at flush time, blocks
+  with no `phiOverride` attached) lands in `NotSentScreen`, whose "refusal clears when its cause
+  clears" model (Phase 2 design) has no edit/resubmit path — but a PHI override needs the payload
+  itself mutated with a written, audited reason, which nothing external will ever supply, so the
+  capture is stuck in Not Sent permanently and invisible to every later PHI check on that block.
+  Affects `recordSpray` (4c) and `recordHarvest` (4d) identically. Fixing it means new UI/flow on
+  regulated code, which needs its own compliance pass — JP chose to file it (issue #12) and merge
+  Phase 4 on the SEV-2 fix alone rather than open a second agent round this session; take-up timing
+  (a dedicated slice, Phase 5-adjacent or otherwise) is open, not mandated. Traced during the same
+  pass that Phase 2's FR-131 sale-during-withdrawal block has no override field at all and so never
+  hits this class — it's specific to captures with a legitimate but capture-time-only override.
+  `pnpm verify` re-run after the fix: see the line below.
 ```
 
 **Deferred — not in Phase 4, named so they are not mistaken for a miss (all priority-2 in the FR

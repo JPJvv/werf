@@ -2669,6 +2669,44 @@ describe('landrow: guards a capture against a not-yet-accepted camp (P2.7, issue
     expect(sent).not.toContain(MOVE2_ID);
   });
 
+  it('⭐ sends a mob move captured AFTER mount, with no other capture in the same round', async () => {
+    // Every OTHER test in this file that proves a mob move flushes pre-seeds `werf-mob-moves` into
+    // localStorage BEFORE render() — `useMemo` always runs on its first invocation regardless of
+    // its dependency list, so a pre-seeded value is picked up correctly whether or not `mobMoves`
+    // is actually a listed dependency of the `queue` memo. That made every such test blind to
+    // `mobMoves` being DROPPED from that dependency array: the memo would recompute once at mount
+    // (correctly, by luck) and never again for a LATER change. This test drives the capture
+    // through the real screen post-mount, with `werf-mob-moves` starting empty and nothing else in
+    // the queue to force a recompute via a different dependency (`sent` is the trap: if anything
+    // else sent in this round, the memo would recompute for an unrelated reason and this would pass
+    // against broken code) — the only thing that can make `queue` recompute is `mobMoves` itself
+    // changing after the capture, which is exactly the dependency the fix restores.
+    cachedSession();
+    seedLandUnit();
+    window.localStorage.setItem(
+      `werf-mobs:${FARM_ID}`,
+      JSON.stringify([
+        { id: MOB_ID, farmId: FARM_ID, name: 'Ossies', species: 'cattle', landUnitId: null },
+      ]),
+    );
+    const fetchMock = acceptingFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    window.history.pushState({}, '', '/animals/groups/move');
+
+    render(<App />);
+
+    await user.click(await screen.findByRole('button', { name: /Ossies/ }));
+    await user.selectOptions(screen.getByLabelText(/move to which camp/i), LAND_UNIT_ID);
+    await user.click(screen.getByRole('button', { name: /move them/i }));
+
+    await waitFor(() => {
+      expect(postedPaths(fetchMock).some((p) => p.endsWith('/livestock/mob-moves'))).toBe(true);
+    });
+    const sent = window.localStorage.getItem(`werf-sent:${FARM_ID}`) ?? '';
+    expect(sent).not.toBe('');
+  });
+
   it('⭐ holds a theft incident behind BOTH a refused camp and a refused named animal', async () => {
     // The two dependency kinds a theft incident carries (Outbox.tsx's own header on the loop),
     // proven together: `landUnitId` from the camp picker AND `animalIds` from the ownership

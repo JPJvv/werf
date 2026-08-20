@@ -3,31 +3,20 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-20 (thirty-third session — Phase 4 exit-review sweep). 🔶 **Phase 4's
-exit-review sweep is DONE except ONE item.** Closed, all re-derived from the code rather than
-assumed: `pnpm verify` re-run clean (1680/1680, 194.26 KB gz, no code change since 32nd session);
-regenerated-artifact drift check (re-ran `generate:schema`+`generate:sync-rules`, `git status
---porcelain` empty); `tenancy.spec.ts` re-run standalone (22/22); offline-write grep (clean, no
-hits outside docs); O-12/"Spray → PHI → blocked harvest, Offline" journey row (closes on the same
-"unit/integration, no dedicated e2e" precedent O-10 set — `RecordSpray.test.tsx`/
-`RecordHarvest.test.tsx` cover it). ✅ **The standing a11y gap closed in one sweep, as
-anticipated**: `/crops/spray` (4d·11's PHI override UI + 4e·4's stock-lot picker),
-`/crops/fertilise` (stock-lot picker), `/animals/feed` (mob/camp toggle, lot picker, cost preview)
-each gained a real `POPULATED_SCREENS` entry — zero axe violations, both themes, first try. New
-e2e fixture: a planting due in 5 days (so a same-day spray blocks at capture, exercising the
-override with no extra interaction) plus a chemical lot and a costed feed lot. `pnpm test:e2e --
-a11y` 20/20; full suite 32 passed/5 skipped, one teardown-timeout flake confirmed transient on
-isolated re-run (twice).
-
-⛔ **ONE box left, and it is why the phase is not yet closed: the whole-branch `reviewer` +
-`sync-auditor` + `compliance-checker` pass has never run over 4d/4e** — only narrower slice-scoped
-passes have (24th/25th/29th sessions); the 21st-session whole-branch pass covered 4c alone.
-Deliberately NOT run this session (JP wants agent work in its own separate session).
-🔶 **AGENT MARKER for next session — JP to trigger, do not spawn unprompted (CLAUDE.md):** run all
-three agents over `main..HEAD` on `phase-4/crops-fields`, each pointed at
-`docs/04-delivery/agent-context.md` first (compliance-checker also reads `legal-compliance.md`
-first). Closing this — clean, or MED/LOW fixed under §6's stopping rule — is what lets Phase 4
-merge; full evidence is in `phase-checklists.md`'s Quality gates section.
+**Last updated:** 2026-08-20 (thirty-fourth session — whole-branch agent pass, JP-requested). ✅
+**Phase 4's exit gate is now fully closed — MERGE-READY.** The last remaining box (whole-branch
+`reviewer`+`sync-auditor`+`compliance-checker` over `main..HEAD`) ran and closed this session:
+`sync-auditor` CLEARS outright; `reviewer` found one SEV-2 (`Outbox.tsx`'s `queue` useMemo read
+`mobMoves` but omitted it from the dependency array — a mob move captured after mount, with
+nothing else in the same round, silently never flushed while the strip falsely read "Saved and
+sent"), fixed with a fail-first test; `compliance-checker` found one SEV-1 (a spray/harvest
+refused server-side for an unresolved PHI block has no override-resubmit path and is stuck in
+`/not-sent` permanently, invisible to every later PHI check) — **filed as issue #12, not fixed,
+JP's explicit decision** (merge on the SEV-2 fix alone; take-up timing open, Phase-5-adjacent
+acceptable). Full account in §3 and `phase-checklists.md`'s Quality gates section. `pnpm verify`
+re-run clean after the fix: 1630 tests green in the full pass + 1 suite that hit a transient
+testcontainer timeout, re-run in isolation (51/51) — 1681 total, 0 real failures; `pnpm build`
+7/7, 194.26 KB gz.
 
 Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, either
 compliance-checker pass (25th/29th sessions), or this session's own mechanical checks above.
@@ -68,7 +57,7 @@ PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fi
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | 🔶 **Feature-complete, exit-review sweep DONE except the compliance/review pass** (every per-slice box ☑; five of six Quality-gates boxes closed 33rd session; the sixth — whole-branch `reviewer`+`sync-auditor`+`compliance-checker` on 4d/4e — is the one remaining item, JP to trigger), `phase-4/crops-fields` off `main` @ `6823858` | `phase-checklists.md` §Phase 4 has the full slice plan and the Quality gates section's per-box evidence. ⛔ Production `chemical_products` source still unnamed (18th session). ✅ 4c CLEARED (21st session). ✅ 4d CLEARED (25th session) — see §3, but only at slice scope, not whole-branch. 4e·1–4e·6 all closed (23rd–31st sessions), 4e·4 compliance-CLEARED 29th session at slice scope. 32nd session closed crop-facing home metrics. **33rd session (this one): closed the five mechanically-verifiable Quality-gates boxes (offline-write grep, domain-logic purity, O-12/journey-row, artifact-drift re-check, TENANCY re-run) and the standing a11y populated-state gap on `/crops/spray`+`/crops/fertilise`+`/animals/feed`. The whole-branch compliance/review pass has NEVER run over 4d/4e — only narrower slice-scoped passes have — and is the ONE thing blocking the merge.** |
+| 4 — Crops & fields | ✅ **MERGE-READY** — every checklist box ☑, all six Quality-gates boxes closed, whole-branch `reviewer`+`sync-auditor`+`compliance-checker` closed 34th session (SEV-2 fixed, SEV-1 filed as issue #12 per JP), `phase-4/crops-fields` off `main` @ `6823858`, not yet merged | `phase-checklists.md` §Phase 4 has the full slice plan and the Quality gates section's per-box evidence. ⛔ Production `chemical_products` source still unnamed (18th session) — blocks deployment, not the merge. ⛔ Issue #12 (PHI-refusal resubmit gap) filed, not fixed — JP decision, does not block merge. Full slice history condensed in §3. |
 | 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
@@ -81,6 +70,35 @@ noisy accessibility fixture, human-gated regulated verification, a false uncache
 missing FR-101 capture controls — all closed before the Phase 2 merge (`13a0d46`).
 
 ## 3. Owner decisions
+
+✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` on
+`phase-4/crops-fields` — CLOSED 2026-08-20 (34th session, JP-requested).** `sync-auditor` CLEARS
+(no SEV-1/SEV-2; every new table's RLS/sync-rule/API-guard triple agrees; no hardcoded regulated
+numbers; aggregates genuinely re-derived from the log; one disclosed LOW — `useSetReorderPoint`/
+`saveRestPeriodDays` are online-only by design, farm-configuration edits not farmer captures, and
+fail honestly rather than claiming success). `reviewer` found one SEV-2, **fixed**: `Outbox.tsx`'s
+`queue` useMemo read `mobMoves` (line 1050) but never listed it in the dependency array (the other
+~25 stores it reads all are) — a mob move captured after mount, with nothing else in the same
+round to force a recompute via a different dependency, silently never flushed; the sync strip
+falsely read "Saved and sent" instead of naming it. No existing test could have caught this: every
+mob-move test pre-seeds `localStorage` before `render()`, and `useMemo` always runs its first
+invocation regardless of the dependency array. Fixed by adding `mobMoves` to the deps, with a new
+fail-first test (`Outbox.test.tsx`, "sends a mob move captured AFTER mount") driven through the
+real `MoveMobScreen` post-mount — watched red against the pre-fix code (capture visible on screen,
+strip lied "sent", no POST fired), green after. `compliance-checker` found one SEV-1, **filed, not
+fixed — JP's explicit decision**: `recordSpray`/`recordHarvest` both throw a 4xx with no override
+when the server's PHI guard blocks and the request carries none — reachable when this device's
+local guard passed against a stale cross-device cache. That refusal lands in `NotSentScreen`,
+whose "refusal clears when its cause clears" model (Phase 2 design, unchanged by this diff) has no
+edit/resubmit path — but a PHI override needs the payload itself mutated with a written, audited
+reason, which nothing external will ever supply, so the capture is stuck in `/not-sent`
+permanently and invisible to every later PHI check on that block. Fixing it means new UI/flow on
+regulated code, needing its own compliance pass — JP chose **issue #12** over a second agent round
+this session; merge on the SEV-2 fix alone, take-up timing open (Phase-5-adjacent acceptable, not
+mandated). Traced during the pass that Phase 2's FR-131 sale-during-withdrawal block has no
+override field at all and so never hits this class — it's specific to captures with a legitimate
+but capture-time-only override. `pnpm verify` re-run clean after the fix (see §4); `pnpm build`
+7/7, 194.26 KB gz, no bundle-size regression from the one-line/one-test diff.
 
 ✅ **4e·5's two design questions RESOLVED (JP asked directly, 30th session, before code) — full
 account in `phase-checklists.md` 4e·5.** Which slice next: 4e·5 over 4e·6. Expiry scope: "expired"
@@ -209,45 +227,25 @@ per-farm events partitioning retired (migration 0021).
 | Check | Latest result |
 |---|---|
 | `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
-| Phase 4 exit-review sweep (2026-08-20, 33rd session, **the number to trust**) | ✅ `pnpm verify` **1680/1680, lint/typecheck/build clean, 194.26 KB gz** — re-run, no code change since 32nd session. Regenerated-artifact drift: re-ran both generators, `git status --porcelain` empty. `tenancy.spec.ts` re-run standalone: 22/22. Offline-write grep: clean, no hits outside docs. `pnpm test:e2e -- a11y` full suite 20/20 both themes (new spray/fertilise/feed populated-state entries included). Full `pnpm test:e2e`: 32 passed/5 skipped, one teardown-timeout flake confirmed transient on isolated re-run (twice) |
-| `pnpm verify` — 32nd (crop-metrics)/31st (4e·6)/30th (4e·5) sessions | ✅ All green, condensed — full per-session numbers in `phase-checklists.md` Phase 4 and git history |
-| `compliance-checker` on `d331a2c..HEAD` (4e·1/4e·2/4e·4), 29th session | ✅ CLEARS, no SEV-1/SEV-2. Two LOW fixed (stale doc reference; rest-period warning gating) — full account in §3 |
-| `pnpm verify` — 4e·4 (28th)/4e·2 (27th)/4e·1+4d·11 (26th/25th) sessions | ✅ All green, condensed — full per-session numbers in git history and `phase-checklists.md` Phase 4. 25th session hit transient Postgres contention, confirmed not a regression |
+| Whole-branch agent pass + SEV-2 fix (2026-08-20, 34th session, **the number to trust**) | ✅ `pnpm verify`: full pass 1630 green + 1 suite hit a transient testcontainer health-check timeout, re-run in isolation clean (51/51) — **1681/1681 real**, lint/typecheck clean (web typecheck genuinely re-ran, cache miss on the edited file). `pnpm build` 7/7, 194.26 KB gz. `Outbox.test.tsx` 53/53 including the new fail-first test |
+| Phase 4 exit-review sweep, 33rd session | ✅ `pnpm verify` 1680/1680 (baseline this session's 1681 builds on), artifact-drift/TENANCY/offline-write/a11y sweeps all clean — full account in git history |
+| `pnpm verify` — 32nd/31st/30th/28th/27th/26th/25th sessions | ✅ All green, condensed — full per-session numbers in `phase-checklists.md` Phase 4 and git history. 25th hit transient Postgres contention, confirmed not a regression |
+| `compliance-checker` on `d331a2c..HEAD` (4e·1/4e·2/4e·4), 29th session | ✅ CLEARS, no SEV-1/SEV-2. Two LOW fixed — full account in §3 |
 | `compliance-checker` on 4d·11+mob-move (25th) / 4d+4e·3 (24th) | ✅ 4d·11 APPROVABLE after one HIGH fixed — full account in §3 |
 | Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, 21st/16th sessions | ✅ Both CLEARS/APPROVABLE — full accounts in §3. 21st caught a stale-cache-hit masked typecheck failure |
-| `WERF_REAL_STACK=1`, all 5 gated tests, isolated (sixteenth session) | ✅ All pass — two real test-tooling defects found and fixed as `dd1fac8` |
+| `WERF_REAL_STACK=1`, all 5 gated tests, isolated (16th session) | ✅ All pass — two real test-tooling defects found and fixed as `dd1fac8` |
 | `compliance-checker` `45775ea..ec8336e` / `428200a..45775ea` (14th/12th) & review agents `baf4b4d..428200a` (4th) | ✅ All CLEARED — full accounts in §3 |
 | Historical baselines (2026-08-08 through 2026-08-17) | Condensed — full detail in git history and `phase-checklists.md` 3b–3i |
 
-## 5. Next executable steps — the punch list, sliced for separate sessions
+## 5. Next executable steps
 
-**Everything through 2026-08-13's compliance-checker/land-hydration work is condensed in §3 — full
-narrative in git history and `phase-checklists.md`.** Do not begin payroll on local adapters.
-`docs/phase-3-6-scope` still needs rebasing onto `main` before any Phase 3–6 scope-doc work.
-
-**Origin of this list, condensed — now fully closed:** JP asked (2026-08-14, second session) for a
-large implementation-and-closure pass, three priority bands plus a doc/quality band, one item (or a
-tightly related pair) per session. Ran second through sixteenth sessions; every item below closed.
-
-✅ **21–41. Done 2026-08-14 through 2026-08-17 (first–sixteenth sessions), fully closed — condensed,
-full detail in git history.** P1 data-loss/safety blockers (SQLite durability, attachment orphan
-race, withdrawal fail-closed, prod CSP/CORS, `c2cc48a`); P2.5–P2.10 (secure attachment reads,
-`theft_incident_animals` surrogate id, `landrow:` dependency guards, a true two-browser O-3 run,
-UUIDv7 schema-boundary enforcement, adversarial tenancy mutants — `422e09d`/`6820a21`/`256d06a`/
-`38268b5`/`b88b29b`); conflict audit/review, O-6/O-7/O-8 (migration 0026, immutable `audit_log` +
-`conflict_reviews`, `(occurred_at,id)` LWW); P3.11–P3.15 (step-up re-auth, Google-first OIDC/
-cookie-BFF, FR-001 business fields, branding register FR-601/602, one shared `parseRandsToCents`);
-P3.16 auth-hardening batch, 7/7 (invitation reuse of soft-deleted identities `06ca3d6`, WebAuthn
-challenge cleanup `e24a281`, production WebAuthn config `c7358b0`, immutable auth audit `016fb5d`,
-users-table column grants `fc5759d`, attachment MIME/size/quota `49677b4` — 25MB/attachment, 5GB/
-farm running quota on `farms.attachment_bytes_used`, five-type photo whitelist; registration-
-enumeration hardening deferred to Phase 7 as an owner decision, not a gap). Q17/Q18/Q19 closed
-(`f875dcc`/`1b036bf`/`testing-strategy.md` §7a's five Phase-3 field-evidence rows). Final
-definition-of-done sweep (sixteenth session): `pnpm verify` **116 files/1278 tests, 7/7 builds,
-168.78 KB gz**; `pnpm test:e2e` 31/5 skipped; `WERF_REAL_STACK=1` all 5 gated specs pass in
-isolation — two real defects found and fixed in test tooling only, `dd1fac8` (a stale MIME literal
-predating the P3.16 whitelist, and an unscoped-by-`farm_id` fixture lookup that collided against a
-persistent dev Postgres). Every **phase-checklist** box is `☑`; this punch list was a stricter pass on top of that, not a reopening.
+Phase 4 is merge-ready (§1). Next session's work is JP's call: open the PR and merge
+`phase-4/crops-fields` to `main`, start Phase 5 (labour & wages — per-slice compliance review, not
+batched, see CLAUDE.md), or pick up issue #12. `docs/phase-3-6-scope` still needs rebasing onto
+`main` before any Phase 3–6 scope-doc work. Full history of the second–sixteenth-session
+implementation punch list (P1 safety blockers, P2.5–P2.10, conflict audit/review, P3.11–P3.16,
+Q17–Q19) is condensed in git history and `phase-checklists.md` — every item closed, nothing open
+here.
 
 ## 6. The review-pass stopping rule (set 2026-08-05 by JP) — ⚠️ SATISFIED, keep it anyway
 

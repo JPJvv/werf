@@ -1,26 +1,11 @@
-/**
- * Spray history (FR-211) — an auditor-ready record of every spray this farm has captured, per
- * block, newest first. This is the home grid's "Sprays" tile destination (`home/tiles.ts`), real
- * from this slice on rather than the placeholder it pointed at before 4c.
- *
- * ⭐ Built ENTIRELY from local cached data — `useEffectiveSprays()` (local + hydrated, hydrated
- * winning so the PHI/active-ingredients fields are present once a spray has round-tripped) joined
- * against the local `chemical_products` reference cache for the product's name and registration
- * number. No network call in the render path: FR-211's own "auditor-ready" framing does not mean
- * "online-only" — a spray-history reconstruction at the farm gate, with no signal, is the case this
- * whole product is built for. The server's `GET /crops/sprays` (`CropsService.listSprayHistory`)
- * exists for future non-device consumers (a printed pack, a desktop export) and is not called here.
- *
- * One report, not the GlobalGAP checklist engine (control points, non-conformances, evidence
- * completeness) — that is `legal-compliance.md` § 4.1's Phase 6 build requirement.
- */
+/** Private, offline spray history built from the farmer's own captured facts. */
 
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useEffectiveLandUnits } from '../land/LocalLand';
 import { useEffectiveSprays, type StoredSpray } from './LocalSprays';
-import { useChemicalProducts } from './LocalChemicalProducts';
+import { useEffectiveInventoryItems } from '../inventory/stock';
 
 function isLaterOccurred(a: StoredSpray, b: StoredSpray): boolean {
   if (a.occurredAt !== b.occurredAt) return a.occurredAt > b.occurredAt;
@@ -31,7 +16,7 @@ export function SpraysScreen() {
   const { t } = useTranslation();
   const sprays = useEffectiveSprays();
   const units = useEffectiveLandUnits();
-  const products = useChemicalProducts();
+  const products = useEffectiveInventoryItems();
   const blocks = useMemo(() => units.filter((u) => u.kind === 'block'), [units]);
 
   const [blockFilter, setBlockFilter] = useState('');
@@ -40,7 +25,7 @@ export function SpraysScreen() {
 
   const landUnitCodes = useMemo(() => new Map(units.map((u) => [u.id, u.code])), [units]);
   const productNames = useMemo(
-    () => new Map(products.map((p) => [p.id, `${p.name} · ${p.registrationNumber}`])),
+    () => new Map(products.map((product) => [product.id, product.name])),
     [products],
   );
 
@@ -114,12 +99,13 @@ export function SpraysScreen() {
                 </span>
               </div>
               <span className="text-body text-soil-900">
-                {productNames.get(spray.productId) ?? t('crops.sprays.unknownProduct')}
+                {spray.productName ||
+                  productNames.get(spray.productId) ||
+                  t('crops.sprays.unknownProduct')}
+                {spray.registrationNumber ? ` · ${spray.registrationNumber}` : ''}
               </span>
               <span className="text-body text-soil-700">
-                {spray.activeIngredients === undefined ? (
-                  t('crops.sprays.phiPending')
-                ) : spray.phiDays === undefined ? (
+                {spray.phiDays === undefined ? (
                   t('crops.spray.noPhi')
                 ) : spray.earliestHarvestDate === undefined ? (
                   t('crops.sprays.harvestDateUnknown')
@@ -130,6 +116,51 @@ export function SpraysScreen() {
                   </>
                 )}
               </span>
+              {(spray.activeIngredients !== undefined ||
+                spray.rateLPerHa !== undefined ||
+                spray.waterLPerHa !== undefined ||
+                spray.operator !== undefined ||
+                spray.equipment !== undefined ||
+                spray.windKph !== undefined ||
+                spray.tempC !== undefined ||
+                spray.targetPest !== undefined) && (
+                <div className="mt-2 border-t border-soil-200 pt-2 text-body text-soil-900">
+                  {spray.activeIngredients !== undefined && (
+                    <p>
+                      <span className="font-ui font-semibold">{t('crops.sprays.actives')}:</span>{' '}
+                      {spray.activeIngredients.join(', ')}
+                    </p>
+                  )}
+                  {(spray.rateLPerHa !== undefined || spray.waterLPerHa !== undefined) && (
+                    <p>
+                      <span className="font-ui font-semibold">
+                        {t('crops.sprays.application')}:
+                      </span>{' '}
+                      {spray.rateLPerHa ?? '—'} L/ha · {spray.waterLPerHa ?? '—'} L/ha{' '}
+                      {t('crops.sprays.water')}
+                    </p>
+                  )}
+                  {(spray.operator !== undefined || spray.equipment !== undefined) && (
+                    <p>
+                      <span className="font-ui font-semibold">{t('crops.sprays.operator')}:</span>{' '}
+                      {spray.operator ?? '—'} · {t('crops.sprays.equipment')}:{' '}
+                      {spray.equipment ?? '—'}
+                    </p>
+                  )}
+                  {(spray.windKph !== undefined || spray.tempC !== undefined) && (
+                    <p>
+                      <span className="font-ui font-semibold">{t('crops.sprays.weather')}:</span>{' '}
+                      {spray.windKph ?? '—'} km/h · {spray.tempC ?? '—'} °C
+                    </p>
+                  )}
+                  {spray.targetPest !== undefined && (
+                    <p>
+                      <span className="font-ui font-semibold">{t('crops.sprays.target')}:</span>{' '}
+                      {spray.targetPest}
+                    </p>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>

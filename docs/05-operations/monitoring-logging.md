@@ -8,7 +8,8 @@ Most SaaS fails loudly. A farm app with an offline-first client **fails silently
 
 If sync has been failing for that farm for six hours, nobody knows. Not the farmer, not us, not until they call having lost a week.
 
-> **The single most important thing on the dashboard is not error rate. It is sync health, per farm.**
+> **The single most important thing on the dashboard is not error rate. It is aggregate sync health
+> without exposing a farm's identity or records to operations staff.**
 
 Everything below is arranged around that.
 
@@ -29,9 +30,9 @@ Everything below is arranged around that.
 
 | Metric | Why | Alert |
 |---|---|---|
-| **`sync_queue_depth{farm_id}`** | A farm with a stuck queue is a farm losing confidence | p99 > 500 for 30m |
-| **`sync_failure_rate{farm_id}`** | The silent failure | > 1% for 15m |
-| **`sync_last_success_age{farm_id}`** | **A farm that hasn't synced in 24h is either offline (fine) or broken (not fine)** | > 48h for an active farm |
+| **`sync_queue_depth_bucket`** | Detect stuck queues without a stable farm identifier | p99 > 500 for 30m |
+| **`sync_failure_rate`** | Detect silent platform failure in aggregate | > 1% for 15m |
+| **`sync_attempt_age_bucket`** | Distinguish widespread client failure from normal offline use | abnormal distribution |
 | `sync_conflict_rate` | Rising conflicts = a data model problem | > 5% of writes |
 | `sync_quarantine_count` | Writes we couldn't apply | > 0 → investigate |
 | **`replication_slot_lag_bytes`** | **The WAL footgun — see §5** | **> 1GB** |
@@ -40,7 +41,9 @@ Everything below is arranged around that.
 
 **`sync_last_success_age` is the highest-value alert in this system.** A farmer who is genuinely in a dead zone for two days is normal and fine. A farmer whose device *thinks* it is syncing and is failing every attempt looks identical from the outside — and one of those two people is about to lose a week of records.
 
-Distinguishing them requires the client to report attempts, not just successes. That is a client instrumentation requirement, and it is easy to forget because the happy path never needs it.
+Distinguishing them requires privacy-preserving aggregate attempt counters. Detailed queue and
+last-success state remains on the farmer's device, where Werf can explain the problem and offer an
+explicit diagnostic export.
 
 ### 2.3 Business signals 🇿🇦
 
@@ -51,9 +54,7 @@ Distinguishing them requires the client to report attempts, not just successes. 
 | `regulatory_rate_lookup_miss_total{jurisdiction,code}` | **> 0 is a page.** A missing rate means payroll is throwing. In February this is the fire. |
 | `auth_2fa_enrolled_ratio{role}` | Owners without 2FA are the accounts holding wages and banking. Track it; nudge it. |
 | `auth_recovery_code_used_total` | A spike means phones are being lost, or something worse |
-| `phi_override_total{farm_id}` | Overrides are legal but they are non-conformances. Rising = something wrong on a farm. |
-| `evidence_pack_generated_total{type}` | Is the wedge being used? This is BO-2 (BRD) in a metric. |
-| `compliance_pack_duration_p95` | NFR-016: 15s |
+| `record_export_duration_p95` | Farmer-requested export performance; no record type or farm identifier | NFR-016: 15s |
 
 `regulatory_rate_lookup_miss_total > 0` pages someone. [ADR-0005](../03-architecture/adr/ADR-0005-regulatory-rates.md) rule 6 says a missing rate throws rather than defaulting — which is correct, and it means the throw must reach a human immediately, especially in the last week of February.
 
@@ -88,18 +89,17 @@ export const logger = pino({
   "level": "info",
   "time": "2026-07-17T09:30:00.000Z",
   "correlationId": "01HXYZ...",
-  "userId": "019...",
-  "farmId": "019...",
   "route": "POST /v1/farms/:farmId/payroll/runs",
   "durationMs": 4210,
   "status": 201,
-  "payrollRunId": "019...",
   "warningCount": 3,
   "blocked": true
 }
 ```
 
-**Note what is not in there:** no employee name, no ID number, no amount. `warningCount: 3, blocked: true` is enough to debug with. Whose payslip was blocked is in the database, behind RLS, where it belongs — not in a log stream that a support engineer greps.
+**Note what is not in there:** no farm/user/record identifier, employee name, ID number or amount.
+`warningCount: 3, blocked: true` is enough to diagnose aggregate code behaviour without making farm
+records searchable in an operations log.
 
 ### The redaction test
 
@@ -142,15 +142,15 @@ OpenTelemetry (NFR-702). Trace the paths where latency actually hurts:
 ```ts
 const span = tracer.startSpan('payroll.calculate', {
   attributes: {
-    'werf.farm_id': farmId,
     'werf.employee_count': employees.length,
     'werf.period_days': days,
-    // ⭐ never an employee name, never an amount
+    // ⭐ aggregate operation shape only: never a farm/user id, name, amount or record content
   },
 });
 ```
 
-Span attributes leave the country if the tracing backend is offshore. Same rule as logs (NFR-212).
+Operational traces remain in-region and contain aggregate service health only (NFR-212,
+ADR-0013).
 
 ---
 
@@ -227,41 +227,25 @@ Alert on burn rate, not on raw thresholds (NFR-704).
 
 ## 7. Dashboards
 
-### Sync health (per farm) — the one you actually look at
+### Aggregate sync health
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │  SYNC HEALTH                              last 24h     │
 ├────────────────────────────────────────────────────────┤
-│  Farms syncing normally              1,204             │
-│  Farms with queue > 100                 12  ← look     │
-│  Farms not synced in 48h                 3  ← CALL     │
+│  Sync success rate                    99.8%             │
+│  Queue depth p99                         84             │
+│  Clients reporting repeated failure      3  ← look     │
 │  Quarantined writes                      0             │
 │  Conflict rate                        0.3%             │
 ├────────────────────────────────────────────────────────┤
-│  Farms not synced in 48h:                              │
-│    Rietfontein      last: 3d ago   queue: 247   ⚠      │
-│    Kranskop         last: 5d ago   queue:  89   ⚠      │
-│    Doornhoek        last: 2d ago   queue:   0   ok?    │
+│  No farm names, farm ids, record payloads or GPS       │
 └────────────────────────────────────────────────────────┘
 ```
 
-**Doornhoek has a queue of 0 and hasn't synced in two days — that farm is probably just offline, and that is fine.** Rietfontein has 247 records waiting and hasn't landed one in three days — **that farmer needs a phone call today**, and they do not know it yet.
-
-That distinction is the entire reason this dashboard exists, and it is why `sync_queue_depth` and `sync_last_success_age` must be read together rather than alerted on separately.
-
-### Compliance 🇿🇦
-
-```
-Payroll runs (30d)          247
-  blocked                     3  ← by reason
-  with warnings              89  ← PIECE_RATE_TOPPED_UP: 61
-Rate lookup misses            0  ← MUST be 0
-PHI overrides (30d)          12  ← by farm
-Evidence packs               34  ← theft: 4 · GlobalGAP: 22 · SIZA: 8
-```
-
-`Evidence packs: 34` is BO-2 from the [BRD](../00-business/BRD.md) rendered as an operational metric. If that number is zero, the wedge is not landing and the product strategy is wrong — which is worth knowing from the dashboard rather than from churn.
+The client owns the individual diagnosis: it shows unsent work, retry state and a plain-language
+recovery path. Support sees farm-specific diagnostics only when an authorised farm member previews
+and deliberately shares an export.
 
 ---
 
@@ -275,11 +259,11 @@ Evidence packs               34  ← theft: 4 · GlobalGAP: 22 · SIZA: 8
 | Data-loss signal | Page | Zero tolerance |
 | API 5xx > 1% | Page | |
 | Sync fast burn | Page | |
-| Farm not synced 48h + queue > 0 | Ticket | **Phone the farmer** |
+| Aggregate repeated sync failures | Ticket | Investigate the platform; do not identify or contact a farm from telemetry |
 | Quarantined writes > 0 | Ticket | Human review |
 | Sync slow burn | Ticket | |
 | Payroll blocked spike | Ticket | Real problem or our bug? |
-| PHI overrides trending | Ticket | Farm conversation |
+| Reminder-calculation errors trending | Ticket | Investigate code without inspecting farm payloads |
 
 **Every alert has a runbook link (NFR-705).** No orphans. An alert without a runbook is a 2am guess.
 
@@ -287,14 +271,9 @@ Evidence packs               34  ← theft: 4 · GlobalGAP: 22 · SIZA: 8
 
 ## 9. Client-side
 
-```ts
-Sentry.init({
-  tracesSampleRate: 0.1,
-  beforeSend(event) {
-    return scrubPii(event, { /* NFR-212 — see security.md §3.4 */ });
-  },
-});
-```
+There is no third-party client error recorder or behavioural analytics SDK. Client diagnostics stay
+on the device unless an authorised farm member explicitly exports them, and that export must show
+exactly what it contains before sharing.
 
 **Client metrics we actually need:**
 
@@ -306,7 +285,9 @@ Sentry.init({
 | `queue_depth` | What the farmer sees |
 | `time_to_interactive_warm` | NFR-004: 1s |
 
-Real user monitoring is sampled at 10% and **must not transmit GPS**. A farm's GPS trace is a stock theft map ([security.md §1](security.md)).
+Aggregate performance counters may be sampled, but they contain no stable farm/user identifier,
+route parameters, record payload or GPS. A farm's GPS trace is a stock-theft map
+([security.md §1](security.md)).
 
 ---
 
@@ -318,6 +299,5 @@ Real user monitoring is sampled at 10% and **must not transmit GPS**. A farm's G
 | Metrics | 15 months | CloudWatch |
 | Traces | 7d | 10% sampled |
 | **Audit log** | **7 years** | **Postgres — NFR-606** |
-| Sentry | 90d | Offshore, **PII-scrubbed** |
 
 Audit log is the odd one out on purpose: it is a legal record in a database table, not telemetry, and it outlives every other signal here by six and a half years.

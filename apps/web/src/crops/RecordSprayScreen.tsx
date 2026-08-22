@@ -1,39 +1,12 @@
 /**
- * Record a spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED
- * (legal-compliance.md § 4). The crush-side capture that FR-211's audit trail and the harvest
- * guard (4d) both depend on.
- *
- * ⭐ THE EARLIEST SAFE HARVEST DATE IS SHOWN BEFORE THE FARMER WALKS AWAY FROM THE TANK. Mirrors
- * `RecordHealthScreen.tsx`'s own reasoning exactly, one PHI over: the date shown here is a PREVIEW
- * computed from the CACHED chemical-product register using the same pure domain function the server
- * uses; the date actually STORED is computed server-side from the registration in force on the
- * spray day (ADR-0005). The client never sends a PHI or active ingredients; it sends a product id.
- *
- * ⭐ BLOCKS AT CAPTURE, OFFLINE, THE OTHER DIRECTION TOO (legal-compliance.md § 4.3): when the
- * preview above would clear AFTER the block's own planned harvest date (`useSprayPhiGuard`,
- * `usePhiGuard.ts`), this screen refuses to save unless overridden — mirrors
- * `RecordHarvestScreen.tsx`'s own override UI exactly, one guard over. No server round trip needed
- * to know: the planned harvest date is this device's own `useCurrentPlanting` read.
- *
- * Offline-first: `save` commits locally and instantly with no network in the path. The product
- * register and the planting log are both local caches, so the picker, the PHI preview, and the
- * guard all work at the tank in a dead zone.
- *
- * ⭐ Inventory auto-decrement (Phase 4e, FR-502) — OPTIONAL, additive: a farm without stock
- * tracking on sees no lot picker's worth of extra decisions. Picking a lot stores an
- * `inventoryLotId` reference ON the spray event (a plain, uncompliance-gated field — see
- * `@werf/domain`'s `SprayInput`) and, separately, appends a `consumed` `inventory_movement`
- * through the SAME local capture 4e·3's `ReceiveStockScreen` uses (`useRecordInventoryMovement`).
- * These are two independent local commits, not one atomic write: if the spray itself is later
- * refused server-side (a 4xx on a PHI guard this device's stale cache did not know about), the
- * movement still lands — the stock genuinely left the shed regardless of whether the compliance
- * write was accepted, the identical "the spray happened whether or not the shed card was
- * accurate" reasoning `stock.ts`'s own module note gives for a shortfall.
+ * Farmer-owned spray log. Werf records what the farmer says was used and performs transparent
+ * date arithmetic from the interval they enter. It does not approve a product, decide whether a
+ * spray is lawful, or prevent a farmer from recording work that happened.
  */
 
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { uuidv7 } from '@werf/core';
+import { schemas, uuidv7 } from '@werf/core';
 import { earliestHarvestDateFor } from '@werf/domain';
 import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
@@ -44,22 +17,15 @@ import {
   useEffectiveInventoryLots,
   useCurrentQuantity,
 } from '../inventory/stock';
-import { useRecordInventoryMovement } from '../inventory/LocalInventory';
 import {
-  useChemicalProducts,
-  chemicalProductsInForceOn,
-  type StoredChemicalProduct,
-} from './LocalChemicalProducts';
+  useRecordInventoryItem,
+  useRecordInventoryMovement,
+  type StoredInventoryItem,
+} from '../inventory/LocalInventory';
 import { useRecordSpray } from './LocalSprays';
 import { useSprayPhiGuard } from './usePhiGuard';
 
-const OVERRIDE_REASON_CATEGORIES = [
-  'emergency_pest_control',
-  'harvest_date_will_move',
-  'misrecorded_planting',
-  'other',
-] as const;
-type OverrideReasonCategory = (typeof OVERRIDE_REASON_CATEGORIES)[number];
+const NEW_PRODUCT = '__new_product__';
 
 function today(): string {
   return farmToday();
@@ -70,20 +36,31 @@ function sprayedInstant(day: string): Date {
 }
 
 function optionalPositiveNumber(text: string): number | undefined {
-  const trimmed = text.trim();
-  if (trimmed === '') return undefined;
-  const value = Number(trimmed);
-  return Number.isFinite(value) && value > 0 ? value : undefined;
+  const value = Number(text.trim());
+  return text.trim() !== '' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-/** The earliest safe harvest day from the cached registration — a PREVIEW, never the stored value
- *  (see the module header). Null when the product carries no PHI on record. */
-function harvestPreview(
-  product: StoredChemicalProduct | undefined,
-  sprayedOn: string,
-): string | null {
-  if (!product || product.phiDays === null) return null;
-  return earliestHarvestDateFor(sprayedOn, product.phiDays);
+function optionalFiniteNumber(text: string): number | undefined {
+  const value = Number(text.trim());
+  return text.trim() !== '' && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalNonNegativeNumber(text: string): number | undefined {
+  const value = optionalFiniteNumber(text);
+  return value !== undefined && value >= 0 ? value : undefined;
+}
+
+function optionalNonNegativeInteger(text: string): number | undefined {
+  const value = optionalNonNegativeNumber(text);
+  return value !== undefined && Number.isInteger(value) ? value : undefined;
+}
+
+function ingredientsOf(text: string): readonly string[] | undefined {
+  const ingredients = text
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value !== '');
+  return ingredients.length === 0 ? undefined : ingredients;
 }
 
 export function RecordSprayScreen() {
@@ -91,11 +68,15 @@ export function RecordSprayScreen() {
   const { activeFarm } = useAuth();
   const units = useEffectiveLandUnits();
   const blocks = useMemo(() => units.filter((unit) => unit.kind === 'block'), [units]);
-  const products = useChemicalProducts();
-  const recordSpray = useRecordSpray();
-  const recordMovement = useRecordInventoryMovement();
   const inventoryItems = useEffectiveInventoryItems();
+  const products = useMemo(
+    () => inventoryItems.filter((item) => item.category === 'chemical'),
+    [inventoryItems],
+  );
   const inventoryLots = useEffectiveInventoryLots();
+  const recordProduct = useRecordInventoryItem();
+  const recordMovement = useRecordInventoryMovement();
+  const recordSpray = useRecordSpray();
   const [params] = useSearchParams();
 
   const requested = params.get('block');
@@ -110,7 +91,12 @@ export function RecordSprayScreen() {
   const selectedId = selected?.id ?? '';
 
   const [sprayedOn, setSprayedOn] = useState(today);
-  const [productId, setProductId] = useState('');
+  const [productChoice, setProductChoice] = useState(NEW_PRODUCT);
+  const [productName, setProductName] = useState('');
+  const [productUnit, setProductUnit] = useState('L');
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [activeIngredients, setActiveIngredients] = useState('');
+  const [phiDays, setPhiDays] = useState('');
   const [rateValue, setRateValue] = useState('');
   const [waterValue, setWaterValue] = useState('');
   const [operator, setOperator] = useState('');
@@ -118,88 +104,103 @@ export function RecordSprayScreen() {
   const [windKph, setWindKph] = useState('');
   const [tempC, setTempC] = useState('');
   const [targetPest, setTargetPest] = useState('');
-  const [overriding, setOverriding] = useState(false);
-  const [overrideCategory, setOverrideCategory] = useState<OverrideReasonCategory | ''>('');
-  const [overrideText, setOverrideText] = useState('');
   const [inventoryLotId, setInventoryLotId] = useState('');
   const [quantityUsed, setQuantityUsed] = useState('');
   const [savedProduct, setSavedProduct] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const inForce = useMemo(
-    () => chemicalProductsInForceOn(products, sprayedOn),
-    [products, sprayedOn],
-  );
-  const product = inForce.find((p) => p.id === productId);
+  const existingProduct = products.find((product) => product.id === productChoice);
+  const isNewProduct = productChoice === NEW_PRODUCT;
+  const enteredPhiDays = optionalNonNegativeInteger(phiDays);
+  const phiInputBad = phiDays.trim() !== '' && enteredPhiDays === undefined;
+  const sprayDayValid = schemas.dateSchema.safeParse(sprayedOn).success;
+  const clearDate =
+    enteredPhiDays === undefined || !sprayDayValid
+      ? null
+      : earliestHarvestDateFor(sprayedOn, enteredPhiDays);
+  const guard = useSprayPhiGuard(selectedId, sprayedOn, sprayDayValid ? enteredPhiDays : undefined);
 
-  // Chemical lots only (Phase 4e, FR-502) — a fertiliser or feed lot has no place in a spray
-  // capture. Not filtered or matched against `productId`: `chemical_products` (national reference,
-  // what the product IS) and an inventory item (farm-owned, what THIS farm has) are deliberately
-  // two different catalogues that this app does not yet link (filed, not built — phase-checklists.md
-  // 4e·4's own note), so the farmer matches them by name, the same posture `ReceiveStockScreen`
-  // already takes for every capture that reads stock.
-  const chemicalLots = useMemo(
+  const productLots = useMemo(
     () =>
-      inventoryLots
-        .filter(
-          (lot) =>
-            inventoryItems.find((i) => i.id === lot.inventoryItemId)?.category === 'chemical',
-        )
-        .map((lot) => ({
-          lot,
-          item: inventoryItems.find((i) => i.id === lot.inventoryItemId),
-        })),
-    [inventoryLots, inventoryItems],
+      productChoice === NEW_PRODUCT
+        ? []
+        : inventoryLots
+            .filter((lot) => lot.inventoryItemId === productChoice)
+            .map((lot) => ({
+              lot,
+              item: inventoryItems.find((item) => item.id === lot.inventoryItemId),
+            })),
+    [inventoryItems, inventoryLots, productChoice],
   );
-  const selectedLot = chemicalLots.find((c) => c.lot.id === inventoryLotId);
-
-  // Called unconditionally, before the `!activeFarm` early return below (Rules of Hooks) — the
-  // identical ordering constraint `RecordHarvestScreen.tsx`'s own guard call obeys. Read
-  // unconditionally too, for the same reason — `''` reads as zero, which is never used below.
+  const selectedLot = productLots.find(({ lot }) => lot.id === inventoryLotId);
   const currentQuantity = useCurrentQuantity(inventoryLotId);
-  const guard = useSprayPhiGuard(selectedId, sprayedOn, product?.phiDays ?? undefined);
 
   if (!activeFarm) return null;
 
-  const clearDate = harvestPreview(product, sprayedOn);
-  const overrideReady = overrideCategory !== '' && overrideText.trim() !== '';
-  const needsOverride = guard.blocked;
   const quantityUsedNumber = optionalPositiveNumber(quantityUsed);
-  // Lot picked + quantity blank must block save, never silently emit no movement — see the module
-  // note's own "these are two independent commits" point: an unmatched pair here would mean the
-  // spray event carries an `inventoryLotId` no movement ever explains.
+  const rateLPerHa = optionalPositiveNumber(rateValue);
+  const waterLPerHa = optionalPositiveNumber(waterValue);
+  const windKphNumber = optionalNonNegativeNumber(windKph);
+  const tempCNumber = optionalFiniteNumber(tempC);
+  const optionalNumberBad =
+    (rateValue.trim() !== '' && rateLPerHa === undefined) ||
+    (waterValue.trim() !== '' && waterLPerHa === undefined) ||
+    (windKph.trim() !== '' && windKphNumber === undefined) ||
+    (tempC.trim() !== '' && tempCNumber === undefined);
   const quantityBad = inventoryLotId !== '' && quantityUsedNumber === undefined;
+  const productReady =
+    productName.trim() !== '' && (!isNewProduct || productUnit.trim() !== '') && !phiInputBad;
   const valid =
-    selected !== null &&
-    product !== undefined &&
-    (!needsOverride || (overriding && overrideReady)) &&
-    !quantityBad;
+    selected !== null && sprayDayValid && productReady && !optionalNumberBad && !quantityBad;
 
-  const clearSaved = () => setSavedProduct(null);
-
-  const resetOverride = () => {
-    setOverriding(false);
-    setOverrideCategory('');
-    setOverrideText('');
+  const chooseProduct = (id: string) => {
+    setProductChoice(id);
+    setInventoryLotId('');
+    setQuantityUsed('');
+    setSavedProduct(null);
+    const product = products.find((candidate) => candidate.id === id);
+    if (!product) {
+      setProductName('');
+      setProductUnit('L');
+      setRegistrationNumber('');
+      setActiveIngredients('');
+      setPhiDays('');
+      return;
+    }
+    setProductName(product.name);
+    setProductUnit(product.unit);
+    setRegistrationNumber(product.registrationNumber ?? '');
+    setActiveIngredients(product.activeIngredients?.join(', ') ?? '');
+    setPhiDays(
+      product.phiDays === null || product.phiDays === undefined ? '' : String(product.phiDays),
+    );
   };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!valid || !selected || !product || saving) return;
+    if (!valid || !selected || saving) return;
     setSaving(true);
 
-    const rateLPerHa = optionalPositiveNumber(rateValue);
-    const waterLPerHa = optionalPositiveNumber(waterValue);
+    const productId = existingProduct?.id ?? uuidv7();
+    const cleanName = productName.trim();
+    const cleanRegistration = registrationNumber.trim();
+    const ingredients = ingredientsOf(activeIngredients);
 
-    // `by` is never set here — the acting user id is server-resolved from the session, the same
-    // reasoning `createdBy` is never client-set anywhere in this app (`RecordHarvestScreen.tsx`'s
-    // own module note, one guard over).
-    const phiOverride =
-      needsOverride && overrideReady
-        ? {
-            reason: `${t(`crops.spray.overrideReason.${overrideCategory as OverrideReasonCategory}`)}: ${overrideText.trim()}`,
-          }
-        : undefined;
+    if (isNewProduct) {
+      const product: StoredInventoryItem = {
+        id: productId,
+        farmId: activeFarm.id,
+        enterpriseId: null,
+        category: 'chemical',
+        name: cleanName,
+        unit: productUnit.trim(),
+        registrationNumber: cleanRegistration === '' ? null : cleanRegistration,
+        activeIngredients: ingredients ?? null,
+        phiDays: enteredPhiDays ?? null,
+        reentryHours: null,
+      };
+      await recordProduct(product);
+    }
 
     await recordSpray({
       id: uuidv7(),
@@ -207,20 +208,22 @@ export function RecordSprayScreen() {
       landUnitId: selected.id,
       occurredAt: sprayedInstant(sprayedOn).toISOString(),
       sprayedOn,
-      productId: product.id,
+      productId,
+      productName: cleanName,
+      ...(cleanRegistration === '' ? {} : { registrationNumber: cleanRegistration }),
+      ...(ingredients === undefined ? {} : { activeIngredients: ingredients }),
+      ...(enteredPhiDays === undefined ? {} : { phiDays: enteredPhiDays }),
+      ...(clearDate === null ? {} : { earliestHarvestDate: clearDate }),
       ...(rateLPerHa === undefined ? {} : { rateLPerHa }),
       ...(waterLPerHa === undefined ? {} : { waterLPerHa }),
       ...(operator.trim() === '' ? {} : { operator: operator.trim() }),
       ...(equipment.trim() === '' ? {} : { equipment: equipment.trim() }),
-      ...(windKph.trim() === '' ? {} : { windKph: Number(windKph) }),
-      ...(tempC.trim() === '' ? {} : { tempC: Number(tempC) }),
+      ...(windKphNumber === undefined ? {} : { windKph: windKphNumber }),
+      ...(tempCNumber === undefined ? {} : { tempC: tempCNumber }),
       ...(targetPest.trim() === '' ? {} : { targetPest: targetPest.trim() }),
-      ...(phiOverride === undefined ? {} : { phiOverride }),
       ...(inventoryLotId === '' ? {} : { inventoryLotId }),
     });
 
-    // A SEPARATE local commit from the spray above — see the module note. `quantityBad` already
-    // kept `valid` false unless a picked lot carries a real quantity, so this is safe to read here.
     if (inventoryLotId !== '' && quantityUsedNumber !== undefined) {
       await recordMovement({
         id: uuidv7(),
@@ -233,9 +236,15 @@ export function RecordSprayScreen() {
       });
     }
 
-    resetOverride();
-    setSavedProduct(product.name);
-    setProductId('');
+    setSavedProduct(cleanName);
+    setProductChoice(NEW_PRODUCT);
+    setProductName('');
+    setProductUnit('L');
+    setRegistrationNumber('');
+    setActiveIngredients('');
+    setPhiDays('');
+    setInventoryLotId('');
+    setQuantityUsed('');
     setRateValue('');
     setWaterValue('');
     setOperator('');
@@ -243,8 +252,6 @@ export function RecordSprayScreen() {
     setWindKph('');
     setTempC('');
     setTargetPest('');
-    setInventoryLotId('');
-    setQuantityUsed('');
     setSaving(false);
   };
 
@@ -260,10 +267,13 @@ export function RecordSprayScreen() {
     );
   }
 
+  const fieldClass =
+    'min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900';
+  const numberClass = `${fieldClass} font-data tabular-nums`;
+
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
       <h1 className="mb-4 font-ui text-h1 text-soil-900">{t('crops.spray.title')}</h1>
-
       {savedProduct !== null && (
         <p
           role="status"
@@ -273,320 +283,268 @@ export function RecordSprayScreen() {
         </p>
       )}
 
-      {products.length === 0 ? (
-        <p className="border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
-          {t('crops.spray.noProducts')}
-        </p>
-      ) : (
-        <form onSubmit={save}>
-          <div className="mb-4 flex flex-col">
-            <label htmlFor="block" className="mb-1 text-label uppercase text-soil-700">
-              {t('crops.spray.which')}
-            </label>
-            <select
-              id="block"
-              value={selectedId}
-              onChange={(e) => {
-                setPicked(e.target.value);
-                clearSaved();
-                resetOverride();
-              }}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body text-soil-900"
-            >
-              {blocks.map((unit) => (
-                <option key={unit.id} value={unit.id}>
-                  {unit.code}
-                  {unit.name ? ` — ${unit.name}` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+      <form onSubmit={save}>
+        <div className="mb-4 flex flex-col">
+          <label htmlFor="block" className="mb-1 text-label uppercase text-soil-700">
+            {t('crops.spray.which')}
+          </label>
+          <select
+            id="block"
+            value={selectedId}
+            onChange={(event) => setPicked(event.target.value)}
+            className={fieldClass}
+          >
+            {blocks.map((block) => (
+              <option key={block.id} value={block.id}>
+                {block.code}
+                {block.name ? ` — ${block.name}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {/* Before the product, because the PHI preview below depends on it: a farmer
-              back-dating a capture must see the earliest-harvest answer move with the day. */}
-          <div className="mb-4 flex flex-col">
-            <label htmlFor="sprayedOn" className="mb-1 text-label uppercase text-soil-700">
-              {t('crops.spray.day')}
+        <div className="mb-4 flex flex-col">
+          <label htmlFor="sprayedOn" className="mb-1 text-label uppercase text-soil-700">
+            {t('crops.spray.day')}
+          </label>
+          <input
+            id="sprayedOn"
+            type="date"
+            max={today()}
+            value={sprayedOn}
+            onChange={(event) => setSprayedOn(event.target.value)}
+            className={numberClass}
+          />
+        </div>
+
+        <fieldset className="mb-4 rounded border border-soil-200 p-3">
+          <legend className="px-1 text-label uppercase text-soil-700">
+            {t('crops.spray.product')}
+          </legend>
+          <select
+            id="product"
+            aria-label={t('crops.spray.product')}
+            value={productChoice}
+            onChange={(event) => chooseProduct(event.target.value)}
+            className={`${fieldClass} mb-3 w-full`}
+          >
+            <option value={NEW_PRODUCT}>{t('crops.spray.addProduct')}</option>
+            {products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name}
+              </option>
+            ))}
+          </select>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col text-label uppercase text-soil-700">
+              {t('crops.spray.productName')}
+              <input
+                id="productName"
+                value={productName}
+                onChange={(event) => setProductName(event.target.value)}
+                className={fieldClass}
+              />
             </label>
+            {isNewProduct && (
+              <label className="flex flex-col text-label uppercase text-soil-700">
+                {t('crops.spray.productUnit')}
+                <input
+                  id="productUnit"
+                  value={productUnit}
+                  onChange={(event) => setProductUnit(event.target.value)}
+                  className={fieldClass}
+                />
+              </label>
+            )}
+            <label className="flex flex-col text-label uppercase text-soil-700">
+              {t('crops.spray.registration')}
+              <input
+                id="registrationNumber"
+                value={registrationNumber}
+                onChange={(event) => setRegistrationNumber(event.target.value)}
+                className={fieldClass}
+              />
+            </label>
+            <label className="flex flex-col text-label uppercase text-soil-700">
+              {t('crops.spray.phiDays')}
+              <input
+                id="phiDays"
+                type="number"
+                min="0"
+                step="1"
+                value={phiDays}
+                onChange={(event) => setPhiDays(event.target.value)}
+                className={numberClass}
+              />
+            </label>
+          </div>
+          <label className="mt-3 flex flex-col text-label uppercase text-soil-700">
+            {t('crops.spray.activeIngredients')}
             <input
-              id="sprayedOn"
-              name="sprayedOn"
-              type="date"
-              max={today()}
-              value={sprayedOn}
-              onChange={(e) => {
-                clearSaved();
-                setSprayedOn(e.target.value);
-                resetOverride();
-              }}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+              id="activeIngredients"
+              value={activeIngredients}
+              onChange={(event) => setActiveIngredients(event.target.value)}
+              className={fieldClass}
             />
-          </div>
+          </label>
+          <p className="mt-2 text-label text-soil-700">{t('crops.spray.farmerInputNote')}</p>
+          {phiInputBad && <p className="mt-2 text-body text-klei-700">{t('crops.spray.phiBad')}</p>}
+          {clearDate !== null && (
+            <p className="mt-2 border-l-4 border-dam-700 bg-sand-100 p-2 text-body text-soil-900">
+              {t('crops.spray.harvestFrom')}{' '}
+              <span className="font-data tabular-nums">{clearDate}</span>
+            </p>
+          )}
+        </fieldset>
 
+        {guard.blocked && (
+          <div className="mb-4 border-l-4 border-ochre-500 bg-sand-100 p-3 text-body text-soil-900">
+            <p className="font-ui font-semibold">{t('crops.spray.planningWarning')}</p>
+            <p>
+              {t('crops.spray.blockedClears')}{' '}
+              <span className="font-data tabular-nums">{guard.earliestHarvestDate}</span>.{' '}
+              {t('crops.spray.blockedPlanned')}{' '}
+              <span className="font-data tabular-nums">{guard.expectedHarvestDate}</span>.{' '}
+              {t('crops.spray.warningDoesNotBlock')}
+            </p>
+          </div>
+        )}
+
+        {productLots.length > 0 && (
           <div className="mb-4 flex flex-col">
-            <label htmlFor="product" className="mb-1 text-label uppercase text-soil-700">
-              {t('crops.spray.product')}
+            <label htmlFor="inventoryLot" className="mb-1 text-label uppercase text-soil-700">
+              {t('crops.spray.fromStock')}
             </label>
             <select
-              id="product"
-              name="product"
-              value={productId}
-              onChange={(e) => {
-                clearSaved();
-                setProductId(e.target.value);
-                resetOverride();
+              id="inventoryLot"
+              value={inventoryLotId}
+              onChange={(event) => {
+                setInventoryLotId(event.target.value);
+                setQuantityUsed('');
               }}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              className={fieldClass}
             >
-              <option value="">{t('crops.spray.chooseProduct')}</option>
-              {inForce.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} · {p.registrationNumber}
+              <option value="">{t('crops.spray.notTracked')}</option>
+              {productLots.map(({ lot, item }) => (
+                <option key={lot.id} value={lot.id}>
+                  {item?.name ?? lot.inventoryItemId}
+                  {lot.batch ? ` · ${lot.batch}` : ''} — {lot.quantityOnHand} {item?.unit ?? ''}
                 </option>
               ))}
             </select>
-            {/* Answers "so when CAN I harvest?" before it is asked — at the tank, not three weeks
-                later. A product with no PHI on record says so, because "no restriction" is an
-                answer a farmer needs just as much as a date. */}
-            {product && (
-              <p className="mt-1 border-l-4 border-dam-700 bg-sand-100 p-2 text-body text-soil-900">
-                {clearDate === null ? (
-                  t('crops.spray.noPhi')
-                ) : (
-                  <>
-                    {t('crops.spray.harvestFrom')}{' '}
-                    <span className="font-data tabular-nums">{clearDate}</span>
-                  </>
-                )}
-              </p>
+            {selectedLot && (
+              <label className="mt-2 flex flex-col text-label uppercase text-soil-700">
+                {t('crops.spray.quantityUsed')} ({selectedLot.item?.unit ?? ''})
+                <input
+                  id="quantityUsed"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={quantityUsed}
+                  onChange={(event) => setQuantityUsed(event.target.value)}
+                  className={numberClass}
+                />
+              </label>
+            )}
+            {quantityBad && (
+              <p className="mt-2 text-body text-klei-700">{t('crops.spray.quantityUsedBad')}</p>
             )}
           </div>
+        )}
 
-          {chemicalLots.length > 0 && (
-            <div className="mb-4 flex flex-col">
-              <label htmlFor="inventoryLot" className="mb-1 text-label uppercase text-soil-700">
-                {t('crops.spray.fromStock')}
-              </label>
-              <select
-                id="inventoryLot"
-                value={inventoryLotId}
-                onChange={(e) => {
-                  clearSaved();
-                  setInventoryLotId(e.target.value);
-                  setQuantityUsed('');
-                }}
-                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
-              >
-                <option value="">{t('crops.spray.notTracked')}</option>
-                {chemicalLots.map(({ lot, item }) => (
-                  <option key={lot.id} value={lot.id}>
-                    {item?.name ?? lot.inventoryItemId}
-                    {lot.batch ? ` · ${lot.batch}` : ''} — {lot.quantityOnHand} {item?.unit ?? ''}
-                  </option>
-                ))}
-              </select>
-              {selectedLot && (
-                <div className="mt-2 flex flex-col">
-                  <label htmlFor="quantityUsed" className="mb-1 text-label uppercase text-soil-700">
-                    {t('crops.spray.quantityUsed')} ({selectedLot.item?.unit ?? ''})
-                  </label>
-                  <input
-                    id="quantityUsed"
-                    name="quantityUsed"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="any"
-                    value={quantityUsed}
-                    onChange={(e) => {
-                      clearSaved();
-                      setQuantityUsed(e.target.value);
-                    }}
-                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
-                  />
-                  {quantityBad && (
-                    <p className="mt-2 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
-                      {t('crops.spray.quantityUsedBad')}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {guard.blocked && (
-            <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
-              <p className="mb-1 font-ui font-semibold">{t('crops.spray.blockedTitle')}</p>
-              <p>
-                {t('crops.spray.blockedClears')}{' '}
-                <span className="font-data tabular-nums">{guard.earliestHarvestDate}</span>.{' '}
-                {t('crops.spray.blockedPlanned')}{' '}
-                <span className="font-data tabular-nums">{guard.expectedHarvestDate}</span>.
-              </p>
-              {!overriding ? (
-                <button
-                  type="button"
-                  onClick={() => setOverriding(true)}
-                  className="min-h-touch-min mt-2 rounded border border-soil-700 bg-sand-100 px-3 text-body text-soil-900"
-                >
-                  {t('crops.spray.override')}
-                </button>
-              ) : (
-                <div className="mt-3 flex flex-col gap-2">
-                  <label htmlFor="overrideCategory" className="text-label uppercase text-soil-700">
-                    {t('crops.spray.overrideReasonLabel')}
-                  </label>
-                  <select
-                    id="overrideCategory"
-                    value={overrideCategory}
-                    onChange={(e) =>
-                      setOverrideCategory(e.target.value as OverrideReasonCategory | '')
-                    }
-                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
-                  >
-                    <option value="">{t('crops.spray.overrideReasonChoose')}</option>
-                    {OVERRIDE_REASON_CATEGORIES.map((category) => (
-                      <option key={category} value={category}>
-                        {t(`crops.spray.overrideReason.${category}`)}
-                      </option>
-                    ))}
-                  </select>
-                  <label htmlFor="overrideText" className="text-label uppercase text-soil-700">
-                    {t('crops.spray.overrideTextLabel')}
-                  </label>
-                  <textarea
-                    id="overrideText"
-                    value={overrideText}
-                    onChange={(e) => setOverrideText(e.target.value)}
-                    className="min-h-24 rounded border border-soil-200 bg-sand-100 px-3 py-2 text-body text-soil-900"
-                  />
-                  <p className="text-label text-soil-700">{t('crops.spray.overrideAudited')}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            <div className="flex flex-col">
-              <label htmlFor="rateValue" className="mb-1 text-label uppercase text-soil-700">
-                {t('crops.spray.rate')}
-              </label>
+        <fieldset className="mb-4 rounded border border-soil-200 p-3">
+          <legend className="px-1 text-label uppercase text-soil-700">
+            {t('crops.spray.optionalDetails')}
+          </legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col text-label uppercase text-soil-700">
+              {t('crops.spray.rate')}
               <input
                 id="rateValue"
-                name="rateValue"
                 type="number"
-                inputMode="decimal"
                 min="0"
                 step="any"
                 value={rateValue}
-                onChange={(e) => setRateValue(e.target.value)}
-                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
+                onChange={(event) => setRateValue(event.target.value)}
+                className={numberClass}
               />
-            </div>
-            <div className="flex flex-col">
-              <label htmlFor="waterValue" className="mb-1 text-label uppercase text-soil-700">
-                {t('crops.spray.water')}
-              </label>
+            </label>
+            <label className="flex flex-col text-label uppercase text-soil-700">
+              {t('crops.spray.water')}
               <input
                 id="waterValue"
-                name="waterValue"
                 type="number"
-                inputMode="decimal"
                 min="0"
                 step="any"
                 value={waterValue}
-                onChange={(e) => setWaterValue(e.target.value)}
-                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
+                onChange={(event) => setWaterValue(event.target.value)}
+                className={numberClass}
               />
-            </div>
-          </div>
-
-          <div className="mb-4 flex flex-col">
-            <label htmlFor="targetPest" className="mb-1 text-label uppercase text-soil-700">
-              {t('crops.spray.targetPest')}
             </label>
-            <input
-              id="targetPest"
-              name="targetPest"
-              type="text"
-              value={targetPest}
-              onChange={(e) => setTargetPest(e.target.value)}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
-            />
-          </div>
-
-          <div className="mb-4 flex flex-col">
-            <label htmlFor="operator" className="mb-1 text-label uppercase text-soil-700">
+            <label className="flex flex-col text-label uppercase text-soil-700">
               {t('crops.spray.operator')}
+              <input
+                id="operator"
+                value={operator}
+                onChange={(event) => setOperator(event.target.value)}
+                className={fieldClass}
+              />
             </label>
-            <input
-              id="operator"
-              name="operator"
-              type="text"
-              value={operator}
-              onChange={(e) => setOperator(e.target.value)}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
-            />
-          </div>
-
-          <div className="mb-4 flex flex-col">
-            <label htmlFor="equipment" className="mb-1 text-label uppercase text-soil-700">
+            <label className="flex flex-col text-label uppercase text-soil-700">
               {t('crops.spray.equipment')}
+              <input
+                id="equipment"
+                value={equipment}
+                onChange={(event) => setEquipment(event.target.value)}
+                className={fieldClass}
+              />
             </label>
-            <input
-              id="equipment"
-              name="equipment"
-              type="text"
-              value={equipment}
-              onChange={(e) => setEquipment(e.target.value)}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
-            />
-          </div>
-
-          <div className="mb-6 grid grid-cols-2 gap-2">
-            <div className="flex flex-col">
-              <label htmlFor="windKph" className="mb-1 text-label uppercase text-soil-700">
-                {t('crops.spray.wind')}
-              </label>
+            <label className="flex flex-col text-label uppercase text-soil-700">
+              {t('crops.spray.wind')}
               <input
                 id="windKph"
-                name="windKph"
                 type="number"
-                inputMode="decimal"
                 min="0"
                 step="any"
                 value={windKph}
-                onChange={(e) => setWindKph(e.target.value)}
-                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
+                onChange={(event) => setWindKph(event.target.value)}
+                className={numberClass}
               />
-            </div>
-            <div className="flex flex-col">
-              <label htmlFor="tempC" className="mb-1 text-label uppercase text-soil-700">
-                {t('crops.spray.temp')}
-              </label>
+            </label>
+            <label className="flex flex-col text-label uppercase text-soil-700">
+              {t('crops.spray.temp')}
               <input
                 id="tempC"
-                name="tempC"
                 type="number"
-                inputMode="decimal"
                 step="any"
                 value={tempC}
-                onChange={(e) => setTempC(e.target.value)}
-                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
+                onChange={(event) => setTempC(event.target.value)}
+                className={numberClass}
               />
-            </div>
+            </label>
           </div>
+          <label className="mt-3 flex flex-col text-label uppercase text-soil-700">
+            {t('crops.spray.targetPest')}
+            <input
+              id="targetPest"
+              value={targetPest}
+              onChange={(event) => setTargetPest(event.target.value)}
+              className={fieldClass}
+            />
+          </label>
+          {optionalNumberBad && (
+            <p className="mt-2 text-body text-klei-700">{t('crops.spray.numberBad')}</p>
+          )}
+        </fieldset>
 
-          <button
-            type="submit"
-            disabled={!valid || saving}
-            className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
-          >
-            {guard.blocked && overriding ? t('crops.spray.saveOverride') : t('crops.spray.save')}
-          </button>
-        </form>
-      )}
-
+        <button
+          type="submit"
+          disabled={!valid || saving}
+          className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
+        >
+          {t('crops.spray.save')}
+        </button>
+      </form>
       <Link to="/land" className="mt-6 inline-block text-body text-dam-700">
         {t('crops.spray.back')}
       </Link>

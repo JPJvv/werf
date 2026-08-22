@@ -97,8 +97,8 @@ the owner triggers the relevant reviewer/sync-auditor. Do not batch a Phase 3 te
 
 ## Phase 4 — Crops & fields
 
-**Ships:** crop blocks, plantings, fertiliser, spray capture, product reference data, PHI enforced at
-capture, harvest, grazing/feed and the crop-facing home metrics—on the real Phase 3 sync layer.
+**Ships:** crop blocks, plantings, fertiliser, spray capture, farmer-owned product data, advisory PHI
+reminders, harvest, grazing/feed and the crop-facing home metrics—on the real Phase 3 sync layer.
 Full slice detail (schema/API/screen/projection/tests per slice, and the corrected FR bucketing
 below) is in `phase-checklists.md`'s Phase 4 section — authored at the start of this phase, not
 speculatively.
@@ -107,17 +107,16 @@ speculatively.
 |---|---|---|
 | 4a | Blocks and plantings | FR-201, FR-202, FR-203 |
 | 4b | Fertiliser (no compliance gate) | FR-206 |
-| 4c | Chemical reference data, sprays, spray-history report | FR-508, FR-204, FR-211 |
-| 4d | Harvest + PHI/re-entry guard — ONE slice, never split (Phase 2's treatment/sale lesson) | FR-205, FR-207, US-030 offline |
+| 4c | Farmer product catalogue, sprays, private spray-history report | FR-508, FR-204, FR-211 |
+| 4d | Harvest + advisory PHI/re-entry reminders | FR-205, FR-207, US-030 offline |
 | 4e | Grazing, feed and inventory (new schema) | FR-150…153, 501…503 |
 
 Deferred (priority-2, not in this phase's "Ships" line): FR-208/209/210/212 (soil/leaf/fruit
 analysis, scouting, rotation history, weather). The GlobalGAP checklist *engine* is Phase 6.
 
-**Gate:** crop P1 requirements and US-030 pass offline; no regulated interval is hardcoded; a crop
-farmer can complete a spray-to-harvest record with no network. ⛔ Production `chemical_products`
-seeding is blocked on JP naming a maintained Act 36/1947 source (same class as Phase 5's B-1/B-2) —
-does not block development.
+**Gate:** crop P1 requirements and US-030 pass offline; reminders use the farmer's recorded inputs;
+a crop farmer can complete a spray-to-harvest record with no network and no compliance block.
+No production `chemical_products` seed or maintained registration source is required (ADR-0013).
 
 ## Phase 5 — Labour & wages
 
@@ -128,15 +127,26 @@ The code may be developed against explicitly unverified dev/test rate rows. Prod
 deployment are blocked until every figure is re-verified against the current Gazette and the
 external labour-law review is complete.
 
+**Advisory, not blocking ([ADR-0014](../03-architecture/adr/ADR-0014-advisory-payroll.md), extending
+ADR-0013 to labour, owner decision 2026-08-22).** Werf is a
+logbook and a **calculator**, not an authority. Attendance and piece-work capture never block and
+work offline. The payroll engine computes exactly — caps cap, the piece-rate floor tops up, a
+net-below-floor run is detected — but surfaces every issue as a conspicuous pre-approval warning and
+still generates the run; it does not reject. This supersedes US-021's rejection scenario,
+legal-compliance.md §2.4's reject-the-run constraint and domain.md's reject rule, all rewritten to
+advisory in Phase 5 (5e) and put to the external reviewer (5i) for sign-off.
+
 | Slice | Content | Evidence |
 |---|---|---|
-| 5a | Production seed gate, regulatory-rate admin and ZA rules seam | unverified rows refused |
+| 5a | Rates seed + production seed gate, rate admin, ZA rules seam, read path | unverified rows refused |
 | 5b | Employees; encrypted ID/banking; age verification | FR-301, FR-318, NFR-203 |
 | 5c | Attendance, PIN + GPS, piece work; no biometrics | FR-303, FR-304 offline |
 | 5d | Pure payroll engine | US-020…022; ≥95% domain coverage |
-| 5e | Warnings and blocking | US-021 rejection paths |
-| 5f | Payslips, contracts and BCEA s31 records | FR-302, FR-308, US-023 |
-| 5g | Leave and UIF/SARS/EFT exports | FR-310, 312, 313, 316 |
+| 5e | Advisory compliance warnings (never blocking) | FR-307; US-020…022 warnings |
+| 5f | Payslips and contracts, in the employee's language | FR-302, FR-308 |
+| 5g | BCEA s31 record — the inspector at the gate | FR-309, US-023 |
+| 5h | Leave and UIF/SARS/EFT exports | FR-310, 312, 313, 316 |
+| 5i | External labour-law review — signed off in writing | exit-gate line |
 
 **Gate:** period-spanning rate changes use both rates; corrections use the historical rate; no
 regulated constant exists in code; a bookkeeper and labour-law reviewer sign off.

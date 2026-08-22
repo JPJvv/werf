@@ -227,7 +227,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = configSchema.safeParse({
     port: env.PORT,
     databaseUrl: env.DATABASE_URL,
-    databaseElevatedUrl: env.DATABASE_ELEVATED_URL ?? env.DATABASE_URL,
+    // Treat an explicitly empty value as missing long enough to emit the production-specific
+    // DATABASE_ELEVATED_URL error below, rather than an unhelpful generic URL-shape error.
+    databaseElevatedUrl:
+      env.DATABASE_ELEVATED_URL === undefined || env.DATABASE_ELEVATED_URL === ''
+        ? env.DATABASE_URL
+        : env.DATABASE_ELEVATED_URL,
     jwtSecret: env.JWT_SECRET,
     piiEncryptionKey: env.PII_ENCRYPTION_KEY,
     powerSyncJwtPrivateKey: powerSyncPrivateKey(env),
@@ -312,6 +317,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
                 'silently wrong on a real domain',
             )
             .join('\n'),
+      );
+    }
+
+    if (env.DATABASE_ELEVATED_URL === undefined || env.DATABASE_ELEVATED_URL === '') {
+      throw new Error(
+        'Invalid server configuration:\n' +
+          '  DATABASE_ELEVATED_URL: required when NODE_ENV=production — the RLS-bound ' +
+          'application connection must never silently double as the bypass connection',
+      );
+    }
+    if (parsed.data.databaseUrl === parsed.data.databaseElevatedUrl) {
+      throw new Error(
+        'Invalid server configuration:\n' +
+          '  DATABASE_URL and DATABASE_ELEVATED_URL must be different in production',
+      );
+    }
+    const applicationUser = new URL(parsed.data.databaseUrl).username;
+    if (applicationUser !== 'werf_app') {
+      throw new Error(
+        'Invalid server configuration:\n' +
+          '  DATABASE_URL must connect as werf_app in production so FORCE RLS remains the data boundary',
       );
     }
   }

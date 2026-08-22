@@ -1,11 +1,4 @@
-/**
- * The down-sync half of sprays (FR-204) — sprays another device recorded (or THIS device's own,
- * round-tripped back down), already replicated to THIS device via PowerSync — read through the
- * `@werf/sync` adapter, never the SDK directly (ADR-0003). Mirrors `HydratedFertiliser.tsx`, one
- * compliance-gated field family over: the mapped row here ALSO carries `activeIngredients`/
- * `phiDays`/`earliestHarvestDate`, because those are resolved server-side and this table is the
- * ONLY place a device ever sees them (`LocalSprays.tsx`'s own module note).
- */
+/** Down-synced farmer-owned spray records, including their captured product snapshots. */
 
 import {
   createContext,
@@ -57,16 +50,20 @@ export function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | nu
   }
 
   const productId = payload['productId'];
+  const productName = payload['productName'];
   const sprayedOn = payload['sprayedOn'];
   const activeIngredientsRaw = payload['activeIngredients'];
   if (
     typeof productId !== 'string' ||
+    (productName !== undefined && typeof productName !== 'string') ||
     typeof sprayedOn !== 'string' ||
-    !Array.isArray(activeIngredientsRaw)
+    (activeIngredientsRaw !== undefined && !Array.isArray(activeIngredientsRaw))
   ) {
     return null;
   }
-  const activeIngredients = activeIngredientsRaw.filter((v): v is string => typeof v === 'string');
+  const activeIngredients = Array.isArray(activeIngredientsRaw)
+    ? activeIngredientsRaw.filter((v): v is string => typeof v === 'string')
+    : undefined;
 
   const num = (key: string): number | undefined =>
     typeof payload[key] === 'number' ? (payload[key] as number) : undefined;
@@ -94,7 +91,13 @@ export function mapHydratedSpray(row: Record<string, unknown>): StoredSpray | nu
     occurredAt: occurredAtDate.toISOString(),
     sprayedOn,
     productId,
-    activeIngredients,
+    // Old Phase 4 events did not snapshot the name. Keep them visible and allow the screen to use
+    // a matching farm product when one exists; never drop the farmer's history over this upgrade.
+    productName: typeof productName === 'string' ? productName : '',
+    ...(str('registrationNumber') === undefined
+      ? {}
+      : { registrationNumber: str('registrationNumber') }),
+    ...(activeIngredients === undefined ? {} : { activeIngredients }),
     ...(num('rateLPerHa') === undefined ? {} : { rateLPerHa: num('rateLPerHa') }),
     ...(num('waterLPerHa') === undefined ? {} : { waterLPerHa: num('waterLPerHa') }),
     ...(str('operator') === undefined ? {} : { operator: str('operator') }),

@@ -3,11 +3,8 @@
  * `<App/>`. These are the numbers that decide whether the app is an instrument or a menu, so they
  * are tested the way they are seen — on screen, from seeded device data, with no network.
  *
- * The one worth arguing about is the Health tile carrying "N withholding" rather than the "N due"
- * the design sketch suggested. A due/overdue count needs a vaccination programme schedule that does
- * not exist yet; a tile carrying a number the app cannot compute is worse than a tile carrying
- * none, and "3 withholding" is both true today and the number that stops the wrong animal going
- * onto a truck.
+ * The Health tile counts animals inside farmer-entered intervals rather than inventing a
+ * vaccination schedule. It is private planning arithmetic, not permission to sell.
  */
 /**
  * ⭐ Dates here go through `farmDay`/`farmToday`, never `toISOString().slice(0, 10)`. The code under
@@ -155,7 +152,7 @@ describe('the herd by class (FR-705)', () => {
 });
 
 describe('the home grid as an instrument (FR-017)', () => {
-  it('badges the Health tile with the animals that may not be sold yet', async () => {
+  it('badges the Health tile with entered-interval reminders', async () => {
     cachedSession();
     const id = uuidv7();
     window.localStorage.setItem(HERD_KEY, JSON.stringify([animal(id, 'female', 900)]));
@@ -200,7 +197,7 @@ describe('the home grid as an instrument (FR-017)', () => {
     // asynchronously — wait for the badge to land.
     const healthTile = screen.getByRole('link', { name: /health/i });
     await waitFor(() => {
-      expect(within(healthTile).getByText(/withholding/i)).toBeTruthy();
+      expect(within(healthTile).getByText(/entered interval/i)).toBeTruthy();
       expect(within(healthTile).getByText('1')).toBeTruthy();
     });
   });

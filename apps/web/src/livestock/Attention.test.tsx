@@ -263,7 +263,7 @@ describe('the residue register (FR-131)', () => {
     expect(await screen.findByRole('heading', { name: /needs your attention/i })).toBeTruthy();
     expect(screen.getByText(/slaughtered/i)).toBeTruthy();
     // The line that does the compliance work, and it is a sentence rather than a colour (NFR-411).
-    expect(screen.getByText(/must not go into the food chain/i)).toBeTruthy();
+    expect(screen.getByText(/falls before the reminder date you entered/i)).toBeTruthy();
     expect(screen.getByText(/not sent yet/i)).toBeTruthy();
   });
 
@@ -283,21 +283,13 @@ describe('the residue register (FR-131)', () => {
 
     expect(await screen.findByRole('heading', { name: /needs your attention/i })).toBeTruthy();
     // Still on the register — the device's own flag is a fact and the row does not disappear.
-    expect(screen.getByText(/must not go into the food chain/i)).toBeTruthy();
+    expect(screen.getByText(/falls before the reminder date you entered/i)).toBeTruthy();
     expect(screen.queryByText(/not sent yet/i)).toBeNull();
     expect(screen.getByText(/this phone flagged it from the records it holds/i)).toBeTruthy();
   });
 
-  it('⭐ stops warning about the food chain once the derivation says it was never withheld', async () => {
-    // Found by `compliance-checker`. The server keeps a row whose STORED flag stands but whose live
-    // re-derivation now says the disposal was outside any withholding — the longer dose behind it
-    // was corrected away. `withinWithdrawal` and `knownAtCapture` are two facts for exactly this
-    // reason, and this screen carried only the second. So the row rendered identically to a live
-    // one, including "Meat from this must not go into the food chain."
-    //
-    // An auditor reading a screen that contradicts the system's own authoritative derivation is
-    // worse off than with no screen at all. The row STAYS — the flag is a fact about the audit
-    // trail — but the warning goes.
+  it('⭐ updates a reminder when the current history places it outside the entered interval', async () => {
+    // The row stays as history, while the explanation reflects the farm records currently held.
     cachedSession();
     seedFlock();
     seedServerRegister([{ withinWithdrawal: false, knownAtCapture: true }]);
@@ -305,10 +297,8 @@ describe('the residue register (FR-131)', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: /needs your attention/i })).toBeTruthy();
-    expect(screen.queryByText(/must not go into the food chain/i)).toBeNull();
-    expect(
-      screen.getByText(/on the records we hold now, it was not inside a withdrawal/i),
-    ).toBeTruthy();
+    expect(screen.queryByText(/falls before the reminder date you entered/i)).toBeNull();
+    expect(screen.getByText(/falls outside the entered interval/i)).toBeTruthy();
   });
 
   it('⭐ says plainly that a late discovery could not have been caught on this phone', async () => {
@@ -337,10 +327,10 @@ describe('the residue register (FR-131)', () => {
     window.history.pushState({}, '', '/attention');
     render(<App />);
 
-    expect(await screen.findByText(/you were told about this when you recorded it/i)).toBeTruthy();
+    expect(await screen.findByText(/werf showed this date reminder/i)).toBeTruthy();
     // A death is NOT a food-chain event, and the register must never blur the two.
     expect(screen.getByText(/did not go into the food chain/i)).toBeTruthy();
-    expect(screen.queryByText(/must not go into the food chain/i)).toBeNull();
+    expect(screen.queryByText(/falls before the reminder date you entered/i)).toBeNull();
   });
 
   it('lets the server’s answer replace this device’s for the same event', async () => {
@@ -376,7 +366,7 @@ describe('the residue register (FR-131)', () => {
     unmount();
     window.history.pushState({}, '', '/attention');
     render(<App />);
-    expect(await screen.findByText(/nothing needs your attention/i)).toBeTruthy();
+    expect(await screen.findByText(/no records currently fall inside an interval/i)).toBeTruthy();
   });
 
   it('puts the count on home only when the register has something on it', async () => {
@@ -407,7 +397,7 @@ describe('the residue register (FR-131)', () => {
 
     expect(await screen.findByRole('heading', { name: /needs your attention/i })).toBeTruthy();
     expect(screen.getByText(/slaughtered/i)).toBeTruthy();
-    expect(screen.getByText(/must not go into the food chain/i)).toBeTruthy();
+    expect(screen.getByText(/falls before the reminder date you entered/i)).toBeTruthy();
   });
 
   it('⭐ never files a camp-to-camp transfer as a death', async () => {
@@ -424,7 +414,7 @@ describe('the residue register (FR-131)', () => {
     window.history.pushState({}, '', '/attention');
     render(<App />);
 
-    expect(await screen.findByText(/nothing needs your attention/i)).toBeTruthy();
+    expect(await screen.findByText(/no records currently fall inside an interval/i)).toBeTruthy();
     expect(screen.queryByText(/died/i)).toBeNull();
   });
 });

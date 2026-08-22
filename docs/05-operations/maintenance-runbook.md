@@ -16,8 +16,7 @@ Operational procedures. Written to be followed at 2am by someone who did not wri
 | **Mid-April** | BCEA earnings threshold Gazette → load before 1 May. | Managers above the threshold get overtime they are not owed, or vice versa. |
 | **Nov–Dec** | Next year's public holidays, incl. any once-off proclaimed days. | Public holiday pay computes wrong. |
 | **Quarterly** | **Restore drill** (§4). | Your RTO is fiction. |
-| **Quarterly** | Chemical registrations + PHIs; notifiable disease list. | PHI enforcement blocks the wrong things, or nothing. |
-| **Annually** | GlobalGAP/SIZA checklist versions vs the current standard. | Audit packs fail. |
+| **Quarterly** | Review farmer-product entry and reminder usability with pilot farms. | The logbook becomes harder to use or misleading. |
 | **Annually** | POPIA review: retention, DPIA, operator contracts. | |
 | **Annually** | Rotate the PII encryption key (re-encrypt). | |
 
@@ -148,32 +147,12 @@ psql $PROD_URL -c "SELECT pg_drop_replication_slot('powersync_slot');"
 
 **Prevention:** `wal_sender_timeout = 0` in the parameter group ([deployment-guide.md §2](deployment-guide.md)). If someone refactors the parameter group and loses that line, this alarm fires a week later and nobody connects the two.
 
-### Sync failures for one farm
+### Repeated sync failures
 
-**Alert:** `sync_last_success_age{farm_id} > 48h` **and** `sync_queue_depth > 0`
-
-```bash
-# Queue > 0 and no success = BROKEN. Queue = 0 and no success = just offline (fine).
-# That distinction is the whole alert.
-
-# 1. What's in the queue?
-psql $PROD_URL -c "
-  SELECT status, count(*) FROM sync_write_log
-  WHERE farm_id = '<id>' AND created_at > now() - interval '7 days'
-  GROUP BY status;"
-
-# 2. Quarantined? Read why.
-psql $PROD_URL -c "
-  SELECT reason, count(*) FROM sync_quarantine
-  WHERE farm_id = '<id>' GROUP BY reason;"
-
-# 3. Auth? Their refresh token may have expired.
-#    The queue is HELD, not lost (UC-050 A2.1). They need to log in.
-
-# 4. PHONE THE FARMER. Not an email.
-```
-
-**Phone them.** A farmer with 247 unsent records does not know anything is wrong, and every day that passes is another day of work at risk. This is the single highest-value support action in the product, and it must happen the same day.
+Operations receives aggregate failure-rate and queue-depth signals without a stable farm identifier.
+The farmer's device shows its own unsent work, retry state and sign-in recovery steps. If the farmer
+asks support for help, an authorised farm member can preview and deliberately share a diagnostic
+export. Support must not query farm records or derive a contact list from telemetry.
 
 ### Payroll computing wrong — SEV1
 

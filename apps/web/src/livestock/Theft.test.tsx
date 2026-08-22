@@ -123,8 +123,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('filing a stock-theft incident (FR-603)', () => {
-  it('files an incident with no signal, anchored to where the farmer is standing', async () => {
+describe('recording a stock-theft incident (FR-603)', () => {
+  it('saves an incident with no signal, including where the farmer is standing', async () => {
     cachedSession();
     stubGeolocation('ok');
     const user = userEvent.setup();
@@ -133,7 +133,7 @@ describe('filing a stock-theft incident (FR-603)', () => {
 
     await user.type(screen.getByLabelText(/how many are gone/i), '12');
     await user.type(screen.getByLabelText(/what did you find/i), 'Fence cut on the east boundary');
-    await user.click(screen.getByRole('button', { name: /file this incident/i }));
+    await user.click(screen.getByRole('button', { name: /save this incident/i }));
 
     await waitFor(async () => expect(await storedIncidents()).toHaveLength(1));
     const [incident] = await storedIncidents();
@@ -161,7 +161,7 @@ describe('filing a stock-theft incident (FR-603)', () => {
     expect(screen.getByRole('link', { name: /stock theft/i })).toBeTruthy();
   });
 
-  it('does not silently file without a GPS point — it says so, and asks again', async () => {
+  it('does not silently save without a GPS point — it says so, and asks again', async () => {
     cachedSession();
     stubGeolocation('denied');
     const user = userEvent.setup();
@@ -169,15 +169,15 @@ describe('filing a stock-theft incident (FR-603)', () => {
     render(<App />);
 
     await user.type(screen.getByLabelText(/how many are gone/i), '3');
-    await user.click(screen.getByRole('button', { name: /file this incident/i }));
+    await user.click(screen.getByRole('button', { name: /save this incident/i }));
 
-    // Nothing filed, and the reason is named — "denied" and "no sky" need different actions from
+    // Nothing saved, and the reason is named — "denied" and "no sky" need different actions from
     // the person holding the phone.
     expect(await storedIncidents()).toHaveLength(0);
     expect(screen.getByText(/not allowing the app to use its location/i)).toBeTruthy();
   });
 
-  it('files anyway on a second, deliberate tap — a report is worth more filed than not', async () => {
+  it('saves anyway on a second deliberate tap — the farmer owns the record', async () => {
     cachedSession();
     stubGeolocation('denied');
     const user = userEvent.setup();
@@ -185,8 +185,8 @@ describe('filing a stock-theft incident (FR-603)', () => {
     render(<App />);
 
     await user.type(screen.getByLabelText(/how many are gone/i), '3');
-    await user.click(screen.getByRole('button', { name: /file this incident/i }));
-    await user.click(screen.getByRole('button', { name: /file it without a gps point/i }));
+    await user.click(screen.getByRole('button', { name: /save this incident/i }));
+    await user.click(screen.getByRole('button', { name: /save without a gps point/i }));
 
     await waitFor(async () => expect(await storedIncidents()).toHaveLength(1));
     expect((await storedIncidents())[0]).toMatchObject({
@@ -225,7 +225,7 @@ describe('filing a stock-theft incident (FR-603)', () => {
 
     await user.type(screen.getByLabelText(/how many are gone/i), '2');
     await user.click(await screen.findByRole('button', { name: /0417/ }));
-    await user.click(screen.getByRole('button', { name: /file this incident/i }));
+    await user.click(screen.getByRole('button', { name: /save this incident/i }));
 
     await waitFor(async () => expect(await storedIncidents()).toHaveLength(1));
     expect((await storedIncidents())[0]!['animalIds']).toEqual([a1]);

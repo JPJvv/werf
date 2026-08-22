@@ -73,11 +73,11 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | ID | Requirement | P |
 |---|---|---|
 | FR-130 | 📶 Record a treatment: product, batch, dose, route, administered by, reason | 1 |
-| FR-131 | 📶 **Automatic withdrawal period**: from product reference data, compute and display meat/milk withdrawal; block or hard-warn on sale/slaughter within it | 1 |
+| FR-131 | 📶 **Farmer-entered withdrawal reminder**: store the farm's product/interval snapshot, compute and display meat/milk reminder dates, and never block recording a sale or slaughter | 1 |
 | FR-132 | 📶 Record a vaccination against a programme; show which animals are due/overdue | 1 |
 | FR-133 | 📶 🇿🇦 Record dip/tick treatment (required in controlled areas) | 1 |
 | FR-134 | 📶 Record an injury or condition with observations, treatment plan, and outcome | 2 |
-| FR-135 | 📶 🇿🇦 Flag a notifiable disease from the reference list; prompt the reporting obligation with the state vet contact; do **not** report on the farmer's behalf | 2 |
+| FR-135 | 📶 Record a farmer-configured disease/health reminder and optional contact; Werf does not diagnose, classify or report | 2 |
 | FR-136 | 📶 Medicine inventory: stock on hand, batch, expiry; treatments decrement; expiry warnings | 2 |
 | FR-137 | Vet read-only access to treatment history for a scoped herd, time-limited | 2 |
 
@@ -110,14 +110,14 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-201 | 📶 Define a block: GPS boundary, hectares, soil type, irrigation type | 1 |
 | FR-202 | 📶 Split a block into sub-blocks without losing history | 2 |
 | FR-203 | 📶 Record a planting: crop, cultivar, date, density, seed source, expected harvest | 1 |
-| FR-204 | 📶 🇿🇦 Record a spray to GlobalGAP standard: **registered product, active ingredient(s)**, rate, water volume, operator, equipment, weather at application, target pest | 1 |
-| FR-205 | 📶 🇿🇦 **Block harvest within the pre-harvest interval at the point of capture.** Override requires a written reason and is audited. Catching this at audit time is too late — the fruit is already rejected | 1 |
+| FR-204 | 📶 Record a spray with the farmer's product snapshot and any details they choose to keep: registration/label number, actives, rate, water, operator, equipment, weather and target | 1 |
+| FR-205 | 📶 Calculate a private pre-harvest reminder from the farmer-entered interval; show planning overlaps clearly and always allow spray/harvest capture | 1 |
 | FR-206 | 📶 Record fertiliser application including fertigation | 1 |
 | FR-207 | 📶 Record a harvest: quantity, grade, destination, date | 1 |
 | FR-208 | 📶 Capture soil/leaf/fruit analysis results | 2 |
 | FR-209 | 📶 Pest/disease scouting with GPS, photo, severity | 2 |
 | FR-210 | 📶 Crop rotation history per block; warn on rotation-rule violation | 2 |
-| FR-211 | 🇿🇦 Auditor-ready spray history report per block, per season | 1 |
+| FR-211 | Private farmer-initiated spray history export per block and season; no automatic reporting or compliance claim | 1 |
 | FR-212 | Weather integration: current, forecast, rainfall record per farm | 2 |
 | FR-213 | 📶 Manual rainfall capture per rain gauge: how much (mm) and when. Modelled as a farm/land-scoped `rainfall` event (not animal-scoped), so grazing and cropping both read it. Cross-cutting — relevant to livestock too | 1 |
 | FR-214 | Packhouse intake-to-dispatch tracking with traceability to block | 3 |
@@ -185,7 +185,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-505 | 📶 Maintenance schedule by hours or date; due/overdue | 2 |
 | FR-506 | 📶 Equipment check-out with GPS | 3 |
 | FR-507 | 📶 Stock take with variance report | 2 |
-| FR-508 | 🇿🇦 Chemical reference data: registered product, registration number, actives, PHI, re-entry interval — versioned, synced from a maintained source | 1 |
+| FR-508 | Farm-owned product list: name plus optional registration number, actives, PHI and re-entry interval entered and maintained by authorised farm members | 1 |
 
 ---
 
@@ -199,7 +199,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-602 | 🇿🇦 Link every animal to its mark; flag animals unmarked past the prescribed window after acquisition | 1 |
 | FR-603 | 🇿🇦 **Stock theft evidence pack**: one action → PDF with identification, ownership chain, brand certificate, last-seen GPS + timestamp, movement history, treatment history, SAPS case number field. **Facts only — no "suspect" field** (defamation + POPIA s26 exposure) | 1 |
 | FR-604 | 🇿🇦 Removal certificate for stock moving off-property | 2 |
-| FR-605 | 🇿🇦 Mark an animal missing; timestamped, GPS-anchored | 1 |
+| FR-605 | 📶 Mark an animal missing; timestamp it and optionally add a GPS point without making location a save condition | 1 |
 | FR-606 | 🇿🇦 GlobalGAP IFA checklist engine: control points mapped to existing evidence, completeness %, non-conformances with owner and due date | 2 |
 | FR-607 | 🇿🇦 SIZA checklist engine, drawing on the labour module | 2 |
 | FR-608 | 🇿🇦 One-click auditor evidence pack per standard | 2 |

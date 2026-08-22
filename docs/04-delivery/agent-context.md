@@ -6,6 +6,11 @@
 > **Why it exists.** The fourth review pass cost ~583,000 tokens across three agents (214k / 188k /
 > 181k), and a large share went on three agents independently working out where things live and
 > what the standing rules are. This file answers that once.
+>
+> **Boundary correction (ADR-0013):** references below to withdrawal/PHI “guards,” legal product
+> authority or mandatory reporting describe superseded implementation history. Review the current
+> code as a private farmer-controlled logbook with advisory interval calculations. Tenancy,
+> authentication, data integrity and explicitly farmer-triggered exports remain security concerns.
 
 ---
 
@@ -30,8 +35,8 @@ is permission to skip.** This file is a map, not a filter.
 
 | What | Where |
 |---|---|
-| **The withdrawal guard (server)** — the SEV-1 area, FR-131 | `apps/api/src/livestock/livestock.service.ts` — `latestMeatClearForAnimal`, `latestMeatClearForMob`, `mobMembership`, `mobMembersOn` |
-| **The withdrawal guard (client / at-capture)** | `apps/web/src/livestock/withdrawal.ts` |
+| **Private withdrawal-reminder calculation (server)** — FR-131 | `apps/api/src/livestock/livestock.service.ts` — `latestMeatClearForAnimal`, `latestMeatClearForMob`, `mobMembership`, `mobMembersOn` |
+| **Private withdrawal-reminder calculation (client)** | `apps/web/src/livestock/withdrawal.ts` |
 | **The outbox flush** — ordering, 4xx/5xx, idempotency | `apps/web/src/sync/Outbox.tsx` |
 | **Shared write discipline** — every capture goes through here | `apps/api/src/common/event-capture.ts` (`insertEvent`, `assertCanCapture`, `assertOwnedReferences`, `assertHerdScoped`) |
 | **Tenancy classification** (sync rules ≠ RLS — both required, and they must agree) | `packages/sync/src/index.ts` + `packages/sync/test/tenancy.spec.ts` |

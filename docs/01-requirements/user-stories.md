@@ -180,6 +180,13 @@ Scenario: Combined deductions cannot push net below the floor
   And the deductions are NOT silently clamped
 ```
 
+> ⚠️ **SUPERSEDED FOR PHASE 5 (ADR-0014, owner decision 2026-08-22): payroll is ADVISORY, not
+> blocking.** Under ADR-0014 this case is a conspicuous must-acknowledge WARNING shown before
+> approval and the run is STILL generated — not rejected. The deductions are still not silently
+> clamped, and the calculation is unchanged. This scenario is rewritten to the advisory behaviour in
+> Phase 5 sub-phase 5e, after the external labour-law review (5i). See
+> `docs/03-architecture/adr/ADR-0014-advisory-payroll.md`.
+
 > Rejecting is correct here. Silently clamping a garnishee produces a wrong payslip and a legal problem downstream. Make the human decide.
 
 ### US-022 · Overtime cap
@@ -275,33 +282,35 @@ Scenario: Mark missing, generate pack
 Scenario: The pack works offline-first
   Given I am in a camp with no signal
   When I mark 12 cattle missing
-  Then the missing status is recorded locally with GPS and timestamp
+  Then the missing status is recorded locally with the date I entered
+  And an available GPS point is included but never required
   And the evidence pack generation is queued
   And I am told plainly: "Evidence pack will be generated when you have signal"
 ```
 
-> Generation is server-side because it needs the brand certificate and PDF rendering. Marking missing is local, because that is the time-critical bit and the GPS/timestamp is the evidence.
+> Generation is server-side because it needs the brand certificate and PDF rendering. Marking missing is local because that is the time-critical fact; GPS is optional supporting detail.
 
 ### US-032 · Withdrawal period on sale
 
 **FRs:** FR-131, FR-130
 
 ```gherkin
-Scenario: Selling inside a meat withdrawal period is blocked
+Scenario: Selling inside a farmer-entered meat interval shows a reminder
   Given animal "STR-0088" was treated on 2026-06-01 with a product having a 28-day meat withdrawal
   When I try to record a sale of "STR-0088" on 2026-06-15
-  Then the sale is BLOCKED
-  And the message names the product, the treatment date, and the clear date of 2026-06-29
-  And an override requires a reason and is audited
+  Then Werf shows the treatment date, entered interval, and reminder date of 2026-06-29
+  And the farmer can still record the sale
 
-Scenario: The block works offline
+Scenario: The reminder works offline
   Given the device is offline
-  And the product reference data is synced locally
+  And the farmer's product and interval snapshot is stored locally
   When I try to sell "STR-0088" inside the withdrawal period
-  Then the sale is BLOCKED locally, without a server round trip
+  Then the reminder appears locally, without a server round trip
+  And recording the sale remains available
 ```
 
-> This is why chemical/medicine reference data must sync to the device. The check has to work in the crush.
+> The reminder is a calculator using the farmer's own inputs. It is not approval and never reports
+> the decision elsewhere (ADR-0013).
 
 ---
 

@@ -261,8 +261,8 @@ describe('recording a birth (FR-104)', () => {
   });
 });
 
-describe('reporting an animal missing (FR-605)', () => {
-  it('anchors the report to a GPS point and the day it was last seen', async () => {
+describe('recording an animal missing (FR-605)', () => {
+  it('adds an available GPS point and the day it was last seen', async () => {
     cachedSession();
     const id = uuidv7();
     seedHerd(animal(id));
@@ -275,7 +275,7 @@ describe('reporting an animal missing (FR-605)', () => {
     // finish hydrating (phase-checklists.md 3c).
     await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^missing$/i }));
-    await user.click(screen.getByRole('button', { name: /report it missing/i }));
+    await user.click(screen.getByRole('button', { name: /record it missing/i }));
 
     await waitFor(async () => {
       expect(await storedEvents()).toHaveLength(1);
@@ -296,7 +296,7 @@ describe('reporting an animal missing (FR-605)', () => {
     expect((await screen.findAllByText(/missing/i)).length).toBeGreaterThan(0);
   });
 
-  it('refuses to save without a fix, and says what to do about it', async () => {
+  it('explains a failed fix and lets the farmer save without GPS', async () => {
     cachedSession();
     seedHerd(animal(uuidv7()));
     stubGeolocation('denied');
@@ -308,12 +308,14 @@ describe('reporting an animal missing (FR-605)', () => {
     // finish hydrating (phase-checklists.md 3c).
     await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^missing$/i }));
-    await user.click(screen.getByRole('button', { name: /report it missing/i }));
+    await user.click(screen.getByRole('button', { name: /record it missing/i }));
 
-    // A record with no point is of little use to the Stock Theft Unit, so it is not written —
-    // and the message is about the PERMISSION, not about being offline.
+    // The first attempt explains why the useful optional point is missing.
     expect(await storedEvents()).toHaveLength(0);
     expect(screen.getByText(/not allowing the app to use its location/i)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /save without a gps point/i }));
+    await waitFor(async () => expect(await storedEvents()).toHaveLength(1));
+    expect((await storedEvents())[0]).not.toHaveProperty('lastSeenGeojson');
   });
 });
 

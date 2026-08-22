@@ -1,9 +1,7 @@
 /**
  * Recording a harvest (FR-207), tested as a pure function on observable output: does a capture
  * produce the right append-only `harvest` event, is it scoped to the BLOCK rather than a herd, and
- * is an override carried through untouched (never resolved or judged here — that is `phi-guard.ts`
- * and the caller composing the two). Asserted on what a farmer or an auditor would see — never on
- * implementation.
+ * remain a plain farmer-owned fact without a regulatory override workflow.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -61,23 +59,6 @@ describe('recordHarvest (FR-207)', () => {
       grade: 'Class 1',
       destination: 'Pack shed A',
     });
-  });
-
-  it('carries an override through untouched — never judged or resolved here', () => {
-    const event = recordHarvest(
-      input({ phiOverride: { reason: 'Export deadline — reason on file', by: USER_ID } }),
-    );
-
-    expect(event.payload).toMatchObject({
-      phiOverride: { reason: 'Export deadline — reason on file', by: USER_ID },
-    });
-  });
-
-  it('⭐ accepts an override with `by` OMITTED — a local capture that has a reason but no server-trusted actor to give yet', () => {
-    const event = recordHarvest(input({ phiOverride: { reason: 'Export deadline' } }));
-
-    expect(event.payload).toMatchObject({ phiOverride: { reason: 'Export deadline' } });
-    expect('by' in (event.payload as { phiOverride: object }).phiOverride).toBe(false);
   });
 
   it('validates the payload against the schema the wire and the database share', () => {

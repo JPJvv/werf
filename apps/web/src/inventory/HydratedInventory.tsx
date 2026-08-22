@@ -31,7 +31,9 @@ import type {
 } from './LocalInventory';
 
 const INVENTORY_ITEMS_SQL =
-  'SELECT id, farm_id, enterprise_id, category, name, unit, reorder_point FROM inventory_items ' +
+  'SELECT id, farm_id, enterprise_id, category, name, unit, registration_number, ' +
+  'active_ingredients, phi_days, reentry_hours, meat_withdrawal_days, milk_withdrawal_hours, ' +
+  'reorder_point FROM inventory_items ' +
   'WHERE farm_id = ? AND deleted_at IS NULL';
 
 const INVENTORY_LOTS_SQL =
@@ -64,6 +66,14 @@ export function mapHydratedInventoryItem(row: Record<string, unknown>): StoredIn
   }
   const enterpriseId = row['enterprise_id'];
   const reorderPointRaw = row['reorder_point'];
+  const activeIngredientsRaw = row['active_ingredients'];
+  const activeIngredients = Array.isArray(activeIngredientsRaw)
+    ? activeIngredientsRaw.filter((value): value is string => typeof value === 'string')
+    : null;
+  const optionalString = (key: string): string | null =>
+    typeof row[key] === 'string' ? (row[key] as string) : null;
+  const optionalNumber = (key: string): number | null =>
+    typeof row[key] === 'number' ? (row[key] as number) : null;
   return {
     id,
     farmId,
@@ -71,6 +81,12 @@ export function mapHydratedInventoryItem(row: Record<string, unknown>): StoredIn
     category,
     name,
     unit,
+    registrationNumber: optionalString('registration_number'),
+    activeIngredients,
+    phiDays: optionalNumber('phi_days'),
+    reentryHours: optionalNumber('reentry_hours'),
+    meatWithdrawalDays: optionalNumber('meat_withdrawal_days'),
+    milkWithdrawalHours: optionalNumber('milk_withdrawal_hours'),
     reorderPoint: typeof reorderPointRaw === 'number' ? reorderPointRaw : null,
   };
 }

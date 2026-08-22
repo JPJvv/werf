@@ -6,13 +6,9 @@
  * list, marked — because a farmer's records and the audit/financial trail keep the tombstone; it is
  * only excluded from "how many do I have".
  *
- * ⭐ MISSING is not just a third radio button. It is the stock-theft path (legal-compliance.md
- * § 3.2), and the thing that makes the record worth anything to the SAPS Stock Theft Unit is the
- * GPS point and the day it was LAST SEEN — which is days before the farmer is standing here. So this
- * screen asks for the day rather than assuming today, and it takes a real fix rather than saving
- * without one. Geolocation works with no signal (GPS is a receiver, not a connection), so requiring
- * it costs an offline farmer nothing; when it genuinely fails, the reason is named, because
- * "permission denied" and "no signal" need different actions from the person holding the phone.
+ * MISSING is a private farm record first. The screen asks when the animal was last seen and tries
+ * to add the farmer's current GPS point because both can be useful later. Location is optional: a
+ * denied or unavailable fix must never prevent the farmer from recording what happened.
  *
  * Offline-first like every capture: `save` commits locally and instantly with no network in the
  * path (NFR-007).
@@ -44,9 +40,8 @@ import {
 import { speciesLabel, sexLabel } from './AnimalsScreen';
 
 /**
- * ⭐ `slaughtered` is its own outcome and not a `cause` someone types into `died`, because FR-131
- * has to be able to READ it. Slaughtering for the pot puts meat into the food chain exactly as a
- * sale to an abattoir does, and a withdrawal guard cannot find that fact inside a sentence.
+ * `slaughtered` is its own outcome and not a `cause` someone types into `died`, so the log can
+ * distinguish an intentional slaughter from a death without interpreting farmer-written notes.
  */
 type Outcome = 'died' | 'slaughtered' | 'sold' | 'missing';
 
@@ -127,11 +122,7 @@ export function RecordLossScreen() {
 
   const selected = live.find((a) => a.id === selectedId) ?? null;
 
-  // FR-131. Checked at capture, not only on the server: a sale refused days later, after the truck
-  // has gone, is a rule that reached nobody. See ./withdrawal.
-  //
-  // Judged on the DAY THE FARMER GAVE, not on today — a back-dated disposal must be judged against
-  // the withholding as it stood when the animal actually left.
+  // FR-131 reminder arithmetic uses the day the farmer gave, not today. It remains advisory.
   const selectedStored = selected === null ? undefined : stored.find((a) => a.id === selected.id);
   // Same reasoning as `moves` above: a hydrated dose carries `meatWithholdUntil`, a local capture
   // never can.
@@ -147,12 +138,10 @@ export function RecordLossScreen() {
           moves,
           hydratedAnimalIds,
         );
-  // Both routes into the food chain, and the guard has to cover both. A server-only check on the
-  // slaughter path arrives days after the animal has been eaten.
+  // Show the same private interval reminder for both relevant log outcomes.
   const intoFoodChain = outcome === 'sold' || outcome === 'slaughtered';
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
-  // ⭐ A death is RECORDED, never refused — but not silently. "Died" sits one tap from the blocked
-  // "Slaughtered", so a guard that says nothing here teaches its own workaround.
+  // A death is recorded and may still show the farmer's interval reminder.
   const deathWithinWithdrawal = outcome === 'died' && withdrawal !== null && withdrawal.blocked;
 
   const reset = () => {
@@ -178,17 +167,17 @@ export function RecordLossScreen() {
   const nameOf = (animal: NonNullable<typeof selected>): string =>
     labels.get(animal.id) ?? speciesLabel(t, animal.species);
 
-  const save = async () => {
+  const save = async (saveMissingWithoutGps = false) => {
     if (!selected || saving) return;
     setSaving(true);
     try {
-      await saveOutcome();
+      await saveOutcome(saveMissingWithoutGps);
     } finally {
       setSaving(false);
     }
   };
 
-  const saveOutcome = async () => {
+  const saveOutcome = async (saveMissingWithoutGps: boolean) => {
     if (!selected) return;
     const base = {
       id: uuidv7(),
@@ -204,7 +193,6 @@ export function RecordLossScreen() {
       if (cause.trim().length === 0) return;
       await recordDeath({ ...base, cause: cause.trim() });
     } else if (outcome === 'slaughtered') {
-      if (withheld) return;
       // The cause is the act itself, so nothing is asked for: standing at a carcass with gloves on,
       // a required free-text box to type "slaughtered" is an obstacle and not a record.
       //
@@ -218,7 +206,7 @@ export function RecordLossScreen() {
       // The same backstop the slaughter branch carries, and for the same reason: `canSave` is what
       // the farmer sees, this is what the code guarantees. A sale is a route into the food chain
       // exactly as a slaughter is, and it had no second line.
-      if (withheld || disposalDay === '') return;
+      if (disposalDay === '') return;
       await recordSale({
         ...base,
         counterparty: counterparty.trim(),
@@ -232,19 +220,23 @@ export function RecordLossScreen() {
     } else if (outcome === 'missing') {
       // The fix is taken HERE, not on selection: a farmer who picks an animal and then walks to
       // where they last saw it should get the point from where they are standing when they record.
-      setLocating(true);
-      const fix = await currentPoint();
-      setLocating(false);
-      if (!fix.ok) {
-        setFixFailed(fix.reason);
-        return;
+      let lastSeenGeojson: string | undefined;
+      if (!saveMissingWithoutGps) {
+        setLocating(true);
+        const fix = await currentPoint();
+        setLocating(false);
+        if (!fix.ok) {
+          setFixFailed(fix.reason);
+          return;
+        }
+        lastSeenGeojson = fix.geojson;
       }
       await recordMissing({
         ...base,
         // The day the farmer gave, not today: a missing report is filed after the fact, and a
         // theft dated to the day it was noticed is a theft dated wrong.
         occurredAt: new Date(`${lastSeenDay}T12:00:00.000Z`),
-        lastSeenGeojson: fix.geojson,
+        ...(lastSeenGeojson === undefined ? {} : { lastSeenGeojson }),
         ...(cause.trim().length === 0 ? {} : { cause: cause.trim() }),
       });
     } else {
@@ -274,7 +266,7 @@ export function RecordLossScreen() {
         // `withinWithdrawal` flag this input was added for.
         cause.trim().length > 0 && disposalDay !== ''
       : outcome === 'slaughtered'
-        ? !withheld && disposalDay !== ''
+        ? disposalDay !== ''
         : outcome === 'sold'
           ? // ⭐ `disposalDay !== ''` belongs here for BOTH reasons the slaughter branch has it, and
             // a sale is the route that had neither. (1) A cleared date reaches `save` as
@@ -285,8 +277,7 @@ export function RecordLossScreen() {
             counterparty.trim().length > 0 &&
             priceIsValid(priceRands) &&
             weightIsValid(saleWeight) &&
-            disposalDay !== '' &&
-            !withheld
+            disposalDay !== ''
           : outcome === 'missing'
             ? lastSeenDay !== '' && !locating
             : false;
@@ -435,18 +426,22 @@ export function RecordLossScreen() {
                   </div>
                   <p className="mb-4 text-body text-soil-700">{t('loss.gpsExplain')}</p>
                   {fixFailed !== null && (
-                    <p className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
-                      {t(`loss.gps.${fixFailed}` as TranslationKey)}
-                    </p>
+                    <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+                      <p>{t(`loss.gps.${fixFailed}` as TranslationKey)}</p>
+                      <button
+                        type="button"
+                        className="mt-3 min-h-touch-min rounded border border-soil-900 px-3 font-ui"
+                        disabled={saving}
+                        onClick={() => void save(true)}
+                      >
+                        {t('loss.saveWithoutGps')}
+                      </button>
+                    </div>
                   )}
                 </>
               )}
 
-              {/* ⭐ The withholding warning, shown the moment "Sold" or "Slaughtered" is chosen and
-                  BEFORE the buyer's name is typed. It answers "so when CAN I sell?" in the same
-                  breath as saying no, which is the whole point of the rule existing in the app
-                  rather than in a document. Warning FORM — tinted panel, left rule — never the
-                  ochre action shape (NFR-411). */}
+              {/* Farmer-entered interval reminder, shown before save but never used as permission. */}
               {deathWithinWithdrawal && withdrawal?.clearFrom !== null && (
                 <p
                   role="status"
@@ -467,13 +462,8 @@ export function RecordLossScreen() {
                 </p>
               )}
 
-              {/* ⛔ BLOCKED WITH NO DATE TO SHOW — a day the guard cannot read. Until the ninth pass
-                  every panel above was gated on `clearFrom !== null`, which was a safe assumption
-                  only while `blocked` implied a date. It stopped being one when an unreadable day
-                  started failing closed: clear the date field and the red panel VANISHED while Save
-                  stayed disabled. A food-safety refusal with nothing on screen saying why is the
-                  one shape `.claude/rules/frontend.md` names outright — what happened, why, what
-                  now. */}
+              {/* If the day is malformed, explain why no interval date can be calculated. The
+                  ordinary required-date validation—not the reminder—controls whether save works. */}
               {(withheld || deathWithinWithdrawal) && withdrawal?.clearFrom === null && (
                 <p
                   role="alert"

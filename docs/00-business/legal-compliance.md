@@ -73,7 +73,9 @@ Section 72 restricts transfer of personal information to a third party in a fore
 
 The consequence is architectural: **Supabase Cloud does not offer a South African region** (they explicitly withdrew af-south-1 support for new projects). We therefore self-host. See [ADR-0002](../03-architecture/adr/ADR-0002-data-residency.md).
 
-Where we *do* transfer offshore — error tracking, email delivery, any AI feature — we must either establish a s72 ground or scrub personal information before it leaves. Sentry must be configured to strip PII; that is a code requirement, not a settings checkbox.
+Where we *do* transfer offshore — email delivery or any future explicitly approved feature — we
+must establish a s72 ground and minimise the data. ADR-0013 prohibits farm records in third-party
+telemetry and requires a separate decision before any AI feature receives them.
 
 ### 1.5 Breach notification (s22)
 
@@ -185,6 +187,10 @@ For each employee, for each pay period:
 
        CONSTRAINT: total deductions must not reduce net below the
        statutory floor. Reject the payroll run, do not clamp silently.
+       -- ⚠️ SUPERSEDED FOR PHASE 5 by ADR-0014 (owner decision 2026-08-22): the engine WARNS
+       -- conspicuously and still GENERATES the run; it does not reject. Detection and calculation
+       -- are unchanged. This normative text is rewritten in Phase 5 (5e) AFTER the external
+       -- labour-law review (5i) has considered the advisory-only decision. See ADR-0014.
 
   5. net := gross - deductions
 
@@ -209,7 +215,9 @@ Werf is **not** a registered payroll bureau. We calculate, we generate payslips,
 - Animals acquired must be marked **within a prescribed period** of acquisition.
 - Marks are recorded in the national Animal Identification System (AIS).
 
-**Build requirement:** a `branding_registers` table per farm holding the registered mark, registration certificate reference, mark type, and body position. Every animal record links to the mark it carries. An unmarked animal past the prescribed window raises a compliance flag.
+**Build boundary (ADR-0013):** Werf records the farmer's mark, certificate reference, method and
+body position. It may show a reminder calculated from farmer-entered dates; it does not validate a
+registration or decide that an animal is lawfully marked.
 
 ### 3.2 Stock Theft Act 57 of 1959
 
@@ -234,7 +242,9 @@ The Livestock Identification and Traceability System for South Africa is a natio
 
 Controlled and notifiable diseases must be reported. Dip/tick records are required in controlled areas. Movement permits are required in and out of controlled areas.
 
-**Build requirement:** a notifiable disease list in `regulatory_rates`-style reference data (it changes); when a health event matches, the system prompts the reporting obligation with the relevant state vet contact. We prompt; we do not report on the farmer's behalf.
+**Product boundary (ADR-0013):** Werf records health observations and may offer farmer-configured
+reminders or links. It does not diagnose, classify a disease as notifiable, or report on the
+farmer's behalf.
 
 ---
 
@@ -256,7 +266,10 @@ The South African social and environmental standard, widely required by EU/UK re
 
 Spray records must name the **registered** product and the **active ingredient**, and honour the **pre-harvest interval** (PHI). Products are registered under Act 36 of 1947 and registrations change.
 
-**Build requirement:** a `chemical_products` reference table (product, registration number, actives, crop, PHI, re-entry interval), synced from a maintained source, versioned. Spraying a block within the PHI of its planned harvest date must be **blocked at capture** with an override that requires a reason and is audited. Catching this at audit time is too late — the fruit is already rejected.
+**Product boundary (ADR-0013):** the farmer keeps these optional label facts in their own product
+catalogue. Werf snapshots them on the spray and calculates PHI/re-entry reminder dates from the
+farmer's input. A planning overlap is shown clearly but never blocks spray or harvest capture and is
+not represented as legal approval. Werf does not maintain an authoritative Act 36 register.
 
 ---
 
@@ -288,7 +301,7 @@ The system needs a live `compliance_obligations` table so the *farm* can see wha
 | Dip records (controlled areas) | Location-dependent | Per schedule | Health events |
 | Report notifiable disease | Diagnosis | Per event | Health event → prompt |
 | Removal certificate | Stock movement off-property | Per movement | Movement record |
-| Honour pre-harvest interval | Spray → harvest | Per event | Spray capture block |
+| Review farmer-entered pre-harvest interval | Spray → harvest | Per event | Private reminder |
 | GlobalGAP audit | Certification cycle | Annual | Checklist engine |
 | SIZA audit | Buyer requirement | Annual | Labour module → evidence pack |
 
@@ -304,7 +317,7 @@ This is not a legal appendix. It is a **recurring release with a legislated dead
 | **March** | New wage rate live. Verify a real payroll run against a hand-calculated example. | Backend + QA |
 | **April** | Watch for the BCEA threshold gazette. Update. Deploy before 1 May. | Backend |
 | **Ongoing** | Public holidays for the following year (including any proclaimed once-off days — elections have created these before). | Backend |
-| **Ongoing** | Chemical registrations and PHIs. | Data |
+| **Ongoing** | Farmers update their own product-label facts when their products change. | Farm |
 | **Ongoing** | Notifiable disease list. | Data |
 | **Annually** | Review GlobalGAP/SIZA checklist versions against the current standard. | Product |
 | **Annually** | POPIA review: retention, DPIA refresh, operator contracts. | Legal + Eng |

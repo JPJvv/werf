@@ -143,9 +143,8 @@ export interface DeathInput extends CaptureBase {
   readonly cause: string;
   readonly disposal?: string;
   /**
-   * Slaughtered for consumption rather than found dead — COMPLIANCE-GATED (FR-131). Carried as a
-   * flag so the withdrawal guard has something it can actually read: a caller cannot be asked to
-   * infer "this one went into the food chain" from the cause text a farmer typed.
+   * Slaughtered for consumption rather than found dead. Carried as a stable flag so reports and
+   * private reminders do not have to infer the fact from farmer-written cause text.
    */
   readonly slaughtered?: boolean;
   /** The animal was inside an active meat withholding on the day. Recorded, never refused. */
@@ -215,13 +214,12 @@ export function recordWeaning(input: WeaningInput): LifecycleCapture {
 }
 
 // ── Missing (FR-605, stock theft) ───────────────────────────────────────────────────
-// Mark an animal missing: status → 'missing', timestamped (occurredAt), and GPS-anchored. The
-// last-seen location is REQUIRED — a missing record with no point is little use to the Stock Theft
-// Unit (legal-compliance.md § 3.2). 'missing' is more final than 'alive' but less than sold/dead, so
-// you cannot mark a sold or dead animal missing; the state machine enforces that.
+// Mark an animal missing: status → 'missing' and timestamped (occurredAt). A last-seen point is a
+// useful farmer-entered detail, not a condition for recording the fact. 'missing' is more final
+// than 'alive' but less than sold/dead, so a sold or dead animal cannot be marked missing.
 export interface MissingInput extends CaptureBase {
-  /** The last-seen GPS location as GeoJSON. Required — this is what "GPS-anchored" means (FR-605). */
-  readonly lastSeenGeojson: string;
+  /** The last-seen GPS location as GeoJSON, when available. */
+  readonly lastSeenGeojson?: string;
   readonly cause?: string;
 }
 
@@ -230,7 +228,9 @@ export function recordMissing(input: MissingInput): LifecycleCapture {
   const payload: Record<string, unknown> = {};
   if (input.cause !== undefined) payload.cause = input.cause;
   const event = buildEvent(
-    { ...input, locationGeojson: input.lastSeenGeojson },
+    input.lastSeenGeojson === undefined
+      ? input
+      : { ...input, locationGeojson: input.lastSeenGeojson },
     'missing',
     schemas.eventPayloadSchemaFor('missing'),
     payload,

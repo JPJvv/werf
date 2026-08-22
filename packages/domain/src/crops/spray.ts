@@ -1,31 +1,7 @@
 /**
- * Recording a spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED (legal-compliance.md § 4,
- * .claude/rules/domain.md). The sharp part is the same discipline `livestock/health.ts` proves for
- * a treatment's withdrawal, one field over: the pre-harvest interval is computed AT CAPTURE from
- * the registered `chemical_products` figure and STORED on the event (ADR-0005), never recomputed on
- * read — the rule that applied is the rule at the time of the spray.
- *
- * Two rules this file exists to honour, mirroring `health.ts`'s own two:
- *   1. NO regulated/product number is typed here. The PHI is the chemical product's registered
- *      figure (reference data, resolved by the spray date); the caller injects `phiDays`. A
- *      literal here would be a defect even if correct today.
- *   2. The clear date (`earliestHarvestDate`) is computed AT CAPTURE and stored.
- *
- * `phiOverride` mirrors `harvest.ts`'s field of the same name exactly, one guard over
- * (`phi-guard.ts`'s `sprayPhiGuardFor`, legal-compliance.md § 4.3): present only when the caller's
- * own guard blocked this spray (its resulting PHI would clear after the block's planned harvest
- * date) and the farmer chose to override it. `by` is OPTIONAL for the identical reason it is on
- * `harvest.ts`'s field — the acting user id, never client-supplied; the API service always fills it
- * in, a client's own local capture has a reason but no server-trusted answer to give for who.
- *
-
- * Filed under `FARM_SCOPED_EVENT_TYPES` (@werf/core) — a block is ground, not a herd, the same
- * filing `planting`/`fertiliser` already use and for the identical reason.
- *
- * Pure: no I/O, no clock. The event id and `occurredAt` are injected; `phiDays` is injected
- * (already resolved by the caller, omitted when the product carries none — never zero); the
- * farm-local spray date (`sprayedOn`, a calendar day) is injected because deriving it from an
- * instant needs a timezone, which is farm data this layer must not assume.
+ * Pure builder for a farmer-owned spray record. Product facts and the optional interval are
+ * farmer inputs. Werf preserves the capture-time snapshot and performs only transparent calendar
+ * arithmetic; it does not approve the product or judge the spray.
  */
 
 import { schemas, ValidationError } from '@werf/core';
@@ -53,12 +29,10 @@ export interface SprayInput {
   /** The farm-local spray DAY (YYYY-MM-DD) — the base for the PHI arithmetic (injected). */
   readonly sprayedOn: string;
   readonly productId: string;
-  readonly activeIngredients: readonly string[];
-  /**
-   * The product's pre-harvest interval in whole days, from chemical-product reference data
-   * resolved by the spray date (injected, never hardcoded). Omit when the product carries no PHI
-   * on record — never inject 0 (see the module note).
-   */
+  readonly productName: string;
+  readonly registrationNumber?: string;
+  readonly activeIngredients?: readonly string[];
+  /** Farmer-entered pre-harvest interval. Omit when the farmer has not entered one. */
   readonly phiDays?: number;
   readonly rateLPerHa?: number;
   readonly waterLPerHa?: number;
@@ -67,13 +41,6 @@ export interface SprayInput {
   readonly windKph?: number;
   readonly tempC?: number;
   readonly targetPest?: string;
-  /**
-   * Present only when the spray-capture PHI guard blocked this spray and the farmer overrode it
-   * (legal-compliance.md § 4.3: "an override that requires a reason and is audited"). `by` is the
-   * acting user id — the caller's job to resolve from the session when it can (server: always;
-   * client: never — see the module note).
-   */
-  readonly phiOverride?: { readonly reason: string; readonly by?: string };
   /**
    * The stock lot this spray drew from (Phase 4e, FR-502) — OPTIONAL: a farm without inventory
    * tracking on can still spray. Purely a reference stored on the event; the quantity actually
@@ -94,9 +61,11 @@ export interface SprayInput {
 export function recordSpray(input: SprayInput): schemas.NewEvent {
   const payload: Record<string, unknown> = {
     productId: input.productId,
-    activeIngredients: input.activeIngredients,
+    productName: input.productName,
     sprayedOn: input.sprayedOn,
   };
+  if (input.registrationNumber !== undefined) payload.registrationNumber = input.registrationNumber;
+  if (input.activeIngredients !== undefined) payload.activeIngredients = input.activeIngredients;
   if (input.rateLPerHa !== undefined) payload.rateLPerHa = input.rateLPerHa;
   if (input.waterLPerHa !== undefined) payload.waterLPerHa = input.waterLPerHa;
   if (input.operator !== undefined) payload.operator = input.operator;
@@ -108,12 +77,8 @@ export function recordSpray(input: SprayInput): schemas.NewEvent {
     payload.phiDays = input.phiDays;
     payload.earliestHarvestDate = earliestHarvestDateFor(input.sprayedOn, input.phiDays);
   }
-  if (input.phiOverride !== undefined) payload.phiOverride = input.phiOverride;
-
   if (!schemas.sprayPayloadSchema.safeParse(payload).success) {
-    throw new ValidationError(
-      'A spray needs a registered product and active ingredients, on a real block',
-    );
+    throw new ValidationError('A spray needs the farmer’s product and a real block');
   }
 
   return {

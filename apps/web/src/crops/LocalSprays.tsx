@@ -1,16 +1,4 @@
-/**
- * The local spray log (FR-204) — sprays, as the device holds them. COMPLIANCE-GATED: these are the
- * records a pre-harvest interval is computed from, and a GlobalGAP auditor reads (FR-211).
- *
- * ⭐ What is NOT stored here, mirroring `LocalHealth.tsx`'s own header exactly: a stored spray
- * carries a `productId` and NEVER a PHI figure or an active-ingredients list, because both are
- * REGULATED and resolved server-side from the registration in force on the spray day (ADR-0005,
- * FR-204, .claude/rules/domain.md). Unlike `LocalPlantings`/`LocalFertiliser`, this store does NOT
- * call the `@werf/domain` `recordSpray` builder locally — that function needs the resolved PHI as
- * an INPUT, which this device does not have and must not invent. The screen SHOWS a PHI preview
- * from the cached register so the farmer knows the earliest safe harvest day; that is a preview,
- * and it is the server's number that is stored.
- */
+/** Farmer-owned local spray log. Product facts are snapshots of what the farmer entered. */
 
 import {
   createContext,
@@ -27,19 +15,7 @@ import { useCloseCaptureStore } from '../sync/useCloseCaptureStore';
 import { mergeByIdPreferHydrated } from '../livestock/HydratedLivestock';
 import { useHydratedSprays } from './HydratedSprays';
 
-/**
- * A spray as held locally. The three REGULATED fields — `activeIngredients`, `phiDays`,
- * `earliestHarvestDate` — are never SET by a local capture (see the module note); they exist here
- * only so the identical shape can carry them once THIS device's own write round-trips back down as
- * a hydrated echo with the same id (`HydratedSprays.tsx`'s `mergeByIdPreferHydrated` merge).
- *
- * `activeIngredients` is the discriminator for "has this spray been resolved by the server yet":
- * the wire schema requires it non-empty, so it is ALWAYS present on a hydrated echo and NEVER on a
- * local-only capture. `phiDays`/`earliestHarvestDate` are independently optional even once
- * resolved — omitted, together, exactly when the registered product carries no PHI on record. A
- * consumer that reads `phiDays === undefined` alone cannot tell "not yet synced" from "synced, no
- * PHI restriction" apart; check `activeIngredients` first.
- */
+/** A spray as held locally. Product details are captured with the event so history stays stable. */
 export interface StoredSpray {
   readonly id: string;
   readonly farmId: string;
@@ -47,6 +23,8 @@ export interface StoredSpray {
   readonly occurredAt: string;
   readonly sprayedOn: string;
   readonly productId: string;
+  readonly productName: string;
+  readonly registrationNumber?: string;
   readonly rateLPerHa?: number;
   readonly waterLPerHa?: number;
   readonly operator?: string;
@@ -57,11 +35,7 @@ export interface StoredSpray {
   readonly activeIngredients?: readonly string[];
   readonly phiDays?: number;
   readonly earliestHarvestDate?: string;
-  /** Present only when the spray-capture PHI guard (`usePhiGuard.ts`'s `useSprayPhiGuard`,
-   *  legal-compliance.md § 4.3) blocked this spray and the farmer overrode it. A local capture that
-   *  needed one carries `reason` alone — `by` arrives only once this device's own capture has
-   *  round-tripped through the server, the identical asymmetry `LocalHarvest.tsx`'s field of the
-   *  same name documents. */
+  /** Historical compatibility only; new captures never create regulatory overrides. */
   readonly phiOverride?: { readonly reason: string; readonly by?: string };
   /** The stock lot this spray drew from (Phase 4e, FR-502) — OPTIONAL. See `@werf/domain`'s
    *  `SprayInput` field of the same name: the quantity consumed is a separate `inventory_movement`
@@ -129,7 +103,7 @@ export function useSpraysHydrationFailed(): boolean {
 /**
  * Record a spray. Synchronous; never awaits the network (NFR-007). No domain validation runs here
  * — see the module note for why — so the capture screen is responsible for the two hard
- * requirements (a real block, a selected product) before this is called.
+ * structural requirements (a real block and a named farm product) before this is called.
  */
 export function useRecordSpray(): (spray: StoredSpray) => Promise<void> {
   const store = useSprayStore();
@@ -140,12 +114,8 @@ export function useRecordSpray(): (spray: StoredSpray) => Promise<void> {
  * This device's own sprays, MERGED with sprays another device sent and the server has already
  * replicated down (the land-hydration pattern, applied to this store). HYDRATED wins on a shared
  * id — `mergeByIdPreferHydrated`, the same choice `HydratedLivestock.tsx` makes for a move — because
- * the hydrated copy carries `activeIngredients`/`phiDays`/`earliestHarvestDate`, which a purely
- * local capture never can (see `StoredSpray`'s own doc). Without this, FR-211's report would show
- * every spray missing its PHI until a farmer happened to open the app after a full round trip. The
- * same reasoning covers `phiOverride.by`, one field over — plain `mergeById` would permanently
- * shadow it the moment this device's own override round-trips back down, the identical defect class
- * `LocalHarvest.tsx`'s module note names for its own field of the same name.
+ * the hydrated copy is the server-accepted echo. Product facts remain farmer-entered snapshots;
+ * hydration does not turn them into an approval or regulatory determination.
  */
 export function useEffectiveSprays(): readonly StoredSpray[] {
   const sprays = useSprays();

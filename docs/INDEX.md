@@ -36,6 +36,8 @@ next slice. Stable decisions must graduate to the relevant document or ADR.
 | How does offline reconciliation work? | `03-architecture/offline-sync.md` |
 | What is the API contract? | `03-architecture/api-specification.md` |
 | What is the security model? | `05-operations/security.md`, ADR-0007 and ADR-0011 |
+| Is Werf an authority or a private farmer logbook? | `03-architecture/adr/ADR-0013-farmer-controlled-logbook.md` |
+| Does payroll block or only warn? | `03-architecture/adr/ADR-0014-advisory-payroll.md` (advisory — extends ADR-0013 to labour) |
 | How is Google/BFF authentication migrated safely? | `04-delivery/google-bff-migration-plan.md` |
 | How should it look and behave? | `02-design/ux-design-system.md` |
 | What is built next? | `STATUS.md`, then `04-delivery/roadmap.md` and `phase-checklists.md` |

@@ -1,20 +1,7 @@
 /**
- * The local health log (FR-130/131/132/133) — treatments, vaccinations and dips, as the device
- * holds them. COMPLIANCE-GATED: these are the records a withdrawal period is computed from, and an
- * export auditor reads.
- *
- * ⭐ What is NOT stored here is the interesting part. A stored health event carries a `productId`
- * and NEVER a withdrawal period, because the withdrawal is a REGULATED NUMBER: it is resolved
- * server-side from the registration in force on the treatment day and written onto the event there
- * (ADR-0005, FR-131, .claude/rules/domain.md). A client that sent a withdrawal could claim a shorter
- * one by relabelling, and a client that stored one would freeze today's cached figure into a record
- * that outlives it. The screen SHOWS a clear date from the cached register so the farmer knows when
- * they can sell — that is a preview, and it is the server's number that is kept.
- *
- * Health events change no status, so they are not folded onto the herd. They live in their own
- * store rather than the lifecycle log for that reason and one more: `.claude/rules/db.md` classifies
- * health as sensitive, and keeping it in its own farm-scoped key makes "what is on this phone"
- * answerable table by table.
+ * The device's private health log: treatments, vaccinations and dips. Each event keeps the farm
+ * product identity and farmer-entered facts as a snapshot, so a later edit does not rewrite history.
+ * Health events live separately because they do not change herd status and contain sensitive data.
  */
 
 import {
@@ -45,7 +32,7 @@ export type HealthKind = 'treatment' | 'vaccination' | 'dip';
  */
 export type DipMethod = NonNullable<schemas.DipPayload['method']>;
 
-/** A health event as held locally. No withdrawal period — see the note above. */
+/** A health event as held locally, including the farmer-entered product snapshot used for reminders. */
 export interface StoredHealthEvent {
   readonly id: string;
   readonly farmId: string;
@@ -53,7 +40,7 @@ export interface StoredHealthEvent {
    * ⭐ The subject is an animal XOR a mob, exactly as the wire contract has always been. A plunge
    * dip is the canonical whole-flock operation and a group-only flock has no `animals` rows at all,
    * so an animal-only local log could not record the dose the smallholder path is built around —
-   * and the withdrawal guard on `AdjustMobScreen` had nothing to read.
+   * and the group reminder on `AdjustMobScreen` had nothing to read.
    *
    * `mobId` is optional rather than required so records already in a device's register stay
    * readable: they are animal-subject, which is what an absent `mobId` means.
@@ -65,8 +52,12 @@ export interface StoredHealthEvent {
   readonly occurredAt: string;
   /** The farm-local treatment DAY (YYYY-MM-DD) the withdrawal arithmetic is based on. */
   readonly administeredOn: string;
-  /** The registered product selected. The server resolves its withdrawal from this. */
+  /** The farm-owned medicine item and the label facts the farmer entered. */
   readonly productId: string;
+  readonly productName?: string;
+  readonly registrationNumber?: string | null;
+  readonly meatWithdrawalDays?: number | null;
+  readonly milkWithdrawalHours?: number | null;
   /** Ties one dosing run across many animals together as the single action it was (FR-112). */
   readonly batchId: string | null;
   /** How much was given, and in what — 20, "ml". A treatment only (FR-130). */

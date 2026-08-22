@@ -19,6 +19,17 @@ function validEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv
   } as NodeJS.ProcessEnv;
 }
 
+function validProductionEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
+  return validEnv({
+    NODE_ENV: 'production',
+    DATABASE_URL: 'postgres://werf_app:secret@db:5432/werf',
+    DATABASE_ELEVATED_URL: 'postgres://werf_owner:secret@db:5432/werf',
+    WEBAUTHN_RP_ID: 'werf.co.za',
+    WEBAUTHN_ORIGIN: 'https://werf.co.za',
+    ...overrides,
+  });
+}
+
 describe('loadConfig — PowerSync signing key', () => {
   it('accepts a real PEM private key', () => {
     const config = loadConfig(validEnv());
@@ -98,15 +109,32 @@ describe('loadConfig — WebAuthn RP ID/origin (security.md §10.2)', () => {
   });
 
   it('boots in production once both are configured', () => {
-    const config = loadConfig(
-      validEnv({
-        NODE_ENV: 'production',
-        WEBAUTHN_RP_ID: 'werf.co.za',
-        WEBAUTHN_ORIGIN: 'https://werf.co.za',
-      }),
-    );
+    const config = loadConfig(validProductionEnv());
     expect(config.webauthnRpId).toBe('werf.co.za');
     expect(config.webauthnOrigin).toEqual(['https://werf.co.za']);
+  });
+});
+
+describe('loadConfig — production RLS connections', () => {
+  it('requires a separate elevated connection', () => {
+    expect(() =>
+      loadConfig(
+        validProductionEnv({
+          DATABASE_ELEVATED_URL: '',
+        }),
+      ),
+    ).toThrow(/DATABASE_ELEVATED_URL/);
+  });
+
+  it('requires the ordinary connection to use the RLS-bound werf_app role', () => {
+    expect(() =>
+      loadConfig(
+        validProductionEnv({
+          DATABASE_URL: 'postgres://werf_owner:secret@db:5432/werf',
+          DATABASE_ELEVATED_URL: 'postgres://werf_owner:other-secret@db:5432/werf',
+        }),
+      ),
+    ).toThrow(/must connect as werf_app/);
   });
 });
 

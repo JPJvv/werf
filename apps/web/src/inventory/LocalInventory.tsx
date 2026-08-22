@@ -37,6 +37,13 @@ export interface StoredInventoryItem {
   readonly category: InventoryItemCategory;
   readonly name: string;
   readonly unit: string;
+  /** Farmer-entered label facts. Werf stores and calculates from them; it does not verify them. */
+  readonly registrationNumber?: string | null;
+  readonly activeIngredients?: readonly string[] | null;
+  readonly phiDays?: number | null;
+  readonly reentryHours?: number | null;
+  readonly meatWithdrawalDays?: number | null;
+  readonly milkWithdrawalHours?: number | null;
   readonly reorderPoint?: number | null;
 }
 

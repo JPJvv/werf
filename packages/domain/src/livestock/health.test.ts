@@ -1,8 +1,7 @@
 /**
- * Health captures (FR-130/131/132/133), COMPLIANCE-GATED — tested as pure functions on observable
- * output. The sharp cases are FR-131: the withdrawal clear date is computed AT CAPTURE from an
- * INJECTED product withdrawal period (never a number in the test either), stored on the event, and
- * a sale/slaughter guard reads it. Asserted on behaviour an auditor would check, not implementation.
+ * Farmer-entered health captures and reminder arithmetic (FR-130/131/132/133), tested as pure
+ * functions. The withdrawal date is computed from an injected farm value and stored on the event;
+ * this layer calculates dates and never decides whether the farmer may record a disposal.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -54,14 +53,14 @@ describe('withholdUntil (FR-131)', () => {
   });
 });
 
-describe('isWithinWithdrawal (FR-131 — block sale/slaughter within it)', () => {
-  it('blocks a disposal before the clear date and allows it on/after', () => {
+describe('isWithinWithdrawal (FR-131 — private interval reminder)', () => {
+  it('identifies dates before the reminder date and clears on/after it', () => {
     expect(isWithinWithdrawal('2026-08-12', '2026-08-11')).toBe(true); // still withheld
     expect(isWithinWithdrawal('2026-08-12', '2026-08-12')).toBe(false); // clears on the day
     expect(isWithinWithdrawal('2026-08-12', '2026-08-13')).toBe(false);
   });
 
-  it('treats a product with no withdrawal as never blocking', () => {
+  it('treats a product with no entered interval as having no reminder', () => {
     expect(isWithinWithdrawal(undefined, '2026-08-11')).toBe(false);
   });
 });

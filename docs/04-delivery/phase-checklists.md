@@ -3,6 +3,12 @@
 The executable, per-phase task lists. Each phase ends with the same **exit gate**: `pnpm verify`
 exits 0, the checklist is fully ticked, and the `reviewer` agent passes. One phase per PR unless noted.
 
+> **Phase 3–4 product-boundary correction (ADR-0013, 2026-08-20):** entries below that describe
+> withdrawal/PHI hard blocks, overrides, product-register authority, mandatory GPS or compliance
+> reporting are retained only as implementation history. They are superseded. Current behavior is
+> farmer-entered private records plus advisory arithmetic; structural, tenancy and integrity
+> validation remain. Use ADR-0013 and the current functional requirements for acceptance decisions.
+
 Full narrative and the eight-phase arc live in `docs/04-delivery/roadmap.md` (to be written).
 
 ---
@@ -448,7 +454,12 @@ Breeding (P1 only; FR-122/123 deferred)
   falling back — but the diagnosis is still recorded, because refusing it would lose a real
   observation to protect a projection that was never available
 
-Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-checker before merge)
+> **Current contract (ADR-0013, 2026-08-20):** the historical Phase 3 entries below describe the
+> implementation as originally merged. Current capture uses farm-owned medicine products and
+> farmer-entered intervals. Withdrawal calculations are private reminders and never block a sale,
+> slaughter or tally. Theft evidence remains farmer-initiated and is never sent automatically.
+
+Health (farmer-controlled log and reminders)
 ☑ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130) — SCREEN DONE
   (commit d32451a) on top of the server endpoints that already existed. A dosing run is a batch by
   nature, so selection is the primary interaction and one batch_id ties the run together; products
@@ -1388,6 +1399,11 @@ lost on retry, refusal, refresh expiry, schema upgrade, browser restart or quota
 
 ## Phase 4 — Crops & fields
 
+> **Current contract (ADR-0013, 2026-08-20):** the historical build account below is retained as
+> history, but official chemical-product resolution, PHI blocking and audited overrides are
+> superseded. Current capture uses farm-owned products and farmer-entered label facts; PHI and
+> re-entry results are advisory and never prevent a spray or harvest. There is no automatic report.
+
 Goal: a farmer on a crop or mixed farm can define blocks, record a planting, spray to GlobalGAP
 standard with the pre-harvest interval enforced *at capture*, fertilise, harvest, and see the
 crop-facing home metrics — all with the network off. Written now, at the start of the phase, per
@@ -2161,11 +2177,107 @@ Sub-phases map 1:1 onto [roadmap.md](roadmap.md) Phase 5 (5a–5i). Autonomy for
 **LOW** — see [claude-code-playbook.md](claude-code-playbook.md), which is generated from the
 roadmap and now says so correctly.
 
+> **Product-boundary correction ([ADR-0014](../03-architecture/adr/ADR-0014-advisory-payroll.md),
+> extending ADR-0013 to labour, owner decision 2026-08-22).**
+> Werf is a private farmer-controlled logbook, planner and **calculator** — not an authority. Two
+> consequences bind the whole phase and are load-bearing wherever a line below still says "block"
+> or "reject":
+> 1. **Attendance and piece-work CAPTURE never blocks and always works offline.** They are records
+>    of a fact that happened, exactly the class ADR-0013 protects. No `if (!navigator.onLine) throw`,
+>    no validation that refuses to record a shift.
+> 2. **⚠️ The payroll ENGINE is advisory — it warns, it never blocks.** JP decided (2026-08-22) that
+>    the logbook philosophy extends to payroll: a run whose deductions would push net below the
+>    statutory floor is **generated with a conspicuous warning shown before approval, not rejected.**
+>    This **supersedes** three normative statements that currently say the opposite, and rewriting
+>    each to advisory is a Phase 5 work item (5e), not a licence to leave them contradicting the code:
+>    - `docs/01-requirements/user-stories.md` **US-021** scenario 2 ("the payroll run is REJECTED …
+>      no payslip is generated").
+>    - `docs/00-business/legal-compliance.md` **§2.4** step 4 ("Reject the payroll run, do not clamp
+>      silently") and step 3's reject-on-floor constraint.
+>    - `.claude/rules/domain.md` ("Net below the statutory floor → REJECT the whole run").
+>    The **calculation** is unchanged and still exact: caps still cap, the piece-rate floor still
+>    tops up, the net-below-floor case is still detected — it is surfaced as a first-class warning
+>    the owner must acknowledge, and every warning still carries its statute and gazette reference so
+>    the owner can check it. ⛔ **This choice is itself a question for the external labour-law review
+>    (5i, B-1):** an advisory-only engine that emits a payslip the BCEA makes unlawful is precisely
+>    the judgement a practitioner should bless or reject. Put it to them explicitly.
+>
+> What does NOT change: the calculation is the most careful code in the repo, every rate is
+> date-resolved, no regulated constant lives in code, and every payslip is a real BCEA s33 document.
+> "Advisory, not blocking" is about who decides, never about whether the number is right.
+
+**Reuse map — read before designing anything; the rate seam and the table already exist.** This
+mirrors Phase 4's reuse map and is the highest-value part of this section — most of 5a's substrate
+is built, and mistaking "built" for "unbuilt" (or the reverse) is how a slice doubles or ships a gap.
+
+- **The pure rate-lookup seam is DONE and tested.** `packages/domain/src/rates/rate-lookup.ts`:
+  `createRateLookup(rates, timeZone)` → `RateLookup.lookup(jurisdiction, code, occurredAt)`,
+  resolving by the farm-local calendar day, latest-`effectiveFrom` wins, and a missing rate throws
+  `MissingRateError` (never a silent fallback). `RegulatedRate` keeps `value` a decimal STRING
+  (Postgres `numeric(14,4)`), never a float. It is pure — rows are injected. **Do not rewrite it;
+  build the ZA rules and the I/O around it.**
+- **`regulatory_rates` the TABLE exists** (migration `0002_regulatory_rates.sql`): RLS + FORCE,
+  `GRANT SELECT` to `werf_app` only (writes are the elevated/admin path), `jurisdiction char(2)`,
+  `UNIQUE(jurisdiction, code, effective_from)`, the lookup index, and a `regulatory_rates_read`
+  policy. It is already classified in `packages/sync` TENANCY as **reference sync, jurisdiction-
+  filtered** (a ZA device never downloads another country's rates). **But the table is EMPTY** —
+  there is no seed in `packages/db/scripts/seed.mjs`, and the seed INSERT shown at
+  `database-schema.md:433` does **not** exist in the migration. That is a live doc-vs-code drift
+  ([[docs-contradict-the-code]]); 5a authors the seed for the first time (and fixes the doc), it
+  does not re-verify existing rows.
+- **`IMPLEMENTED_JURISDICTIONS = ['ZA']`** (`packages/domain/src/index.ts`) with a guarding test
+  (`jurisdictions.test.ts`). The registry pattern ADR-0006 mandates is stubbed to exactly one entry.
+- **The employee/payroll TABLES are specified but NOT migrated.** `database-schema.md` §labour
+  fully specifies `employees`, `payroll_runs`, `payslips`, `injury_records` (contract_type enum,
+  `id_number_encrypted`/`bank_account_encrypted` bytea via the PII key, `locale` for payslip
+  language, `payslips.lines` carrying the gazette ref per rate). No migration creates them yet — 5b
+  and 5d/5f author them. Copy the RLS+FORCE+TENANCY discipline every Phase 2–4 table already follows.
+- **`attendance` and `piece_work` are already `event_type` enum values** (`database-schema.md:294`,
+  migration 0010) with sketched payloads (`attendance: { startAt, endAt, breakMin, pin, gps? }`).
+  Capture rides the existing `insertEvent`/`assertCanCapture` write path and the Outbox — **no
+  `ALTER TYPE`, no new capture plumbing** — the same lesson Phase 4 used for `spray`/`harvest`.
+- **`ReferenceService` is the pattern for the rate read path.** `apps/api/src/reference/
+  reference.service.ts` `listVeterinaryProducts` (and `listChemicalProducts`) already implements the
+  P1.3 "return every version when `onDay` is omitted, resolve by day when given" semantics the client
+  cache needs. A `listRegulatoryRates` sibling does not exist yet (the service header already names
+  it as the labour-phase addition) — copy the shape, including P1.3.
+- **Server-only tables must never enter a sync rule** (`db.md`): `payroll_runs`, `payslips`,
+  `injury_records`. A stolen phone must not carry 40 workers' payslips. `employees` syncs
+  role-gated and **minus** the encrypted columns.
+
+### Working method — this phase, Sonnet implements with Opus-5 as advisor (owner decision 2026-08-22)
+
+```
+□ IMPLEMENTATION runs on the Sonnet model, one small slice at a time. The reasoning that catches
+  the class of gap a green gate cannot see is delegated to the ADVISOR (Opus 5) via the advisor()
+  tool, which sees the full session transcript and takes no parameters.
+□ ADVISOR IS A REQUIRED PER-SLICE STEP, not a habit — twice per slice:
+    (1) BEFORE committing to an approach (after orientation, before writing the engine/migration/
+        screen), so the design is checked while it is still cheap to change; and
+    (2) BEFORE declaring the slice done, AFTER pnpm verify is already green. Phase 4 earned this:
+        an advisor() call after a green 1470-test gate found three gaps the gate was structurally
+        blind to ([[gate-claims-that-cannot-fail]], third recurrence). A green gate proves the code
+        does what you tested, not that you tested the right things.
+□ PAIR THE SECOND ADVISOR CALL WITH THE PAPER PAYSLIP. For every payroll slice (5d/5e/5f),
+  hand-calculate one payslip on paper from legal-compliance.md §2.4's worked example and compare —
+  the gate proves arithmetic self-consistency, not that the arithmetic is the BCEA's.
+□ REVIEW AGENTS STAY OWNER-TRIGGERED (CLAUDE.md, unchanged). Sonnet NEVER spawns compliance-checker,
+  reviewer or sync-auditor. When a regulated slice is written, tested and committed, SAY OUT LOUD
+  that it is waiting on an owner-triggered compliance-checker pass and is not merge-ready until then.
+□ OWNER-INTERRUPT BUDGET, stated up front so it is not discovered in week three: CLAUDE.md mandates
+  compliance-checker PER SLICE for the labour phase specifically (not batched). Across 5a–5i that is
+  roughly 8–10 owner-trigger points, plus reviewer + sync-auditor at the gate. This is not Sonnet's
+  to batch away — it is the point of the phase.
+□ When an owner-triggered agent runs, point it at docs/04-delivery/agent-context.md first (CLAUDE.md).
+  agent-context.md has no payroll defect-class section yet; add one the first time compliance-checker
+  runs on a payroll slice, from what that pass finds.
+```
+
 ### ⛔ Two external blockers. Neither is a formality, and both have been open since the second session.
 
 **Do not deploy Phase 5 until both are answered.** Placeholder dev/test rate rows may support the
-mechanics, but a production seed must reject every unverified row.
-a session reading only this file cannot miss them.
+mechanics, but a production seed must reject every unverified row. They are restated here, at the
+head of the phase, so a session reading only this file cannot miss them.
 
 ```
 ⛔ B-1 🇿🇦 THE LABOUR-LAW REVIEW IS BOOKED, with a date
@@ -2211,21 +2323,48 @@ a session reading only this file cannot miss them.
 
 ### 5a · Rates, the lookup, and the jurisdiction seam ⭐ standalone session + standalone review
 
+**Status going in:** the pure lookup seam and the empty table exist (see the reuse map). 5a is the
+I/O, the seed, the ZA rules module, the read path, the admin UI and the lint rule around them — plus
+the two external blockers. Get 5a wrong and every number downstream is wrong in a way the tests will
+cheerfully confirm; this is a session and a review unit of its own, never bundled with 5b.
+
 ```
-□ ⛔ B-1 and B-2 above are both answered before this sub-phase begins
-□ regulatory_rates carries jurisdiction char(2) (ADR-0006); 'ZA' in v1
-□ rates.lookup(jurisdiction, code, occurredAt) — resolves BY THE DATE THE WORK WAS DONE,
-  never now(). A recalculated February payslip must resolve February's rate
-□ A MISSING RATE THROWS. It does not default, fall back, or return the nearest row. A loud
-  failure is a five-minute fix; a silent one is a season of wrong payslips nobody distrusts
-□ Seed from the Gazette, with gazetteReference + effective_from/effective_to on EVERY row
+Already built — verify, do not rebuild
+☑ regulatory_rates carries jurisdiction char(2) (ADR-0006), 'ZA' in v1; RLS+FORCE; GRANT SELECT
+  to werf_app only; UNIQUE(jurisdiction, code, effective_from); lookup index (migration 0002)
+☑ rates.lookup(jurisdiction, code, occurredAt) resolves BY THE DATE THE WORK WAS DONE, never now();
+  a MISSING RATE THROWS (MissingRateError) — no default, no nearest-row fallback (rate-lookup.ts)
+☑ regulatory_rates classified in packages/sync TENANCY as reference sync, jurisdiction-filtered
+
+New work
+□ ⛔ B-1 and B-2 above are both answered before this sub-phase begins — not by reading the repo
+□ SEED regulatory_rates for the FIRST time (the table is empty; the INSERT at database-schema.md:433
+  does not exist in migration 0002). Dev/test seed in seed.mjs; every row carries gazetteReference +
+  effective_from/effective_to. Codes at minimum: NMW_FARM, BCEA_THRESHOLD, UIF_RATE_EMPLOYEE/
+  _EMPLOYER, UIF_CEILING, OVERTIME_MULTIPLIER, SUNDAY_MULTIPLIER, PUBLIC_HOLIDAY_MULTIPLIER,
+  OVERTIME_WEEKLY_CAP_HOURS, ORDINARY_WEEKLY_HOURS, DEDUCTION_CAP_ACCOMMODATION, DEDUCTION_CAP_FOOD,
+  PUBLIC_HOLIDAYS (dated rows, incl. once-off proclaimed days) — ADR-0005 §Scope
+□ PRODUCTION SEED GATE: a production seed REFUSES every row whose gazetteReference is a placeholder
+  ("— verify") or whose figure has not been confirmed against the current Gazette (B-2). Dev/test
+  rows may be explicit placeholders; production must fail loudly rather than seed a plausible number
+□ Fix the doc-vs-code drift: reconcile database-schema.md:433 (either add the INSERT to the migration
+  path it claims, or correct the doc to point at the seed script) — [[docs-contradict-the-code]]
+□ ReferenceService.listRegulatoryRates + controller route, mirroring listVeterinaryProducts,
+  INCLUDING the P1.3 semantics (every version when onDay omitted; resolve by day when given)
+□ Client rate reference cache (a createReferenceCache sibling), so the lookup works offline in the
+  crush and in payroll with no signal (ADR-0005 rule 5: rates sync to the client, read-only)
 □ A period spanning 1 March resolves BOTH rates — the every-year case, tested explicitly
-□ FR-615: admin UI to update a rate without a deploy (a rate change must not need an engineer)
-□ PayrollRules interface with exactly ONE implementation (ZA) — ADR-0006 says why this is the
-  narrow case where the seam is justified, and CLAUDE.md says it is not over-engineering
-□ NO SA statute name outside jurisdictions/za/ — checked, not assumed
-□ The NFR-507 regulated-constants lint rule actually fires on this phase's code
-□ compliance-checker over the seeded rates and the lookup, before commit
+□ FR-615: admin UI to update a rate without a deploy (a rate change must not need an engineer);
+  writes go through the elevated/admin path, never werf_app
+□ PayrollRules interface in @werf/core — JURISDICTION-NEUTRAL (earningsThreshold, classifyShift,
+  statutoryDeductionCaps…); NO bcea*/sd13*/uif* names in the shared contract (ADR-0006 naming rule)
+□ packages/domain/src/jurisdictions/za/ created (does NOT exist yet): the ZA gazette-code names
+  (BCEA_THRESHOLD, NMW_FARM…) and exactly ONE PayrollRules implementation registered for 'ZA'
+□ NO SA statute name outside jurisdictions/za/, docs, and ZA copy — checked, not assumed
+□ NFR-507 regulated-constants lint rule (does NOT exist yet, ADR-0005 rule 3): flags numeric
+  literals near wage/rate/threshold/minimum/withdrawal/cap in packages/domain; false positives
+  suppressed one-by-one with a reason. Prove it actually FIRES on this phase's code
+□ compliance-checker over the seeded rates and the lookup — owner-triggered, said out loud
 ```
 
 ### 5b · Employees
@@ -2280,19 +2419,32 @@ a session reading only this file cannot miss them.
 □ Per slice: hand-calculate a payslip on paper; compliance-checker; human reads the diff
 ```
 
-### 5e · Compliance warnings and blocking ⭐ MULTIPLE SMALL SESSIONS — never batched
+### 5e · Compliance warnings — advisory, never blocking ⭐ MULTIPLE SMALL SESSIONS — never batched
+
+⚠️ **Retitled from "warnings and blocking" per the owner decision 2026-08-22 (banner at the top of
+this phase).** Payroll is a calculator, not a guard dog: every case below is a conspicuous warning
+shown BEFORE approval that the owner acknowledges, and the run is still generated. The **detection**
+of each case is unchanged and exact — only the response changes from refuse to warn.
 
 ```
 □ Warnings surfaced BEFORE approval, never after (FR-307) — a warning after approval is a
   record of a decision already made
-□ Overtime over the 10h weekly cap
+□ Warnings are RETURNED DATA, not logs, and render ABOVE the numbers (domain.md)
+□ Overtime over the 10h weekly cap — the hours are PAID IN FULL and flagged (US-022), never withheld
 □ Deduction capped (show what it was reduced FROM, and under which rule)
-□ Piece rate topped up to the floor (show the shortfall)
-□ Net below the floor — this one BLOCKS rather than warns
-□ US-021 rejection scenario passes
-□ Every warning names the statute and the date-resolved rate it was measured against, so an
-  owner can check it rather than trust it
-□ Per slice: compliance-checker; human reads the diff
+□ Piece rate topped up to the floor (show the shortfall) — the top-up is a visible payslip line
+□ Net below the floor — DETECTED and surfaced as a first-class, must-acknowledge warning; the run is
+  STILL GENERATED (owner decision — advisory, not a block). ⛔ This is the specific point 5i's
+  labour-law review must bless or overturn
+□ Every warning names the statute and the date-resolved rate + gazetteReference it was measured
+  against, so an owner can check it rather than trust it
+□ Rewrite the three superseded "reject/block" statements to advisory in the SAME slice they are
+  contradicted by working code: US-021 scenario 2, legal-compliance.md §2.4 step 4, domain.md.
+  A checklist that ships code the docs still contradict is the recurring defect this repo tracks
+□ US-020/US-021/US-022 tests updated to assert the advisory behaviour (warn + still generate),
+  each watched to FAIL against a would-be blocking implementation first
+□ Per slice: advisor() before the approach and before done; paper payslip; owner-triggered
+  compliance-checker; human reads the diff
 ```
 
 ### 5f · Payslips and contracts 🇿🇦
@@ -2360,10 +2512,14 @@ a session reading only this file cannot miss them.
 someone who has been a farm bookkeeper for twenty years and watch their face.
 
 **Deliberately NOT in Phase 5, so it is named rather than implied:** FR-305 (task assignment),
-FR-314 (labour cost allocated to enterprise/camp/block), FR-315 (teams) and FR-317 (injury-on-duty
-register, health data restricted to owner + H&S role) are not in the roadmap's 5a–5i and are not
-smuggled in here. FR-317 in particular needs its own access-control design and should not ride
-along on a payroll slice.
+FR-314 (labour cost allocated to enterprise/camp/block), FR-315 (teams), FR-317 (injury-on-duty
+register, health data restricted to owner + H&S role) and **FR-320 (SIZA social evidence pack)** are
+not in the roadmap's 5a–5i and are not smuggled in here. FR-317 in particular needs its own
+access-control design and should not ride along on a payroll slice. **FR-320 lives in Phase 6**
+(roadmap "SIZA evidence mapping"): it is a report ASSEMBLED FROM the labour records this phase
+produces, and it needs the export/evidence-pack machinery Phase 6 owns — building the records in
+Phase 5 is what makes it a one-button by-product later (legal-compliance.md §4.2). Naming it here
+closes the two-incompatible-phase-maps gap: it is Phase 6, not silently absent.
 
 ---
 

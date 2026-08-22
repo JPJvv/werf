@@ -1,19 +1,4 @@
-/**
- * Record a harvest (FR-207) — COMPLIANCE-GATED (legal-compliance.md § 4.3, US-030). Blocks at
- * capture inside an active pre-harvest interval, resolved from the block's OWN spray history
- * (`usePhiGuard`, `@werf/domain`'s `phiGuardFor`) — O-12: blocked locally, no server round trip.
- *
- * ⭐ THE MESSAGE ANSWERS "SO WHEN CAN I HARVEST?" BEFORE IT IS ASKED (US-030's own gherkin): names
- * the product, the spray date, and the earliest safe harvest date. An override is offered, but it is
- * never silent (FR-205): a category AND a free-text reason are both required, and the server writes
- * an immutable audit row with the acting user and timestamp the instant it lands.
- *
- * ⭐ A SPLIT BLOCK'S INHERITED SPRAY HISTORY IS NOT CHECKED HERE. `usePhiGuard` only reads this
- * block's own sprays — see its own module note for why. This screen discloses that gap on its own
- * account whenever the selected block was split from another, so a leaf-only "clear" never reads as
- * a confirmed answer about ground with a history this device cannot see. The server checks the full
- * ancestor chain and is the authoritative backstop (`crops.service.ts`).
- */
+/** Farmer-owned harvest log. Interval calculations are reminders and never block capture. */
 
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -22,17 +7,9 @@ import { useTranslation } from '../i18n/LocaleProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveLandUnits } from '../land/LocalLand';
-import { useChemicalProducts } from './LocalChemicalProducts';
+import { useEffectiveInventoryItems } from '../inventory/stock';
 import { useRecordHarvest } from './LocalHarvest';
 import { usePhiGuard } from './usePhiGuard';
-
-const OVERRIDE_REASON_CATEGORIES = [
-  'export_deadline',
-  'spoilage_risk',
-  'misrecorded_spray',
-  'other',
-] as const;
-type OverrideReasonCategory = (typeof OVERRIDE_REASON_CATEGORIES)[number];
 
 function today(): string {
   return farmToday();
@@ -43,10 +20,8 @@ function harvestedInstant(day: string): Date {
 }
 
 function optionalPositiveNumber(text: string): number | undefined {
-  const trimmed = text.trim();
-  if (trimmed === '') return undefined;
-  const value = Number(trimmed);
-  return Number.isFinite(value) && value > 0 ? value : undefined;
+  const value = Number(text.trim());
+  return text.trim() !== '' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 export function RecordHarvestScreen() {
@@ -54,7 +29,7 @@ export function RecordHarvestScreen() {
   const { activeFarm } = useAuth();
   const units = useEffectiveLandUnits();
   const blocks = useMemo(() => units.filter((unit) => unit.kind === 'block'), [units]);
-  const products = useChemicalProducts();
+  const products = useEffectiveInventoryItems();
   const recordHarvest = useRecordHarvest();
   const [params] = useSearchParams();
 
@@ -65,8 +40,8 @@ export function RecordHarvestScreen() {
     setLastRequested(requested);
     setPicked(null);
   }
-  const preferredId = picked ?? requested ?? '';
-  const selected = blocks.find((unit) => unit.id === preferredId) ?? blocks[0] ?? null;
+  const selected =
+    blocks.find((unit) => unit.id === (picked ?? requested ?? '')) ?? blocks[0] ?? null;
   const selectedId = selected?.id ?? '';
 
   const [harvestedOn, setHarvestedOn] = useState(today);
@@ -74,60 +49,25 @@ export function RecordHarvestScreen() {
   const [unit, setUnit] = useState('');
   const [grade, setGrade] = useState('');
   const [destination, setDestination] = useState('');
-  const [overriding, setOverriding] = useState(false);
-  const [overrideCategory, setOverrideCategory] = useState<OverrideReasonCategory | ''>('');
-  const [overrideText, setOverrideText] = useState('');
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const guard = usePhiGuard(selectedId, harvestedOn);
-  const blockedProduct =
+  const reminderProduct =
     guard.blocked && guard.reason === 'active_phi'
-      ? products.find((p) => p.id === guard.blockedBy.productId)
+      ? products.find((product) => product.id === guard.blockedBy.productId)
       : undefined;
-
-  const overrideReady = overrideCategory !== '' && overrideText.trim() !== '';
-  const canOverride = guard.blocked && guard.reason === 'active_phi';
-  const needsOverride = guard.blocked;
   const quantityValue = optionalPositiveNumber(quantity);
-
   const valid =
-    selected !== null &&
-    harvestedOn !== '' &&
-    unit.trim() !== '' &&
-    quantityValue !== undefined &&
-    (!needsOverride || (overriding && overrideReady));
-
-  const resetForm = () => {
-    setQuantity('');
-    setUnit('');
-    setGrade('');
-    setDestination('');
-    setOverriding(false);
-    setOverrideCategory('');
-    setOverrideText('');
-  };
-
-  const clearSaved = () => setSaved(false);
+    selected !== null && harvestedOn !== '' && unit.trim() !== '' && quantityValue !== undefined;
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (!valid || !selected || quantityValue === undefined || saving) return;
+    if (!activeFarm || !valid || !selected || quantityValue === undefined || saving) return;
     setSaving(true);
-
-    // `by` is never set here — the acting user id is server-resolved from the session, the same
-    // reasoning `createdBy` is never client-set anywhere in this app (`LocalHarvest.tsx`'s own
-    // module note).
-    const phiOverride =
-      needsOverride && overrideReady
-        ? {
-            reason: `${t(`crops.harvest.overrideReason.${overrideCategory as OverrideReasonCategory}`)}: ${overrideText.trim()}`,
-          }
-        : undefined;
-
     await recordHarvest({
       id: uuidv7(),
-      farmId: activeFarm!.id,
+      farmId: activeFarm.id,
       landUnitId: selected.id,
       occurredAt: harvestedInstant(harvestedOn),
       harvestedOn,
@@ -135,16 +75,16 @@ export function RecordHarvestScreen() {
       unit: unit.trim(),
       ...(grade.trim() === '' ? {} : { grade: grade.trim() }),
       ...(destination.trim() === '' ? {} : { destination: destination.trim() }),
-      ...(phiOverride === undefined ? {} : { phiOverride }),
     });
-
     setSaved(true);
-    resetForm();
+    setQuantity('');
+    setUnit('');
+    setGrade('');
+    setDestination('');
     setSaving(false);
   };
 
   if (!activeFarm) return null;
-
   if (blocks.length === 0) {
     return (
       <section className="mx-auto w-full max-w-3xl p-4">
@@ -157,10 +97,12 @@ export function RecordHarvestScreen() {
     );
   }
 
+  const fieldClass =
+    'min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900';
+
   return (
     <section className="mx-auto w-full max-w-3xl p-4">
       <h1 className="mb-4 font-ui text-h1 text-soil-900">{t('crops.harvest.title')}</h1>
-
       {saved && (
         <p
           role="status"
@@ -178,24 +120,21 @@ export function RecordHarvestScreen() {
           <select
             id="block"
             value={selectedId}
-            onChange={(e) => {
-              setPicked(e.target.value);
-              clearSaved();
+            onChange={(event) => {
+              setPicked(event.target.value);
+              setSaved(false);
             }}
-            className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body text-soil-900"
+            className={fieldClass}
           >
-            {blocks.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.code}
-                {b.name ? ` — ${b.name}` : ''}
+            {blocks.map((block) => (
+              <option key={block.id} value={block.id}>
+                {block.code}
+                {block.name ? ` — ${block.name}` : ''}
               </option>
             ))}
           </select>
-          {/* The one gap `usePhiGuard` cannot close offline — disclosed unconditionally, never
-              folded into the blocked/clear state, so a split block never reads as confirmed clear
-              on the strength of a check that only ever looked at its own history. */}
           {selected?.parentId !== null && selected !== null && (
-            <p className="mt-1 border-l-4 border-klei-700 bg-klei-100 p-2 text-body text-soil-900">
+            <p className="mt-1 border-l-4 border-ochre-500 bg-sand-100 p-2 text-body text-soil-900">
               {t('crops.harvest.splitBlockWarning')}
             </p>
           )}
@@ -207,147 +146,86 @@ export function RecordHarvestScreen() {
           </label>
           <input
             id="harvestedOn"
-            name="harvestedOn"
             type="date"
             max={today()}
             value={harvestedOn}
-            onChange={(e) => {
-              clearSaved();
-              setHarvestedOn(e.target.value);
-              setOverriding(false);
+            onChange={(event) => {
+              setHarvestedOn(event.target.value);
+              setSaved(false);
             }}
-            className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body tabular-nums text-soil-900"
+            className={`${fieldClass} font-data tabular-nums`}
           />
         </div>
 
         {guard.blocked && guard.reason === 'active_phi' && (
-          <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
-            <p className="mb-1 font-ui font-semibold">{t('crops.harvest.blockedTitle')}</p>
+          <div className="mb-4 border-l-4 border-ochre-500 bg-sand-100 p-3 text-body text-soil-900">
+            <p className="mb-1 font-ui font-semibold">{t('crops.harvest.reminderTitle')}</p>
             <p>
-              {blockedProduct?.name ?? t('crops.harvest.blockedProductUnknown')}{' '}
+              {reminderProduct?.name ?? t('crops.harvest.blockedProductUnknown')}{' '}
               {t('crops.harvest.blockedSprayedOn')}{' '}
               <span className="font-data tabular-nums">{guard.blockedBy.sprayedOn}</span>.{' '}
               {t('crops.harvest.blockedEarliest')}{' '}
-              <span className="font-data tabular-nums">{guard.blockedBy.earliestHarvestDate}</span>.
+              <span className="font-data tabular-nums">{guard.blockedBy.earliestHarvestDate}</span>.{' '}
+              {t('crops.harvest.warningDoesNotBlock')}
             </p>
-            {!overriding ? (
-              <button
-                type="button"
-                onClick={() => setOverriding(true)}
-                className="min-h-touch-min mt-2 rounded border border-soil-700 bg-sand-100 px-3 text-body text-soil-900"
-              >
-                {t('crops.harvest.override')}
-              </button>
-            ) : (
-              <div className="mt-3 flex flex-col gap-2">
-                <label htmlFor="overrideCategory" className="text-label uppercase text-soil-700">
-                  {t('crops.harvest.overrideReasonLabel')}
-                </label>
-                <select
-                  id="overrideCategory"
-                  value={overrideCategory}
-                  onChange={(e) =>
-                    setOverrideCategory(e.target.value as OverrideReasonCategory | '')
-                  }
-                  className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
-                >
-                  <option value="">{t('crops.harvest.overrideReasonChoose')}</option>
-                  {OVERRIDE_REASON_CATEGORIES.map((category) => (
-                    <option key={category} value={category}>
-                      {t(`crops.harvest.overrideReason.${category}`)}
-                    </option>
-                  ))}
-                </select>
-                <label htmlFor="overrideText" className="text-label uppercase text-soil-700">
-                  {t('crops.harvest.overrideTextLabel')}
-                </label>
-                <textarea
-                  id="overrideText"
-                  value={overrideText}
-                  onChange={(e) => setOverrideText(e.target.value)}
-                  className="min-h-24 rounded border border-soil-200 bg-sand-100 px-3 py-2 text-body text-soil-900"
-                />
-                <p className="text-label text-soil-700">{t('crops.harvest.overrideAudited')}</p>
-              </div>
-            )}
           </div>
         )}
-
         {guard.blocked && guard.reason === 'unresolved' && (
-          <div className="mb-4 border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
+          <div className="mb-4 border-l-4 border-ochre-500 bg-sand-100 p-3 text-body text-soil-900">
             {t('crops.harvest.unresolved')}
           </div>
         )}
 
         <div className="mb-4 grid grid-cols-2 gap-2">
-          <div className="flex flex-col">
-            <label htmlFor="quantity" className="mb-1 text-label uppercase text-soil-700">
-              {t('crops.harvest.quantity')}
-            </label>
+          <label className="flex flex-col text-label uppercase text-soil-700">
+            {t('crops.harvest.quantity')}
             <input
               id="quantity"
-              name="quantity"
               type="number"
-              inputMode="decimal"
               min="0"
               step="any"
               value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data tabular-nums text-body text-soil-900"
+              onChange={(event) => setQuantity(event.target.value)}
+              className={`${fieldClass} font-data tabular-nums`}
             />
-          </div>
-          <div className="flex flex-col">
-            <label htmlFor="unit" className="mb-1 text-label uppercase text-soil-700">
-              {t('crops.harvest.unit')}
-            </label>
+          </label>
+          <label className="flex flex-col text-label uppercase text-soil-700">
+            {t('crops.harvest.unit')}
             <input
               id="unit"
-              name="unit"
-              type="text"
               value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              onChange={(event) => setUnit(event.target.value)}
+              className={fieldClass}
             />
-          </div>
-        </div>
-
-        <div className="mb-4 flex flex-col">
-          <label htmlFor="grade" className="mb-1 text-label uppercase text-soil-700">
-            {t('crops.harvest.grade')}
           </label>
+        </div>
+        <label className="mb-4 flex flex-col text-label uppercase text-soil-700">
+          {t('crops.harvest.grade')}
           <input
             id="grade"
-            name="grade"
-            type="text"
             value={grade}
-            onChange={(e) => setGrade(e.target.value)}
-            className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+            onChange={(event) => setGrade(event.target.value)}
+            className={fieldClass}
           />
-        </div>
-
-        <div className="mb-6 flex flex-col">
-          <label htmlFor="destination" className="mb-1 text-label uppercase text-soil-700">
-            {t('crops.harvest.destination')}
-          </label>
+        </label>
+        <label className="mb-6 flex flex-col text-label uppercase text-soil-700">
+          {t('crops.harvest.destination')}
           <input
             id="destination"
-            name="destination"
-            type="text"
             value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+            onChange={(event) => setDestination(event.target.value)}
+            className={fieldClass}
           />
-        </div>
+        </label>
 
         <button
           type="submit"
           disabled={!valid || saving}
           className="min-h-touch-primary w-full rounded bg-ochre-500 px-4 font-ui text-body font-semibold text-on-action disabled:opacity-60"
         >
-          {canOverride && overriding ? t('crops.harvest.saveOverride') : t('crops.harvest.save')}
+          {t('crops.harvest.save')}
         </button>
       </form>
-
       <Link to="/land" className="mt-6 inline-block text-body text-dam-700">
         {t('crops.harvest.back')}
       </Link>

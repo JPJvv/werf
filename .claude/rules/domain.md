@@ -47,11 +47,20 @@ assume §2.2 is wrong and say so rather than coding against it.
 
 ## Payroll (see legal-compliance.md §2.4 for the full algorithm)
 
+> ⚠️ **SUPERSEDED FOR PHASE 5 — payroll is ADVISORY, never blocking (ADR-0014, owner decision
+> 2026-08-22).** The "REJECT the whole run" line below is the pre-ADR-0014 rule. Under ADR-0014 the
+> engine WARNS conspicuously (net-below-floor included) and STILL generates the run — the detection
+> and the exact calculation are unchanged, only the response changes from refuse to warn. This line
+> is rewritten in Phase 5 sub-phase 5e, after the external labour-law review (5i). Until then, build
+> the ADVISORY behaviour, not the block. See `phase-checklists.md` Phase 5 banner and
+> `docs/03-architecture/adr/ADR-0014-advisory-payroll.md`.
+
 - Piece rate below the minimum floor → TOP UP, and the top-up is a visible payslip line.
 - Overtime above the weekly cap → PAID IN FULL and flagged. Never withheld. It is the
   employer's breach of the hours rule; the worker still worked those hours.
 - Deductions capped at the statutory limit → warn.
-- Net below the statutory floor → REJECT the whole run. Never clamp silently.
+- Net below the statutory floor → ⚠️ ADR-0014: WARN (do not reject). ~~REJECT the whole run.~~
+  Never clamp silently.
 - Warnings are returned data, not logs. They render above the numbers.
 - Every warning carries a gazetteReference. When the farmer asks "says who?",
   the answer is a Gazette number.

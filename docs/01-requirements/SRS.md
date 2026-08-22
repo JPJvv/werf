@@ -15,7 +15,11 @@ Audience: the development team (human and AI), QA, and any third party assessing
 
 ### 1.2 Scope
 
-**Werf will:** record and report on animals, fields, labour, wages, finances, inventory, and compliance for a single farm business, potentially spanning multiple farms and enterprises; operate fully offline and synchronise when connectivity permits; generate the statutory and audit documents South African farmers are required to produce.
+**Werf will:** act as a private farmer-controlled logbook, planner and calculator for animals,
+fields, labour, wages, finances and inventory across the farms and enterprises the farmer chooses;
+operate fully offline and synchronise when connectivity permits; and generate farmer-initiated
+records or exports. Werf is not an authority, does not approve farm decisions and does not report
+farm activity to authorities or third parties (ADR-0013).
 
 **Werf will not:** trade livestock, lend money, formulate rations, control irrigation, file tax returns, replace an accounting general ledger, or require hardware.
 
@@ -204,7 +208,9 @@ Functional requirements are catalogued separately in [functional-requirements.md
 
 **SRS-26.** **No South African concept may name a generic thing.** `bceaThreshold` in `packages/core` is a defect; `earningsThreshold` on the interface with `BCEA_THRESHOLD` inside `jurisdictions/za/` is correct. `BCEA`, `POPIA`, `SD13`, `UIF`, `SARS`, `SAPS`, `SIZA` appear only in `jurisdictions/za/`, in the ZA legal pack, and in ZA user-facing copy.
 
-**SRS-27.** Reference data (chemical registrations, veterinary withdrawal periods, public holidays, regulatory rates) is **filtered by the farm's jurisdiction** on sync. A South African device never downloads Namibian withdrawal periods.
+**SRS-27.** Public holidays and genuinely server-authoritative payroll rates are filtered by the
+farm's jurisdiction. Crop and veterinary products and intervals are farm-owned inputs, not public
+reference data (ADR-0013).
 
 > **Why build the seam for a country we do not serve:** the `jurisdiction` column costs one line today and a migration across 10,000 partitioned farms in year three. The interface costs one indirection today and a rewrite of the most legally-dangerous code in the system later. Both are cheap wrongs if the second country never comes. See [ADR-0006](../03-architecture/adr/ADR-0006-multi-jurisdiction.md) — and note what it refuses: no rules engine, no DSL, no plugin loader, no guessing.
 

@@ -37,7 +37,7 @@ STRIDE, scoped to what is real here.
 | **Repudiation** | "I didn't approve that payroll" | Audit row: user, IP, timestamp, before/after |
 | **Information disclosure** | **Cross-tenant leak via sync rules** | **Three layers + the tenancy test suite** — §4 |
 | | Stolen phone | Sensitive columns never sync (NFR-215) · encrypted at rest · remote wipe on next connection |
-| | PII in error reports | **Scrub before transmission — code, not config** (NFR-212) |
+| | Farm data in telemetry | **Do not transmit it**; aggregate service health only (NFR-212, ADR-0013) |
 | | PII in logs | Structured logging with a deny-list; a test asserts it |
 | **Denial of service** | API flood | WAF · rate limits · autoscaling |
 | | **Sync flood from a returning device** | **Not an attack — a success case.** 10k writes/min/farm ([api-specification.md §10](../03-architecture/api-specification.md)) |
@@ -127,26 +127,12 @@ Everything containing personal information is in **af-south-1**. See [ADR-0002](
 | Destination | Contains | Control |
 |---|---|---|
 | CloudFront (global) | Static assets only | No personal data, **by construction** |
-| Sentry (offshore) | Error traces | **PII scrubbed before transmission** — NFR-212 |
 | Email provider | Addresses, names | s72 ground: necessary for contract performance |
-| Any future AI feature | TBD | **Scrub, or establish a s72 ground, or process locally. No fourth option.** |
+| Any future AI or telemetry feature | No farm records by default | Separate owner decision, explicit opt-in and a privacy design that satisfies ADR-0013 before implementation |
 
-```ts
-// apps/web/src/monitoring/sentry.ts
-Sentry.init({
-  beforeSend(event) {
-    // ⭐ This is a code requirement (NFR-212), not a dashboard toggle.
-    // A toggle can be flipped by someone who doesn't know why it's there.
-    return scrubPii(event, {
-      dropKeys: ['idNumber','id_number','bankAccount','password','token',
-                 'fullName','phone','email','gps','location'],
-      dropPatterns: [/\b\d{13}\b/],   // SA ID number shape
-    });
-  },
-});
-```
-
-A test asserts that an event containing a 13-digit number never leaves. It runs in CI.
+Third-party behavioural analytics are disabled by design. Operational metrics must use aggregate
+service health (latency, error counts, queue depth) without request bodies, event payloads, farm
+names, GPS, attachment content or stable farmer identifiers.
 
 ---
 
@@ -274,7 +260,7 @@ Honest list. Every one is a decision, not an oversight.
 | OPFS is unencrypted by the browser | No portable API for it | Mitigated: sensitive columns never sync |
 | 30-day offline session | A farmer offline for 3 weeks must not be locked out of their own data | If device theft becomes a real pattern |
 | No biometric attendance | Consent obtained from a farm worker by their employer is of questionable voluntariness | Full DPIA + a genuine non-biometric alternative first |
-| Sentry is offshore | No credible SA-hosted equivalent | Self-host GlitchTip if scrubbing proves insufficient |
+| Third-party error tracing is omitted | Farm records must not enter telemetry | Use aggregate in-region service metrics; revisit only through ADR-0013 |
 | No SOC 2 | Cost, and no customer asks | When an enterprise customer asks |
 | No bug bounty | Team size | Post-launch, when there is someone to triage |
 
@@ -390,4 +376,15 @@ because delivery failed. An invitation's durable fact is the pending membership 
 
 `PII_ENCRYPTION_KEY` is now required at boot: 32 bytes, base64, and it must not be the same material as `JWT_SECRET`. Generate it with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. **Losing it makes every enrolled TOTP seed undecryptable**, which locks out every user who has no recovery codes left — back it up separately from the database, or the separation that makes a stolen dump useless also makes a lost key unrecoverable. It is deliberately not derivable from anything else in the config.
 
-The elevated connection needs a role that genuinely bypasses RLS. Because `user_sessions` and every domain table use `FORCE ROW LEVEL SECURITY`, table *ownership* is not enough — the role must be `BYPASSRLS` or superuser. `DATABASE_URL` must name `werf_app` and **must not** be the same role as `DATABASE_ELEVATED_URL`: pointing both at a superuser silently disables every RLS policy in the database, and nothing about the system looks broken while it happens.
+The elevated connection needs a role that genuinely bypasses RLS. Because `user_sessions` and every domain table use `FORCE ROW LEVEL SECURITY`, table *ownership* is not enough — the role must be `BYPASSRLS` or superuser. `DATABASE_URL` must name `werf_app` and **must not** be the same role as `DATABASE_ELEVATED_URL`: pointing both at a superuser silently disables every RLS policy in the database. Production configuration now enforces all three conditions at boot.
+
+### Farmer privacy boundary
+
+Farm records are exposed by the application only to current members explicitly invited to that
+farm. There is no staff/support data-browser role and no automatic authority-reporting path. RLS,
+sync streams and API ownership checks enforce that application boundary independently.
+
+This is not end-to-end encryption: the API, database and object store process plaintext to sync and
+render the logbook, and tightly controlled infrastructure credentials can technically access it.
+Marketing and support must not claim provider-blind privacy. See ADR-0013 for what a genuine E2EE
+redesign would require.

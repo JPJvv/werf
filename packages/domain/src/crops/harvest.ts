@@ -37,12 +37,6 @@ export interface HarvestInput {
   readonly unit: string;
   readonly grade?: string;
   readonly destination?: string;
-  /**
-   * Present only when a PHI guard blocked this harvest and the farmer overrode it. `by` is the
-   * acting user id — the caller's job to resolve from the session when it can (server: always;
-   * client: never — see the module note), never accepted as client input on the wire.
-   */
-  readonly phiOverride?: { readonly reason: string; readonly by?: string };
   readonly notes?: string | null;
   readonly createdBy?: string | null;
 }
@@ -60,8 +54,6 @@ export function recordHarvest(input: HarvestInput): schemas.NewEvent {
   };
   if (input.grade !== undefined) payload.grade = input.grade;
   if (input.destination !== undefined) payload.destination = input.destination;
-  if (input.phiOverride !== undefined) payload.phiOverride = input.phiOverride;
-
   if (!schemas.harvestPayloadSchema.safeParse(payload).success) {
     throw new ValidationError('A harvest needs a day, a quantity and a unit, on a real block');
   }

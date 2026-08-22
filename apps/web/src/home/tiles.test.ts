@@ -13,36 +13,15 @@ const labels = (types: Parameters<typeof homeTiles>[0], locale: Locale = 'en-ZA'
 
 describe('home grid adaptation (FR-017)', () => {
   it('a beef cattle farm sees Herd and Camps — and never Sprays', () => {
-    expect(labels(['beef_cattle'])).toEqual([
-      'Herd',
-      'Camps',
-      'Health',
-      'Labour',
-      'Money',
-      'Compliance',
-    ]);
+    expect(labels(['beef_cattle'])).toEqual(['Herd', 'Camps', 'Health', 'Labour', 'Money']);
   });
 
   it('a vineyard sees Blocks, Sprays and Harvest — and never Herd', () => {
-    expect(labels(['vineyards'])).toEqual([
-      'Blocks',
-      'Sprays',
-      'Harvest',
-      'Labour',
-      'Money',
-      'Compliance',
-    ]);
+    expect(labels(['vineyards'])).toEqual(['Blocks', 'Sprays', 'Harvest', 'Labour', 'Money']);
   });
 
   it('a sheep-and-goat farm sees Flock, not Herd', () => {
-    expect(labels(['sheep', 'goats'])).toEqual([
-      'Flock',
-      'Camps',
-      'Health',
-      'Labour',
-      'Money',
-      'Compliance',
-    ]);
+    expect(labels(['sheep', 'goats'])).toEqual(['Flock', 'Camps', 'Health', 'Labour', 'Money']);
   });
 
   it('a mixed farm shows the land unit as Blocks (crop naming wins) — never Camps', () => {
@@ -63,14 +42,7 @@ describe('home grid adaptation (FR-017)', () => {
     // The Phase 1 fork: terminology labels were English strings decided in tiles.ts, so a tile
     // could not be translated without deciding the word in a second place. Both halves now come
     // from the dictionary — the terminology-driven words AND the fixed ones.
-    expect(labels(['sheep'], 'af-ZA')).toEqual([
-      'Trop',
-      'Kampe',
-      'Gesondheid',
-      'Arbeid',
-      'Geld',
-      'Nakoming',
-    ]);
+    expect(labels(['sheep'], 'af-ZA')).toEqual(['Trop', 'Kampe', 'Gesondheid', 'Arbeid', 'Geld']);
   });
 
   it('never renders a Sprays tile without a crop enterprise', () => {
@@ -88,7 +60,7 @@ describe('home grid adaptation (FR-017)', () => {
   });
 
   it('a farm with no enterprise types yet still has the shared doors', () => {
-    expect(labels([])).toEqual(['Labour', 'Money', 'Compliance']);
+    expect(labels([])).toEqual(['Labour', 'Money']);
   });
 
   it('keeps a fixed order — the same types always produce the same sequence', () => {

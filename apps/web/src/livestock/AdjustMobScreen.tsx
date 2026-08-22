@@ -252,20 +252,8 @@ export function AdjustMobScreen() {
   const tooMany = projected !== null && projected < 0;
   const changesNothing = !isRecount && typed === 0;
 
-  // ⭐ FR-131 on the group path, AT CAPTURE. The server refuses this and that refusal is the
-  // authoritative one — but it arrives on the next flush, which on this product is Friday. Dip the
-  // flock Monday; Tuesday, no signal, tally forty to the abattoir; the screen says "saved, 260
-  // head"; the truck loads. The 400 lands three days later and FR-009 correctly sets it aside
-  // forever, by which time the only thing it can do is explain what already happened.
-  //
-  // The individual sale path has been guarded at capture since the health slice, for reasons its
-  // own header states. This is the path where the exposure is worse: a flock run by head count is
-  // the smallholder's, and the farm least likely to have a second system catching the mistake.
-  //
-  // ⭐ A TRANSFER is NOT here, deliberately (§2.3b). Splitting a dipped flock between two of your
-  // own camps puts nothing into the food chain — it is the ordinary husbandry that the sale-out /
-  // purchase-in workaround was being used to express, and refusing it is what taught the workaround.
-  // What it must do instead is carry the withholding across, which `carriedWithholdUntil` below does.
+  // FR-131 private reminder on the group path. A transfer carries the entered interval so the
+  // farmer's own history remains useful across mobs, but no outcome is blocked or approved here.
   const intoFoodChain = reason === 'sale' || reason === 'slaughter';
   const withdrawal =
     selected === null
@@ -281,7 +269,7 @@ export function AdjustMobScreen() {
           hydratedAnimalIds,
         );
   const withheld = intoFoodChain && withdrawal !== null && withdrawal.blocked;
-  // The reasons that are recorded rather than refused still say so — same rule as the death path.
+  // Other decreases may also display the same private history without changing save behavior.
   const noteWithdrawal =
     !intoFoodChain && reason !== null && withdrawal !== null && withdrawal.blocked;
 
@@ -297,7 +285,6 @@ export function AdjustMobScreen() {
     typed !== null &&
     !tooMany &&
     !changesNothing &&
-    !withheld &&
     day !== '' &&
     // A transfer with no destination is half a move, and the half that would be written is the one
     // that takes head OUT of the source — losing forty sheep into nothing.
@@ -341,10 +328,9 @@ export function AdjustMobScreen() {
       trade && priceRands.trim() !== '' ? (parseRandsToCents(priceRands) ?? undefined) : undefined;
     const buyer = trade && counterparty.trim() !== '' ? counterparty.trim() : undefined;
 
-    // The domain is the authority on whether this capture is legal, and `canSave` above is a
-    // preview of its answer rather than a second implementation of it. If the two ever disagree,
-    // the farmer must see SOMETHING — not a blank screen from an exception thrown out of a click
-    // handler with their capture lost.
+    // The domain validates record shape and count arithmetic; it does not decide whether the
+    // farmer's husbandry decision is legal. If validation fails, preserve the typed capture and
+    // explain the malformed or contradictory input.
     //
     // ⭐ What they see is the translated string, and the domain's own message goes underneath it.
     // Domain errors are raised in English by design (they are thrown from a package with no
@@ -353,7 +339,7 @@ export function AdjustMobScreen() {
     // ⭐ The withholding the head carry with them, resolved from the SOURCE mob at the moment of the
     // move and written onto BOTH halves. It is a PREVIEW — the server computes and stores its own
     // from its whole log, exactly as it does a treatment's clear date (ADR-0005), and this one is
-    // never sent. But without it on the device the local guard is blind: a counted flock has no
+    // never sent. Without it the device cannot show the carried reminder: a counted flock has no
     // `animals` rows, so head walking in from a dipped camp leaves nothing else to read, and this
     // phone would clear forty dipped sheep for the abattoir the moment they came through the gate.
     const carried =

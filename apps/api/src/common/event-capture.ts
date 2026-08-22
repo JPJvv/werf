@@ -26,7 +26,13 @@ import {
   theftIncidents,
   type AppDb,
 } from '@werf/db';
-import { NotFoundError, TenancyError, type UserRole, type schemas } from '@werf/core';
+import {
+  NotFoundError,
+  TenancyError,
+  type InventoryItemCategory,
+  type UserRole,
+  type schemas,
+} from '@werf/core';
 import { assertHerdScoped } from '@werf/domain';
 
 /** The RLS-bound transaction handle a capture runs inside (from `AppDb.asUser`). */
@@ -92,6 +98,7 @@ export async function insertEvent(
     enterpriseId: event.enterpriseId,
     landUnitId: event.landUnitId,
     inventoryLotId: event.inventoryLotId,
+    inventoryLotCategory: inventoryCategoryForEvent(event.type),
   });
 
   const [row] = await tx
@@ -237,6 +244,12 @@ export async function assertOwnedReferences(
     incidentId?: string | null | undefined;
     /** The inventory lot an `inventory_movement` concerns (Phase 4e, FR-501). */
     inventoryLotId?: string | null | undefined;
+    /**
+     * When the capture consumes stock, the lot must belong to the matching catalogue category.
+     * Farm ownership alone is insufficient: a crafted client must not file a feed lot against a
+     * chemical spray (or a chemical lot against a feed event).
+     */
+    inventoryLotCategory?: InventoryItemCategory | undefined;
     /** The item a new lot is a batch of (Phase 4e, FR-501). */
     inventoryItemId?: string | null | undefined;
   },
@@ -313,11 +326,17 @@ export async function assertOwnedReferences(
         tx
           .select({ id: inventoryLots.id })
           .from(inventoryLots)
+          .innerJoin(inventoryItems, eq(inventoryItems.id, inventoryLots.inventoryItemId))
           .where(
             and(
               eq(inventoryLots.id, id),
               eq(inventoryLots.farmId, farmId),
               isNull(inventoryLots.deletedAt),
+              eq(inventoryItems.farmId, farmId),
+              isNull(inventoryItems.deletedAt),
+              ...(refs.inventoryLotCategory === undefined
+                ? []
+                : [eq(inventoryItems.category, refs.inventoryLotCategory)]),
             ),
           ),
       'Inventory lot not found',
@@ -343,6 +362,22 @@ export async function assertOwnedReferences(
     if (id === null || id === undefined) continue;
     const rows = await query(id);
     if (rows.length === 0) throw new NotFoundError(message);
+  }
+}
+
+/** The only event types whose optional inventory reference represents consumed stock. */
+function inventoryCategoryForEvent(
+  eventType: schemas.NewEvent['type'],
+): InventoryItemCategory | undefined {
+  switch (eventType) {
+    case 'spray':
+      return 'chemical';
+    case 'fertiliser':
+      return 'fertiliser';
+    case 'feed':
+      return 'feed';
+    default:
+      return undefined;
   }
 }
 

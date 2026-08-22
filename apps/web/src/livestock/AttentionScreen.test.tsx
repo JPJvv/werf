@@ -125,7 +125,7 @@ describe('the register (FR-131) sees a withholding known only by HYDRATION', () 
     window.history.pushState({}, '', '/attention');
     render(<App />);
 
-    expect(await screen.findByText(/must not go into the food chain/i)).toBeTruthy();
+    expect(await screen.findByText(/falls before the reminder date you entered/i)).toBeTruthy();
     expect(screen.queryByText(/nothing needs your attention/i)).toBeNull();
   });
 
@@ -195,12 +195,12 @@ describe('the register (FR-131) sees a withholding known only by HYDRATION', () 
     window.history.pushState({}, '', '/attention');
     render(<App />);
 
-    expect(await screen.findByText(/must not go into the food chain/i)).toBeTruthy();
+    expect(await screen.findByText(/falls before the reminder date you entered/i)).toBeTruthy();
     expect(screen.queryByText(/nothing needs your attention/i)).toBeNull();
   });
 });
 
-describe('the PHI compliance register (FR-205/4d·6)', () => {
+describe('the private interval reminder list', () => {
   it('⭐ renders the section, the product/spray-date/earliest-date line, and folds it into the home badge', async () => {
     // `phiRegister.test.ts` already covers `localPhiFlags` as a pure fold — this is the rendering
     // gap `SpraysScreen.tsx` shipped a MED for having none of (STATUS.md, 21st session): nothing had
@@ -218,18 +218,19 @@ describe('the PHI compliance register (FR-205/4d·6)', () => {
       ]),
     );
     window.localStorage.setItem(
-      `werf-chemical-products:${FARM_ID}`,
+      `werf-inventory-items:${FARM_ID}`,
       JSON.stringify([
         {
           id: PRODUCT_ID,
-          jurisdiction: 'ZA',
+          farmId: FARM_ID,
+          enterpriseId: null,
+          category: 'chemical',
           name: 'Roundup PowerMax',
+          unit: 'L',
           registrationNumber: 'L1234 Act 36/1947',
-          crop: 'maize',
+          activeIngredients: null,
           phiDays: 21,
           reentryHours: 24,
-          effectiveFrom: '2020-01-01',
-          effectiveTo: null,
         },
       ]),
     );
@@ -243,6 +244,9 @@ describe('the PHI compliance register (FR-205/4d·6)', () => {
           occurredAt: '2026-08-01T08:00:00.000Z',
           sprayedOn: '2026-08-01',
           productId: PRODUCT_ID,
+          productName: 'Roundup PowerMax',
+          phiDays: 21,
+          earliestHarvestDate: '2026-08-22',
         },
       ]),
     );

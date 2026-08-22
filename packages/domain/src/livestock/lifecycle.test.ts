@@ -176,6 +176,13 @@ describe('recordMissing (FR-605, stock theft)', () => {
     expect(statusChange).toEqual({ animalId: ANIMAL_ID, status: 'missing', statusAt: OCCURRED });
   });
 
+  it('records the fact without a GPS point when none is available', () => {
+    const { event, statusChange } = recordMissing(base());
+    expect(event.type).toBe('missing');
+    expect(event.locationGeojson).toBeNull();
+    expect(statusChange).toMatchObject({ status: 'missing' });
+  });
+
   it('cannot mark a sold or dead animal missing (state machine guard)', () => {
     for (const from of ['sold', 'dead', 'culled'] as AnimalStatus[]) {
       expect(() =>

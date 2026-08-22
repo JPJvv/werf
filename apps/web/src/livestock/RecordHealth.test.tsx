@@ -1,5 +1,5 @@
 /**
- * Recording a treatment as a farmer does it (FR-130/131) — COMPLIANCE-GATED. Renders the real
+ * Recording a treatment as a farmer does it (FR-130/131), with farm-entered product facts. Renders the real
  * `<App/>` against a seeded `localStorage`, including a seeded product register, so the whole thing
  * runs with no network at all.
  *
@@ -31,7 +31,7 @@ const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
 const HERD_KEY = `werf-herd:${FARM_ID}`;
 const HEALTH_KEY = `werf-health:${FARM_ID}`;
-const PRODUCTS_KEY = `werf-vet-products:${FARM_ID}`;
+const PRODUCTS_KEY = `werf-inventory-items:${FARM_ID}`;
 const PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d001';
 const MOBS_KEY = `werf-mobs:${FARM_ID}`;
 const MOB_ID = '0190f3a0-0000-7000-8000-00000000b001';
@@ -80,15 +80,17 @@ function seedProducts(meatWithdrawalDays: number | null): void {
     JSON.stringify([
       {
         id: PRODUCT_ID,
-        jurisdiction: 'ZA',
+        farmId: FARM_ID,
+        enterpriseId: null,
+        category: 'medicine',
         name: 'Terramycin LA',
+        unit: 'ml',
         registrationNumber: 'G1234 Act 36/1947',
-        species: ['cattle'],
         meatWithdrawalDays,
         milkWithdrawalHours: 96,
-        route: 'intramuscular',
-        effectiveFrom: '2020-01-01',
-        effectiveTo: null,
+        activeIngredients: null,
+        phiDays: null,
+        reentryHours: null,
       },
     ]),
   );
@@ -171,7 +173,7 @@ describe('recording a treatment (FR-130/131)', () => {
 
     // 28 days from today, computed through the same pure domain function the server uses.
     const clear = farmDay(new Date(Date.now() + 28 * 86_400_000));
-    expect(screen.getByText(/may be sold for slaughter from/i)).toBeTruthy();
+    expect(screen.getByText(/meat-interval reminder date/i)).toBeTruthy();
     expect(screen.getByText(clear)).toBeTruthy();
   });
 
@@ -211,7 +213,7 @@ describe('recording a treatment (FR-130/131)', () => {
     expect(String(saved!.occurredAt).slice(0, 10)).toBe(threeDaysBack);
   });
 
-  it('says so when a product carries no meat withholding, rather than staying silent', async () => {
+  it('keeps the farmer in control when no meat interval is entered', async () => {
     // "No withholding" is an answer a farmer needs just as much as a date — silence reads as
     // "the app does not know", which is what sends someone back to a paper book.
     cachedSession();
@@ -222,10 +224,11 @@ describe('recording a treatment (FR-130/131)', () => {
     render(<App />);
 
     await user.selectOptions(await screen.findByLabelText(/which product/i), PRODUCT_ID);
-    expect(screen.getByText(/no meat withholding period/i)).toBeTruthy();
+    expect(screen.getByText(/does not verify or approve/i)).toBeTruthy();
+    expect((screen.getByLabelText(/meat interval/i) as HTMLInputElement).value).toBe('');
   });
 
-  it('doses a whole group in one action, and stores a product id but never a withdrawal', async () => {
+  it('doses a whole group in one action and stores the farmer-entered product snapshot', async () => {
     cachedSession();
     seedProducts(28);
     seedHerd(3);
@@ -247,11 +250,12 @@ describe('recording a treatment (FR-130/131)', () => {
     expect(new Set(saved.map((e) => e['id'])).size).toBe(3);
 
     for (const event of saved) {
-      expect(event).toMatchObject({ kind: 'treatment', productId: PRODUCT_ID });
-      // ⭐ The regulated number is NOT here. It is resolved server-side from the registration in
-      // force on the treatment day; a client that stored one would freeze a cached figure into a
-      // record that outlives it.
-      expect(event).not.toHaveProperty('meatWithdrawalDays');
+      expect(event).toMatchObject({
+        kind: 'treatment',
+        productId: PRODUCT_ID,
+        productName: 'Terramycin LA',
+        meatWithdrawalDays: 28,
+      });
       expect(event).not.toHaveProperty('meatWithholdUntil');
       // The treatment DAY is stored, because the withdrawal arithmetic is based on it.
       expect(String(event['administeredOn'])).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -367,7 +371,7 @@ describe('recording a treatment (FR-130/131)', () => {
     expect(await storedHealth()).toHaveLength(0);
   });
 
-  it('says what to do when the register has not reached this phone yet', async () => {
+  it('lets the farmer add a product when their catalogue is empty', async () => {
     // Not the farmer's fault and not an error — an empty picker with no explanation is what makes
     // someone give up on the app in a crush.
     cachedSession();
@@ -375,11 +379,12 @@ describe('recording a treatment (FR-130/131)', () => {
     window.history.pushState({}, '', '/animals/health');
     render(<App />);
 
-    expect(await screen.findByText(/has not reached this phone yet/i)).toBeTruthy();
+    expect(await screen.findByRole('option', { name: /add a product i use/i })).toBeTruthy();
+    expect(screen.getByLabelText(/product name/i)).toBeTruthy();
   });
 });
 
-describe('the withdrawal guard on a sale (FR-131)', () => {
+describe('the farmer-entered withdrawal reminder on a sale (FR-131)', () => {
   /** A treatment already on the device, `daysAgo` days back. */
   function seedTreatment(animalId: string, daysAgo: number): void {
     const administeredOn = farmDay(new Date(Date.now() - daysAgo * 86_400_000));
@@ -394,15 +399,16 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
           occurredAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
           administeredOn,
           productId: PRODUCT_ID,
+          productName: 'Terramycin LA',
+          meatWithdrawalDays: 28,
           batchId: null,
         },
       ]),
     );
   }
 
-  it('refuses the sale of a treated animal, and says when it may be sold', async () => {
-    // Without this the capture commits offline, the flush is refused forever, and the queue jams
-    // with nothing on the phone explaining why — days after the truck has gone.
+  it('shows an interval reminder but lets the farmer record the sale', async () => {
+    // The date is useful planning information, never permission or a save condition.
     cachedSession();
     seedProducts(28);
     const [animalId] = seedHerd(1);
@@ -414,16 +420,14 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
     await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
 
-    // It says no AND says when: a refusal with no way forward is what makes someone stop
-    // recording treatments at all.
-    expect(screen.getByText(/cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     const clear = farmDay(new Date(Date.now() + 25 * 86_400_000));
     expect(screen.getByText(clear)).toBeTruthy();
 
     await user.type(screen.getByLabelText(/buyer/i), 'Bloem Abattoir');
     await user.type(screen.getByLabelText(/price/i), '18450');
     expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
-      true,
+      false,
     );
   });
 
@@ -440,7 +444,7 @@ describe('the withdrawal guard on a sale (FR-131)', () => {
     await user.click((await screen.findAllByRole('button', { name: /cattle/i }))[0]!);
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
 
-    expect(screen.queryByText(/cannot be sold for slaughter yet/i)).toBeNull();
+    expect(screen.queryByText(/reminder date on/i)).toBeNull();
     await user.type(screen.getByLabelText(/buyer/i), 'Bloem Abattoir');
     await user.type(screen.getByLabelText(/price/i), '18450');
     expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
@@ -483,7 +487,7 @@ describe('dipping a whole flock (FR-133)', () => {
 
     await user.click(await screen.findByRole('button', { name: /flock a/i }));
     await user.click(screen.getByRole('button', { name: /^dip$/i }));
-    await user.selectOptions(screen.getByLabelText(/product/i), PRODUCT_ID);
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
     await user.click(screen.getByRole('button', { name: /record/i }));
 
     await waitFor(async () => {
@@ -511,7 +515,7 @@ describe('dipping a whole flock (FR-133)', () => {
       'false',
     );
     await user.click(screen.getByRole('button', { name: /^dip$/i }));
-    await user.selectOptions(screen.getByLabelText(/product/i), PRODUCT_ID);
+    await user.selectOptions(screen.getByLabelText(/which product/i), PRODUCT_ID);
     await user.click(screen.getByRole('button', { name: /record/i }));
 
     await waitFor(async () => {

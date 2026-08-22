@@ -98,7 +98,6 @@ graph TB
     subgraph Ext["External"]
         SB["Stud Book"]
         PF["PayFast"]
-        SN["Sentry<br/>PII-scrubbed"]
     end
 
     UI --> CDN
@@ -111,7 +110,6 @@ graph TB
     API --> PG & RD & S3
     WRK --> PG & RD & S3
     API --> SB & PF
-    API -.-> SN
 
     style Device fill:#FEF6D6,stroke:#D9A800
     style SA fill:#EDF0E6,stroke:#3F4A33
@@ -272,7 +270,10 @@ graph TB
     style af-south-1 fill:#EDF0E6
 ```
 
-**Everything containing personal information is in af-south-1.** CloudFront serves static assets globally — those contain no personal data, by construction. Backups stay in-region. Sentry is offshore, which is exactly why PII scrubbing is a code requirement (NFR-212) and not a settings checkbox.
+**Everything containing farm or personal information is in af-south-1.** CloudFront serves static
+assets globally — those contain no farm data, by construction. Backups stay in-region. No
+third-party behavioural analytics or offshore error-trace service receives farm records
+(ADR-0013).
 
 Full detail: [deployment-guide.md](../05-operations/deployment-guide.md).
 

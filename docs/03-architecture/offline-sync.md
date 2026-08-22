@@ -158,18 +158,16 @@ stateDiagram-v2
 
 1. A queued write survives app close, browser kill, and device reboot. Tested by chaos test, not by hope.
 2. A queued write is **never** discarded by the system. Only a human, explicitly, after review.
-3. ⛔ **The queue does NOT drain in `occurred_at` order, and must not.** It drains in an order
-   that puts the EVIDENCE a server-side guard reads ahead of the thing that guard judges. This
-   invariant used to read "drains in `occurred_at` order"; that was never what the code did and it
-   is the shape of a SEV-1 this repo has already shipped and fixed. The rules, in the order the
-   flush applies them (`apps/web/src/sync/Outbox.tsx`):
+3. ⛔ **The queue does NOT drain in `occurred_at` order, and must not.** It drains in dependency and
+   causal order. This protects reference integrity and ensures the server can reconstruct the same
+   private history and advisory reminder dates on the first pass; it does not give those reminders
+   authority over later records. The rules, in the order the flush applies them
+   (`apps/web/src/sync/Outbox.tsx`):
    1. **The foreign-key graph first** — a row cannot insert before the row it references.
-   2. **Evidence before the act it is judged against.** A dose creates a withholding; a move
-      decides which mob an animal stood in. Both must reach the server BEFORE any disposal
-      (`sale`, `slaughter`) that the server's withdrawal guard will judge against them. The guard
-      is a point-in-time query and cannot refuse what it has not received: dip a flock Monday
-      offline, tally forty to the abattoir Tuesday, reconnect Friday, and an `occurred_at` drain
-      posts the tally first and gets a **201** for meat inside an active withholding.
+   2. **Context before the record that uses it.** A dose supplies farmer-entered interval data; a
+      move decides which mob an animal stood in. Sending both before a disposal gives every device
+      the same complete log and reminder result. The disposal is still accepted regardless of the
+      calculated date.
    3. **Capture order for everything else, because capture order is CAUSAL.** It is what makes a
       departure precede its own arrival and an increase precede the departure it funds. The sort
       is stable, so what is left is the farmer's own order.

@@ -1,51 +1,9 @@
 /**
- * The client's meat-withdrawal guard (FR-131) — COMPLIANCE-GATED.
+ * Farmer-configured meat-withdrawal reminder arithmetic (FR-131).
  *
- * The server already refuses a sale inside an active withholding, and that refusal is the
- * authoritative one. This exists because of what happens WITHOUT it, offline: a farmer sells a
- * treated animal in a dead zone, the capture commits locally, and days later the flush is refused
- * forever. The queue jams behind it, the strip says "not sent — will retry", and nothing on the
- * phone explains why — least of all that the animal should not have been loaded onto the truck.
- * By then the transaction has happened. Catching it at capture is not duplicated validation; it is
- * the only version of this rule that reaches the person who can still act on it.
- *
- * The clear date is derived HERE from the device's health log and its cached product register,
- * using the same pure domain functions the server uses. It is a PREVIEW — the authoritative date is
- * the one computed server-side and stored on the treatment event at the time of treatment
- * (ADR-0005) — so a device with a stale register can be wrong at the margin. That asymmetry is
- * deliberate and it is safe in the direction that matters: the server still refuses what the client
- * lets through, and the client warns about what the server would refuse.
- *
- * Both entry points read BOTH routes a DOSE takes, because health events are animal-XOR-mob. An
- * asymmetry here is not a rounding error — it is this guard silently disagreeing with the one that
- * will actually refuse. The individual path was blind to mob doses and the group path was blind to
- * individual ones; each was found by a different review agent, from its own side. Membership is
- * reconstructed from the move log in farm-local days, the same shape the server runs, so the two
- * answer the same question rather than two similar-looking ones.
- *
- * ⭐ THERE IS A THIRD SOURCE, and this header did not mention it for two sessions after it landed.
- * Since §2.3b a withholding can ARRIVE WITH head rather than be given to it — a `transfer_in` out of
- * a dipped camp, or a purchase whose seller declared one — and for a counted flock that event is the
- * only place the fact can live, because there are no `animals` rows to hang a dose on. Only the MOB
- * entry point reads it (`latestArrivedWithhold`), and that asymmetry is CORRECT rather than the next
- * defect: the server's per-animal rule reads only health events too, so the two sides agree. It is
- * named here because the route that goes unmentioned is the route the next reader forgets, and this
- * file has now paid for that three times.
- *
- * ⭐ AND EVERY ROUTE IS BOUNDED BY THE DAY BEING JUDGED. A dose given after a disposal cannot
- * withhold it — see `latestClearAcross`, which had no such bound while the server did.
- *
- * ⭐ A DOSE IS READ TWO WAYS, and which one applies is not a caller's choice. `StoredHealthEvent`
- * (a LOCAL capture, not yet confirmed sent) carries a `productId` — the device's own cached
- * register is the only clear date it can preview. A dose read back through `HydratedLivestock`
- * (this device's own capture, once round-tripped through the server, or another device's) carries
- * no `productId` at all: the wire payload stores `product` (a NAME string, resolved server-side)
- * and the ALREADY-COMPUTED `meatWithholdUntil`, because the withdrawal is a regulated number
- * (ADR-0005) and the server never sends the id back. `WithholdDose` is the shape both satisfy, and
- * `clearDateFor` prefers the hydrated date when present — it is the authoritative answer, not a
- * second preview of the same one. A mapper that tried to force a hydrated dose into `productId`
- * would find nothing in the local register and silently drop it from the fold: a false CLEAR on
- * the one guard this file exists to keep from ever being wrong in that direction.
+ * Local and hydrated health events, mob membership and declared incoming dates are folded into a
+ * useful planning date. Every source is bounded by the day being reviewed. The result is private
+ * farm guidance only: callers may display it but must never refuse a farmer's capture because of it.
  */
 
 import { isWithinWithdrawal, withholdUntil } from '@werf/domain';
@@ -55,7 +13,7 @@ import type { StoredMove } from './LocalMoves';
 import type { StoredVetProduct } from './LocalVetProducts';
 
 /**
- * What the withdrawal guard needs from ONE dose, and nothing more — the fold's own minimal shape,
+ * What the withdrawal reminder needs from ONE dose, and nothing more — the fold's own minimal shape,
  * satisfied by both a local `StoredHealthEvent` (structurally: `productId` required narrows to this
  * field's optional type) and a hydrated dose (`meatWithholdUntil` in place of `productId`). See the
  * module header for why a dose is read two different ways.
@@ -70,6 +28,8 @@ export interface WithholdDose {
   readonly administeredOn: string;
   /** A LOCAL capture's productId — looked up against the device's cached register. */
   readonly productId?: string;
+  /** Farmer-entered interval snapshot on current local captures. */
+  readonly meatWithdrawalDays?: number | null;
   /** A HYDRATED dose's already-resolved clear date — the server's own answer, preferred when present. */
   readonly meatWithholdUntil?: string;
 }
@@ -77,7 +37,7 @@ export interface WithholdDose {
 export interface WithdrawalStatus {
   /** The day this animal clears its meat withholding, or null when nothing is withholding it. */
   readonly clearFrom: string | null;
-  /** True when a disposal on the given day would fall inside an active withholding. */
+  /** True when a disposal day falls inside the farmer-entered interval. Advisory only. */
   readonly blocked: boolean;
 }
 
@@ -563,6 +523,15 @@ function clearDateFor(
 ): ClearResult {
   if (event.meatWithholdUntil !== undefined)
     return { kind: 'known', clear: event.meatWithholdUntil };
+  if (event.meatWithdrawalDays !== undefined) {
+    return {
+      kind: 'known',
+      clear:
+        event.meatWithdrawalDays === null
+          ? undefined
+          : withholdUntil(event.administeredOn, event.meatWithdrawalDays),
+    };
+  }
   if (event.productId === undefined) return { kind: 'known', clear: undefined };
   if (!withdrawalDays.has(event.productId)) {
     // This EXACT version is missing from the cache — not "registered, no withdrawal", but "this

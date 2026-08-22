@@ -61,12 +61,9 @@ export type WeightPayload = z.infer<typeof weightPayloadSchema>;
 /**
  * Death (FR-105): the cause, and how the carcass was disposed of. Drives status → 'dead'.
  *
- * ⭐ `slaughtered` is a compliance-gated FLAG rather than a word in `cause`, and it is the whole
- * reason this schema is not just free text. An animal slaughtered on the farm goes into the food
- * chain exactly as a sale to an abattoir does, so FR-131's withdrawal guard has to fire for it — and
- * a guard cannot read "slaughtered for the workers' rations" out of a sentence someone typed. The
- * group path (`tally`) has had `slaughter` as a first-class reason since FR-102; without this the
- * individual path was the mirror image of the hole that closed.
+ * `slaughtered` is a stable fact rather than a word hidden in `cause`. That lets the farmer search,
+ * calculate and export the log without Werf interpreting free-text notes. It does not make Werf an
+ * authority over the farmer's decision or turn a reminder into a save condition.
  */
 export const deathPayloadSchema = z.object({
   cause: z.string().min(1),
@@ -196,6 +193,11 @@ const dosingFields = {
   milkWithholdUntil: dateSchema.optional(),
 } as const;
 
+const farmerProductSnapshotFields = {
+  productId: uuidSchema.optional(),
+  registrationNumber: z.string().min(1).optional(),
+} as const;
+
 /** Route a medicine was given by. */
 export const treatmentRouteSchema = z.enum([
   'oral',
@@ -208,9 +210,10 @@ export const treatmentRouteSchema = z.enum([
 ]);
 export type TreatmentRoute = z.infer<typeof treatmentRouteSchema>;
 
-/** Treatment (FR-130/131): the registered product, batch, dose, route, who gave it, why. */
+/** Treatment (FR-130/131): the farmer's product snapshot, batch, dose, route, giver and reason. */
 export const treatmentPayloadSchema = z.object({
   product: z.string().min(1),
+  ...farmerProductSnapshotFields,
   batch: z.string().min(1).optional(),
   doseValue: z.number().positive().optional(),
   doseUnit: z.string().min(1).optional(),
@@ -224,6 +227,7 @@ export type TreatmentPayload = z.infer<typeof treatmentPayloadSchema>;
 /** Vaccination (FR-132): the product, the programme it belongs to, batch, who gave it. */
 export const vaccinationPayloadSchema = z.object({
   product: z.string().min(1),
+  ...farmerProductSnapshotFields,
   programme: z.string().min(1).optional(),
   batch: z.string().min(1).optional(),
   administeredBy: z.string().min(1).optional(),
@@ -234,6 +238,7 @@ export type VaccinationPayload = z.infer<typeof vaccinationPayloadSchema>;
 /** Dip / tick treatment (FR-133): required in controlled areas (Animal Diseases Act 35 of 1984). */
 export const dipPayloadSchema = z.object({
   product: z.string().min(1),
+  ...farmerProductSnapshotFields,
   method: z.enum(['plunge', 'spray', 'pour_on', 'hand']).optional(),
   reason: z.string().min(1).optional(),
   ...dosingFields,
@@ -671,18 +676,9 @@ export const fertiliserPayloadSchema = z.object({
 export type FertiliserPayload = z.infer<typeof fertiliserPayloadSchema>;
 
 /**
- * A spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED (legal-compliance.md § 4,
- * .claude/rules/domain.md). The registered product, active ingredients, rate, water volume,
- * operator, equipment and weather at application, plus the pre-harvest interval computed AT
- * CAPTURE and stored (ADR-0005) — the exact discipline `dosingFields` below already proves for a
- * treatment's withdrawal, one field over.
- *
- * `productId` is stored, not a bare PHI number: the server resolves BOTH `activeIngredients` and
- * `phiDays` from the registered `chemical_products` row in force on `sprayedOn` and writes them
- * here, so a client can never claim a shorter PHI, or a different active ingredient, by relabelling
- * (the same property `treatmentPayloadSchema`'s `product` name-snapshot protects, applied here to
- * the FK itself so 4c·4's report and 4d's future guard can both resolve back to the exact
- * registration version that applied).
+ * A farmer-entered spray record (FR-204). The event snapshots the farm-owned product name and
+ * optional product facts, application details, and a PHI reminder calculated from the farmer's
+ * value at capture. Werf does not validate product legality or certify the record.
  *
  * `phiDays`/`earliestHarvestDate` are OPTIONAL and OMITTED — never zero — when the resolved
  * product carries no PHI on record. A null `phi_days` and a zero-day PHI are different facts
@@ -696,7 +692,10 @@ export type FertiliserPayload = z.infer<typeof fertiliserPayloadSchema>;
  */
 export const sprayPayloadSchema = z.object({
   productId: uuidSchema,
-  activeIngredients: z.array(z.string().min(1)).min(1),
+  /** Optional for compatibility with pre-logbook events; all new captures carry the snapshot. */
+  productName: z.string().min(1).optional(),
+  registrationNumber: z.string().min(1).optional(),
+  activeIngredients: z.array(z.string().min(1)).optional(),
   /** The farm-local day the spray was applied (YYYY-MM-DD) — the base for the PHI arithmetic, the
    *  same role `administeredOn` plays for a treatment (`dosingFields` below). */
   sprayedOn: dateSchema,
@@ -707,24 +706,19 @@ export const sprayPayloadSchema = z.object({
   windKph: z.number().nonnegative().finite().optional(),
   tempC: z.number().finite().optional(),
   targetPest: z.string().min(1).optional(),
-  /** Pre-harvest interval in whole days, resolved server-side. Absent = the registered product
-   *  carries no PHI on record — never stored as 0. */
+  /** Farmer-entered pre-harvest interval in whole days. Absent means the farm entered no value. */
   phiDays: z.number().int().nonnegative().optional(),
   /** `sprayedOn` + `phiDays`, computed server-side and stored — never recomputed on read. Absent
    *  exactly when `phiDays` is absent. */
   earliestHarvestDate: dateSchema.optional(),
-  phiOverride: z
-    .object({
-      reason: z.string().min(1),
-      by: uuidSchema.optional(),
-    })
-    .optional(),
+  /** Legacy field retained only so historical events remain readable. New captures never set it. */
+  phiOverride: z.object({ reason: z.string().min(1), by: uuidSchema.optional() }).optional(),
 });
 export type SprayPayload = z.infer<typeof sprayPayloadSchema>;
 
 /**
- * A harvest (FR-207) — COMPLIANCE-GATED (legal-compliance.md § 4.3, US-030): 4d's PHI guard blocks
- * this at capture unless `phiOverride` is present. `quantity`/`unit` mirror `planting.density`'s
+ * A farmer-entered harvest fact (FR-207). PHI arithmetic may be shown as a planning reminder but
+ * never blocks capture. `quantity`/`unit` mirror `planting.density`'s
  * generic `{ value, unit }` shape one field flatter (a harvest has no second numeric field to pair a
  * unit with), because the unit varies by crop (kg for grain, bins for grapes, bags for potatoes) the
  * same way a fertiliser rate's does.

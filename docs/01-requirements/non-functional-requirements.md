@@ -78,7 +78,7 @@ Full threat model and controls: [security.md](../05-operations/security.md).
 | NFR-209 | OWASP Top 10 addressed and documented | Security review per phase |
 | NFR-210 | Layered rate limiting: global API budget plus tighter auth/ceremony budgets; production counters shared across replicas; account-aware delay and edge/WAF controls | Unit + distributed integration/load test |
 | NFR-211 | Audit log immutable — no UPDATE/DELETE grant at the database level | Migration assertion + test |
-| NFR-212 | **PII scrubbed before leaving South Africa** (Sentry, logs, any AI feature) | Code requirement + test, not a settings checkbox |
+| NFR-212 | **No farm record enters third-party telemetry.** Any future offshore AI/telemetry feature needs a separate owner decision and explicit privacy design (ADR-0013) | Architecture + code tests |
 | NFR-213 | CSP with no `unsafe-inline`, no `unsafe-eval` | Header test in CI |
 | NFR-214 | Penetration test before public launch | External, scheduled Phase 7 |
 | NFR-215 | Local SQLite contains no unencrypted ID numbers or banking details | Code review + test |

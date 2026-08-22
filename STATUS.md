@@ -3,32 +3,27 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-22 (Phase 4 commercial-audit + Phase 5 plan merged to `main` via PR #15;
-`phase-5/people-work-pay` branched). Previous substantive state: 2026-08-20 (Phase 3–4 farmer-first
-commercial audit on `phase-4/commercial-audit`, based on `main` @ `451f793`). Owner decision ADR-0013
-resets the product boundary: Werf is a private farmer-controlled logbook, planner and calculator, not
-an authority.
+**Last updated:** 2026-08-22 (Phase 4 commercial-audit + Phase 5 plan merged to `main` via PR #15 @
+`5988414`; `phase-5/people-work-pay` branched, no implementation yet). Owner decision ADR-0013 resets
+the product boundary: Werf is a private farmer-controlled logbook, planner and calculator, not an
+authority.
 
-✅ **PR #15 merged 2026-08-22** (`phase-4/commercial-audit` → `main` @ `5988414`), closing STATUS.md
-§5 step 1. CI's own `E2E · axe` run caught two real gaps `pnpm verify` cannot see, both fixed on the
-PR before merge (`644fc94`), not filed:
-- **A genuine regression, not a stale test:** `usePhiGuard.ts`'s `sprayFactsOf` had been simplified to
-  a hardcoded `resolved: true`, silently disabling the O-12 offline PHI-preview fallback — a local
-  spray capture not yet round-tripped through the server was read as "confirmed, no PHI on record"
-  instead of falling back to the farmer's own product register. This fed both the harvest-capture
-  reminder and `phiRegister.ts`'s compliance-gated local PHI register. Restored the
-  `activeIngredients` discriminator, added a fail-first regression test (`usePhiGuard.test.ts`) — no
-  existing test exercised `sprayFactsOf` itself, only `phiGuardFor` with hand-built facts, which is
-  why `pnpm verify` stayed green through the regression.
-- `apps/web/e2e/a11y.spec.ts` and `session.ts` had gone stale against the same audit: theft-report
-  copy, the meat-interval panels and the removed crop-PHI override UI all moved to advisory language;
-  the crop-chemical PHI fact moved from the retired `werf-chemical-products` store onto the farmer's
-  own inventory item, and the fixture never carried `phiDays` onto its new home, so `/crops/spray`'s
-  planning-warning panel — the newest control on that screen — never rendered under axe. Both fixed;
-  full `a11y.spec.ts` re-verified 20/20 against the running app, not just CI's word for it.
-
-**Branch reconcile (2026-08-22):** `phase-5/people-work-pay` branched from `main` @ `5988414`. Phase
-5 implementation not started.
+✅ **PR #15 merged 2026-08-22, closing §5 step 1.** CI's `E2E · axe` run caught two real gaps
+`pnpm verify` can't see, both fixed pre-merge (`644fc94`): (1) a genuine regression, not a stale
+test — `usePhiGuard.ts`'s `sprayFactsOf` had flattened to a hardcoded `resolved: true`, silently
+disabling the O-12 offline PHI-preview fallback (an unsent spray read as "confirmed, no PHI on
+record" instead of falling back to the farmer's register), feeding both the harvest reminder and
+`phiRegister.ts`'s compliance-gated register — no existing test exercised `sprayFactsOf` itself, only
+`phiGuardFor` with hand-built facts, so `pnpm verify` stayed green through it; fixed + fail-first test
+added. (2) `a11y.spec.ts`/`session.ts` had gone stale against the same audit's copy (theft
+"report"→"record", meat-interval panels, removed PHI override UI) and its chemical-product migration
+(fixture never carried `phiDays` onto the new `inventory_items` home, so `/crops/spray`'s
+planning-warning panel never rendered under axe). Both fixed, `a11y.spec.ts` re-verified 20/20 against
+the running app. ⚠️ **Neither fix got a compliance-checker pass before merge — flagged to JP after the
+fact, not before.** JP asked for one on the full PR range (`451f793..5988414`); running, result TBD.
+🆕 Filed, not fixed: **issue #16** — the `chemical_products`→`inventory_items` migration has no
+backfill, so a pre-migration spray can never resolve PHI again (no production data yet, so no farmer
+impact today).
 
 🆕 **Phase 5 owner decisions (2026-08-22), load-bearing for the plan:**
 - **The whole phase is a farmer-controlled people, work and pay tool, not a compliance gate.**
@@ -42,27 +37,20 @@ PR before merge (`644fc94`), not filed:
   to the external labour-law reviewer (5i) for sign-off. Recommendation on record was to KEEP the
   block; JP chose advisory-only. **Recorded as [ADR-0014](docs/03-architecture/adr/ADR-0014-advisory-payroll.md)**
   (precedence 1).
-- **Phase 5 implementation branches from `main` AFTER the P4 audit/planning PR is merged** (not from
-  the current tree). Order in §5.
 - **Working method for Phase 5:** Sonnet implements one small slice at a time; `advisor()` (Opus 5)
   is a required per-slice step — before committing to an approach and again before declaring done,
   after the gate is green. Review agents stay owner-triggered only. Full cadence in
   `phase-checklists.md` Phase 5 §"Working method".
-Farmers now own their crop and veterinary product catalogue and optional label/interval facts;
-Werf snapshots those inputs, calculates transparent reminders, and never blocks recording a spray,
-harvest, sale or slaughter. Missing-stock GPS is useful but optional. The unfinished Compliance home tile is dropped. Production now refuses
-to boot unless its ordinary DB connection is the forced-RLS `werf_app` role and its narrowly used
-elevated maintenance connection is separately configured.
 
-✅ **Farmer-first commercial audit verification:** the final Phase 3–4 tree passes `pnpm verify`
-(project coherence, lint/format, forced typecheck, full tests and production build). Focused evidence
-also covers 164 livestock API tests, 56 crop API/UI tests, 87 capture/configuration tests and 14
-private-reminder screen tests. Commercial deployment still requires the Phase 7 penetration,
-operability and pilot gates. A chemical-product source is not a gate because capture uses the farm's
-own product list.
+Missing-stock GPS is useful but optional. The unfinished Compliance home tile is dropped. Production
+now refuses to boot unless its ordinary DB connection is the forced-RLS `werf_app` role and its
+narrowly used elevated maintenance connection is separately configured.
 
-Phase 3 MERGED to `main` as `6823858` (PR #11). Do not re-run P1–P3, 4a–4e·6, either
-compliance-checker pass (25th/29th sessions), or this session's own mechanical checks above.
+✅ **Farmer-first commercial audit verification:** the final Phase 3–4 tree passed `pnpm verify` plus
+164 livestock API, 56 crop API/UI, 87 capture/configuration and 14 private-reminder screen tests.
+Commercial deployment still requires the Phase 7 penetration, operability and pilot gates. Do not
+re-run P1–P3, 4a–4e·6, either compliance-checker pass (25th/29th sessions), or this session's own
+mechanical checks above.
 
 ✅ **Historical 4a/4b/4c/4d/4e·1–4e·6 record (superseded where ADR-0013 differs) — fully closed, full accounts in
 `phase-checklists.md`'s Phase 4 section.** 4e·6 (31st session): FR-153 feed consumption — new
@@ -89,11 +77,9 @@ Werf calculates reminders from those entries without verifying, approving or rep
 
 **Active branch:** `phase-5/people-work-pay` @ `main`'s `5988414`. Phase 5 code not started.
 
-**Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`). Phase 3 merged to `main` via
-PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fixes needed. Phase 4
-merged to `main` via PR #13 (`580c611`, 2026-08-20) — 3/3 CI checks green at merge. The Phase 4
-commercial audit + Phase 5 plan merged via PR #15 (`5988414`, 2026-08-22) — 3/3 CI checks green at
-merge, after the two fixes above.
+**Remote state:** Phase 2 → `main` via PR #3 (`13a0d46`). Phase 3 → `main` via PR #11 (`6823858`,
+2026-08-17). Phase 4 → `main` via PR #13 (`580c611`, 2026-08-20). Commercial audit + Phase 5 plan →
+`main` via PR #15 (`5988414`, 2026-08-22). All four: 3/3 CI checks green at merge.
 
 ## 1. Delivery position
 
@@ -193,20 +179,12 @@ on hand is RECORDED, never refused; two mechanical gotchas closed same session (
 hand-maintained table registries, both `@werf/db` and `@werf/sync`).
 
 ✅ **4d built (22nd session), CLEARED by compliance-checker (25th session, see above).** PHI guard
-(`packages/domain/src/crops/phi-guard.ts`, shared client+server) + harvest capture + FR-205
-override (audited, migration 0026) + 4d·6's cross-device race register. Client-side ancestor
-checking is deliberately LEAF-ONLY (no local `created_at` to bound a split with) — disclosed on
-`RecordHarvestScreen.tsx`, server (full ancestor chain) is the authoritative backstop. An advisor
-review during design caught a draft that would have broken the OFFLINE case (O-12): the guard
-falls back to a local-cache PREVIEW for an unsent spray, mirroring `withdrawal.ts`'s
-`clearDateFor`, rather than trusting a server-resolved date a local capture never has.
-
-⚠️ **Self-review same day (22nd session) caught three gaps a green `pnpm verify` could not have —
-all closed:** `a11y.spec.ts` never covered ANY crops screen from 4a onward (fixed, 18/18 e2e green,
-0 violations — the same gap in 4a/4b/4c's own screens was filed, not fixed here); a real bug in
-`RecordHarvestScreen.tsx` (`valid` never checked `harvestedOn !== ''`, permanently disabling Save
-on a cleared date — fixed, not a compliance bypass since the guard still blocks in the safe
-direction); `AttentionScreen.tsx`'s PHI section had zero render coverage (added).
+(`packages/domain/src/crops/phi-guard.ts`, shared client+server) + harvest capture + FR-205 override
+(migration 0026) + 4d·6's cross-device race register. Client-side ancestor checking is deliberately
+LEAF-ONLY, server (full ancestor chain) is the authoritative backstop. Same-day self-review caught
+three gaps a green `pnpm verify` couldn't: missing crops-screen a11y coverage (fixed), a real
+`RecordHarvestScreen.tsx` Save-disabling bug (fixed), zero render coverage on `AttentionScreen.tsx`'s
+PHI section (added).
 
 ✅ **Whole-branch `reviewer`+`sync-auditor`+`compliance-checker`, `main..HEAD` on
 `phase-4/crops-fields` — CLEARS, 2026-08-17 (twenty-first session, JP-requested).** Full account is
@@ -217,42 +195,40 @@ reachable via the current write path). `reviewer` also caught a stale Turbo cach
 typecheck failure this session's earlier `pnpm verify` runs had missed. ⛔ New scope opens from
 `3d10103` forward.
 
-✅ **Phase 2/3-era passes (12th–16th sessions, 2026-08-14…17), all CLOSED — full detail in git
-history, condensed here to hold the line budget.** 16th: whole-branch `reviewer`+`sync-auditor`+
-`compliance-checker` `main...HEAD` APPROVABLE, one SEV-2 (attachment loss under OPFS quota) + two
-LOW fixed (`c45cd01`/`47c0ffe`), follow-up pass found nothing new. 14th: scope `45775ea..ec8336e`
-(WebAuthn prod config, immutable auth audit log, users column grants, attachment MIME/size/quota)
-CLEARED, one LOW fixed; JP set attachment cap 25 MB, quota in scope, reg-enumeration hardening →
-Phase 7. 12th: scope `428200a..45775ea` (18 commits, P2.10 + conflict audit/review migration 0026 +
-P3.11–16) CLEARED clean. Sessions 1/3/4: back-dated-move fail-closed, 3e land hydration, 3i
-attachment queue/residuals, P2.6–2.9, conflict audit/review + `(occurred_at,id)` LWW; four passes
-`baf4b4d..428200a` all CLEARED (one LOW REFUTED with evidence). 3b–3i: hydration passes APPROVABLE
-(`ba7f680`), partitioning retired (0021), drizzle snapshot gap reconciled (0023/0024).
+✅ **Phase 2/3-era passes (1st–16th sessions, 2026-08-08…17), all CLOSED — full detail in git
+history only.** 16th: whole-branch APPROVABLE, one SEV-2 (attachment loss under OPFS quota) + two LOW
+fixed. 14th: WebAuthn prod config + auth audit log + attachment MIME/size/quota CLEARED (cap 25 MB;
+reg-enumeration hardening deferred to Phase 7). 12th: P2.10 + conflict audit/review + P3.11–16
+CLEARED. Earlier: back-dated-move fail-closed, 3e land hydration, 3i attachment queue, `(occurred_at,
+id)` LWW, hydration passes APPROVABLE, partitioning retired (0021).
 
 ## 4. Verification
 
 | Check | Latest result |
 |---|---|
-| Phase 4 commercial audit (2026-08-20, current branch) | ✅ Forced-cold `pnpm verify`: **1688/1688**, 151/151 files; lint/typecheck clean with 0 Turbo cache hits; build 7/7, 196.30 KB gz. Focused web 75/75; focused Postgres crop/livestock 218/218 |
-| Phase 5 planning audit (2026-08-22) | ✅ project check (300/300 lines, phase names coherent), lint/Prettier and `git diff --check`; ⚠️ full verify stops at forced sync typecheck because this workspace cannot resolve pre-existing `@powersync/*` packages (ordinary run also lacks a container runtime) |
-| Whole-branch agent pass + SEV-2 fix (2026-08-20, 34th session, **the number to trust**) | ✅ `pnpm verify`: full pass 1630 green + 1 suite hit a transient testcontainer health-check timeout, re-run in isolation clean (51/51) — **1681/1681 real**, lint/typecheck clean (web typecheck genuinely re-ran, cache miss on the edited file). `pnpm build` 7/7, 194.26 KB gz. `Outbox.test.tsx` 53/53 including the new fail-first test |
-| Phase 4 exit-review sweep, 33rd session | ✅ `pnpm verify` 1680/1680 (baseline this session's 1681 builds on), artifact-drift/TENANCY/offline-write/a11y sweeps all clean — full account in git history |
-| `pnpm verify` — 32nd/31st/30th/28th/27th/26th/25th sessions | ✅ All green, condensed — full per-session numbers in `phase-checklists.md` Phase 4 and git history. 25th hit transient Postgres contention, confirmed not a regression |
-| Earlier agent passes (4th–29th sessions, Phase 2–4) | ✅ All CLEARED/APPROVABLE — 29th (4e·1/2/4) CLEARS + 2 LOW; 25th/24th 4d·11 APPROVABLE after 1 HIGH; 21st/16th whole-branch (21st caught a stale-cache typecheck mask); 16th `WERF_REAL_STACK` 5/5 (`dd1fac8`); 14th/12th/4th CLEARED. Full accounts in §3 and git history |
+| PR #15 merge verification (2026-08-22, this session) | ✅ Forced `pnpm verify`: **1664/1664** tests, lint/typecheck/build clean (7/7, 196.08 KB gz). Full `apps/web/e2e/a11y.spec.ts` re-verified **20/20** against the running app after the fixture/PHI fixes above |
+| Phase 4 commercial audit (2026-08-20) | ✅ Forced-cold `pnpm verify`: **1688/1688**, 151/151 files; lint/typecheck clean, build 7/7, 196.30 KB gz |
+| Whole-branch agent pass + SEV-2 fix (34th session, the number to trust for pre-audit Phase 4) | ✅ **1681/1681** real, lint/typecheck clean, build 7/7, 194.26 KB gz |
+| Earlier sessions (4th–33rd, Phase 2–4) | ✅ All green/CLEARED/APPROVABLE — full per-session accounts in §3, `phase-checklists.md` and git history |
 
 ## 5. Next executable steps
 
 Ordered.
 
-1. ✅ **DONE 2026-08-22 — Closed out the P4 commercial audit + Phase 5 planning PR.** Committed,
-   pushed, opened PR #15, CI ran (catching and fixing the two gaps recorded at the top of this file),
-   merged to `main` @ `5988414` (§7: every `main`-bound change goes through a PR). The production
-   privacy promise (tenant-private vs delayed provider-blind E2E) is still open and touches Phase 5's
-   5b PII encryption — decide and document it, but it does not block Phase 5 starting; 5b uses the
-   current PII-key model and flags the migration exposure.
-2. ✅ **DONE 2026-08-22 — Branched `phase-5/people-work-pay` from `main`** @ `5988414`. This STATUS.md
-   reconcile is its first commit (§7 precedent — not a push to `main`).
-3. **NEXT — book/complete the two external deployment gates early** (they are not satisfied by reading the repo):
+1. ✅ **DONE — P4 commercial audit + Phase 5 planning PR #15 merged to `main`** @ `5988414` (§7: every
+   `main`-bound change goes through a PR). The production privacy promise (tenant-private vs delayed
+   provider-blind E2E) is still open and touches Phase 5's 5b PII encryption — decide and document
+   it, but it does not block Phase 5 starting; 5b uses the current PII-key model.
+2. ✅ **DONE — Branched `phase-5/people-work-pay` from `main`** @ `5988414`.
+2b. ✅ **`compliance-checker` on `451f793..5988414` back 2026-08-22 — 3 findings, JP-triaged, none
+   fixed yet.** (1) MED: `usePhiGuard.ts`'s `resolved` discriminator assumed `activeIngredients` stays
+   required, but this PR relaxed it to optional — a confirmed spray with none entered now reads
+   permanently unresolved and can invent/lose a PHI reminder from today's catalogue, not capture-time
+   facts. JP: **fix now, this branch, advisor()-gated.** (2) MED: `config.ts`'s boot check verifies
+   `DATABASE_URL` is `werf_app` but never checks `DATABASE_ELEVATED_URL` isn't ALSO non-privileged.
+   JP: **small mechanical hotfix PR to `main`.** (3) LOW: stale Animal Diseases Act comment
+   (`events.ts`, rule-4 hit) — folded into (1).
+3. **Book/complete the two external deployment gates early** (they are not satisfied by reading the repo):
    - **B-1** — book the external labour-law review, with a date. It gates 5i (an exit-gate line) and
      is on someone else's calendar, so book it now, not in week seven. Ask it to bless or overturn
      the advisory-only payroll decision specifically.

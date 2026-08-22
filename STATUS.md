@@ -3,27 +3,20 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-22 (Phase 4 commercial-audit + Phase 5 plan merged to `main` via PR #15 @
-`5988414`; `phase-5/people-work-pay` branched, no implementation yet). Owner decision ADR-0013 resets
-the product boundary: Werf is a private farmer-controlled logbook, planner and calculator, not an
-authority.
+**Last updated:** 2026-08-22 (session ended on a token budget, deliberately at a clean/stable point —
+see 🔴 **NEXT SESSION**, first thing below). PR #15 (Phase 4 commercial-audit + Phase 5 plan) merged
+to `main` @ `5988414`; `phase-5/people-work-pay` branched, no slice implementation yet. Owner decision
+ADR-0013 resets the product boundary: Werf is a private farmer-controlled logbook, planner and
+calculator, not an authority.
 
-✅ **PR #15 merged 2026-08-22, closing §5 step 1.** CI's `E2E · axe` run caught two real gaps
-`pnpm verify` can't see, both fixed pre-merge (`644fc94`): (1) a genuine regression, not a stale
-test — `usePhiGuard.ts`'s `sprayFactsOf` had flattened to a hardcoded `resolved: true`, silently
-disabling the O-12 offline PHI-preview fallback (an unsent spray read as "confirmed, no PHI on
-record" instead of falling back to the farmer's register), feeding both the harvest reminder and
-`phiRegister.ts`'s compliance-gated register — no existing test exercised `sprayFactsOf` itself, only
-`phiGuardFor` with hand-built facts, so `pnpm verify` stayed green through it; fixed + fail-first test
-added. (2) `a11y.spec.ts`/`session.ts` had gone stale against the same audit's copy (theft
-"report"→"record", meat-interval panels, removed PHI override UI) and its chemical-product migration
-(fixture never carried `phiDays` onto the new `inventory_items` home, so `/crops/spray`'s
-planning-warning panel never rendered under axe). Both fixed, `a11y.spec.ts` re-verified 20/20 against
-the running app. ⚠️ **Neither fix got a compliance-checker pass before merge — flagged to JP after the
-fact, not before.** JP asked for one on the full PR range (`451f793..5988414`); running, result TBD.
-🆕 Filed, not fixed: **issue #16** — the `chemical_products`→`inventory_items` migration has no
-backfill, so a pre-migration spray can never resolve PHI again (no production data yet, so no farmer
-impact today).
+🔴 **NEXT SESSION STARTS HERE:** run `compliance-checker` on `phase-5/people-work-pay`'s commit
+`23986d0` (JP's explicit ask, deferred only for this session's token budget — full context in 2b).
+Not a mechanical fix, so clause 3's no-pass exception is JP's call, not mine to assume. Act on its
+findings — the one open item before Phase 5 slice work (§5 step 3 otherwise: B-1/B-2 external gates).
+
+✅ **PR #15 merged 2026-08-22, closing §5 step 1** — full account in 2b. 🆕 Filed, not fixed:
+**issue #16** — `chemical_products`→`inventory_items` has no backfill, so a pre-migration spray can
+never resolve PHI again (no production data yet, no farmer impact today).
 
 🆕 **Phase 5 owner decisions (2026-08-22), load-bearing for the plan:**
 - **The whole phase is a farmer-controlled people, work and pay tool, not a compliance gate.**
@@ -220,14 +213,24 @@ Ordered.
    provider-blind E2E) is still open and touches Phase 5's 5b PII encryption — decide and document
    it, but it does not block Phase 5 starting; 5b uses the current PII-key model.
 2. ✅ **DONE — Branched `phase-5/people-work-pay` from `main`** @ `5988414`.
-2b. ✅ **`compliance-checker` on `451f793..5988414` back 2026-08-22 — 3 findings, JP-triaged, none
-   fixed yet.** (1) MED: `usePhiGuard.ts`'s `resolved` discriminator assumed `activeIngredients` stays
-   required, but this PR relaxed it to optional — a confirmed spray with none entered now reads
-   permanently unresolved and can invent/lose a PHI reminder from today's catalogue, not capture-time
-   facts. JP: **fix now, this branch, advisor()-gated.** (2) MED: `config.ts`'s boot check verifies
-   `DATABASE_URL` is `werf_app` but never checks `DATABASE_ELEVATED_URL` isn't ALSO non-privileged.
-   JP: **small mechanical hotfix PR to `main`.** (3) LOW: stale Animal Diseases Act comment
-   (`events.ts`, rule-4 hit) — folded into (1).
+2b. ✅ **`compliance-checker` on `451f793..5988414` back 2026-08-22 — 3 findings, all now fixed,
+   ⚠️ one still needs its OWN re-pass (see 🔴 NEXT SESSION at the top).** (2) MED, `config.ts`'s boot
+   check never verified `DATABASE_ELEVATED_URL` wasn't ALSO `werf_app` — fixed as a small mechanical
+   hotfix, PR #17 merged to `main` @ `9365dee`, fail-first test added, `pnpm verify` 1665/1665. (1) MED,
+   the real regression this PR's own CI catch (above) had already touched: `usePhiGuard.ts`'s
+   `resolved` discriminator assumed `activeIngredients` stays required, but this PR relaxed it to
+   optional, so a confirmed spray with none entered read as permanently unresolved and could
+   invent/lose a PHI reminder from today's catalogue. **Fixed on `phase-5/people-work-pay` @ `23986d0`**
+   — `resolved` now derives from the raw hydrated-spray id set (same shape `withdrawal.ts`'s
+   `hydratedAnimalIds`), never a farmer-entered field; `advisor()`-reviewed, caught a residual, now
+   DISCLOSED-not-fixed limitation: while hydration is loading or has permanently failed, a genuinely
+   confirmed no-PHI spray reads "unresolved" rather than skipping cleanly (safe direction — an honest
+   under-claim, never a false all-clear — but not maximally accurate). ⚠️ **This fix changed a
+   function signature and added a hook dependency — NOT purely mechanical — so JP wants a fresh
+   `compliance-checker` pass on `23986d0` specifically before it counts as compliance-clear.
+   `a11y.spec.ts` (20/20) is NOT evidence for this fix — its fixture only ever exercises local,
+   never-hydrated sprays; the real coverage is the new `usePhiGuard.test.ts` cases.** (3) LOW: stale
+   Animal Diseases Act comment (`events.ts`, rule-4 hit) — fixed alongside (1), same commit.
 3. **Book/complete the two external deployment gates early** (they are not satisfied by reading the repo):
    - **B-1** — book the external labour-law review, with a date. It gates 5i (an exit-gate line) and
      is on someone else's calendar, so book it now, not in week seven. Ask it to bless or overturn

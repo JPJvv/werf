@@ -49,8 +49,7 @@ explicit diagnostic export.
 
 | Metric | Why |
 |---|---|
-| `payroll_runs_blocked_total{reason}` | **A spike in `NET_BELOW_MINIMUM` means either a real problem on farms or a bug in our engine.** Both need a human. |
-| `payroll_warnings_total{code}` | `PIECE_RATE_TOPPED_UP` trending up = farms are getting piece rates wrong. That is a product insight, and possibly a support conversation. |
+| `payroll_warnings_total{code}` | Aggregate warning counts show calculation regressions without identifying or policing a farm. A spike is investigated as a product/rule issue, never used to contact or report a farmer. |
 | `regulatory_rate_lookup_miss_total{jurisdiction,code}` | **> 0 is a page.** A missing rate means payroll is throwing. In February this is the fire. |
 | `auth_2fa_enrolled_ratio{role}` | Owners without 2FA are the accounts holding wages and banking. Track it; nudge it. |
 | `auth_recovery_code_used_total` | A spike means phones are being lost, or something worse |
@@ -262,7 +261,7 @@ and deliberately shares an export.
 | Aggregate repeated sync failures | Ticket | Investigate the platform; do not identify or contact a farm from telemetry |
 | Quarantined writes > 0 | Ticket | Human review |
 | Sync slow burn | Ticket | |
-| Payroll blocked spike | Ticket | Real problem or our bug? |
+| Payroll warning spike | Ticket | Calculation/rule regression or changed usage; inspect aggregate behaviour, not farm records |
 | Reminder-calculation errors trending | Ticket | Investigate code without inspecting farm payloads |
 
 **Every alert has a runbook link (NFR-705).** No orphans. An alert without a runbook is a 2am guess.

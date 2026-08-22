@@ -3,28 +3,28 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-22 (Phase 5 planning session — plan authored into `roadmap.md` and
-`phase-checklists.md` Phase 5, two owner decisions recorded below; NO code written). Previous
+**Last updated:** 2026-08-22 (Phase 5 farmer-workflow/forms/exports planning audit; NO code written). Previous
 substantive state: 2026-08-20 (Phase 3–4 farmer-first commercial audit on
 `phase-4/commercial-audit`, based on `main` @ `451f793`). Owner decision ADR-0013 resets the product
 boundary: Werf is a private farmer-controlled logbook, planner and calculator, not an authority.
 
-⚠️ **Working-tree reconcile (found 2026-08-22):** the commercial-audit changes are **uncommitted**
-in the working tree — `phase-4/commercial-audit` is **0 commits ahead of `main`** (`git log
-main..HEAD` is empty). The "passes `pnpm verify`" evidence in this file describes the uncommitted
-tree. Nothing is lost, but it is not yet a branch. See §5 for the ordered next steps.
+⚠️ **Branch reconcile (2026-08-22):** `phase-4/commercial-audit` is **1 commit ahead of `main`** at
+`d1ab7da` (audit + first P5 plan), with this revision uncommitted; open its PR before P5 implementation.
 
-🆕 **Phase 5 owner decisions (2026-08-22), both load-bearing for the plan:**
+🆕 **Phase 5 owner decisions (2026-08-22), load-bearing for the plan:**
+- **The whole phase is a farmer-controlled people, work and pay tool, not a compliance gate.**
+  Forms save incomplete records; concerns warn, never reject. Standard forms generate farmer-initiated PDF/DOCX/XLSX. Recorded as
+  [ADR-0015](docs/03-architecture/adr/ADR-0015-farmer-controlled-labour-tools.md).
 - **Payroll is ADVISORY, never blocking (ADR-0013 extended to labour).** Attendance/piece-work
   capture never blocks and works offline; the payroll engine computes exactly but surfaces every
   issue (net-below-floor included) as a conspicuous pre-approval warning and STILL generates the
   run. This **supersedes** US-021 scenario 2, `legal-compliance.md §2.4` step 4, and
-  `.claude/rules/domain.md`'s reject rule — all three rewritten to advisory in Phase 5 (5e) and put
+  `.claude/rules/domain.md`'s reject rule — all three are now rewritten to advisory and put
   to the external labour-law reviewer (5i) for sign-off. Recommendation on record was to KEEP the
   block; JP chose advisory-only. **Recorded as [ADR-0014](docs/03-architecture/adr/ADR-0014-advisory-payroll.md)**
-  (precedence 1), and the three superseded statements now carry forward-reference pointers to it.
-- **Phase 5 branches from `main` AFTER the P4 audit is merged** (not from the current tree). Order
-  in §5.
+  (precedence 1).
+- **Phase 5 implementation branches from `main` AFTER the P4 audit/planning PR is merged** (not from
+  the current tree). Order in §5.
 - **Working method for Phase 5:** Sonnet implements one small slice at a time; `advisor()` (Opus 5)
   is a required per-slice step — before committing to an approach and again before declaring done,
   after the gate is green. Review agents stay owner-triggered only. Full cadence in
@@ -68,7 +68,7 @@ a package just touched proves nothing changed, not that nothing is broken.
 veterinary reference-data source is required. Farmers enter the products and label facts they use;
 Werf calculates reminders from those entries without verifying, approving or reporting them.
 
-**Active branch:** `phase-4/commercial-audit`, based on `main` @ `451f793`. Phase 5 not started.
+**Active branch:** `phase-4/commercial-audit` @ `d1ab7da`, 1 ahead of `main` @ `451f793`. Phase 5 code not started.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`). Phase 3 merged to `main` via
 PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fixes needed. Phase 4
@@ -83,7 +83,7 @@ merged to `main` via PR #13 (`580c611`, 2026-08-20) — 3/3 CI checks green at m
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
 | 4 — Crops & fields | ✅ **Merged; farmer-first audit repaired and verified** | PR #13 merged the phase. `phase-4/commercial-audit` replaces authoritative product/PHI logic with farmer-owned inputs and advisory reminders, tightens production RLS configuration, and passes the full gate |
-| 5 — Labour & wages | Not started | Placeholder rate rows only; deployment needs verified Gazette sources + labour-law review |
+| 5 — People, work & pay | Not started; plan revised | Standard forms + PDF/DOCX/XLSX outputs planned; regulated deployment needs verified sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
 
@@ -213,7 +213,7 @@ attachment queue/residuals, P2.6–2.9, conflict audit/review + `(occurred_at,id
 | Check | Latest result |
 |---|---|
 | Phase 4 commercial audit (2026-08-20, current branch) | ✅ Forced-cold `pnpm verify`: **1688/1688**, 151/151 files; lint/typecheck clean with 0 Turbo cache hits; build 7/7, 196.30 KB gz. Focused web 75/75; focused Postgres crop/livestock 218/218 |
-| `pnpm project:check` | Green (unanswered owner decisions are a WARNING, not a failure) |
+| Phase 5 planning audit (2026-08-22) | ✅ project check (300/300 lines, phase names coherent), lint/Prettier and `git diff --check`; ⚠️ full verify stops at forced sync typecheck because this workspace cannot resolve pre-existing `@powersync/*` packages (ordinary run also lacks a container runtime) |
 | Whole-branch agent pass + SEV-2 fix (2026-08-20, 34th session, **the number to trust**) | ✅ `pnpm verify`: full pass 1630 green + 1 suite hit a transient testcontainer health-check timeout, re-run in isolation clean (51/51) — **1681/1681 real**, lint/typecheck clean (web typecheck genuinely re-ran, cache miss on the edited file). `pnpm build` 7/7, 194.26 KB gz. `Outbox.test.tsx` 53/53 including the new fail-first test |
 | Phase 4 exit-review sweep, 33rd session | ✅ `pnpm verify` 1680/1680 (baseline this session's 1681 builds on), artifact-drift/TENANCY/offline-write/a11y sweeps all clean — full account in git history |
 | `pnpm verify` — 32nd/31st/30th/28th/27th/26th/25th sessions | ✅ All green, condensed — full per-session numbers in `phase-checklists.md` Phase 4 and git history. 25th hit transient Postgres contention, confirmed not a regression |
@@ -221,16 +221,17 @@ attachment queue/residuals, P2.6–2.9, conflict audit/review + `(occurred_at,id
 
 ## 5. Next executable steps
 
-Ordered — Phase 5 must not branch until step 2 lands (owner decision 2026-08-22).
+Ordered — Phase 5 implementation must not branch until step 1 lands (owner decision 2026-08-22).
 
-1. **Close out the P4 commercial audit.** Commit the uncommitted commercial-audit tree, open its PR
-   from `phase-4/commercial-audit`, run CI, merge to `main` (§7: every `main`-bound change goes
-   through a PR). The production privacy promise (tenant-private vs delayed provider-blind E2E) is
+1. **Close out the P4 commercial audit + Phase 5 planning PR.** Review and commit this session's
+   planning-only diff on `phase-4/commercial-audit`, push the branch, open its PR, run CI and merge
+   to `main` (§7: every `main`-bound change goes through a PR). The production privacy promise
+   (tenant-private vs delayed provider-blind E2E) is
    still open and touches Phase 5's 5b PII encryption — decide and document it, but it does not block
    Phase 5 starting; 5b uses the current PII-key model and flags the migration exposure.
-2. **Branch `phase-5/labour-rates` from `main`.** Its FIRST commit carries the post-merge STATUS.md
+2. **Branch `phase-5/people-work-pay` from updated `main`.** Its FIRST commit carries the post-merge STATUS.md
    reconcile note (§7 precedent — not a push to `main`).
-3. **Answer the two external blockers BEFORE 5a code** (they are not satisfied by reading the repo):
+3. **Book/complete the two external deployment gates early** (they are not satisfied by reading the repo):
    - **B-1** — book the external labour-law review, with a date. It gates 5i (an exit-gate line) and
      is on someone else's calendar, so book it now, not in week seven. Ask it to bless or overturn
      the advisory-only payroll decision specifically.
@@ -238,10 +239,10 @@ Ordered — Phase 5 must not branch until step 2 lands (owner decision 2026-08-2
      Gazette. Today is 2026-08-22; the NMW (R30.23, eff 2026-03-01) and BCEA threshold (R269,600.90,
      eff 2026-05-01) are the current rows but must still be confirmed and their gazette references
      recorded on every seeded row.
-4. **5a** — the rates seed + production seed gate + `listRegulatoryRates` read path + client cache +
-   `PayrollRules`/`jurisdictions/za/` + FR-615 admin UI + NFR-507 lint rule. The pure lookup seam
-   and the (empty) table already exist — see `phase-checklists.md` Phase 5 reuse map. Standalone
-   session, standalone owner-triggered compliance-checker pass.
+4. **5a** — employer defaults + draft-friendly schema reconcile + dev/test rates + production seed
+   gate + rate read path/cache + `PayrollRules`/`jurisdictions/za/` + NFR-507 lint rule. Keep
+   FR-615's rate admin UI at priority 2 and out of the farmer workflow. The pure lookup seam and
+   empty table already exist — see `phase-checklists.md` Phase 5 reuse map.
 
 Production deployment still waits for Phase 7 penetration, operability and pilot evidence.
 

@@ -128,30 +128,35 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 
 ## FR-3xx · Labour & Wages 🇿🇦
 
-> This module is the wedge. See [legal-compliance.md §2](../00-business/legal-compliance.md) before writing any of it. **Every rate is looked up by date. No exceptions.**
+> This module is a farmer-controlled people, work and pay tool (ADR-0015). See
+> [legal-compliance.md §2](../00-business/legal-compliance.md) before writing regulated calculations.
+> Compliance concerns warn; they do not reject farmer-owned records or outputs.
 
 | ID | Requirement | P |
 |---|---|---|
-| FR-301 | Employee record: name, ID number (encrypted, masked), job title, start date, contract type, wage rate, banking | 1 |
-| FR-302 | 🇿🇦 Generate BCEA s29 written particulars of employment, in the employee's language | 1 |
-| FR-303 | 📶 Record attendance: start/end, worker PIN, optional GPS. **No biometrics in v1** — see legal-compliance §1.3 | 1 |
-| FR-304 | 📶 Record piece work: units, rate, worker, block/camp | 1 |
+| FR-300 | Employer/document defaults: legal/trading name; registration/UIF/PAYE references; physical/postal address; contact; normal pay frequency/day; work locations. Prefill documents without making identifiers mandatory for ordinary capture | 1 |
+| FR-301 | Draft-friendly employee and work-terms record using the Phase 5 standard form: name; employee number; contact/address; ID/passport and banking (encrypted, masked); birth date; document language; job/duties/location; dates/type; ordinary hours; pay basis/rate/frequency; allowances/deductions/leave/notice notes. Name alone can save; missing details show Incomplete | 1 |
+| FR-302 | 🇿🇦 Generate employee-language written particulars / simple contract as printable PDF and editable Word (`.docx`); blank facts say “Not recorded”, never guessed | 1 |
+| FR-303 | 📶 Record attendance by start/end **or total hours**, with break, hour category, worker, work location, note, optional PIN/GPS; single and weekly/batch entry. **No biometrics in v1** | 1 |
+| FR-304 | 📶 Record piece work: worker, date, activity, block/camp, quantity, unit, rate, hours where known and note; single and repeat/batch entry | 1 |
 | FR-305 | 📶 Assign a task to a worker or team; worker marks complete; time attributed to enterprise | 2 |
-| FR-306 | 🇿🇦 **Payroll run**: 🔒 ordinary/overtime/Sunday/public-holiday classification, piece-rate top-up to the minimum floor, capped deductions, UIF — all resolved against the rates in force **on the date the work was done** | 1 |
-| FR-307 | 🇿🇦 **Compliance warnings surfaced before approval**, never after: overtime over the 10h cap, deduction capped, piece rate topped up, net below floor | 1 |
-| FR-308 | 🇿🇦 Generate a BCEA s33-compliant payslip in the employee's language | 1 |
-| FR-309 | 🇿🇦 **BCEA s31 record**: name, occupation, time worked, remuneration — one button, 3-year retention, inspector-ready | 1 |
-| FR-310 | Leave: annual (21 days / 1 per 17 worked), sick (30 per 36 months), family responsibility (3), maternity (4 months); accrual, balance, application, approval | 2 |
+| FR-306 | 🇿🇦 **Advisory pay run**: ordinary/overtime/Sunday/public-holiday classification, piece-rate top-up, capped deductions and UIF resolved by work date; calculation gaps preserve captured inputs and raw export rather than erasing the run | 1 |
+| FR-307 | 🇿🇦 **Warnings surfaced before approval**, never after: overtime, capped deductions, piece-rate top-up, net below floor, age/reference gaps. Warnings never disable Save, Calculate, Approve or Download | 1 |
+| FR-308 | 🇿🇦 Generate a printable PDF payslip in the employee's language; historical regeneration uses the run snapshot | 1 |
+| FR-309 | 🇿🇦 Employment record: name, occupation, time worked, remuneration and under-18 birth date where recorded — one action, 3-year retention, PDF for printing and XLSX for reuse | 1 |
+| FR-310 | Leave register: annual, sick, family responsibility and maternity; transparent accrual/balance plus opening balance and reasoned correction; a balance mismatch warns and never rejects the record | 2 |
 | FR-311 | Seasonal worker onboarding: bulk add, short-form contract, end-date | 1 |
 | FR-312 | UIF declaration export | 2 |
 | FR-313 | SARS-compatible payroll export | 2 |
-| FR-314 | Labour cost allocated to enterprise, camp, or block from attendance and task records | 1 |
+| FR-314 | Labour cost allocated to enterprise, camp, or block from attendance and task records | 2 |
 | FR-315 | Team management: group workers; assign and pay by team | 2 |
 | FR-316 | Bank payment file export (EFT batch) | 2 |
 | FR-317 | 🇿🇦 Injury-on-duty register; **health data restricted** to owner + H&S role | 2 |
-| FR-318 | 🇿🇦 Age verification at hire; block under-15; flag 15–17 for restricted-work rules | 1 |
+| FR-318 | 🇿🇦 Advisory age check: explain under-15 and 15–17 concerns and their source without rejecting the employee record, work capture or farmer-owned export | 1 |
 | FR-319 | 📶 Worker self-view: own hours, own payslips. Nothing else. | 3 |
 | FR-320 | 🇿🇦 **SIZA social evidence pack** generated from labour records | 2 |
+| FR-321 | Farmer-initiated PDF/XLSX attendance, piece-work, leave, employee and payroll reports; A4-printable PDFs and typed/filterable spreadsheets | 1 |
+| FR-322 | Farmer-initiated accountant pack (`.xlsx`) with README, employee list, attendance, piece work, leave, payroll summary/detail and warnings; sensitive fields excluded by default | 1 |
 
 ---
 
@@ -220,7 +225,7 @@ Legend: 📶 = must work fully offline · 🔒 = server-authoritative (online on
 | FR-701 | 📶 Role-appropriate dashboard: owner sees money, manager sees today's work, worker sees their tasks | 1 |
 | FR-702 | 📶 Enterprise-type-appropriate widgets | 1 |
 | FR-703 | Report library: statutory, operational, financial | 1 |
-| FR-704 | Export any report to PDF and CSV | 1 |
+| FR-704 | Export reports to a fit-for-purpose format: PDF for print, XLSX/CSV for tabular reuse, and DOCX for explicitly editable documents | 1 |
 | FR-705 | 📶 Herd/flock summary: counts by class, age, camp | 1 |
 | FR-706 | Reproduction report: conception, calving %, calving spread, weaning % | 2 |
 | FR-707 | 📶 Growth report: ADG by group, cohort comparison | 2 |

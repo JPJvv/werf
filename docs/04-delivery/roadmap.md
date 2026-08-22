@@ -118,38 +118,40 @@ analysis, scouting, rotation history, weather). The GlobalGAP checklist *engine*
 a crop farmer can complete a spray-to-harvest record with no network and no compliance block.
 No production `chemical_products` seed or maintained registration source is required (ADR-0013).
 
-## Phase 5 — Labour & wages
+## Phase 5 — People, work & pay
 
-**Ships:** employees, attendance, piece work, a pure payroll engine, compliance warnings, payslips,
-contracts, leave and statutory exports.
+**Ships:** simple employee and work-term records, offline attendance and piece work, an advisory pay
+calculator, leave records, and farmer-initiated Word/Excel/PDF documents that are useful to workers,
+bookkeepers, accountants and inspectors.
 
 The code may be developed against explicitly unverified dev/test rate rows. Production seeds and
 deployment are blocked until every figure is re-verified against the current Gazette and the
 external labour-law review is complete.
 
-**Advisory, not blocking ([ADR-0014](../03-architecture/adr/ADR-0014-advisory-payroll.md), extending
-ADR-0013 to labour, owner decision 2026-08-22).** Werf is a
-logbook and a **calculator**, not an authority. Attendance and piece-work capture never block and
-work offline. The payroll engine computes exactly — caps cap, the piece-rate floor tops up, a
-net-below-floor run is detected — but surfaces every issue as a conspicuous pre-approval warning and
-still generates the run; it does not reject. This supersedes US-021's rejection scenario,
-legal-compliance.md §2.4's reject-the-run constraint and domain.md's reject rule, all rewritten to
-advisory in Phase 5 (5e) and put to the external reviewer (5i) for sign-off.
+**Farmer-controlled, not blocking ([ADR-0015](../03-architecture/adr/ADR-0015-farmer-controlled-labour-tools.md)).**
+Werf is a logbook and calculator, not an authority. Every operational form saves the facts the
+farmer has; missing or unusual details produce an incomplete marker or warning, not a compliance
+rejection. Structural integrity, authorisation and tenancy still hold. Attendance and piece-work
+capture work offline. Payroll computes exactly and surfaces every issue before approval, but still
+generates the run ([ADR-0014](../03-architecture/adr/ADR-0014-advisory-payroll.md)).
 
 | Slice | Content | Evidence |
 |---|---|---|
-| 5a | Rates seed + production seed gate, rate admin, ZA rules seam, read path | unverified rows refused |
-| 5b | Employees; encrypted ID/banking; age verification | FR-301, FR-318, NFR-203 |
-| 5c | Attendance, PIN + GPS, piece work; no biometrics | FR-303, FR-304 offline |
-| 5d | Pure payroll engine | US-020…022; ≥95% domain coverage |
-| 5e | Advisory compliance warnings (never blocking) | FR-307; US-020…022 warnings |
-| 5f | Payslips and contracts, in the employee's language | FR-302, FR-308 |
-| 5g | BCEA s31 record — the inspector at the gate | FR-309, US-023 |
-| 5h | Leave and UIF/SARS/EFT exports | FR-310, 312, 313, 316 |
-| 5i | External labour-law review — signed off in writing | exit-gate line |
+| 5a | Employer defaults, rate read path and production verification gate | FR-300; no farmer rate-admin UI |
+| 5b | Employee + work terms form; editable Word/PDF particulars | FR-301, 302, 311, 318 |
+| 5c | Attendance and piece-work forms, batch entry/import, offline | FR-303, 304 |
+| 5d | Pure pay calculator + advisory review; never compliance-blocking | FR-306, 307; US-020…022; ≥95% domain coverage |
+| 5e | Payslips and print documents | FR-308, 309; PDF + DOCX |
+| 5f | Leave register and balances | FR-310 |
+| 5g | Accountant export; verified machine-format follow-ons | XLSX pack P1; FR-312, 313, 316 remain P2 |
+| 5h | Farmer/bookkeeper usability pass | standard forms and exports completed without support |
+| 5i | External labour-law review — signed off in writing | deployment exit-gate line, not an in-product gate |
 
-**Gate:** period-spanning rate changes use both rates; corrections use the historical rate; no
-regulated constant exists in code; a bookkeeper and labour-law reviewer sign off.
+**Gate:** a farmer can add people, record a week offline, calculate a pay period, correct an input
+and download the relevant PDF/DOCX/XLSX without support. Period-spanning rate changes use both
+rates; corrections use the historical rate; no regulated constant exists in code; a bookkeeper and
+labour-law reviewer sign off. External verification blocks production deployment, not ordinary
+capture or the farmer's ability to export their own records.
 
 **Autonomy:** low. Payroll and compliance rules are small reviewed slices, never a long unattended
 run. Automated tests prove arithmetic, not legal interpretation.

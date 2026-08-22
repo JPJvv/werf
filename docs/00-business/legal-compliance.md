@@ -176,8 +176,9 @@ For each employee, for each pay period:
        Piece work does not exempt the employer from the minimum wage.
        If the piece-rate outcome falls below the floor, TOP UP to the floor
        and record the top-up as a distinct line. This is the single most
-       common wage compliance failure on South African farms and the
-       system must make it impossible.
+       common wage compliance failure on South African farms. The calculated
+       top-up and its source must be impossible to miss; Werf does not police
+       what the employer does after reviewing it (ADR-0015).
 
   4. Deductions:
        accommodation := min(requested, gross × 0.10)   [if conditions met]
@@ -185,23 +186,28 @@ For each employee, for each pay period:
        uif           := min(gross, uif_ceil) × 0.01
        other         := only with written consent, subject to BCEA s34
 
-       CONSTRAINT: total deductions must not reduce net below the
-       statutory floor. Reject the payroll run, do not clamp silently.
-       -- ⚠️ SUPERSEDED FOR PHASE 5 by ADR-0014 (owner decision 2026-08-22): the engine WARNS
-       -- conspicuously and still GENERATES the run; it does not reject. Detection and calculation
-       -- are unchanged. This normative text is rewritten in Phase 5 (5e) AFTER the external
-       -- labour-law review (5i) has considered the advisory-only decision. See ADR-0014.
+       CHECK: if deductions reduce net below the reference floor, return a
+       conspicuous warning with the requested deductions, calculated net and
+       rate/source used. Generate the run; do not reject and do not silently
+       clamp an otherwise lawful deduction (ADR-0014 and ADR-0015).
 
   5. net := gross - deductions
 
   6. Emit: payslip (s33 fields), audit row, and any compliance warnings.
 ```
 
-**Warnings are first-class output, not console noise.** If overtime exceeded 10 hours, if a deduction was capped, if a piece rate was topped up — the farmer sees it before they approve the run. The system's job is to prevent the CCMA case, not to compute the number.
+**Warnings are first-class output, not console noise.** If overtime exceeded 10 hours, a deduction
+was capped, a piece rate was topped up or net is below the reference floor, the farmer sees it before
+approval. Werf explains the calculation and source; the employer remains the decision-maker.
 
 ### 2.5 What we deliberately do not do
 
-Werf is **not** a registered payroll bureau. We calculate, we generate payslips, we export to SARS/UIF-compatible formats. We do **not** file returns on the farmer's behalf, do not act as tax agent, and every generated document carries: *"Werf assists with wage calculation. The employer remains responsible for compliance with the BCEA, the National Minimum Wage Act, and all applicable sectoral determinations."*
+Werf is **not** a registered payroll bureau. We calculate, generate payslips and employment
+particulars, and provide farmer-initiated PDF, Word, Excel and purpose-specific SARS/UIF/EFT files.
+We do **not** email, file or submit them on the farmer's behalf, do not act as tax agent, and every
+generated regulated document carries: *"Werf assists with wage calculation. The employer remains
+responsible for compliance with the BCEA, the National Minimum Wage Act, and all applicable sectoral
+determinations."*
 
 ---
 
@@ -296,7 +302,7 @@ The system needs a live `compliance_obligations` table so the *farm* can see wha
 | Keep employment records | Employment | Continuous, 3-year retention | Labour module |
 | Issue written particulars | New hire | Per hire | Generated contract |
 | Issue payslip | Each pay period | Per period | Payroll module |
-| Pay ≥ minimum wage | Each pay period | Per period | Payroll engine constraint |
+| Pay ≥ minimum wage | Each pay period | Per period | Payroll calculation + conspicuous warning |
 | Submit UIF declaration | Monthly | Monthly | UIF export |
 | Dip records (controlled areas) | Location-dependent | Per schedule | Health events |
 | Report notifiable disease | Diagnosis | Per event | Health event → prompt |

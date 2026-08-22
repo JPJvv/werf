@@ -48,8 +48,8 @@ regulated constant lives in code; every payslip is a real BCEA s33 document; mon
 
 ## Superseded statements
 
-These currently mandate the opposite and are rewritten to advisory during Phase 5 sub-phase 5e, in
-the same slice the working code contradicts them (never left as a stale contradiction):
+The following statements mandated the opposite and were rewritten to advisory during the Phase 5
+planning correction on 2026-08-22:
 
 - `docs/01-requirements/user-stories.md` — US-021 scenario 2 ("the payroll run is REJECTED … no
   payslip is generated").
@@ -75,7 +75,7 @@ this ADR is revisited before 5e ships to production.
 | ➕ | The engine stays a pure calculator + warning set — simpler than calculate-then-gate |
 | ➖ | Werf can generate a payslip that is unlawful if the owner ignores a warning |
 | ➖ | The wedge ("prevent the CCMA case") now depends on the owner heeding a warning, not on a gate |
-| ➖ | Three documents must be rewritten (above), and one is normative legal text |
+| ➖ | The normative legal text and generated documents require qualified external review |
 
 ## Revisit if
 

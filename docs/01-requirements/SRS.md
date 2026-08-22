@@ -198,7 +198,10 @@ Functional requirements are catalogued separately in [functional-requirements.md
 
 **SRS-19.** Language is a **user** preference, not a farm preference. The owner reads English; the manager reads Afrikaans; the same farm.
 
-**SRS-20.** Generated statutory documents (contracts, payslips, privacy notices) render in the **recipient's** language, not the generator's. A payslip for an Afrikaans-speaking worker is in Afrikaans regardless of who ran payroll. This is a POPIA openness and BCEA fairness requirement, not a nicety.
+**SRS-20.** Generated statutory documents (employment particulars, payslips, privacy notices) render
+in the **recipient's** language, not the generator's. Phase 5 provides printable PDF and, for
+editable employment particulars, Word (`.docx`) output; spreadsheet registers use the farmer's
+chosen interface language.
 
 ### 3.6 Jurisdiction
 
@@ -231,6 +234,11 @@ reference data (ADR-0013).
 **SRS-33.** Export completes within 24 hours and is delivered as a signed, expiring link.
 
 **SRS-34.** Import supports CSV with column mapping, and named importers for BenguFarm, Farmbrite, SA Stud Book (Logix), and generic Excel.
+
+**SRS-35.** Phase-specific working documents are not deferred to the Phase 7 full-data export.
+Labour provides farmer-initiated PDF/DOCX/XLSX outputs for the standard forms and an accountant pack.
+Sensitive columns are excluded by default; generation is role-gated, audit-logged and never sent to
+a third party automatically (ADR-0015).
 
 > Migration-in is a growth feature and migration-out is a trust feature. Both are Phase 7. A product that traps data does not get recommended at a farmers' day.
 

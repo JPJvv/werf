@@ -353,17 +353,18 @@ Payroll's most important screen. Warnings **above** the numbers, never below, ne
 │   14h worked, 10h is the weekly cap   │
 │   Paid in full. Fix the roster. [Why?]│
 ├───────────────────────────────────────┤
-│ ⛔ Sipho N · deductions too high      │
+│ ⚠ Sipho N · deductions may be too high│
 │   Net would fall below the minimum.   │
-│   You cannot approve until this is    │
-│   fixed.                     [Fix now]│
+│   Review the deduction or continue.   │
+│                         [Review inputs]│
 └───────────────────────────────────────┘
         ┏━━━━━━━━━━━━━━━━━━━━━━━┓
-        ┃  Approve — R48,204.11 ┃   ← disabled while any ⛔ exists
+        ┃  Approve — R48,204.11 ┃   ← warnings never disable the action
         ┗━━━━━━━━━━━━━━━━━━━━━━━┛
 ```
 
-Note the difference in voice between ⚠ and ⛔. The warning says what happened and that it is handled. The block says you cannot proceed, and gives you the door.
+Phase 5 uses warnings only: what Werf calculated, which input/rule produced it, and where to review
+the source. Compliance concerns never disable Save, Calculate, Approve or Download (ADR-0015).
 
 ### 6.5 Two-factor prompts
 

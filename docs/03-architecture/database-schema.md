@@ -392,25 +392,36 @@ CREATE TABLE employees (
   farm_id       uuid NOT NULL REFERENCES farms(id),
   user_id       uuid REFERENCES users(id),     -- if they have app access
   full_name     text NOT NULL,
+  employee_number text,
+  preferred_name text,
+  phone         text,
+  address       text,
 
   -- ⭐ Encrypted with a key SEPARATE from the DB key. Masked in every UI.
   -- Never logged. Never synced to a device (NFR-215).
   id_number_encrypted bytea,
   bank_account_encrypted bytea,
 
-  date_of_birth date NOT NULL,                 -- 🇿🇦 FR-318: block <15, flag 15-17
-  job_title     text NOT NULL,
-  contract_type contract_type NOT NULL,
-  start_date    date NOT NULL,
+  date_of_birth date,                          -- 🇿🇦 FR-318: advisory age warning
+  job_title     text,
+  duties        text,
+  work_location text,
+  contract_type contract_type,
+  start_date    date,
   end_date      date,
-  wage_rate     numeric(14,2) NOT NULL,
-  wage_unit     text NOT NULL,                 -- 'hour','day','month'
-  ordinary_hours_per_week numeric(4,1) NOT NULL DEFAULT 45,
+  wage_rate     numeric(14,2),
+  wage_unit     text,                          -- 'hour','day','week','month','piece'
+  pay_frequency text,
+  ordinary_hours_per_week numeric(4,1),
   locale        text NOT NULL DEFAULT 'en-ZA', -- ⭐ payslip/contract language (SRS-20)
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz
 );
+
+-- ADR-0015: only full_name is needed to save a draft employee. Null means "not recorded", never a
+-- guessed default. Work/pay particulars that outgrow these common columns are added from the final
+-- Phase 5 standard-form schema before migration; do not turn document completeness into NOT NULL.
 
 -- ⭐⭐ THE most important table in the labour module. See ADR-0005 and ADR-0006.
 CREATE TABLE regulatory_rates (

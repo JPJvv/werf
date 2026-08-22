@@ -14,12 +14,15 @@ Check, specifically:
    and `jurisdiction`. Flag any magic number even if it is today's correct value.
 2. **Lookup is by `occurred_at`, never `now()`.** Recalculating an old payslip at today's rate is a
    defect. Prove the date used is the event date.
-3. **Net-below-minimum is a hard block, not a warning.** A payroll run cannot be approvable while any
-   worker's net falls below the statutory minimum after deductions.
+3. **Compliance is advisory (ADR-0014/ADR-0015).** Net-below-floor, age, hour and deduction concerns
+   must be conspicuous returned warnings with their source, but may not make farmer-owned records,
+   runs or exports unapprovable. Flag hidden refusal paths as product-boundary defects. Structural
+   integrity, tenancy and authorisation remain strict.
 4. **No SA statute names leaking into `packages/core`.** BCEA/POPIA/SD13/UIF/SARS belong only in
    `jurisdictions/za/`, docs, and ZA copy.
 5. **Money is integer cents, never a float.**
-6. **POPIA:** no biometric worker data; special-category data handled per s26; retention effective-dated.
+6. **POPIA:** no biometric worker data; special-category data handled per s26; retention effective-dated;
+   sensitive exports explicit, role-gated and excluded by default.
 
 Report findings as: file, line, the rule violated, and the fix. If clean, say so explicitly and name
 what you verified. Do not approve on vibes.

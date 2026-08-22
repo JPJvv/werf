@@ -104,15 +104,18 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
    - apply deductions with statutory caps,
    - compute UIF against the ceiling in force,
    - compute net.
-7. **System presents a draft with compliance warnings first**, above the numbers:
+7. **System presents a draft with advisory warnings first**, above the numbers:
    - overtime over 10h/week,
    - deductions capped,
    - piece rates topped up,
-   - net below floor → **run blocked**,
-   - any employee paid below minimum → **run blocked**.
-8. Actor dispositions each warning (acknowledge, or go fix the underlying record).
+   - net below floor,
+   - a reference rate or employee fact Werf could not check.
+8. Actor reviews each warning and may correct the underlying record or continue. Warnings never
+   disable Calculate, Approve or Download.
 9. Actor approves.
-10. System generates payslips in each employee's language, writes an immutable audit row per employee, locks the period against further attendance edits, and produces the EFT batch and UIF export.
+10. System generates payslips in each employee's language, writes an immutable audit row per
+    employee, versions later corrections, and offers PDF payslips, the XLSX accountant pack and
+    purpose-specific EFT/UIF/SARS exports. It sends none of them automatically.
 
 ### Alternates
 
@@ -122,7 +125,11 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
 
 ### Exceptions
 
-- **E7.1 — Net below the statutory floor after deductions.** **Reject the run.** Do not clamp, do not warn-and-proceed. Name the employee and the offending deduction. A human decides.
+- **E7.1 — Net below the reference floor after deductions.** Warn above the totals. Name the employee,
+  offending deduction, calculated net and reference used. Do not silently clamp and do not reject;
+  the employer decides (ADR-0014).
+- **E7.3 — A regulatory reference is unavailable.** Preserve the captured hours and pay inputs,
+  name the check that could not run, and allow raw PDF/XLSX record export. Never guess a rate.
 - **E7.2 — An employee has no attendance at all.** Warn; allow exclusion with a reason (leave, absent, terminated); never pay zero silently.
 - **E10.1 — Payslip generation fails for one employee.** The whole run is atomic: roll back, report, do not part-generate. A payroll where 39 of 40 people were paid is worse than one where nobody was.
 

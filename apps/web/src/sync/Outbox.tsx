@@ -886,7 +886,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
-    // A spray is COMPLIANCE-GATED (FR-204) and is the EVIDENCE 4d's harvest guard reads — the
+    // A spray references a farm-owned product snapshot used by the farmer's harvest reminder — the
     // identical shape a dose is to a disposal (16fbb6a). `provides` a `sprayrow:` tag per block so a
     // spray HELD this round (its own `landrow:` dependency unmet, e.g. a block split moments ago)
     // taints any harvest on that block or a descendant, holding it rather than letting it post
@@ -911,6 +911,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           send: (token) => sprayApi.recordSpray(spray, token),
           guardedBy: [
             `landrow:${spray.landUnitId}`,
+            `inventoryitemrow:${spray.productId}`,
             ...ancestorChainOf(spray.landUnitId, landUnits).map((id) => `plantingrow:${id}`),
             // An OPTIONAL stock-lot reference (Phase 4e, FR-502) — see the fertiliser tier's own
             // note above for why this guard is conditional.
@@ -1008,20 +1009,9 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
         });
       }
     }
-    // ⭐ MOVES AND HEALTH EVENTS GO BEFORE EVERY DISPOSAL, and this is a SAFETY ordering rather
-    // than a foreign-key one. The FK graph is satisfied either way — both reference only animals
-    // and mobs, which are already ahead.
-    //
-    // The server's withdrawal guard is a point-in-time check against what has LANDED. It cannot
-    // refuse what it has not yet received. With health last, a single device could do this: treat
-    // five cattle on Monday offline, tally forty of their mob to the abattoir on Tuesday offline,
-    // reconnect on Friday — the tally arrived first, the guard found no dose, and it returned 201.
-    // Meat inside an active withdrawal, with an affirmative answer from the boundary that exists
-    // to prevent it.
-    //
-    // So the order is: the EVIDENCE a guard reads (where the animal was, what it was given) before
-    // the ACT the guard judges (a sale, a slaughter, a tally out of a flock). Moves come first of
-    // the two because membership decides which doses reached which animal.
+    // Moves and health events go before disposals so the server can reconstruct the same private
+    // history and reminder dates on the first sync pass. This ordering improves the log; it is not
+    // a permission check and a disposal is never refused because of an interval calculation.
     for (const move of moves) {
       if (!sent.has(move.id)) {
         items.push({
@@ -1095,6 +1085,7 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
           kind: 'health',
           detail: event.animalId === null ? null : (labels.get(event.animalId) ?? null),
           send: (token) => livestockApi.recordHealth(event, token),
+          guardedBy: [`inventoryitemrow:${event.productId}`],
           // A dose creates the withholding a disposal is judged against — on the animal it was
           // given to, or on the whole mob for a plunge dip.
           provides: nonNull(event.animalId, event.mobId),
@@ -1102,24 +1093,19 @@ export function OutboxProvider({ children, factory = defaultSentLogFactory }: Ou
       }
     }
     // A tally references its mob and nothing else. It sits HERE, after the doses, and not up with
-    // the mobs where the FK graph alone would put it — a `sale`/`slaughter` tally is judged against
-    // the withholding, so it must not overtake the dose that creates one. It is named by the mob it
-    // adjusts: "three off Flock A" is a sentence a farmer recognises; the uuid is not.
+    // the mobs where the FK graph alone would put it, so the first server projection has the same
+    // complete context as the device. It is named by the mob it adjusts: "three off Flock A" is a
+    // sentence a farmer recognises; the uuid is not.
     //
-    // ⭐ ARRIVALS GO BEFORE DISPOSALS, and for the same reason doses go before tallies. Since §2.3b a
-    // tally is not only an act: head arriving by `transfer_in`, or by a purchase whose seller
-    // declared a withdrawal, IS the withholding on the mob it joins — for a counted flock it is the
-    // only thing that can be, because there are no `animals` rows for a dose to attach to. Left in
-    // capture order, a slaughter captured on Tuesday could overtake the transfer captured on Monday
-    // that withholds it, and the server cannot refuse what it has not received.
+    // ARRIVALS GO BEFORE DISPOSALS. A transfer or purchase may carry an entered interval onto the
+    // mob it joins; sending that context first keeps the private reminder history deterministic.
     //
     // ⭐ Everything that is not a disposal keeps CAPTURE ORDER, which is causal — see `tallyPass`.
     // That is what makes a departure precede its own arrival, and an increase precede the departure
     // it funds, without a pass for either. `sort` is stable, so the order is the farmer's own.
     for (const tally of orderTallies(tallies)) {
       if (!sent.has(tally.id)) {
-        // Only a sale or slaughter tally is judged against a WITHHOLDING; a death or recount takes
-        // head out without putting meat into the food chain.
+        // Only a sale or slaughter tally is relevant to the entered-interval reminder view.
         //
         // ⛔ That does not mean a death is never held. It said "so it is not held for evidence" and
         // that stopped being true the moment a tally could be held for HEAD as well — a death is a

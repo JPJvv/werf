@@ -64,11 +64,7 @@ export class CropsController {
     return this.crops.recordFertiliser(auth.userId, body);
   }
 
-  /**
-   * Record a spray to GlobalGAP standard (FR-204) — COMPLIANCE-GATED. The body carries the client's
-   * own event id, the block sprayed, the day sprayed, and the selected product id; the PHI and the
-   * active ingredients are resolved server-side (see the service), never sent by the client.
-   */
+  /** Record the farmer's spray fact and calculator inputs. No regulatory authorisation occurs. */
   @Post('sprays')
   @HttpCode(HttpStatus.CREATED)
   async recordSpray(
@@ -97,11 +93,7 @@ export class CropsController {
     });
   }
 
-  /**
-   * Record a harvest (FR-207) — COMPLIANCE-GATED. Blocked at capture inside an active pre-harvest
-   * interval unless the body carries a written `phiOverride` (see the service). Same idempotency
-   * and authorship discipline as every other capture here.
-   */
+  /** Record a harvest fact. Farmer-entered PHI arithmetic never blocks the log. */
   @Post('harvests')
   @HttpCode(HttpStatus.CREATED)
   async recordHarvest(
@@ -129,12 +121,8 @@ export class CropsController {
     });
   }
 
-  /**
-   * The PHI compliance register (4d·6, FR-205) — the cross-device race: a harvest that, once every
-   * device's spray evidence has landed, reads as having fallen inside an active PHI it could not
-   * have been checked against at capture. Flagged on `/attention`, never refused after the fact —
-   * see the service for the full reasoning, mirroring `GET /livestock/residue-register`.
-   */
+  /** Private interval comparison over the farm's own entries. It is a reminder, not a compliance
+   * report, and is visible only to members the farmer admitted to this farm. */
   @Get('phi-register')
   async phiComplianceRegister(
     @CurrentUser() auth: AuthContext,

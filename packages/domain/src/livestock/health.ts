@@ -1,15 +1,12 @@
 /**
- * Health capture (FR-130/131/132/133) — COMPLIANCE-GATED (legal-compliance.md § 3, .claude/rules/
- * domain.md). Record treatments, vaccinations and dips as append-only events, and — the sharp part
- * — compute the meat/milk WITHDRAWAL clear dates AT CAPTURE and store them on the event.
+ * Farmer-entered health capture and withdrawal reminders (FR-130/131/132/133). Record treatments,
+ * vaccinations and dips as append-only events, then calculate meat/milk reminder dates from the
+ * farm's product values and store the snapshot on the event.
  *
  * Two rules this file exists to honour:
- *   1. NO regulated/product number is typed here. A withdrawal period is the veterinary product's
- *      registered figure (reference data, resolved by the treatment date); the caller injects
- *      `withdrawalDays`. A literal here would be a defect even if correct today.
+ *   1. No product value is hard-coded here. The caller injects the farmer's `withdrawalDays`.
  *   2. The withdrawal clear date is computed AT CAPTURE and stored (ADR-0005, FR-131), never on read.
- *      The rule that applied is the rule at the time of treatment — recomputing later against a
- *      re-registered withdrawal would silently move an animal in or out of a withholding period.
+ *      Recomputing later after a product edit would silently rewrite the farmer's historic record.
  *
  * Pure: no I/O, no clock. The event id and `occurredAt` are injected; withdrawal periods are
  * injected; the farm-local treatment date (`administeredOn`, a calendar day) is injected because
@@ -120,6 +117,8 @@ function buildHealthEvent(
 // ── Treatment (FR-130/131) ────────────────────────────────────────────────────────
 export interface TreatmentInput extends HealthBase {
   readonly product: string;
+  readonly productId?: string;
+  readonly registrationNumber?: string;
   readonly batch?: string;
   readonly doseValue?: number;
   readonly doseUnit?: string;
@@ -130,6 +129,8 @@ export interface TreatmentInput extends HealthBase {
 
 export function recordTreatment(input: TreatmentInput): schemas.NewEvent {
   const payload: Record<string, unknown> = { product: input.product };
+  if (input.productId !== undefined) payload.productId = input.productId;
+  if (input.registrationNumber !== undefined) payload.registrationNumber = input.registrationNumber;
   if (input.batch !== undefined) payload.batch = input.batch;
   if (input.doseValue !== undefined) payload.doseValue = input.doseValue;
   if (input.doseUnit !== undefined) payload.doseUnit = input.doseUnit;
@@ -142,6 +143,8 @@ export function recordTreatment(input: TreatmentInput): schemas.NewEvent {
 // ── Vaccination (FR-132) ────────────────────────────────────────────────────────────
 export interface VaccinationInput extends HealthBase {
   readonly product: string;
+  readonly productId?: string;
+  readonly registrationNumber?: string;
   readonly programme?: string;
   readonly batch?: string;
   readonly administeredBy?: string;
@@ -149,6 +152,8 @@ export interface VaccinationInput extends HealthBase {
 
 export function recordVaccination(input: VaccinationInput): schemas.NewEvent {
   const payload: Record<string, unknown> = { product: input.product };
+  if (input.productId !== undefined) payload.productId = input.productId;
+  if (input.registrationNumber !== undefined) payload.registrationNumber = input.registrationNumber;
   if (input.programme !== undefined) payload.programme = input.programme;
   if (input.batch !== undefined) payload.batch = input.batch;
   if (input.administeredBy !== undefined) payload.administeredBy = input.administeredBy;
@@ -158,12 +163,16 @@ export function recordVaccination(input: VaccinationInput): schemas.NewEvent {
 // ── Dip / tick treatment (FR-133) ─────────────────────────────────────────────────────
 export interface DipInput extends HealthBase {
   readonly product: string;
+  readonly productId?: string;
+  readonly registrationNumber?: string;
   readonly method?: schemas.DipPayload['method'];
   readonly reason?: string;
 }
 
 export function recordDip(input: DipInput): schemas.NewEvent {
   const payload: Record<string, unknown> = { product: input.product };
+  if (input.productId !== undefined) payload.productId = input.productId;
+  if (input.registrationNumber !== undefined) payload.registrationNumber = input.registrationNumber;
   if (input.method !== undefined) payload.method = input.method;
   if (input.reason !== undefined) payload.reason = input.reason;
   return buildHealthEvent(input, 'dip', schemas.dipPayloadSchema, payload);

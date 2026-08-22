@@ -285,11 +285,7 @@ export class LivestockController {
     return this.livestock.recordSale(auth.userId, body, auth.sessionId);
   }
 
-  /**
-   * Record a treatment (FR-130/131) — COMPLIANCE-GATED. The body carries a `productId`, not a
-   * withdrawal period: the server resolves the registered meat/milk withdrawal from reference data
-   * and stores the clear dates on the event at capture. Idempotent on the id.
-   */
+  /** Record a farmer-entered treatment snapshot and its calculated reminder dates. */
   @Post('treatments')
   @HttpCode(HttpStatus.CREATED)
   async recordTreatment(
@@ -311,7 +307,7 @@ export class LivestockController {
     return this.livestock.recordVaccination(auth.userId, body);
   }
 
-  /** Record a dip / tick treatment (FR-133), required in controlled areas (Animal Diseases Act). */
+  /** Record a farmer-entered dip / tick treatment (FR-133). */
   @Post('dips')
   @HttpCode(HttpStatus.CREATED)
   async recordDip(
@@ -336,18 +332,7 @@ export class LivestockController {
     return this.livestock.createTheftIncident(auth.userId, body);
   }
 
-  /**
-   * The residue register (FR-131) — COMPLIANCE-GATED. Every disposal that took head out of the herd
-   * while it was inside a meat withholding, re-derived from the whole log rather than read off a
-   * stored flag.
-   *
-   * ⭐ A read, and it has to be one. The device can already answer this for its OWN captures — the
-   * at-capture guard does exactly that, offline, which is the only version of the rule that reaches
-   * the person who can still act on it. What a device cannot answer is what a SECOND phone recorded
-   * in a dead zone it has never heard of, and that is precisely the case that gets past the guard:
-   * one phone records the dip, the other tallies to the abattoir. Only the server has both. The
-   * client caches the result so the register still opens with no signal.
-   */
+  /** Read the farm's private, advisory interval-reminder history across synced devices. */
   @Get('residue-register')
   async residueRegister(
     @CurrentUser() auth: AuthContext,

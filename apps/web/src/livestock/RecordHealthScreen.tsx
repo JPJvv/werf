@@ -1,25 +1,20 @@
 /**
- * Record a treatment, vaccination or dip (FR-130/131/132/133) — COMPLIANCE-GATED
- * (legal-compliance.md § 3). The crush-side capture that the whole withdrawal-period machinery
- * exists to serve.
+ * Record a treatment, vaccination or dip (FR-130/131/132/133) from the farm's own product list.
  *
  * A dosing run is a BATCH by nature: nobody doses one animal and walks away. So selection is the
  * primary interaction, as it is for a move, and every animal gets its own event under one shared
  * `batch_id` (FR-112) so the run can be reviewed or corrected as the single action it was.
  *
- * ⭐ THE CLEAR DATE IS SHOWN BEFORE THE FARMER LEAVES THE CRUSH. "When can I sell this animal?" is
- * the question the record exists to answer, and answering it three weeks later on a screen nobody
- * opens is answering it too late. The date shown here is computed from the CACHED product register
- * using the same pure domain function the server uses — it is a preview, and the date actually
- * STORED is computed server-side from the registration in force on the treatment day (ADR-0005).
- * The client never sends a withdrawal period; it sends a product id, which is what stops a client
- * claiming a shorter withhold by relabelling.
+ * The reminder date is shown before the farmer leaves the crush. It is calculated from values the
+ * farmer entered and is guidance for their own planning, never an approval or a capture block.
+ * The event sends a snapshot of the chosen farm product and interval so history remains useful
+ * after the catalogue changes. Werf does not compare that input with an official register.
  *
  * Offline-first: `save` commits every event locally and instantly with no network in the path. The
- * product register is a local cache, so the picker works in a dead zone too.
+ * farm product list is local, so the picker works in a dead zone too.
  */
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { uuidv7, type schemas } from '@werf/core';
 import { withholdUntil } from '@werf/domain';
@@ -29,7 +24,8 @@ import { useAuth } from '../auth/AuthProvider';
 import { farmToday } from '../farmTime';
 import { useEffectiveAnimals, useEffectiveMobs } from './herd';
 import { useAnimalLabels } from './LocalIdentifiers';
-import { useVetProducts, inForceOn, type StoredVetProduct } from './LocalVetProducts';
+import { useEffectiveInventoryItems } from '../inventory/stock';
+import { useRecordInventoryItem } from '../inventory/LocalInventory';
 import {
   useRecordHealth,
   type DipMethod,
@@ -60,7 +56,8 @@ const DIP_METHODS: readonly DipMethod[] = ['plunge', 'spray', 'pour_on', 'hand']
 export function RecordHealthScreen() {
   const { t } = useTranslation();
   const { activeFarm } = useAuth();
-  const products = useVetProducts();
+  const products = useEffectiveInventoryItems().filter((item) => item.category === 'medicine');
+  const recordInventoryItem = useRecordInventoryItem();
   const labels = useAnimalLabels();
   const recordHealth = useRecordHealth();
   const live = useEffectiveAnimals().filter((a) => a.status === 'alive');
@@ -71,6 +68,10 @@ export function RecordHealthScreen() {
 
   const [kind, setKind] = useState<HealthKind>('treatment');
   const [productId, setProductId] = useState('');
+  const [productName, setProductName] = useState('');
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [meatWithdrawalDays, setMeatWithdrawalDays] = useState('');
+  const [milkWithdrawalHours, setMilkWithdrawalHours] = useState('');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [selectedMob, setSelectedMob] = useState<string | null>(null);
   const [administeredBy, setAdministeredBy] = useState('');
@@ -90,32 +91,11 @@ export function RecordHealthScreen() {
 
   const chosen = live.filter((a) => selected.has(a.id));
   const chosenMob = countedMobs.find((m) => m.id === selectedMob) ?? null;
-  // A product registered for cattle is not a product for sheep. Filtering by what is actually
-  // selected keeps a wrong choice off the screen rather than relying on the farmer to notice.
-  const speciesInSelection = useMemo(
-    () => new Set(chosenMob ? [chosenMob.species] : chosen.map((a) => a.species)),
-    [chosen, chosenMob],
-  );
-  // ⭐ P1.3: filtered to the version IN FORCE ON THE DAY BEING CAPTURED — never today's, and never
-  // every version this device has ever cached. `products` now holds this farm's whole registration
-  // history (LocalVetProducts.tsx), so a farmer catching up after a fortnight offline and
-  // back-dating `administeredOn` across a re-registration boundary sees the version that was
-  // actually current on THAT day, not one superseded since or not yet in force.
-  const inForce = useMemo(() => inForceOn(products, administeredOn), [products, administeredOn]);
-  const usable = useMemo(
-    () =>
-      inForce.filter(
-        (p) =>
-          speciesInSelection.size === 0 ||
-          [...speciesInSelection].every((s) => p.species.includes(s)),
-      ),
-    [inForce, speciesInSelection],
-  );
-  const product = usable.find((p) => p.id === productId);
+  const product = products.find((p) => p.id === productId);
 
   if (!activeFarm) return null;
 
-  const clearDate = meatClearDate(product, administeredOn);
+  const clearDate = meatClearDate(meatWithdrawalDays, administeredOn);
 
   // Animal XOR mob, enforced on the screen rather than explained in help text: picking a flock
   // clears any animals picked, and picking an animal clears the flock. The wire contract refuses
@@ -147,14 +127,34 @@ export function RecordHealthScreen() {
   // treatment register that silently lost the dose someone stood there and entered is worse than
   // one that never had it, because nobody knows to go back.
   const blocked =
-    product === undefined ||
+    productName.trim() === '' ||
     (chosen.length === 0 && chosenMob === null) ||
     administeredOn === '' ||
+    !optionalWholeNumber(meatWithdrawalDays) ||
+    !optionalWholeNumber(milkWithdrawalHours) ||
     (kind === 'treatment' && !doseIsValid(doseValue));
 
   const save = async () => {
-    if (blocked || !product || saving) return;
+    if (blocked || saving) return;
     setSaving(true);
+    const chosenProductId = product?.id ?? uuidv7();
+    if (!product) {
+      await recordInventoryItem({
+        id: chosenProductId,
+        farmId: activeFarm.id,
+        enterpriseId: null,
+        category: 'medicine',
+        name: productName.trim(),
+        unit: 'unit',
+        registrationNumber: registrationNumber.trim() || null,
+        activeIngredients: null,
+        phiDays: null,
+        reentryHours: null,
+        meatWithdrawalDays: meatWithdrawalDays.trim() === '' ? null : Number(meatWithdrawalDays),
+        milkWithdrawalHours: milkWithdrawalHours.trim() === '' ? null : Number(milkWithdrawalHours),
+      });
+      setProductId(chosenProductId);
+    }
     // ONE batch id across the run: it was one action with one syringe and one product.
     const batchId = uuidv7();
     // The two clocks the schema keeps apart. `occurredAt` is when the dose was GIVEN: precise when
@@ -170,7 +170,11 @@ export function RecordHealthScreen() {
       kind,
       occurredAt,
       administeredOn,
-      productId: product.id,
+      productId: chosenProductId,
+      productName: productName.trim(),
+      registrationNumber: registrationNumber.trim() || null,
+      meatWithdrawalDays: meatWithdrawalDays.trim() === '' ? null : Number(meatWithdrawalDays),
+      milkWithdrawalHours: milkWithdrawalHours.trim() === '' ? null : Number(milkWithdrawalHours),
       batchId,
       ...(administeredBy.trim() === '' ? {} : { administeredBy: administeredBy.trim() }),
       ...(reason.trim() === '' || kind === 'vaccination' ? {} : { reason: reason.trim() }),
@@ -223,12 +227,6 @@ export function RecordHealthScreen() {
 
       {live.length === 0 && countedMobs.length === 0 ? (
         <p className="text-body text-soil-700">{t('health.noAnimals')}</p>
-      ) : products.length === 0 ? (
-        // The register has not reached this device yet. Say so plainly: a farmer must not be left
-        // staring at an empty picker wondering what they did wrong.
-        <p className="border-l-4 border-klei-700 bg-klei-100 p-3 text-body text-soil-900">
-          {t('health.noProducts')}
-        </p>
       ) : (
         <>
           <fieldset className="mb-4 border-0 p-0">
@@ -354,25 +352,97 @@ export function RecordHealthScreen() {
                 id="product"
                 name="product"
                 value={productId}
-                onChange={(e) => setProductId(e.target.value)}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setProductId(id);
+                  const selectedProduct = products.find((item) => item.id === id);
+                  setProductName(selectedProduct?.name ?? '');
+                  setRegistrationNumber(selectedProduct?.registrationNumber ?? '');
+                  setMeatWithdrawalDays(
+                    selectedProduct?.meatWithdrawalDays == null
+                      ? ''
+                      : String(selectedProduct.meatWithdrawalDays),
+                  );
+                  setMilkWithdrawalHours(
+                    selectedProduct?.milkWithdrawalHours == null
+                      ? ''
+                      : String(selectedProduct.milkWithdrawalHours),
+                  );
+                }}
                 className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
               >
-                <option value="">{t('health.chooseProduct')}</option>
-                {usable.map((p) => (
+                <option value="">{t('health.addProduct')}</option>
+                {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                     {p.registrationNumber ? ` · ${p.registrationNumber}` : ''}
                   </option>
                 ))}
               </select>
-              {/* Answers "so when CAN I sell?" before it is asked — in the crush, not three weeks
-                  later. A product with no meat withdrawal says so, because "no withholding" is an
-                  answer a farmer needs just as much as a date. */}
-              {product && (
+              <label htmlFor="productName" className="mt-3 mb-1 text-label uppercase text-soil-700">
+                {t('health.productName')}
+              </label>
+              <input
+                id="productName"
+                value={productName}
+                onChange={(e) => {
+                  setProductId('');
+                  setProductName(e.target.value);
+                }}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              />
+              <label
+                htmlFor="registrationNumber"
+                className="mt-3 mb-1 text-label uppercase text-soil-700"
+              >
+                {t('health.registrationNumber')}
+              </label>
+              <input
+                id="registrationNumber"
+                value={registrationNumber}
+                onChange={(e) => setRegistrationNumber(e.target.value)}
+                className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 text-body text-soil-900"
+              />
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="flex flex-col">
+                  <label
+                    htmlFor="meatWithdrawalDays"
+                    className="mb-1 text-label uppercase text-soil-700"
+                  >
+                    {t('health.meatWithdrawalDays')}
+                  </label>
+                  <input
+                    id="meatWithdrawalDays"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={meatWithdrawalDays}
+                    onChange={(e) => setMeatWithdrawalDays(e.target.value)}
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body text-soil-900"
+                  />
+                </div>
+                <div className="flex flex-col">
+                  <label
+                    htmlFor="milkWithdrawalHours"
+                    className="mb-1 text-label uppercase text-soil-700"
+                  >
+                    {t('health.milkWithdrawalHours')}
+                  </label>
+                  <input
+                    id="milkWithdrawalHours"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={milkWithdrawalHours}
+                    onChange={(e) => setMilkWithdrawalHours(e.target.value)}
+                    className="min-h-touch-min rounded border border-soil-200 bg-sand-100 px-3 font-data text-body text-soil-900"
+                  />
+                </div>
+              </div>
+              <p className="mt-2 text-body text-soil-700">{t('health.farmerProductHelp')}</p>
+              {productName.trim() !== '' && meatWithdrawalDays.trim() !== '' && (
                 <p className="mt-1 border-l-4 border-dam-700 bg-sand-100 p-2 text-body text-soil-900">
-                  {clearDate === null ? (
-                    t('health.noWithdrawal')
-                  ) : (
+                  {clearDate !== null && (
                     <>
                       {t('health.clearFrom')}{' '}
                       <span className="font-data tabular-nums">{clearDate}</span>
@@ -526,10 +596,19 @@ function doseIsValid(typed: string): boolean {
  * function the server uses, so the two agree whenever the cache is current, and null when the
  * product carries no meat withdrawal at all.
  */
-function meatClearDate(
-  product: StoredVetProduct | undefined,
-  administeredOn: string,
-): string | null {
-  if (!product || product.meatWithdrawalDays === null) return null;
-  return withholdUntil(administeredOn, product.meatWithdrawalDays);
+function optionalWholeNumber(typed: string): boolean {
+  if (typed.trim() === '') return true;
+  const value = Number(typed);
+  return Number.isInteger(value) && value >= 0;
+}
+
+function meatClearDate(withdrawalDays: string, administeredOn: string): string | null {
+  if (
+    !optionalWholeNumber(withdrawalDays) ||
+    withdrawalDays.trim() === '' ||
+    administeredOn === ''
+  ) {
+    return null;
+  }
+  return withholdUntil(administeredOn, Number(withdrawalDays));
 }

@@ -110,10 +110,10 @@ Scenario: occurred_at is preserved across a long offline period
 
 ## Epic: Wages 🇿🇦
 
-### US-020 · Piece work must not fall below the minimum wage
+### US-020 · Show and top up piece work below the reference floor
 
 > **As a** farm owner
-> **I want** the system to stop me paying below the minimum wage on piece rates
+> **I want** the system to compare piece pay with the applicable reference rate and show any top-up
 > **So that** I don't end up at the CCMA
 
 **FRs:** FR-306, FR-307, FR-304 · **See:** [legal-compliance.md §2.4](../00-business/legal-compliance.md)
@@ -175,12 +175,14 @@ Scenario: Combined deductions cannot push net below the floor
   Given employee "Sipho" has gross pay of R5,000.00
   And accommodation R500 and food R500 and a garnishee of R4,200 are configured
   When I run payroll
-  Then the payroll run is REJECTED with "Deductions would reduce net pay below the statutory minimum"
-  And no payslip is generated
+  Then a warning "Deductions would reduce net pay below the statutory minimum" is shown before approval
+  And the warning shows the gross, deductions, net and reference floor used
+  And the payroll run and payslip are still generated
   And the deductions are NOT silently clamped
 ```
 
-> Rejecting is correct here. Silently clamping a garnishee produces a wrong payslip and a legal problem downstream. Make the human decide.
+> Werf does not silently change a garnishee and does not reject the farmer's run. It shows the
+> consequence before approval and leaves the decision with the employer (ADR-0014/ADR-0015).
 
 ### US-022 · Overtime cap
 
@@ -208,10 +210,41 @@ Scenario: One button, inspector-ready
   Given my farm has 23 employees with 18 months of attendance and payroll history
   When I generate the "BCEA Employment Records" report for the last 3 years
   Then a PDF is produced within 30 seconds
+  And I can also download the same rows as an Excel workbook
   And it contains, for every employee: name, occupation, time worked, remuneration paid
   And employees under 18 show their date of birth
   And former employees within the 3-year retention window are included
   And the report is available in English and Afrikaans
+```
+
+### US-024 · Send ordinary records to the bookkeeper
+
+> **As a** farm owner
+> **I want** standard labour forms and familiar downloadable files
+> **So that** I do not retype the same facts for my worker, bookkeeper and accountant
+
+**FRs:** FR-300, FR-301, FR-302, FR-321, FR-322
+
+```gherkin
+Scenario: An incomplete employee is still useful
+  Given I know only the worker's name, phone number, job and start date
+  When I save the employee
+  Then the employee is saved with an "Incomplete" marker
+  And the missing facts are listed without a compliance rejection
+  And I can record attendance and piece work for that employee
+
+Scenario: Accountant pack
+  Given I recorded employees, attendance, piece work, leave and a pay run for March 2026
+  When I download the "Accountant pack" for March 2026
+  Then an XLSX file opens without repair warnings
+  And it contains README, Employees, Attendance, Piece work, Leave, Payroll summary, Payroll detail and Warnings sheets
+  And ID and bank details are excluded unless I explicitly include them with an authorised role
+
+Scenario: Editable employment particulars
+  Given an employee profile contains the facts I have recorded
+  When I download employment particulars as Word
+  Then a DOCX file is produced in the employee's chosen language
+  And any missing fact is marked "Not recorded" rather than invented
 ```
 
 ---
@@ -275,33 +308,35 @@ Scenario: Mark missing, generate pack
 Scenario: The pack works offline-first
   Given I am in a camp with no signal
   When I mark 12 cattle missing
-  Then the missing status is recorded locally with GPS and timestamp
+  Then the missing status is recorded locally with the date I entered
+  And an available GPS point is included but never required
   And the evidence pack generation is queued
   And I am told plainly: "Evidence pack will be generated when you have signal"
 ```
 
-> Generation is server-side because it needs the brand certificate and PDF rendering. Marking missing is local, because that is the time-critical bit and the GPS/timestamp is the evidence.
+> Generation is server-side because it needs the brand certificate and PDF rendering. Marking missing is local because that is the time-critical fact; GPS is optional supporting detail.
 
 ### US-032 · Withdrawal period on sale
 
 **FRs:** FR-131, FR-130
 
 ```gherkin
-Scenario: Selling inside a meat withdrawal period is blocked
+Scenario: Selling inside a farmer-entered meat interval shows a reminder
   Given animal "STR-0088" was treated on 2026-06-01 with a product having a 28-day meat withdrawal
   When I try to record a sale of "STR-0088" on 2026-06-15
-  Then the sale is BLOCKED
-  And the message names the product, the treatment date, and the clear date of 2026-06-29
-  And an override requires a reason and is audited
+  Then Werf shows the treatment date, entered interval, and reminder date of 2026-06-29
+  And the farmer can still record the sale
 
-Scenario: The block works offline
+Scenario: The reminder works offline
   Given the device is offline
-  And the product reference data is synced locally
+  And the farmer's product and interval snapshot is stored locally
   When I try to sell "STR-0088" inside the withdrawal period
-  Then the sale is BLOCKED locally, without a server round trip
+  Then the reminder appears locally, without a server round trip
+  And recording the sale remains available
 ```
 
-> This is why chemical/medicine reference data must sync to the device. The check has to work in the crush.
+> The reminder is a calculator using the farmer's own inputs. It is not approval and never reports
+> the decision elsewhere (ADR-0013).
 
 ---
 

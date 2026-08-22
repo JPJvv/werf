@@ -17,7 +17,6 @@ import { HydratedSpraysProvider } from '../crops/HydratedSprays';
 import { LocalHarvestProvider } from '../crops/LocalHarvest';
 import { HydratedHarvestProvider } from '../crops/HydratedHarvest';
 import { LocalPhiRegisterProvider } from '../crops/LocalPhiRegister';
-import { LocalChemicalProductsProvider } from '../crops/LocalChemicalProducts';
 import { LocalInventoryProvider } from '../inventory/LocalInventory';
 import { HydratedInventoryProvider } from '../inventory/HydratedInventory';
 import { LocalHerdProvider } from '../livestock/LocalHerd';
@@ -84,7 +83,7 @@ const CAPTURE_STORES = [
   LocalHarvestProvider,
   // Also not a capture store — the DOWN-SYNC half of harvests (FR-207), the identical shape as
   // `HydratedSpraysProvider` above it: the hydrated copy WINS on a shared id (`useEffectiveHarvests`'s
-  // own doc) because it carries the server-resolved `phiOverride.by` a local capture never can.
+  // own doc) because it carries the accepted server echo.
   HydratedHarvestProvider,
   // Phase 4e, FR-501: items, lots and stock movements. Composes three stores in one provider (see
   // its own header for why) — items/lots have no server-resolved field a local capture lacks, so
@@ -111,10 +110,6 @@ const CAPTURE_STORES = [
   LocalFeedProvider,
   LocalHealthProvider,
   LocalVetProductsProvider,
-  // Not a capture store — an INBOUND cache, the identical kind of thing as `LocalVetProductsProvider`
-  // just above it, one reference table over: regulated reference data a spray capture selects FROM
-  // (FR-204/FR-508), never something a farmer writes.
-  LocalChemicalProductsProvider,
   // Not a capture store — an INBOUND cache, like the product register beside it. It is here rather
   // than around the one screen that reads it because the home link carries its count, and a count
   // that only appears once you have opened the screen is a count nobody sees.

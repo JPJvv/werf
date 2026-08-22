@@ -10,9 +10,9 @@
 
 South African farmers run their operations on paper, WhatsApp, and Excel, or on software that solves one slice of the problem. The commercial farmer who needs GlobalGAP spray records buys Donkerhoek Data. The stud breeder who needs pedigree buys BenguFarm. Neither handles wages. Neither handles stock theft. Neither works on a phone in a camp with one bar of signal. The farmer running 400 head of cattle *and* 200 hectares of maize *and* eleven seasonal workers has no single product to buy.
 
-Werf is that product: an offline-first web application, installable on any phone, where the farmer selects their farming type at onboarding and gets a system shaped to their operation — with South African labour law, animal identification law, stock theft procedure, and export audit requirements built into the core rather than bolted on.
+Werf is that product: an offline-first web application, installable on any phone, where the farmer selects their farming type at onboarding and gets a private working logbook shaped to their operation. Werf records what the farm enters, performs useful arithmetic, and produces farmer-controlled exports. It is not a regulator, certification service, product authority, or reporting channel to government or buyers.
 
-**The wedge is compliance.** Record-keeping is a nice-to-have that farmers postpone. A Department of Employment and Labour inspection, a GlobalGAP audit, or a stolen-cattle case at the SAPS is not postponable. Werf earns its subscription on the days those things happen and retains on the days between.
+**The wedge is a trustworthy farm memory.** Farmers should not have to maintain the same operational facts across paper, WhatsApp and disconnected spreadsheets. Werf earns its subscription by making planning, capture, calculation and voluntary evidence export useful every day. The farmer remains responsible for decisions, legal compliance and anything they choose to submit externally.
 
 ---
 
@@ -33,7 +33,7 @@ Source: Stats SA Census of Agricultural Households; commercial farm counts from 
 
 ### 2.2 Why now
 
-- **Compliance pressure is rising, not falling.** Minimum wage increases annually and is enforced; the sectoral determination for farm workers carries specific record-keeping obligations; export markets (EU citrus, wine, fruit) have hardened on GlobalGAP and SIZA social audits.
+- **Record pressure is rising.** Farms increasingly need usable histories for their own management and may choose to use those records with employees, buyers, auditors or authorities.
 - **Stock theft is a material P&L line.** Industry bodies put the national cost in the order of R1.4 billion a year. Branding and record-keeping are both the legal requirement and the practical first step to recovery.
 - **Smartphone penetration among commercial farmers is effectively universal**, but rural connectivity is not. This is precisely the gap an offline-first PWA fills and a cloud-only SaaS does not.
 - **The incumbents are not moving.** The SA-native tools are desktop-heritage products with mobile companions bolted on. The global tools have no commercial reason to build South African labour law.
@@ -59,13 +59,13 @@ The last two rows are deliberate. BenguFarm's stud-book integration and SwiftVEE
 | ID | Objective | Measure | Target (12 months post-launch) |
 |---|---|---|---|
 | BO-1 | Become the record of truth for the farm | Weekly active farms / paying farms | ≥ 70% |
-| BO-2 | Win on compliance, not features | Farms that pass a real GlobalGAP/SIZA audit or DoL inspection using only Werf reports | ≥ 25 documented |
+| BO-2 | Make farm records genuinely useful | Paying farms using planning, capture and export each month | ≥ 70% |
 | BO-3 | Prove offline works | Sync success rate for sessions initiated offline | ≥ 99.5% |
 | BO-4 | Reach commercial farmers | Paying farms | 400 |
 | BO-5 | Sustainable unit economics | Gross margin per farm | ≥ 75% |
 | BO-6 | Earn the "flagship" claim | Net revenue retention | ≥ 100% |
 
-BO-2 is the one that matters. If it is met, BO-4 follows. If features ship but BO-2 does not move, the product is a worse Farmbrite with a Rand price.
+BO-2 is the one that matters. If farmers do not use Werf as their working logbook, adding more compliance machinery will not rescue the product.
 
 ---
 
@@ -77,10 +77,10 @@ BO-2 is the one that matters. If it is met, BO-4 follows. If features ship but B
 | Farm manager | Getting the day's work recorded without a fight | Primary. Kills the product if data entry is slow. |
 | Farm worker / handler | Being paid correctly; not being made to fight software | Secondary but decisive — they are the capture point for most events. |
 | Bookkeeper | Payslips, UIF, SARS, month-end | Primary for the labour and finance modules. |
-| Auditor (GlobalGAP/SIZA) | Evidence, traceability, corrective actions | Defines the compliance module's output format. |
-| Veterinarian | Treatment history, withdrawal periods | Read access; influences the health data model. |
-| SAPS / Stock Theft Unit | Ownership proof, movement records | Defines the evidence pack format. |
-| Buyer / abattoir / packhouse | Traceability, food safety declarations | Defines the export/dispatch data. |
+| Auditor (GlobalGAP/SIZA) | May receive records the farmer deliberately exports | No product access or authority over capture. |
+| Veterinarian | May advise the farmer or receive a farmer-selected export | No automatic access; the farmer enters product facts. |
+| SAPS / Stock Theft Unit | May receive a farmer-generated evidence pack | No automatic access or reporting path. |
+| Buyer / abattoir / packhouse | May request records from the farmer | No automatic access; does not define whether a farmer may record an event. |
 | Anthropic Claude Code | Building the thing | Defines the documentation format (see roadmap). |
 
 ---
@@ -93,7 +93,7 @@ BO-2 is the one that matters. If it is met, BO-4 follows. If features ship but B
 |---|---|---|
 | BR-1 | A farmer selects their farming type(s) at onboarding, and the system adapts — modules, dashboard, terminology — without exposing irrelevant features | The all-type promise. A sheep farmer must never see a spray record. |
 | BR-2 | Every function that a person performs in a field, camp, or crush must work with no network connection | Non-negotiable. Rural SA connectivity is the environment, not an edge case. |
-| BR-3 | The system must produce, on demand, the records that a DoL inspector, a GlobalGAP auditor, a SIZA auditor, or a SAPS officer will ask for | The wedge. |
+| BR-3 | The system must let an authorised farm member export selected records on demand, without sending them automatically or asserting that they prove compliance | Farmer utility and control. |
 | BR-4 | Wage calculation must be correct against the sectoral determination in force on the date the work was done | Legal exposure. Retrospective recalculation at today's rate is a compliance failure. |
 | BR-5 | Personal information must be processed lawfully under POPIA, with special attention to employee biometric and identity data | Legal exposure, and workers are the least-powerful data subjects in this system. |
 | BR-6 | The farmer owns their data and can export all of it, in a usable format, at any time, without asking us | Trust. Also POPIA s23/s24. |
@@ -118,6 +118,8 @@ BO-2 is the one that matters. If it is met, BO-4 follows. If features ship but B
 
 **Launch gate (end of Phase 7):** three pilot farms — one livestock, one crop, one mixed — have used Werf as their only record system for a full month, including a pay cycle, and one has passed a real external audit or inspection on Werf output alone.
 
+The external-audit portion tests whether a farmer's records are useful; it does not turn Werf into a certifier or justify product-validation gates.
+
 If that gate is not met, we do not launch. We fix. A farm management product that loses a farmer's data or gets a payslip wrong does not get a second chance in a community this tightly networked — and word travels faster at a Nampo stand than any marketing budget can outrun.
 
 ---
@@ -126,13 +128,13 @@ If that gate is not met, we do not launch. We fix. A farm management product tha
 
 | ID | Assumption | If wrong |
 |---|---|---|
-| BA-1 | Commercial farmers will pay R300–1,200/mo for compliance certainty | Pricing model collapses; pivot to per-head or per-hectare |
+| BA-1 | Commercial farmers will pay R300–1,200/mo for a reliable private farm logbook and planning tool | Pricing model collapses; pivot to per-head or per-hectare |
 | BA-2 | Offline-first is a genuine differentiator, not a hygiene factor | Lose the technical moat; compete on features against Farmbrite |
-| BA-3 | Regulatory complexity is a moat, not a burden | Global players localise; we lose in 24 months |
+| BA-3 | South African workflows and farmer-controlled outputs are a moat without Werf policing farm decisions | Revisit positioning with pilot farms |
 | BA-4 | A PWA is sufficient — no native app needed for v1 | Push notification and hardware limits force a native shell |
 | BA-5 | We can integrate rather than rebuild (Stud Book, SwiftVEE, PayFast) | Roadmap extends by 6+ months |
 
-BA-2 and BA-3 are the load-bearing ones. Both should be tested with real farmers in Phase 1, not assumed through to launch.
+BA-2 and BA-3 are load-bearing. Both must be tested with real farmers rather than inferred from an authority's preferred workflow.
 
 ---
 

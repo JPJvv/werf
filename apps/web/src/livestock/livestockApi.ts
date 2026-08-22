@@ -94,11 +94,8 @@ export const livestockApi = {
         // it knows. The halves arrive as separate requests, possibly days apart, with nothing else
         // in the second to recognise the first by.
         ...(tally.batchId === undefined ? {} : { batchId: tally.batchId }),
-        // ⭐ `carriedWithholdUntil` is DELIBERATELY not sent. The device computed one as a preview
-        // so its own guard could see the arriving withholding, but a withdrawal period is a
-        // regulated number and the server resolves its own from the source mob's log — a phone with
-        // a stale product register must never be able to shorten a withholding by being the one
-        // that did the arithmetic. Same contract as a treatment's clear date (ADR-0005).
+        // `carriedWithholdUntil` is deliberately not sent: it is a local projection. The server can
+        // reconstruct the farm's entered history from the source mob's events.
         //
         // The seller's declaration IS sent, and the asymmetry is the point: there is no register to
         // resolve it from. It is a thing a person said, and the only honest options are to record
@@ -192,8 +189,8 @@ export const livestockApi = {
         animalId: death.animalId,
         occurredAt: death.occurredAt,
         cause: death.cause,
-        // FR-131. The server refuses a slaughter inside an active withdrawal, so the flag has to
-        // cross the wire — a flag the device keeps to itself is a guard the boundary cannot run.
+        // Preserve the distinct slaughter fact; the server records it and may calculate a private
+        // interval reminder, but never refuses the farmer's capture because of that reminder.
         ...(death.slaughtered === true ? { slaughtered: true } : {}),
       },
       token,
@@ -308,9 +305,8 @@ export const livestockApi = {
     ),
 
   /**
-   * A health event (FR-130/131/132/133). Each kind has its own endpoint. Note what is NOT sent: no
-   * withdrawal period, only the `productId` the server resolves it from. A client that could send
-   * the number could claim a shorter withhold by relabelling.
+   * A health event (FR-130/131/132/133). Each kind has its own endpoint and carries the farmer's
+   * product and interval snapshot; the server checks ownership and shape, not product legality.
    */
   recordHealth: (event: StoredHealthEvent, token: string): Promise<void> =>
     post(
@@ -325,6 +321,10 @@ export const livestockApi = {
         occurredAt: event.occurredAt,
         administeredOn: event.administeredOn,
         productId: event.productId,
+        productName: event.productName ?? 'Product not named',
+        registrationNumber: event.registrationNumber ?? null,
+        meatWithdrawalDays: event.meatWithdrawalDays ?? null,
+        milkWithdrawalHours: event.milkWithdrawalHours ?? null,
         batchId: event.batchId,
         ...(event.doseValue === undefined ? {} : { doseValue: event.doseValue }),
         ...(event.doseUnit === undefined ? {} : { doseUnit: event.doseUnit }),
@@ -364,7 +364,7 @@ export const livestockApi = {
       token,
     ),
 
-  /** A missing report (FR-605). The last-seen point is required all the way to the wire. */
+  /** A private missing record (FR-605), with a last-seen point only when available. */
   recordMissing: (missing: StoredMissing, token: string): Promise<void> =>
     post(
       '/livestock/missing',
@@ -373,7 +373,9 @@ export const livestockApi = {
         farmId: missing.farmId,
         animalId: missing.animalId,
         occurredAt: missing.occurredAt,
-        lastSeenGeojson: missing.lastSeenGeojson,
+        ...(missing.lastSeenGeojson === undefined
+          ? {}
+          : { lastSeenGeojson: missing.lastSeenGeojson }),
         ...(missing.cause === undefined ? {} : { cause: missing.cause }),
       },
       token,

@@ -1,10 +1,8 @@
 /**
- * The client meat-withdrawal guard (FR-131), at the seam where it has to AGREE with the server.
+ * The client meat-withdrawal reminder arithmetic (FR-131), shared with server projections.
  *
- * The rule that matters is not "does this device compute a clear date" — it is "does the device
- * refuse exactly what the server refuses, at capture, offline". Every case here is a case where the
- * two once disagreed, and a disagreement is not a rounding error: it is a truck loaded on the
- * device's word and turned back days later on the server's.
+ * These cases keep local and hydrated history producing the same transparent date. The result is
+ * planning information only and must never determine whether a capture can be saved.
  */
 
 import { describe, expect, it } from 'vitest';

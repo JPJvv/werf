@@ -26,7 +26,6 @@ export const HOME_TILE_KEYS = [
   'harvest',
   'labour',
   'money',
-  'compliance',
 ] as const;
 
 export type HomeTileKey = (typeof HOME_TILE_KEYS)[number];
@@ -53,7 +52,7 @@ function animalsIcon(stock: 'herd' | 'flock' | 'livestock'): string {
  * - animals + health when any livestock is kept;
  * - sprays + harvest when any crop is grown;
  * - one land tile always, named by the terminology layer ("Blocks" with crops, else "Camps");
- * - Labour, Money and Compliance are shared by every enterprise.
+ * - Labour and Money are shared by every enterprise.
  */
 export function homeTiles(enterpriseTypes: readonly EnterpriseType[]): HomeTile[] {
   const hasLivestock = enterpriseTypes.some(isLivestockEnterprise);
@@ -95,7 +94,6 @@ export function homeTiles(enterpriseTypes: readonly EnterpriseType[]): HomeTile[
   // Shared across every farm, in fixed trailing order.
   tiles.push({ key: 'labour', labelKey: 'tile.labour', icon: '👥', to: '/labour' });
   tiles.push({ key: 'money', labelKey: 'tile.money', icon: 'R', to: '/money' });
-  tiles.push({ key: 'compliance', labelKey: 'tile.compliance', icon: '✓', to: '/compliance' });
 
   return tiles;
 }

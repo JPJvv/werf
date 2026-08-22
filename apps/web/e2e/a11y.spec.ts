@@ -222,7 +222,7 @@ const CAPTURE_SCREENS = [
   // list is where the one online-only action in livestock lives, and a farmer reads it under the
   // worst conditions this product has — the morning after.
   { path: '/animals/theft', heading: /stock theft/i },
-  { path: '/animals/theft/new', heading: /report stock theft/i },
+  { path: '/animals/theft/new', heading: /record stock theft/i },
   { path: '/weigh', heading: /weigh session/i },
   { path: '/rainfall', heading: /rainfall/i },
   // Not a capture, but it is reached FROM one going wrong, which is the worst moment to meet an
@@ -279,8 +279,9 @@ const POPULATED_SCREENS = [
         .first()
         .click();
       await page.getByRole('button', { name: 'Slaughtered' }).click();
-      // The animal was dosed today, so this renders the withholding panel and its clear date.
-      await expect(page.getByText(/cannot be sold for slaughter yet/i)).toBeVisible();
+      // The animal was dosed today, so this renders the withholding reminder panel and its clear
+      // date. ADR-0013 made this advisory, not a refusal — the panel says so.
+      await expect(page.getByText(/reminder: using the interval you entered/i)).toBeVisible();
     },
   },
   {
@@ -292,7 +293,8 @@ const POPULATED_SCREENS = [
         .first()
         .click();
       await page.getByRole('button', { name: /^sold$/i }).click();
-      await expect(page.getByText(/cannot go for slaughter or sale yet/i)).toBeVisible();
+      // Same ADR-0013 advisory shape as the individual path above.
+      await expect(page.getByText(/reminder: using the interval you entered/i)).toBeVisible();
     },
   },
   {
@@ -386,20 +388,21 @@ const POPULATED_SCREENS = [
         .getByRole('button', { name: /ossies/i })
         .first()
         .click();
-      await expect(page.getByLabel(/product/i)).toBeVisible();
+      // The farmer-owned product catalogue (ADR-0013) added a free-text "Product name" field
+      // alongside the existing picker, so `/product/i` alone now matches both.
+      await expect(page.getByLabel(/which product/i)).toBeVisible();
     },
   },
   {
-    // 4d (FR-205/US-030). The fixture's one block has an unresolved spray inside its product's
-    // 21-day PHI, and the screen defaults the harvest day to today — so the block panel renders with
-    // no interaction needed. The override reason select/textarea (the newest controls here, and the
-    // ones a compliance pass will look at first) only exist once "Override" is clicked.
+    // 4d (FR-205/US-030), rewritten advisory under ADR-0013/ADR-0015: the fixture's one block has
+    // an unresolved spray (its productId predates the farmer-owned inventory catalogue migration,
+    // so this device cannot look it up) — the screen defaults the harvest day to today, so the
+    // reminder panel renders with no interaction needed. There is no override control any more:
+    // the form saves regardless, so there is nothing left to click through.
     path: '/crops/harvest',
     heading: /record a harvest/i,
     act: async (page: Page) => {
-      await expect(page.getByText(/inside a pre-harvest interval/i)).toBeVisible();
-      await page.getByRole('button', { name: /^override$/i }).click();
-      await expect(page.getByLabel(/reason/i)).toBeVisible();
+      await expect(page.getByText(/no interval details/i)).toBeVisible();
     },
   },
   {
@@ -429,16 +432,15 @@ const POPULATED_SCREENS = [
     // stock-lot picker (FR-502) — STATUS.md's own disclosed gap: this screen's newest controls,
     // the ones a compliance pass looks at first, had never been in front of axe at all, only the
     // "no blocks yet" empty state. The fixture's one block has a planting due in 5 days and this
-    // product carries a 21-day PHI, so picking it blocks at capture with no other interaction —
-    // mirroring `RecordHarvestScreen.tsx`'s own override UI exactly, one guard over (index 1 is
-    // the only real product option, after the "choose a product" placeholder).
+    // product carries a 21-day PHI (now farmer-owned catalogue data, ADR-0013), so picking it shows
+    // the planning-warning panel with no other interaction — rewritten advisory under ADR-0015,
+    // there is no override control any more, one guard over (index 1 is the only real product
+    // option, after the "choose a product" placeholder).
     path: '/crops/spray',
     heading: /record a spray/i,
     act: async (page: Page) => {
       await page.getByLabel(/^product$/i).selectOption({ index: 1 });
-      await expect(page.getByText(/would clear after the planned harvest date/i)).toBeVisible();
-      await page.getByRole('button', { name: /^override$/i }).click();
-      await expect(page.getByLabel(/^reason$/i)).toBeVisible();
+      await expect(page.getByText(/planning reminder/i)).toBeVisible();
       // The chemical-category lot — index 1 is the only real option, after "not tracking this
       // one's stock". Picking it reveals the paired quantity-used field beside it.
       await page.getByLabel(/from stock/i).selectOption({ index: 1 });

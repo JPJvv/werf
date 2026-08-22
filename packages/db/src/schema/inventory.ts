@@ -13,7 +13,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { check, date, numeric, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { check, date, integer, numeric, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { auditColumns, primaryId } from './columns';
 import { inventoryItemCategoryEnum } from './enums';
 import { enterprises, farms, users } from './core';
@@ -30,6 +30,18 @@ export const inventoryItems = pgTable(
     name: text('name').notNull(),
     /** Free text — "kg", "L", "bag" — too many real units across four categories for a closed set. */
     unit: text('unit').notNull(),
+    /**
+     * Farmer-entered product facts. These are deliberately NOT regulatory reference data: Werf
+     * stores what the farm reads from its own container/label and uses `phi_days` only as a
+     * calculator input. They are optional because feed, fertiliser and medicine items need none of
+     * them, and because a useful stock record must not be refused for incomplete label detail.
+     */
+    registrationNumber: text('registration_number'),
+    activeIngredients: text('active_ingredients').array(),
+    phiDays: integer('phi_days'),
+    reentryHours: integer('reentry_hours'),
+    meatWithdrawalDays: integer('meat_withdrawal_days'),
+    milkWithdrawalHours: integer('milk_withdrawal_hours'),
     /**
      * FR-503's low-stock WARNING threshold (4e·5) — how much of this item the farm wants on hand
      * before it counts as running low. Nullable, no default: an unset threshold means no warning
@@ -48,6 +60,19 @@ export const inventoryItems = pgTable(
     check(
       'inventory_items_reorder_point_positive',
       sql`${t.reorderPoint} IS NULL OR ${t.reorderPoint} > 0`,
+    ),
+    check('inventory_items_phi_days_nonnegative', sql`${t.phiDays} IS NULL OR ${t.phiDays} >= 0`),
+    check(
+      'inventory_items_reentry_hours_nonnegative',
+      sql`${t.reentryHours} IS NULL OR ${t.reentryHours} >= 0`,
+    ),
+    check(
+      'inventory_items_meat_withdrawal_days_nonnegative',
+      sql`${t.meatWithdrawalDays} IS NULL OR ${t.meatWithdrawalDays} >= 0`,
+    ),
+    check(
+      'inventory_items_milk_withdrawal_hours_nonnegative',
+      sql`${t.milkWithdrawalHours} IS NULL OR ${t.milkWithdrawalHours} >= 0`,
     ),
   ],
 );

@@ -363,13 +363,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(screen.queryByText('318')).toBeNull();
   });
 
-  it('⭐ refuses to tally a DIPPED flock to the abattoir, at capture and offline', async () => {
-    // The last SEV-1. Dip the flock Monday; Tuesday, no signal, tally forty to slaughter. Without
-    // this the screen said "saved — 260 head", the truck loaded, and the server's refusal arrived
-    // on Friday's flush as a 400 that FR-009 correctly sets aside forever — days after the only
-    // moment anyone could act on it. The individual sale path has been guarded at capture since
-    // the health slice; this is the path where the exposure is worse, because a flock run by head
-    // count is the smallholder's.
+  it('⭐ shows the entered interval for a dipped flock and still records slaughter offline', async () => {
     cachedSession();
     seedFlock();
     seedDip();
@@ -381,10 +375,10 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
 
-    // Says no AND says when.
-    expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^save$/i }).hasAttribute('disabled')).toBe(true);
-    expect(await storedTallies()).toHaveLength(0);
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^save$/i }).hasAttribute('disabled')).toBe(false);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(async () => expect(await storedTallies()).toHaveLength(1));
   });
 
   it('still lets a dipped flock record a DEATH — a dead sheep is not food', async () => {
@@ -407,11 +401,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     });
   });
 
-  it('⭐ refuses a flock tally when ONE animal in it was treated individually', async () => {
-    // A mob may hold individually-registered animals, and their treatment stores `mob_id = NULL`.
-    // The client guard filtered on the mob alone, so it previewed CLEAR while the server — which
-    // reads both routes — correctly refused. The two must answer the same question; a capture-time
-    // guard narrower than the one that actually refuses is the failure it was built to prevent.
+  it('⭐ shows an individual animal reminder on its flock and still records the tally', async () => {
     cachedSession();
     seedFlock();
     window.localStorage.setItem(
@@ -468,18 +458,13 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.click(screen.getByRole('button', { name: /^sold$/i }));
     await user.type(screen.getByLabelText(/how many/i), '40');
 
-    expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
-    expect(await storedTallies()).toHaveLength(0);
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^save$/i }).hasAttribute('disabled')).toBe(false);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(async () => expect(await storedTallies()).toHaveLength(1));
   });
 
-  it('⭐ refuses a flock tally when the member AND its treatment are known only via hydration (phase-checklists.md 3e)', async () => {
-    // The test just above proves the guard sees a member THIS device captured, individually
-    // registered and dosed on its own phone. The gap this closes is the member captured on ANOTHER
-    // device: `AdjustMobScreen.tsx` read `useAnimals()`/`useMoves()`/`useHealthEvents()` — all
-    // local-only — so a member standing in this mob only because another device registered it (and
-    // dosed it) was invisible to `meatWithdrawalForMob`'s mob-membership reconstruction. This
-    // device never runs any `seedHerd`-equivalent for the member: the animal and its treatment
-    // both arrive purely through down-sync.
+  it('⭐ shows a hydrated member reminder and still records the flock tally', async () => {
     cachedSession();
     seedFlock();
     const user = userEvent.setup();
@@ -532,9 +517,11 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.type(screen.getByLabelText(/how many/i), '40');
 
     await waitFor(() => {
-      expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+      expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     });
-    expect(await storedTallies()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: /^save$/i }).hasAttribute('disabled')).toBe(false);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(async () => expect(await storedTallies()).toHaveLength(1));
   });
 
   it('⭐ lets a BACK-DATED tally be recorded against the flock as it stood THAT day', async () => {
@@ -726,7 +713,7 @@ describe('changing a group’s numbers (FR-102)', () => {
     expect(saved[0]?.['priceCents']).toBeUndefined();
   });
 
-  it('⭐ refuses to send the joined group for slaughter while the carried withholding runs', async () => {
+  it('⭐ shows the carried-interval reminder and keeps group slaughter capture available', async () => {
     // The device's own guard, not the server's. The point of carrying the date locally is that the
     // refusal reaches the person who can still act on it — a server-only rule arrives on Friday.
     cachedSession();
@@ -750,13 +737,13 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.click(screen.getByRole('button', { name: /^slaughtered$/i }));
     await user.type(screen.getByLabelText(/how many/i), '10');
 
-    expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(
-      true,
+      false,
     );
   });
 
-  it('⭐ refuses slaughter when the withholding arrived via a HYDRATED transfer this device never captured', async () => {
+  it('⭐ shows a hydrated carried-interval reminder without blocking group slaughter', async () => {
     // sync-auditor Finding 1 (2026-08-10), first call site. The local test just above proves the
     // guard sees a transfer THIS device captured; the gap is a transfer another device captured,
     // sent, and PowerSync has since replicated here — this device never ran a `transfer_in` capture
@@ -797,10 +784,10 @@ describe('changing a group’s numbers (FR-102)', () => {
     await user.type(screen.getByLabelText(/how many/i), '10');
 
     await waitFor(() => {
-      expect(screen.getByText(/cannot go for slaughter or sale yet/i)).toBeTruthy();
+      expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     });
     expect((screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement).disabled).toBe(
-      true,
+      false,
     );
     expect(await storedTallies()).toHaveLength(0);
   });

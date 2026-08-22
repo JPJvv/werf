@@ -290,7 +290,7 @@ describe('recording a loss', () => {
     expect(death).toMatchObject({ type: 'death', status: 'dead', slaughtered: true });
   });
 
-  it('⭐ refuses a slaughter inside an active meat withdrawal, at capture', async () => {
+  it('⭐ shows a reminder but keeps slaughter capture available inside the entered interval', async () => {
     // Offline is the default state, so a server-only refusal arrives days after the animal has
     // been eaten. It says WHEN as well as no: a refusal with no way forward is what makes someone
     // stop recording treatments at all.
@@ -304,14 +304,14 @@ describe('recording a loss', () => {
     await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
-    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /record slaughter/i }).hasAttribute('disabled')).toBe(
-      true,
+      false,
     );
     expect((await storedEvents()).find((e) => e['type'] === 'death')).toBeUndefined();
   });
 
-  it('⭐ refuses a slaughter for an animal AND its treatment known only via hydration (phase-checklists.md 3e)', async () => {
+  it('⭐ shows a reminder from hydrated treatment history without blocking slaughter', async () => {
     // The gap this closes: before it, `RecordLossScreen`'s guard read `useAnimals()` (local-only)
     // to find `selectedStored`, and `useHealthEvents()` (local-only) for the dose. An animal
     // registered on ANOTHER device — never captured here — was invisible to `useAnimals()`, so
@@ -369,15 +369,15 @@ describe('recording a loss', () => {
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
     await waitFor(() => {
-      expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+      expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: /record slaughter/i }).hasAttribute('disabled')).toBe(
-      true,
+      false,
     );
     expect((await storedEvents()).find((e) => e['type'] === 'death')).toBeUndefined();
   });
 
-  it('⭐ refuses a sale for a HYDRATED animal whose mobId is CURRENT, dosed via a mob it has since LEFT (compliance-checker finding)', async () => {
+  it('⭐ finds a hydrated historic mob dose, warns, and keeps sale capture available', async () => {
     // A hydrated animal's `mob_id` is the server's denormalised CURRENT position, not its opening
     // one (`livestock.service.ts`'s `recordMove` overwrites it on every move that lands as the
     // latest). Seeding `withdrawal.ts`'s `mobMembership` from that field made the reconstruction
@@ -450,10 +450,10 @@ describe('recording a loss', () => {
     await user.type(screen.getByLabelText(/^price/i), '8500');
 
     await waitFor(() => {
-      expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+      expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
-      true,
+      false,
     );
   });
 
@@ -527,14 +527,14 @@ describe('recording a loss', () => {
     await user.type(screen.getByLabelText(/^price/i), '8500');
 
     await waitFor(() => {
-      expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+      expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
-      true,
+      false,
     );
   });
 
-  it('refuses a SALE inside an active meat withdrawal, at capture', async () => {
+  it('shows an entered-interval reminder and keeps sale capture available', async () => {
     cachedSession();
     seedHerd(animal('a1', { sex: 'female' }));
     seedActiveWithdrawal('a1');
@@ -547,13 +547,13 @@ describe('recording a loss', () => {
     await user.type(screen.getByLabelText(/buyer/i), 'Vleissentraal');
     await user.type(screen.getByLabelText(/^price/i), '8500');
 
-    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /record sale/i }).hasAttribute('disabled')).toBe(
-      true,
+      false,
     );
   });
 
-  it('⭐ a CLEARED day does not disarm the sale guard, and cannot save an un-sendable sale', async () => {
+  it('⭐ requires the sale day even when a reminder interval exists', async () => {
     // The dose-day bound added to `latestClearAcross` compares `administeredOn > disposalOn`. A
     // native date input is clearable, and every real day is `> ''`, so a blank day skipped EVERY
     // dose, `latest` stayed undefined, and the animal read CLEAR: the red panel vanished and Save
@@ -607,7 +607,7 @@ describe('recording a loss', () => {
     });
   });
 
-  it('⭐ refuses to slaughter an animal whose MOB was dipped, though it was never dosed by name', async () => {
+  it('⭐ shows the mob-dip reminder without blocking an individual slaughter record', async () => {
     // Health events are animal-XOR-mob, so a plunge dip stores `animal_id = NULL`. The client guard
     // read only animal-subject events, so it previewed CLEAR for every individual in a dipped
     // flock — while the server, which reconstructs membership, correctly refused. A capture-time
@@ -623,9 +623,9 @@ describe('recording a loss', () => {
     await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
-    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /record slaughter/i }).hasAttribute('disabled')).toBe(
-      true,
+      false,
     );
   });
 
@@ -657,7 +657,7 @@ describe('recording a loss', () => {
     await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Slaughtered' }));
 
-    expect(screen.queryByText(/treated and cannot be sold for slaughter yet/i)).toBeNull();
+    expect(screen.queryByText(/reminder date on/i)).toBeNull();
   });
 
   it('⭐ judges a BACK-DATED slaughter on the day it happened, not on today', async () => {
@@ -677,7 +677,7 @@ describe('recording a loss', () => {
     // The day is ASKED, and it defaults to today.
     const day = screen.getByLabelText(/what day/i) as HTMLInputElement;
     expect(day.value).toBe(farmToday());
-    expect(screen.getByText(/treated and cannot be sold for slaughter yet/i)).toBeTruthy();
+    expect(screen.getByText(/reminder date on/i)).toBeTruthy();
   });
 
   it('stores a locale-independent cause for a slaughter', async () => {
@@ -773,7 +773,7 @@ describe('recording a loss', () => {
     await user.click(await screen.findByRole('button', { name: /female/i }));
     await user.click(screen.getByRole('button', { name: 'Died' }));
 
-    expect(screen.getByText(/still inside a meat withdrawal on this day/i)).toBeTruthy();
+    expect(screen.getByText(/this date falls inside the meat interval/i)).toBeTruthy();
 
     // And it saves anyway — the note is not a refusal.
     await user.type(screen.getByLabelText(/cause/i), 'Tick-borne disease');

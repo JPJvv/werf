@@ -3,6 +3,12 @@
 The executable, per-phase task lists. Each phase ends with the same **exit gate**: `pnpm verify`
 exits 0, the checklist is fully ticked, and the `reviewer` agent passes. One phase per PR unless noted.
 
+> **Phase 3–4 product-boundary correction (ADR-0013, 2026-08-20):** entries below that describe
+> withdrawal/PHI hard blocks, overrides, product-register authority, mandatory GPS or compliance
+> reporting are retained only as implementation history. They are superseded. Current behavior is
+> farmer-entered private records plus advisory arithmetic; structural, tenancy and integrity
+> validation remain. Use ADR-0013 and the current functional requirements for acceptance decisions.
+
 Full narrative and the eight-phase arc live in `docs/04-delivery/roadmap.md` (to be written).
 
 ---
@@ -448,7 +454,12 @@ Breeding (P1 only; FR-122/123 deferred)
   falling back — but the diagnosis is still recorded, because refusing it would lose a real
   observation to protect a projection that was never available
 
-Health 🇿🇦 (compliance-gated — legal-compliance.md first, compliance-checker before merge)
+> **Current contract (ADR-0013, 2026-08-20):** the historical Phase 3 entries below describe the
+> implementation as originally merged. Current capture uses farm-owned medicine products and
+> farmer-entered intervals. Withdrawal calculations are private reminders and never block a sale,
+> slaughter or tally. Theft evidence remains farmer-initiated and is never sent automatically.
+
+Health (farmer-controlled log and reminders)
 ☑ 📶 Record a treatment: product, batch, dose, route, administered_by, reason (FR-130) — SCREEN DONE
   (commit d32451a) on top of the server endpoints that already existed. A dosing run is a batch by
   nature, so selection is the primary interaction and one batch_id ties the run together; products
@@ -1388,6 +1399,11 @@ lost on retry, refusal, refresh expiry, schema upgrade, browser restart or quota
 
 ## Phase 4 — Crops & fields
 
+> **Current contract (ADR-0013, 2026-08-20):** the historical build account below is retained as
+> history, but official chemical-product resolution, PHI blocking and audited overrides are
+> superseded. Current capture uses farm-owned products and farmer-entered label facts; PHI and
+> re-entry results are advisory and never prevent a spray or harvest. There is no automatic report.
+
 Goal: a farmer on a crop or mixed farm can define blocks, record a planting, spray to GlobalGAP
 standard with the pre-harvest interval enforced *at capture*, fertilise, harvest, and see the
 crop-facing home metrics — all with the network off. Written now, at the start of the phase, per
@@ -2152,27 +2168,141 @@ fixed — JP's explicit decision, evidence and reasoning in `STATUS.md` §3.
 
 ---
 
-## Phase 5 — Labour & wages 🇿🇦 — CRITICAL PATH
+## Phase 5 — People, work & pay 🇿🇦 — CRITICAL PATH
 
-Goal: **the wedge.** A farm can pay people correctly and prove it. This is the phase someone pays
-for, and it is the phase that gets a farmer sued if it is wrong.
+Goal: a farmer can keep useful labour records, work out a pay period and hand the right document to
+a worker, bookkeeper, accountant or inspector. Werf helps; it does not police.
 
 Sub-phases map 1:1 onto [roadmap.md](roadmap.md) Phase 5 (5a–5i). Autonomy for the whole phase is
 **LOW** — see [claude-code-playbook.md](claude-code-playbook.md), which is generated from the
 roadmap and now says so correctly.
 
-### ⛔ Two external blockers. Neither is a formality, and both have been open since the second session.
+The product boundary is
+[ADR-0015](../03-architecture/adr/ADR-0015-farmer-controlled-labour-tools.md), extending the private
+logbook decision (ADR-0013) and advisory payroll decision (ADR-0014).
 
-**Do not deploy Phase 5 until both are answered.** Placeholder dev/test rate rows may support the
-mechanics, but a production seed must reject every unverified row.
-a session reading only this file cannot miss them.
+### Phase-wide rules
+
+```
+□ SAVE WHAT THE FARMER KNOWS. Missing or unusual details become "Incomplete" or a warning; no
+  operational form rejects a record to force legal compliance.
+□ NEVER INVENT A VALUE. A blank stays "Not recorded" in a draft document and is listed once for the
+  farmer to complete. Defaults may come only from the farm or employee profile and stay editable.
+□ STRUCTURAL AND SECURITY BOUNDARIES STILL HOLD: tenant/role checks, valid references, valid money,
+  finite/non-negative quantities, start-before-end, append-only history and idempotency.
+□ ATTENDANCE AND PIECE WORK SAVE OFFLINE and survive reboot. GPS is optional evidence attached to a
+  record, never live tracking. No worker biometrics.
+□ PAYROLL WARNINGS ARE ADVISORY. They render above the numbers, explain their inputs and never
+  disable Save, Calculate, Approve or Download. The farmer may fix an input or continue.
+□ EVERY EXPORT IS FARMER-INITIATED. Werf downloads a file; it does not email, file or send records
+  to an authority, worker, accountant or other party automatically.
+□ FARMER WORDS FIRST: "People", "Hours", "Piece work", "Pay" and "Leave" in navigation. Statute
+  names belong in explanations and documents that need them, not the everyday workflow.
+```
+
+### Standard forms — enter a shared fact once
+
+| Form | Standard fields | Behaviour |
+|---|---|---|
+| Employer details | legal/trading name; registration/UIF/PAYE refs; physical/postal address; contact person, phone and email; normal pay frequency/day; work locations | Prefills documents; identifiers are not required for ordinary capture |
+| Employee | employee number; full/preferred name; phone; ID/passport; birth date; address; preferred document language; job title; start/end date; employment type; work location; notes | Name is enough to save a draft; sensitive fields are encrypted, masked and permission-gated |
+| Work and pay terms | duties; ordinary days/hours; pay basis and rate; overtime/Sunday/holiday terms; pay frequency/day; allowances; agreed deductions; leave basis; notice; accommodation/food notes | Prefills pay and particulars; every prefill remains editable |
+| Attendance | employee; work date; start/end **or total hours**; break; hour categories; block/camp/work location; optional PIN/GPS; note | Fast single entry plus weekly/batch entry; offline; unusual hours warn, never reject |
+| Piece work | employee; work date; activity; block/camp; quantity; unit; rate per unit; hours where known; note | Repeat-last and batch entry; offline; pay comparison is advisory |
+| Pay inputs | period; included people; hours/piece totals; allowances; deductions with description and optional consent/reference; manual adjustment with reason; pay date/method | One review table; employee detail opens without losing the run |
+| Leave | employee; type; start/end; full/partial day; amount; status; note | Records first; balance/accrual assists and can be corrected with a reason |
+
+Phone capture stays one field or one small decision per screen. Desktop uses the same words and
+fields in two columns or a weekly grid; it does not add a query builder or report designer.
+
+### Document and export matrix
+
+| Output | PDF | Word (`.docx`) | Excel (`.xlsx`) | Default audience |
+|---|:---:|:---:|:---:|---|
+| Employment particulars / simple contract | ✓ | ✓ | — | worker / adviser |
+| Employee record summary | ✓ | ✓ | ✓ (list) | farmer / bookkeeper |
+| Attendance register / timesheet | ✓ | — | ✓ | farmer / accountant |
+| Piece-work register | ✓ | — | ✓ | farmer / accountant |
+| Leave record and balances | ✓ | — | ✓ | farmer / accountant |
+| Payslip (single or ZIP by period) | ✓ | — | — | worker |
+| Payroll summary and employee detail | ✓ | — | ✓ | farmer / accountant |
+| Employment record (FR-309) | ✓ | — | ✓ | farmer / inspector |
+| UIF / SARS / EFT purpose-specific files (P2 follow-on) | where required | — | where required | farmer / filing or bank tool |
+
+Every download asks only for period, people and format. PDF must print on A4. XLSX uses typed
+dates/numbers, frozen headers, filters and a README sheet. Sensitive columns are excluded by default
+and need an explicit authorised choice. Jobs are audit-logged and use expiring links.
+
+**External benchmark used only to keep the scope ordinary:** [SimplePay](https://www.simplepay.co.za/help/reports/)
+exposes employee/payroll reports and recommends Excel where available; [Sage](https://www.sage.com/en-za/-/media/files/sagedotcom/southafrica/documents/pdf/sbcp_getting%20started%20guide.pdf)
+exposes standard reports, employee selection and PDF/XLSX export. Werf adopts the common
+form → review → download pattern, not their report writers, recruitment, performance management or
+broad HR modules.
+
+**Reuse map — read before designing anything; the rate seam and the table already exist.** This
+mirrors Phase 4's reuse map and is the highest-value part of this section — most of 5a's substrate
+is built, and mistaking "built" for "unbuilt" (or the reverse) is how a slice doubles or ships a gap.
+
+- **The pure rate-lookup seam is DONE and tested.** `packages/domain/src/rates/rate-lookup.ts`:
+  `createRateLookup(rates, timeZone)` → `RateLookup.lookup(jurisdiction, code, occurredAt)`,
+  resolving by the farm-local calendar day, latest-`effectiveFrom` wins, and a missing rate throws
+  `MissingRateError` (never a silent fallback). `RegulatedRate` keeps `value` a decimal STRING
+  (Postgres `numeric(14,4)`), never a float. It is pure — rows are injected. **Do not rewrite it;
+  build the ZA rules and the I/O around it.**
+- **`regulatory_rates` the TABLE exists** (migration `0002_regulatory_rates.sql`): RLS + FORCE,
+  `GRANT SELECT` to `werf_app` only (writes are the elevated/admin path), `jurisdiction char(2)`,
+  `UNIQUE(jurisdiction, code, effective_from)`, the lookup index, and a `regulatory_rates_read`
+  policy. It is already classified in `packages/sync` TENANCY as **reference sync, jurisdiction-
+  filtered** (a ZA device never downloads another country's rates). **But the table is EMPTY** —
+  there is no seed in `packages/db/scripts/seed.mjs`, and the seed INSERT shown at
+  `database-schema.md:433` does **not** exist in the migration. That is a live doc-vs-code drift
+  ([[docs-contradict-the-code]]); 5a authors the seed for the first time (and fixes the doc), it
+  does not re-verify existing rows.
+- **`IMPLEMENTED_JURISDICTIONS = ['ZA']`** (`packages/domain/src/index.ts`) with a guarding test
+  (`jurisdictions.test.ts`). The registry pattern ADR-0006 mandates is stubbed to exactly one entry.
+- **The employee/payroll TABLES are specified but NOT migrated.** Reconcile their required columns
+  with ADR-0015's draft-friendly standard forms before generating a migration. Keep encrypted
+  ID/banking, employee document language and rate-source snapshots; do not implement the old
+  `NOT NULL` sketch as a hidden compliance gate.
+- **`attendance` and `piece_work` are already `event_type` enum values** (`database-schema.md:294`,
+  migration 0010) with sketched payloads (`attendance: { startAt, endAt, breakMin, pin, gps? }`).
+  Capture rides the existing `insertEvent`/`assertCanCapture` write path and the Outbox — **no
+  `ALTER TYPE`, no new capture plumbing** — the same lesson Phase 4 used for `spray`/`harvest`.
+- **`ReferenceService` is the pattern for the rate read path.** `apps/api/src/reference/
+  reference.service.ts` `listVeterinaryProducts` (and `listChemicalProducts`) already implements the
+  P1.3 "return every version when `onDay` is omitted, resolve by day when given" semantics the client
+  cache needs. A `listRegulatoryRates` sibling does not exist yet (the service header already names
+  it as the labour-phase addition) — copy the shape, including P1.3.
+- **Server-only tables must never enter a sync rule** (`db.md`): `payroll_runs`, `payslips`,
+  `injury_records`. A stolen phone must not carry 40 workers' payslips. `employees` syncs
+  role-gated and **minus** the encrypted columns.
+- **The worker queue and object storage already exist.** Reuse them for PDF, DOCX and XLSX; Phase 5
+  does not need a second export service or document store.
+
+### Working method (owner decision 2026-08-22)
+
+```
+□ Implement one small slice at a time. Use advisor() before committing to the approach and again
+  after pnpm verify is green, before calling the slice done.
+□ For each payroll-rule diff: one rule, table-driven tests, a paper calculation and human diff read.
+  Do not batch regulated rules.
+□ Review agents remain owner-triggered. A regulated slice may be written and committed, but it is
+  not merge-ready until the owner asks for the required compliance-checker pass and findings close.
+□ Point any owner-triggered review agent at agent-context.md first.
+```
+
+### ⛔ Two external deployment gates
+
+**Do not deploy regulated calculations or documents until both are answered.** These are product
+deployment gates, not farmer workflow gates: employee, attendance, piece-work and leave capture and
+raw-record export do not wait for them.
 
 ```
 ⛔ B-1 🇿🇦 THE LABOUR-LAW REVIEW IS BOOKED, with a date
    Gates sub-phase 5i, which is an exit-gate line — the phase cannot close without a signed
    written sign-off. It is on someone else's calendar, so the lead time IS the risk: booking it
    in week seven of an eight-week phase means the phase does not close.
-   Book it while Phases 3–4 build, not before 5i.
+   Book it before implementation reaches 5d, not when 5i is already waiting.
 
 ⛔ B-2 🇿🇦 EVERY FIGURE IN legal-compliance.md §2.2 RE-VERIFIED AGAINST THE CURRENT GAZETTE
    That table is dated July 2026 and self-describes as decaying. The minimum wage changes every
@@ -2184,9 +2314,8 @@ a session reading only this file cannot miss them.
    Record the source and verification date in the compliance register.
 ```
 
-> **Neither blocker is satisfied by reading this repo.** They are answered by a human with a
-> calendar and a human with the current Gazette. If a session reaches this checklist and they are
-> still open, the correct action is to say so and stop, not to seed plausible numbers and carry on.
+> Neither gate is satisfied by reading this repo. Development may use conspicuously unverified
+> dev/test rows; production must never present one as verified.
 
 ### Session and review discipline — this phase only
 
@@ -2194,7 +2323,7 @@ a session reading only this file cannot miss them.
 □ 5a is a SESSION OF ITS OWN, and a review unit of its own. It is the foundation every other
   sub-phase reads from: get the rate lookup wrong and every number downstream is wrong in a way
   the tests will cheerfully confirm. Do not bundle it with 5b.
-□ 5d–5e (the payroll engine and the blocking logic) are MULTIPLE SMALL SESSIONS, never one.
+□ 5d (the payroll engine and advisory warnings) is MULTIPLE SMALL SESSIONS, never one.
   ⛔ NEVER BATCH PAYROLL SLICES. One rule, one diff, one review, one commit.
 □ MANDATORY HUMAN REVIEW OF EVERY DIFF in 5d–5e. Not "the gate is green" — read the diff.
   The gate cannot tell you that overtime was classified against the wrong day's rate.
@@ -2209,54 +2338,87 @@ a session reading only this file cannot miss them.
 □ Hand-calculate at least one payslip on paper per payroll slice, and compare. Every slice.
 ```
 
-### 5a · Rates, the lookup, and the jurisdiction seam ⭐ standalone session + standalone review
+### 5a · Shared setup and the rate read path ⭐ standalone reviewed foundation
+
+**Status going in:** the pure lookup seam and empty table exist. This slice adds shared employer
+defaults, reconciles the draft-friendly target schema, and builds only the rate machinery payroll
+actually needs. It does not expose a regulatory console to farmers.
 
 ```
-□ ⛔ B-1 and B-2 above are both answered before this sub-phase begins
-□ regulatory_rates carries jurisdiction char(2) (ADR-0006); 'ZA' in v1
-□ rates.lookup(jurisdiction, code, occurredAt) — resolves BY THE DATE THE WORK WAS DONE,
-  never now(). A recalculated February payslip must resolve February's rate
-□ A MISSING RATE THROWS. It does not default, fall back, or return the nearest row. A loud
-  failure is a five-minute fix; a silent one is a season of wrong payslips nobody distrusts
-□ Seed from the Gazette, with gazetteReference + effective_from/effective_to on EVERY row
+Already built — verify, do not rebuild
+☑ regulatory_rates carries jurisdiction char(2) (ADR-0006), 'ZA' in v1; RLS+FORCE; GRANT SELECT
+  to werf_app only; UNIQUE(jurisdiction, code, effective_from); lookup index (migration 0002)
+☑ rates.lookup(jurisdiction, code, occurredAt) resolves BY THE DATE THE WORK WAS DONE, never now();
+  a MISSING RATE THROWS (MissingRateError) — no default, no nearest-row fallback (rate-lookup.ts)
+☑ regulatory_rates classified in packages/sync TENANCY as reference sync, jurisdiction-filtered
+
+New work
+□ Employer-details form and defaults used by every generated document
+□ Reconcile the employee/payroll schema with the standard forms before generating a migration
+□ SEED regulatory_rates for the FIRST time (the table is empty; the INSERT at database-schema.md:433
+  does not exist in migration 0002). Dev/test seed in seed.mjs; every row carries gazetteReference +
+  effective_from/effective_to. Codes at minimum: NMW_FARM, BCEA_THRESHOLD, UIF_RATE_EMPLOYEE/
+  _EMPLOYER, UIF_CEILING, OVERTIME_MULTIPLIER, SUNDAY_MULTIPLIER, PUBLIC_HOLIDAY_MULTIPLIER,
+  OVERTIME_WEEKLY_CAP_HOURS, ORDINARY_WEEKLY_HOURS, DEDUCTION_CAP_ACCOMMODATION, DEDUCTION_CAP_FOOD,
+  PUBLIC_HOLIDAYS (dated rows, incl. once-off proclaimed days) — ADR-0005 §Scope
+□ PRODUCTION SEED GATE: a production seed REFUSES every row whose gazetteReference is a placeholder
+  ("— verify") or whose figure has not been confirmed against the current Gazette (B-2). Dev/test
+  rows may be explicit placeholders; production must fail loudly rather than seed a plausible number
+□ Fix the doc-vs-code drift: reconcile database-schema.md:433 (either add the INSERT to the migration
+  path it claims, or correct the doc to point at the seed script) — [[docs-contradict-the-code]]
+□ ReferenceService.listRegulatoryRates + controller route, mirroring listVeterinaryProducts,
+  INCLUDING the P1.3 semantics (every version when onDay omitted; resolve by day when given)
+□ Client rate reference cache (a createReferenceCache sibling), so the lookup works offline in the
+  field for previews; the final pay run remains server-authoritative (ADR-0005 rule 5)
 □ A period spanning 1 March resolves BOTH rates — the every-year case, tested explicitly
-□ FR-615: admin UI to update a rate without a deploy (a rate change must not need an engineer)
-□ PayrollRules interface with exactly ONE implementation (ZA) — ADR-0006 says why this is the
-  narrow case where the seam is justified, and CLAUDE.md says it is not over-engineering
-□ NO SA statute name outside jurisdictions/za/ — checked, not assumed
-□ The NFR-507 regulated-constants lint rule actually fires on this phase's code
-□ compliance-checker over the seeded rates and the lookup, before commit
+□ Keep FR-615's regulatory-rate editor out of the farmer UI and Phase 5 P1. A controlled internal
+  update path or reviewed seed is enough for launch; the admin screen remains priority 2
+□ PayrollRules interface in @werf/core — JURISDICTION-NEUTRAL (earningsThreshold, classifyShift,
+  statutoryDeductionCaps…); NO bcea*/sd13*/uif* names in the shared contract (ADR-0006 naming rule)
+□ packages/domain/src/jurisdictions/za/ created (does NOT exist yet): the ZA gazette-code names
+  (BCEA_THRESHOLD, NMW_FARM…) and exactly ONE PayrollRules implementation registered for 'ZA'
+□ NO SA statute name outside jurisdictions/za/, docs, and ZA copy — checked, not assumed
+□ NFR-507 regulated-constants lint rule (does NOT exist yet, ADR-0005 rule 3): flags numeric
+  literals near wage/rate/threshold/minimum/withdrawal/cap in packages/domain; false positives
+  suppressed one-by-one with a reason. Prove it actually FIRES on this phase's code
+□ compliance-checker over the seeded rates and the lookup — owner-triggered, said out loud
 ```
 
-### 5b · Employees
+### 5b · Employees and work terms — draft-friendly
 
 ```
-□ Employee record (FR-301): name, ID number, job title, start date, contract type, wage rate,
-  banking details
+□ Build the Employee and Work and pay terms standard forms once; seasonal bulk add reuses them
+□ Name is enough to save. Missing ID, birth date, bank, address or terms show "Incomplete" and name
+  the document that needs them; they never discard or reject the employee record
 □ ID number and banking encrypted with the PII KEY, not the DB key, and NEVER synced to a
   device (.claude/rules/db.md). A stolen phone must not carry 40 workers' ID numbers
 □ ID number masked in every read model and every log
-□ Age verification at hire (FR-318): block under-15 outright; flag 15–17 for restricted-work
-  rules. This is a criminal-liability line, not a validation nicety
+□ Age check is advisory (FR-318): explain under-15 and 15–17 concerns with their source, but keep
+  the farmer's record and exports available (ADR-0015)
 □ NFR-203 (PII handling) satisfied and demonstrated by a test, not asserted in a comment
 □ Seasonal bulk add + short-form contract + end date (FR-311)
-□ compliance-checker (POPIA + child-labour rules), before commit
+□ Generate draft employment particulars from the profile as PDF and editable DOCX; blank facts
+  render as "Not recorded", never guessed text
+□ compliance-checker (POPIA + child-labour rules), owner-triggered before merge-ready
 ```
 
 ### 5c · Attendance and piece work 📶 offline
 
 ```
-□ Attendance capture (FR-303): start/end, worker PIN, optional GPS
+□ Fast single-entry and weekly/batch attendance using the standard fields above; accept start/end
+  or a total-hours entry so paper timesheets can be captured without invented times
 □ ⛔ NO BIOMETRICS. POPIA s26 and legal-compliance §1.3 — consent from an employer to a farm
   worker is of questionable voluntariness, and this is settled (CLAUDE.md). Do not reopen it
-□ Piece work (FR-304): units, rate, worker, block/camp
+□ Single and repeat/batch piece work using the same event path (FR-304)
 □ Both capture paths work with the network OFF, and survive a reboot
 □ occurred_at is the day worked, captured separately from created_at — a week of attendance
   synced on Friday must not land in Friday's payroll
 □ GPS is OPTIONAL and is attendance evidence, not worker tracking (ADR-0010 refused tracking)
+□ Unusual, long or overlapping entries save and show a review warning; they are not rejected
+□ Download a selected period as printable PDF and usable XLSX before payroll exists
 ```
 
-### 5d · The payroll engine ⭐ MULTIPLE SMALL SESSIONS — never batched, every diff reviewed
+### 5d · Pay calculator and advisory review ⭐ small reviewed rule slices
 
 ```
 □ Pure functions in packages/domain. NO I/O, no database, no clock — the engine is testable
@@ -2277,67 +2439,74 @@ a session reading only this file cannot miss them.
 □ Money is integer cents throughout. No float touches a wage, ever (CLAUDE.md)
 □ US-020, US-021, US-022 — ALL scenarios
 □ Payroll domain coverage ≥95%, higher than anywhere else in the repo, on purpose
+□ Warnings are returned data and render above the totals: overtime beyond the cap is paid and
+  warned; capped deductions show requested/applied amounts; top-ups are visible lines;
+  net-below-floor warns and the run still generates
+□ No warning disables Save, Calculate, Approve or Download
+□ Missing reference data preserves captured inputs, identifies the calculation Werf could not
+  check, and still allows raw hours/pay-input export. Never substitute a guessed rate
+□ A manual adjustment is explicit, carries a reason and leaves the original calculated line visible
+□ Corrections create a linked version; they never overwrite an approved run or historical rate
 □ Per slice: hand-calculate a payslip on paper; compliance-checker; human reads the diff
 ```
 
-### 5e · Compliance warnings and blocking ⭐ MULTIPLE SMALL SESSIONS — never batched
+### 5e · Payslips and useful documents
 
 ```
-□ Warnings surfaced BEFORE approval, never after (FR-307) — a warning after approval is a
-  record of a decision already made
-□ Overtime over the 10h weekly cap
-□ Deduction capped (show what it was reduced FROM, and under which rule)
-□ Piece rate topped up to the floor (show the shortfall)
-□ Net below the floor — this one BLOCKS rather than warns
-□ US-021 rejection scenario passes
-□ Every warning names the statute and the date-resolved rate it was measured against, so an
-  owner can check it rather than trust it
-□ Per slice: compliance-checker; human reads the diff
+□ Employee-language payslip PDF with required fields and the employer-responsibility notice
+□ Employee-language employment particulars in PDF and editable DOCX
+□ Employee summary, attendance register, piece-work register, payroll summary/detail and FR-309
+  employment record in the formats in the matrix above
+□ Regenerating an old document uses that record/run's snapshot and historical rates, not today's
+□ Draft output visibly says "Draft" and lists missing facts once; it never invents them or claims
+  Werf approved compliance
+□ A4 print QA and spreadsheet QA happen here, not in Phase 7
+□ compliance-checker over the regulated document templates, owner-triggered before merge-ready
 ```
 
-### 5f · Payslips and contracts 🇿🇦
+### 5f · Leave register
 
 ```
-□ BCEA s33-compliant payslip (FR-308) — every element s33 requires, none missing
-□ BCEA s29 written particulars of employment (FR-302)
-□ ⭐ BOTH IN THE EMPLOYEE'S LANGUAGE, not the owner's and not the browser's (SRS-20).
-  A payslip a worker cannot read does not discharge the obligation it exists to discharge
-□ Generated server-side (payslips are server-only and never sync to a device — db.md)
-□ Regenerating an old payslip uses THAT PERIOD's rates, not today's
-□ compliance-checker over the s33 and s29 output, before commit
+□ Record annual, sick, family-responsibility and maternity leave with the standard Leave form
+□ Show accrual/balance as a transparent calculation; allow an opening balance and a correction with
+  a reason. Never reject a leave record because Werf's balance differs from the farmer's records
+□ Provide leave history and balance PDF/XLSX outputs
+□ Do not add rostering, approval hierarchies or a configurable policy engine in Phase 5
 ```
 
-### 5g · The BCEA s31 record — the inspector at the gate 🇿🇦
+### 5g · Accountant and statutory exports
 
 ```
-□ One button (FR-309): name, occupation, time worked, remuneration
-□ 3-year retention, and the soft-delete tombstones actually support it
-□ Inspector-ready as printed — this is the artifact a Department of Employment and Labour
-  inspector is handed at the farm gate, so "export to CSV and open it in something" is a fail
-□ US-023 passes
+□ One "Accountant pack" XLSX: README, employees, attendance, piece work, leave, payroll summary,
+  payroll detail and warnings. No macros and no hidden sheets
+□ Sensitive fields are excluded by default; inclusion is explicit and role-authorised
+□ P2 FOLLOW-ONS (FR-312/313/316): UIF declaration, SARS-compatible payroll and EFT batch exports
+  use verified current file specs; name a remainder rather than delaying the P1 accountant pack
+□ Downloads are generated server-side, audit-logged and delivered by short-lived link
+□ Werf never submits, emails or uploads an export on the farmer's behalf
 ```
 
-### 5h · Leave and the statutory exports
+### 5h · Farmer and bookkeeper usability pass
 
 ```
-□ Annual leave (FR-310): 21 consecutive days, or 1 day per 17 worked; accrual, balance,
-  application, approval
-□ Sick leave: 30 days per 36-month cycle (6-day week) — the CYCLE is the hard part
-□ Family responsibility: 3 days/year
-□ Maternity: 4 consecutive months
-□ UIF declaration export (FR-312)
-□ SARS-compatible payroll export (FR-313)
-□ Bank EFT batch file (FR-316)
-□ Every export is server-side and audit-logged — financial is server-authoritative (db.md)
+□ A farmer adds three workers, records a mixed week offline, corrects one entry and downloads the
+  attendance PDF without help
+□ A bookkeeper runs the period, sees each line/warning's source, makes one explained manual
+  correction, downloads the accountant XLSX and opens it without repair warnings
+□ A worker's payslip and particulars print legibly in the selected language
+□ Remove any field, screen, rule or export option that neither journey uses and no P1 requirement
+  needs. Phase 5 is not a general HR suite
 ```
 
-### 5i · External labour-law review 🇿🇦 ⛔ EXIT-GATE LINE
+### 5i · External labour-law review 🇿🇦 ⛔ DEPLOYMENT EXIT GATE
 
 ```
-□ The review actually happened (booked at B-1, before 5a)
-□ Sign-off IN WRITING, filed in the repo or referenced by document ID from it
+□ Review the calculation rules, warning-only behaviour, age-warning behaviour and generated forms
+□ Sign-off IN WRITING, filed in the repo or referenced by document ID
 □ Every finding either fixed, or recorded in STATUS.md with a named owner and a reason
-□ ⛔ The phase does not close without this. It is not a warning; it is the gate
+□ The regulated calculator/documents are not production-ready without this review and B-2
+□ No compliance permission gate is added after review unless a new owner decision and ADR changes
+  the product boundary
 ```
 
 **Exit gate:**
@@ -2347,6 +2516,10 @@ a session reading only this file cannot miss them.
 ✓ CI green on main
 ✓ Payroll domain coverage ≥95%
 ✓ Every US-02x scenario passes
+✓ Standard forms save incomplete records without compliance rejection
+✓ Offline attendance and piece work survive reboot
+✓ P1 PDF/DOCX/XLSX matrix is complete and visually/data verified
+✓ Accountant and farmer usability journeys pass without support
 ✓ A period spanning 1 March uses BOTH rates          ← the every-year case
 ✓ A correction run for February uses FEBRUARY's rate
 ✓ NO regulated constant in code (the NFR-507 lint rule)
@@ -2356,14 +2529,18 @@ a session reading only this file cannot miss them.
 ✓ Every checklist line is ☑ or ◐ with its remainder NAMED
 ```
 
-**Human check:** hand-calculate one payslip. On paper. Compare it. Then hand a real payslip to
-someone who has been a farm bookkeeper for twenty years and watch their face.
+**Human check:** hand-calculate one payslip, then give a farmer the attendance form and an
+accountant the XLSX without explaining either. Their successful use is the gate.
 
 **Deliberately NOT in Phase 5, so it is named rather than implied:** FR-305 (task assignment),
-FR-314 (labour cost allocated to enterprise/camp/block), FR-315 (teams) and FR-317 (injury-on-duty
-register, health data restricted to owner + H&S role) are not in the roadmap's 5a–5i and are not
-smuggled in here. FR-317 in particular needs its own access-control design and should not ride
-along on a payroll slice.
+FR-314 (labour cost allocated to enterprise/camp/block), FR-315 (teams), FR-317 (injury-on-duty
+register), FR-319 (worker self-service) and **FR-320 (SIZA social evidence pack)** are
+not in the roadmap's 5a–5i and are not smuggled in here. FR-317 in particular needs its own
+access-control design and should not ride along on a payroll slice. **FR-320 lives in Phase 6**
+(roadmap "SIZA evidence mapping"): it is a report ASSEMBLED FROM the labour records this phase
+produces, and it needs the export/evidence-pack machinery Phase 6 owns — building the records in
+Phase 5 is what makes it a one-button by-product later (legal-compliance.md §4.2). Naming it here
+closes the two-incompatible-phase-maps gap: it is Phase 6, not silently absent.
 
 ---
 

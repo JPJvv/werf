@@ -71,10 +71,10 @@ describe.each([
     shifts: [{ occurredAt: '2026-03-09', hours: 45, overtimeHours: 14 }],
     expect: { overtimePaidHours: 14, warnings: ['OVERTIME_EXCEEDS_CAP'], blocked: false } },
 
-  { name: 'net below floor REJECTS the run',
+  { name: 'net below floor WARNS and still generates',
     shifts: [{ occurredAt: '2026-03-15', hours: 40 }],
     deductions: [{ type: 'garnishee', amount: 420000 }],
-    expect: { blocked: true, warnings: ['NET_BELOW_MINIMUM'], payslips: 0 } },
+    expect: { blocked: false, warnings: ['NET_BELOW_MINIMUM'], payslips: 1 } },
 ])('$name', ({ shifts, deductions, expect: exp }) => {
   it('matches the gazetted rule', () => {
     const result = calculatePayroll({
@@ -264,8 +264,9 @@ test('O-9: an expired token holds the queue, never clears it', async ({ page, co
 | Spray → PHI → blocked harvest | UC-010, US-030 | **Offline** |
 | Payroll happy path | UC-020 | Online |
 | Payroll with all three warnings | UC-020, US-020/21/22 | Warnings **above** the numbers |
-| Payroll blocked by deduction | UC-020 E7.1 | **Rejects** |
+| Payroll net-below-floor warning | UC-020 E7.1 | Warns above totals; run and payslip still generated |
 | BCEA inspector report | US-023 | <30s |
+| Labour PDF/DOCX/XLSX downloads | US-023/024 | A4 visual QA; DOCX opens; XLSX typed cells/filters/no repair warning |
 | Mark missing → evidence pack | UC-030, US-031 | Offline mark, queued pack |
 | GlobalGAP checklist → pack | UC-040 | Evidence auto-mapped |
 | Worker role sees no money | US-060 | 403 + **empty local DB** |

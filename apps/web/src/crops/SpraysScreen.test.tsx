@@ -1,25 +1,15 @@
-/**
- * FR-211's auditor-facing spray history report. Specifically pins the discriminator between "this
- * spray has not round-tripped from the server yet" and "this spray is fully resolved and its
- * product genuinely carries no PHI on record" — the two states share `phiDays === undefined`, and a
- * screen that reads only `phiDays` cannot tell them apart (found by a compliance-checker pass,
- * 2026-08-17). `activeIngredients` is the correct discriminator: required non-empty on the wire, so
- * it is present on every hydrated echo and absent on every local-only capture.
- */
+/** The spray screen reads the farmer's captured snapshots without needing a reference register. */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { schemas } from '@werf/core';
 import { App } from '../App';
-import { getCurrentFakeLocalDatabase } from '../test-support/local-db';
 
-const SESSION_KEY = 'werf-session';
 const FARM_ID = '0190f3a0-0000-7000-8000-0000000000f1';
 const BLOCK_ID = '0190f3a0-0000-7000-8000-0000000000b1';
-const NO_PHI_PRODUCT_ID = '0190f3a0-0000-7000-8000-00000000d002';
+const SESSION_KEY = 'werf-session';
 const LAND_KEY = `werf-land:${FARM_ID}`;
 const SPRAYS_KEY = `werf-sprays:${FARM_ID}`;
-const PRODUCTS_KEY = `werf-chemical-products:${FARM_ID}`;
 
 const SESSION_USER: schemas.AuthSession['user'] = {
   id: '0190f3a0-0000-7000-8000-000000000001',
@@ -33,7 +23,8 @@ const SESSION_USER: schemas.AuthSession['user'] = {
   deletedAt: null,
 };
 
-function cachedSession(): void {
+beforeEach(() => {
+  window.localStorage.clear();
   const payload = {
     accessToken: 'access-token',
     expiresIn: 900,
@@ -56,9 +47,6 @@ function cachedSession(): void {
     SESSION_KEY,
     JSON.stringify({ payload, confirmedAt: new Date().toISOString() }),
   );
-}
-
-function cachedBlock(): void {
   window.localStorage.setItem(
     LAND_KEY,
     JSON.stringify([
@@ -79,109 +67,59 @@ function cachedBlock(): void {
       },
     ]),
   );
-}
-
-function cachedNoPhiProduct(): void {
-  window.localStorage.setItem(
-    PRODUCTS_KEY,
-    JSON.stringify([
-      {
-        id: NO_PHI_PRODUCT_ID,
-        jurisdiction: 'ZA',
-        name: 'Sulphur WP',
-        registrationNumber: 'L9999',
-        crop: 'grapes',
-        phiDays: null,
-        reentryHours: null,
-        effectiveFrom: '2020-01-01',
-        effectiveTo: null,
-      },
-    ]),
-  );
-}
-
-beforeEach(() => {
-  window.localStorage.clear();
-  window.history.pushState({}, '', '/');
-  cachedSession();
-  cachedBlock();
-  cachedNoPhiProduct();
+  window.history.pushState({}, '', '/sprays');
 });
 
-afterEach(() => {
-  window.localStorage.clear();
-});
+afterEach(() => window.localStorage.clear());
 
-describe('spray history report (FR-211)', () => {
-  it('shows "not yet synced", never a permanent PHI label, for a spray this device has not hydrated', async () => {
+describe('private spray history', () => {
+  it('shows the capture-time product snapshot and optional application detail', async () => {
     window.localStorage.setItem(
       SPRAYS_KEY,
       JSON.stringify([
         {
-          id: '0190f3a0-0000-7000-8000-00000000e010',
+          id: '0190f3a0-0000-7000-8000-00000000e001',
           farmId: FARM_ID,
           landUnitId: BLOCK_ID,
           occurredAt: '2026-10-05T05:00:00.000Z',
           sprayedOn: '2026-10-05',
-          productId: NO_PHI_PRODUCT_ID,
+          productId: '0190f3a0-0000-7000-8000-00000000d001',
+          productName: 'My Orchard Mix',
+          registrationNumber: 'MY-LABEL-7',
+          activeIngredients: ['alpha'],
+          phiDays: 7,
+          earliestHarvestDate: '2026-10-12',
+          rateLPerHa: 2.5,
+          operator: 'Thabo Mokoena',
         },
       ]),
     );
-    window.history.pushState({}, '', '/sprays');
     render(<App />);
 
-    expect(await screen.findByText(/phi not yet confirmed by the server/i)).toBeTruthy();
+    expect(await screen.findByText(/my orchard mix · my-label-7/i)).toBeTruthy();
+    expect(screen.getByText('2026-10-12')).toBeTruthy();
+    expect(screen.getByText(/alpha/i)).toBeTruthy();
+    expect(screen.getByText(/thabo mokoena/i)).toBeTruthy();
+    expect(screen.queryByText(/server confirmed|audit|override/i)).toBeNull();
   });
 
-  it('⭐ shows "no PHI on record", not "not yet synced", once a no-PHI product resolves', async () => {
-    window.history.pushState({}, '', '/sprays');
-    render(<App />);
-
-    const fake = await getCurrentFakeLocalDatabase();
-    act(() => {
-      fake.hydrateRow('events', {
-        id: '0190f3a0-0000-7000-8000-00000000e011',
-        farm_id: FARM_ID,
-        land_unit_id: BLOCK_ID,
-        type: 'spray',
-        occurred_at: '2026-10-05T05:00:00.000Z',
-        payload: JSON.stringify({
-          productId: NO_PHI_PRODUCT_ID,
-          activeIngredients: ['sulphur'],
+  it('honestly says no interval was entered without treating that as an error', async () => {
+    window.localStorage.setItem(
+      SPRAYS_KEY,
+      JSON.stringify([
+        {
+          id: '0190f3a0-0000-7000-8000-00000000e002',
+          farmId: FARM_ID,
+          landUnitId: BLOCK_ID,
+          occurredAt: '2026-10-05T05:00:00.000Z',
           sprayedOn: '2026-10-05',
-          // no phiDays / earliestHarvestDate — the product genuinely carries none.
-        }),
-      });
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/no pre-harvest interval on record/i)).toBeTruthy();
-    });
-    expect(screen.queryByText(/phi not yet confirmed by the server/i)).toBeNull();
-  });
-
-  it('shows the resolved earliest harvest date once PHI is confirmed', async () => {
-    window.history.pushState({}, '', '/sprays');
+          productId: '0190f3a0-0000-7000-8000-00000000d002',
+          productName: 'Sulphur WP',
+        },
+      ]),
+    );
     render(<App />);
-
-    const fake = await getCurrentFakeLocalDatabase();
-    act(() => {
-      fake.hydrateRow('events', {
-        id: '0190f3a0-0000-7000-8000-00000000e012',
-        farm_id: FARM_ID,
-        land_unit_id: BLOCK_ID,
-        type: 'spray',
-        occurred_at: '2026-10-05T05:00:00.000Z',
-        payload: JSON.stringify({
-          productId: NO_PHI_PRODUCT_ID,
-          activeIngredients: ['cyprodinil'],
-          sprayedOn: '2026-10-05',
-          phiDays: 7,
-          earliestHarvestDate: '2026-10-12',
-        }),
-      });
-    });
-
-    expect(await screen.findByText('2026-10-12')).toBeTruthy();
+    expect(await screen.findByText(/sulphur wp/i)).toBeTruthy();
+    expect(screen.getByText(/no pre-harvest interval on record/i)).toBeTruthy();
   });
 });

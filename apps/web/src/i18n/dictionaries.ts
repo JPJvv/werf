@@ -98,15 +98,15 @@ const en = {
   'sync.blocked.see': 'See what',
   'notSent.title': 'What needs your attention',
   'notSent.intro':
-    'Nothing here is lost — all of it is saved on this phone. The server would not take these as they stand. Fix what it names and they go up on their own; there is nothing to press.',
+    'Nothing here is lost — all of it is saved on this phone. The server would not take these as they stand. Follow the action shown for each record.',
   'notSent.empty': 'Everything has gone up. Nothing needs you.',
   // NOT phrased as a problem, because it is not one and the farmer has nothing to do about it.
   // These were invisible until the ninth pass — stranded behind one refusal with no surface
   // anywhere — and a record nobody can see is a record that is lost.
   // Blocked because the DAY cannot be read, not because of a withholding we can name. Answers the
   // next question the way every other refusal in this product does: here is what to do about it.
-  'loss.needDay': 'Tell us what day this happened and we will check the withholding period.',
-  'tally.needDay': 'Tell us what day this happened and we will check the withholding period.',
+  'loss.needDay': 'Enter the day to calculate the interval reminder.',
+  'tally.needDay': 'Enter the day to calculate the interval reminder.',
   'notSent.waiting.title': 'Waiting on one of the above',
   'notSent.waiting.intro':
     'These are saved and fine. Each one needs a record above it to go up first — two halves of the same move, or a group that is not on the server yet. Sort out what is above and these follow on their own.',
@@ -150,6 +150,8 @@ const en = {
     'Something in this one is already recorded against something else. Record it again with the part that clashes changed.',
   'notSent.why.validation':
     'The server would not accept this one as it stands. Record it again, checking the numbers and dates.',
+  'notSent.why.phiBlocked':
+    'The server found a pre-harvest interval this phone did not know about. A written override is required to send this same record.',
   'notSent.why.notFound':
     'This one points at something the farm does not have — a camp or an animal that was never recorded, or was recorded on another phone. Once that exists, this goes up on its own.',
   'notSent.why.tenancy':
@@ -158,6 +160,16 @@ const en = {
     "This farm has reached its photo storage limit. It is safe on this phone until there is room — please tell us and we'll sort out more space.",
   'notSent.why.unknown':
     'The server would not take this one and did not say why in a way we can explain. It is safe on this phone. Please tell us about it.',
+  'notSent.phiOverride.intro':
+    'If the work did happen and you are authorised to override the interval, give the written reason below. The original local record stays unchanged.',
+  'notSent.phiOverride.reason': 'Override reason',
+  'notSent.phiOverride.choose': 'Choose a reason',
+  'notSent.phiOverride.details': 'Details',
+  'notSent.phiOverride.retry': 'Add reason and retry',
+  'notSent.phiOverride.audited':
+    'If accepted, the server records your name, the time and this reason in the immutable audit trail.',
+  'notSent.phiOverride.saved':
+    'Reason saved on this phone. Werf will retry this record now, or when signal returns.',
   // PWA install. Offered after the browser signals the app is install-worthy (never on
   // first paint, FR-007) and dismissible — a farmer decides, we don't nag.
   'install.title': 'Install Werf on this phone',
@@ -289,11 +301,10 @@ const en = {
   'tile.harvest': 'Harvest',
   'tile.labour': 'Labour',
   'tile.money': 'Money',
-  'tile.compliance': 'Compliance',
   // The Health tile's attention badge (FR-017/131). Deliberately NOT "N due": a due/overdue count
   // needs a vaccination programme schedule that does not exist yet, and a tile carrying a number
   // the app cannot compute is worse than a tile carrying none.
-  'tile.withholding': 'withholding',
+  'tile.withholding': 'in entered interval',
   // The Sprays tile's own attention badge (FR-017, phase-checklists.md's Phase 4 "crop home
   // metrics" line) — the exact "N withholding" precedent above, one domain over: a block is
   // either inside an active pre-harvest interval or it is not, computed straight from spray
@@ -471,16 +482,26 @@ const en = {
   'crops.fertilise.notTracked': "Not tracking this one's stock",
   'crops.fertilise.quantityUsed': 'Quantity used',
   'crops.fertilise.quantityUsedBad': 'Give the quantity used, or clear the stock lot above.',
-  // Spray (FR-204/FR-211) — COMPLIANCE-GATED.
+  // Spray — farmer-owned logbook and transparent date calculator.
   'crops.spray.title': 'Record a spray',
   'crops.spray.noBlocks': 'No blocks yet. Add your first one — it saves with no signal.',
-  'crops.spray.noProducts': 'No registered products yet. Connect to sync the product register.',
+  'crops.spray.noProducts': 'No products yet.',
   'crops.spray.which': 'Which block?',
   'crops.spray.day': 'Day sprayed',
   'crops.spray.product': 'Product',
   'crops.spray.chooseProduct': 'Choose a product',
+  'crops.spray.addProduct': 'Add a product I use',
+  'crops.spray.productName': 'Product name',
+  'crops.spray.productUnit': 'Stock unit',
+  'crops.spray.registration': 'Registration number (optional)',
+  'crops.spray.activeIngredients': 'Active ingredients, comma-separated (optional)',
+  'crops.spray.phiDays': 'Pre-harvest interval in days (optional)',
+  'crops.spray.phiBad': 'Enter a whole number of days, or leave it blank.',
+  'crops.spray.farmerInputNote':
+    'These are your product details. Werf stores them and does the date calculation; it does not verify or approve the product.',
   'crops.spray.noPhi': 'This product has no pre-harvest interval on record.',
-  'crops.spray.harvestFrom': 'Earliest safe harvest from',
+  'crops.spray.harvestFrom': 'Your entered interval gives a harvest date of',
+  'crops.spray.optionalDetails': 'Application details (optional)',
   'crops.spray.rate': 'Rate, L/ha (optional)',
   'crops.spray.water': 'Water, L/ha (optional)',
   'crops.spray.targetPest': 'Target pest (optional)',
@@ -488,6 +509,7 @@ const en = {
   'crops.spray.equipment': 'Equipment (optional)',
   'crops.spray.wind': 'Wind, km/h (optional)',
   'crops.spray.temp': 'Temperature, °C (optional)',
+  'crops.spray.numberBad': 'Check the numbers you entered, or leave those fields blank.',
   'crops.spray.save': 'Save spray',
   'crops.spray.saved': 'saved — your work is saved',
   'crops.spray.back': 'Back to land',
@@ -496,24 +518,11 @@ const en = {
   'crops.spray.notTracked': "Not tracking this one's stock",
   'crops.spray.quantityUsed': 'Quantity used',
   'crops.spray.quantityUsedBad': 'Give the quantity used, or clear the stock lot above.',
-  // Spray-capture PHI guard (legal-compliance.md § 4.3) — COMPLIANCE-GATED, the EARLY half of
-  // FR-205's obligation: blocks a spray whose pre-harvest interval would clear after the block's
-  // OWN planned harvest date.
-  'crops.spray.blockedTitle': 'This spray would clear after the planned harvest date',
-  'crops.spray.blockedClears': 'This product would only be safe to harvest from',
+  // Private comparison between the farmer's spray interval and planned harvest date.
+  'crops.spray.planningWarning': 'Planning reminder: these dates overlap',
+  'crops.spray.blockedClears': 'The interval you entered ends on',
   'crops.spray.blockedPlanned': 'The planned harvest date for this block is',
-  'crops.spray.override': 'Override',
-  'crops.spray.overrideReasonLabel': 'Reason',
-  'crops.spray.overrideReasonChoose': 'Choose a reason',
-  'crops.spray.overrideReason.emergency_pest_control': 'Emergency pest or disease outbreak',
-  'crops.spray.overrideReason.harvest_date_will_move': 'Planned harvest date will move',
-  'crops.spray.overrideReason.misrecorded_planting':
-    'Planted date or harvest estimate was incorrect',
-  'crops.spray.overrideReason.other': 'Other',
-  'crops.spray.overrideTextLabel': 'Details',
-  'crops.spray.overrideAudited':
-    'This override is recorded with your name and the time, and cannot be edited or removed.',
-  'crops.spray.saveOverride': 'Save spray with override',
+  'crops.spray.warningDoesNotBlock': 'This is a reminder only; you can still save your record.',
   'crops.sprays.title': 'Spray history',
   'crops.sprays.record': 'Record a spray',
   'crops.sprays.filterBlock': 'Filter by block',
@@ -524,18 +533,29 @@ const en = {
   'crops.sprays.unknownProduct': 'Product not yet synced',
   'crops.sprays.phiPending': 'PHI not yet confirmed by the server',
   'crops.sprays.harvestDateUnknown': 'Earliest harvest date unknown — do not rely on this record',
-  // Harvest capture + guard (FR-207, FR-205, US-030) — COMPLIANCE-GATED.
+  'crops.sprays.actives': 'Active ingredients',
+  'crops.sprays.application': 'Rate',
+  'crops.sprays.water': 'water',
+  'crops.sprays.operator': 'Applied by',
+  'crops.sprays.equipment': 'equipment',
+  'crops.sprays.weather': 'Weather',
+  'crops.sprays.target': 'Target pest',
+  'crops.sprays.override': 'PHI override',
+  'crops.sprays.incomplete':
+    'This older record is missing required application details. Include the original source record in the audit pack.',
+  // Harvest capture + private interval reminder.
   'crops.harvest.title': 'Record a harvest',
   'crops.harvest.noBlocks': 'No blocks yet. Add your first one — it saves with no signal.',
   'crops.harvest.saved': 'Saved — your work is saved',
   'crops.harvest.which': 'Which block?',
   'crops.harvest.splitBlockWarning':
-    'This block was split from another. This device cannot confirm its full spray history offline — sync before harvesting a recently split block, or check the parent block’s own records.',
+    'This block was split from another. Its parent block may have older spray records worth checking.',
   'crops.harvest.day': 'Day harvested',
-  'crops.harvest.blockedTitle': 'This harvest is inside a pre-harvest interval',
+  'crops.harvest.reminderTitle': 'Your records show an interval reminder',
   'crops.harvest.blockedProductUnknown': 'A product on this block',
   'crops.harvest.blockedSprayedOn': 'was sprayed on',
-  'crops.harvest.blockedEarliest': 'The earliest safe harvest date is',
+  'crops.harvest.blockedEarliest': 'The interval date calculated from your entry is',
+  'crops.harvest.warningDoesNotBlock': 'This is a reminder only; you can still save the harvest.',
   'crops.harvest.override': 'Override',
   'crops.harvest.overrideReasonLabel': 'Reason',
   'crops.harvest.overrideReasonChoose': 'Choose a reason',
@@ -547,7 +567,7 @@ const en = {
   'crops.harvest.overrideAudited':
     'This override is recorded with your name and the time, and cannot be edited or removed.',
   'crops.harvest.unresolved':
-    'This device cannot confirm this block is clear for harvest yet. Sync and try again.',
+    'An older spray record has no interval details. You can still save the harvest and review that record later.',
   'crops.harvest.quantity': 'Quantity',
   'crops.harvest.unit': 'Unit',
   'crops.harvest.grade': 'Grade (optional)',
@@ -606,8 +626,7 @@ const en = {
   'animals.tag': 'Tag animals',
   'animals.untagged': 'without a number',
   'animals.health': 'Treat or vaccinate',
-  // Health (FR-130/131/132/133) — compliance-gated. The clear date is shown IN THE CRUSH, because
-  // "when can I sell this animal?" answered three weeks later is answered too late.
+  // Health (FR-130/131/132/133) — farmer-entered facts and private reminder arithmetic.
   'health.title': 'Treat or vaccinate',
   'health.what': 'What are you recording?',
   'health.kind.treatment': 'Treatment',
@@ -617,6 +636,13 @@ const en = {
   'health.administeredOn': 'When was it given?',
   'health.product': 'Which product',
   'health.chooseProduct': 'Choose one',
+  'health.addProduct': 'Add a product I use',
+  'health.productName': 'Product name',
+  'health.registrationNumber': 'Registration or label number (optional)',
+  'health.meatWithdrawalDays': 'Meat interval (days)',
+  'health.milkWithdrawalHours': 'Milk interval (hours)',
+  'health.farmerProductHelp':
+    'Enter the label facts you want Werf to remember. Werf calculates dates from your entries and does not verify or approve the product.',
   'health.programme': 'Which programme (optional)',
   'health.reason': 'Why (optional)',
   'health.by': 'Who gave it (optional)',
@@ -639,12 +665,8 @@ const en = {
   'health.save': 'Record it',
   'health.saved': 'recorded — your work is saved',
   'health.back': 'Back to animals',
-  'health.clearFrom': 'These animals may be sold for slaughter from',
-  'health.noWithdrawal': 'This product has no meat withholding period.',
+  'health.clearFrom': 'Your meat-interval reminder date is',
   'health.noAnimals': 'No animals to treat yet.',
-  // Not an error the farmer caused. Says what is true and what will fix it.
-  'health.noProducts':
-    'The product register has not reached this phone yet. Open the app once where there is signal, and it will be here for the crush.',
   'animals.mating': 'Record a service',
   'animals.pregnancy': 'Pregnancy test',
   'animals.birth': 'Record a birth',
@@ -742,8 +764,7 @@ const en = {
   'pregnancy.noFigure': 'No calving date can be worked out for',
   'pregnancy.noFigureWhy':
     'The test itself is still recorded — there is just no single carrying period for these animals that would be right.',
-  // Cold cache, NOT "no such figure". Same shape as health.noProducts: says what is true and what
-  // fixes it, and never claims cattle have no carrying period.
+  // Cold cache, NOT "no such figure": say what is true and never claim cattle have no carrying period.
   'pregnancy.figureSyncing': 'No calving date yet for',
   'pregnancy.figureSyncingWhy':
     'The carrying period for these animals has not reached this phone yet. Open the app once where there is signal and it will be here. The test itself is still recorded.',
@@ -876,9 +897,9 @@ const en = {
   // FR-131 on the group path. Says no AND says when — the same shape as the individual sale's
   // refusal, because it is the same rule reaching the same person at the same moment.
   'tally.withheld':
-    'This group was dipped or treated and cannot go for slaughter or sale yet. It may go from',
+    'Reminder: using the interval you entered, this group reaches the reminder date on',
   'tally.withinWithdrawal':
-    'This group was still inside a meat withdrawal on this day. Recording this is correct — but meat from it must not go into the food chain. The withdrawal runs to',
+    'Reminder: this date falls inside the meat interval you entered. Werf will still save your record. The interval runs to',
   'tally.theftNote': 'This changes the count. It does not file a stock-theft report.',
   'tally.theftLink': 'File a stock-theft report',
   'tally.save': 'Save',
@@ -921,7 +942,7 @@ const en = {
   // FR-131. Says no AND says when — a refusal with no way forward is what makes someone stop
   // recording treatments at all.
   'loss.withheld':
-    'This animal was treated and cannot be sold for slaughter yet. It may be sold from',
+    'Reminder: using the interval you entered, this animal reaches the reminder date on',
   'loss.missing': 'Missing',
   'loss.causeMissing': 'What did you find? (optional)',
   'loss.lastSeenDay': 'When was it last seen?',
@@ -931,21 +952,23 @@ const en = {
   // Recorded, never refused — but never silent either. "Died" is one tap from a blocked
   // "Slaughtered", so saying nothing here would teach the workaround.
   'loss.deathWithinWithdrawal':
-    'This animal was still inside a meat withdrawal on this day. Recording the death is correct — but meat from it must not go into the food chain. The withdrawal runs to',
+    'Reminder: this date falls inside the meat interval you entered. Werf will still save your record. The interval runs to',
   // Says WHY the app is about to use the GPS, before it asks — a phone that silently reaches for
   // location is a phone a farmer stops trusting.
   'loss.gpsExplain':
-    'Recording this takes a GPS point of where you are standing. It works with no signal, and it is what makes the record useful to the Stock Theft Unit.',
+    'Recording this takes a GPS point of where you are standing. It stays in your private farm record and is included only if you choose to make an evidence pack.',
   'loss.locating': 'Getting the GPS point…',
-  'loss.saveMissing': 'Report it missing',
+  'loss.saveMissing': 'Record it missing',
+  'loss.saveWithoutGps': 'Save without a GPS point',
   'loss.savedSuffixMissing': 'recorded — marked missing',
   // Each failure needs different advice, so they are not collapsed into one message.
   'loss.gps.denied':
-    'This phone is not allowing the app to use its location. Turn location on for this app, then try again.',
+    'This phone is not allowing the app to use its location. Turn location on and try again, or save without a point.',
   'loss.gps.unavailable':
-    'The phone could not get a GPS point. Step into the open, away from a shed or trees, and try again.',
-  'loss.gps.timeout': 'The GPS is still searching. Wait a few seconds in the open and try again.',
-  'loss.gps.unsupported': 'This phone cannot give a GPS point, so this record cannot be anchored.',
+    'The phone could not get a GPS point. Step into the open and try again, or save without a point.',
+  'loss.gps.timeout':
+    'The GPS is still searching. Wait a few seconds and try again, or save without a point.',
+  'loss.gps.unsupported': 'This phone cannot give a GPS point. You can still save the record.',
   'loss.cause': 'Cause',
   'loss.counterparty': 'Buyer',
   'loss.price': 'Price (R)',
@@ -963,9 +986,9 @@ const en = {
   // another jurisdiction, not so a South African farmer reads "the police service" in their own app.
   'theft.title': 'Stock theft',
   'theft.intro':
-    'The incidents you have filed. Each one can produce a pack of the facts — identification, ownership, where and when — for the Stock Theft Unit.',
-  'theft.report': 'Report stock theft',
-  'theft.empty': 'No incidents filed.',
+    'Your private incident records. You can choose to produce a facts-only evidence pack from each one; Werf does not send it anywhere.',
+  'theft.report': 'Record stock theft',
+  'theft.empty': 'No incidents recorded.',
   'theft.back': 'Back to animals',
   'theft.headTaken': 'head taken',
   'theft.discovered': 'Found',
@@ -982,7 +1005,7 @@ const en = {
   'theft.packRefused':
     'The pack could not be put together for this incident. Check that it has been sent, then try again.',
   // The capture screen.
-  'theft.report.title': 'Report stock theft',
+  'theft.report.title': 'Record stock theft',
   'theft.report.intro':
     'Record what you found, where, and when. It saves on this phone straight away, with or without signal.',
   'theft.discoveredDay': 'When did you find it?',
@@ -1003,12 +1026,12 @@ const en = {
   'theft.caseNumber': 'SAPS case number (if you have one)',
   'theft.station': 'SAPS station (if you have reported it)',
   'theft.gpsExplain':
-    'Saving takes a GPS point of where you are standing. It works with no signal, and it is what makes this record useful to the Stock Theft Unit.',
+    'Saving takes a GPS point of where you are standing. It stays in your private farm record and is included only if you choose to make an evidence pack.',
   'theft.locating': 'Getting the GPS point…',
-  'theft.save': 'File this incident',
-  'theft.saveWithoutPoint': 'File it without a GPS point',
+  'theft.save': 'Save this incident',
+  'theft.saveWithoutPoint': 'Save without a GPS point',
   'theft.gpsRetryHint':
-    'The point is most of what makes this record evidence. Step into the open and try again, or file it without one — the incident is worth more filed than not.',
+    'The point makes this private record more useful if you later choose to share it. Step into the open and try again, or save without one.',
   'theft.gpsTryAgain': 'Try the GPS again',
   'theft.gps.denied':
     'This phone is not allowing the app to use its location. Turn location on for this app, then try again.',
@@ -1130,13 +1153,11 @@ const en = {
   'inventory.reorderPoint.failed': 'Could not be saved just now. Try again.',
   'inventory.reorderPoint.needsSignal': 'Needs signal to save.',
   'inventory.expired.warning': 'Expired',
-  // The residue register (FR-131) — COMPLIANCE-GATED. Copy rules apply hardest here: what
-  // happened, why, what now, and never a reprimand. Every line on this screen describes something
-  // the farmer already did, and most of it they could not have known at the time.
+  // Private interval reminders derived from the farmer's own values; never instructions or refusal.
   'residue.link': 'Needs your attention',
   'residue.title': 'Needs your attention',
   'attention.intro':
-    'Records from different phones that need a quick check, plus any withdrawal records that need follow-up.',
+    'Records from different phones to review, plus private reminders calculated from intervals you entered.',
   'conflict.title': 'Records to check',
   'conflict.intro':
     'Both records have been kept. Werf applied the stated rule and left this item here for a person to check.',
@@ -1151,18 +1172,18 @@ const en = {
   'conflict.reviewed': 'Mark as reviewed',
   'conflict.manager': 'An owner or manager can mark this as reviewed.',
   'conflict.error': 'That review could not be saved. Try again when you have signal.',
-  'residue.sectionTitle': 'Withdrawal records',
+  'residue.sectionTitle': 'Entered-interval reminders',
   'residue.intro':
-    'Head that left the herd while it was still inside a meat withdrawal. Nothing here is a refusal — it is the record, so you can answer for it if you are ever asked.',
-  'residue.empty': 'Nothing needs your attention. No head has left inside a withdrawal.',
-  'residue.foodChain': 'Meat from this must not go into the food chain.',
+    'Records whose dates fall inside a meat interval you entered. Werf keeps the record and the calculation together; you decide what it means for your farm.',
+  'residue.empty': 'No records currently fall inside an interval you entered.',
+  'residue.foodChain': 'This record falls before the reminder date you entered.',
   // Flagged when recorded, but not inside a withdrawal on the records we hold now — the dose behind
   // it was corrected. The row stays as an audit fact; the warning would be a false statement.
   'residue.noLongerWithin':
-    'This was flagged when it was recorded. On the records we hold now, it was not inside a withdrawal.',
+    'This was flagged when it was recorded. Using the records held now, it falls outside the entered interval.',
   'residue.notFoodChain': 'This did not go into the food chain.',
-  'residue.clearFrom': 'The withdrawal ran to',
-  'residue.clearUnknown': 'The withdrawal period is no longer on record.',
+  'residue.clearFrom': 'The entered interval ran to',
+  'residue.clearUnknown': 'The entered interval is no longer on record.',
   'residue.head': 'head',
   'residue.animal': 'One animal',
   'residue.group': 'Group',
@@ -1170,7 +1191,7 @@ const en = {
   // an auditor: one of these the app told them about, the other nothing could have caught.
   'residue.lateDiscovery':
     'This was only found later, when a treatment recorded on another phone reached us. Nothing on your phone could have known at the time.',
-  'residue.knownAtCapture': 'You were told about this when you recorded it.',
+  'residue.knownAtCapture': 'Werf showed this date reminder when you recorded it.',
   'residue.notSentYet': 'Saved on this phone. Not sent yet.',
   // Sent, but the register does not carry it — the server holds more of the log than this phone and
   // may have judged it clear. Saying "not sent yet" here was simply false.
@@ -1185,12 +1206,11 @@ const en = {
   // Anything that left the herd for a reason this screen has no noun for. Neutral on purpose: a
   // fallback that guesses a noun eventually guesses 'Died' for a camp move.
   'residue.type.left': 'Left the herd',
-  // The PHI compliance register (4d·6) — the cross-device race, mirrored one field over from the
-  // residue register just above.
-  'phi.sectionTitle': 'Harvest PHI compliance',
+  // Private harvest-interval reminders across records from more than one device.
+  'phi.sectionTitle': 'Harvest interval reminders',
   'phi.intro':
     'A harvest that, once every device’s spray records had arrived, fell inside a pre-harvest interval neither phone could have checked at the time.',
-  'phi.blocked': 'This harvest falls within the pre-harvest interval —',
+  'phi.blocked': 'Using the interval entered for this product, this harvest falls before',
   'phi.lateDiscovery':
     'This was only found later, when a spray recorded on another phone reached us. Nothing on your phone could have known at the time.',
   'phi.notSentYet': 'Saved on this phone. Not sent yet.',
@@ -1262,10 +1282,10 @@ const af: Record<TranslationKey, string> = {
   'sync.blocked.see': 'Wys my',
   'notSent.title': 'Wat jou aandag benodig',
   'notSent.intro':
-    'Niks hier is verlore nie — dit is alles op hierdie foon gestoor. Die bediener wou dit nie so vat nie. Maak reg wat dit noem, dan gaan hulle vanself op; daar is niks om te druk nie.',
+    'Niks hier is verlore nie — dit is alles op hierdie foon gestoor. Die bediener wou dit nie so vat nie. Volg die aksie wat by elke rekord gewys word.',
   'notSent.empty': 'Alles is opgestuur. Niks benodig jou nie.',
-  'loss.needDay': 'Sê vir ons watter dag dit gebeur het, dan kyk ons na die onttrekkingstydperk.',
-  'tally.needDay': 'Sê vir ons watter dag dit gebeur het, dan kyk ons na die onttrekkingstydperk.',
+  'loss.needDay': 'Voer die dag in om die intervalherinnering te bereken.',
+  'tally.needDay': 'Voer die dag in om die intervalherinnering te bereken.',
   'notSent.waiting.title': 'Wag vir een hierbo',
   'notSent.waiting.intro':
     'Hierdie is gestoor en reg. Elkeen wag vir ’n rekord hierbo om eers op te gaan — twee helftes van dieselfde skuif, of ’n groep wat nog nie op die bediener is nie. Maak reg wat hierbo is, dan volg hulle vanself.',
@@ -1303,6 +1323,8 @@ const af: Record<TranslationKey, string> = {
     'Iets in hierdie een is reeds teen iets anders aangeteken. Teken dit weer aan met die deel wat bots verander.',
   'notSent.why.validation':
     'Die bediener wou hierdie een nie so vat nie. Teken dit weer aan en kyk na die getalle en datums.',
+  'notSent.why.phiBlocked':
+    'Die bediener het ’n voor-oes-tydperk gevind waarvan hierdie foon nie geweet het nie. ’n Geskrewe oorskrywingsrede is nodig om dieselfde rekord te stuur.',
   'notSent.why.notFound':
     'Hierdie een wys na iets wat die plaas nie het nie — ’n kamp of ’n dier wat nooit aangeteken is nie, of op ’n ander foon aangeteken is. Sodra dit bestaan, gaan hierdie een vanself op.',
   'notSent.why.tenancy':
@@ -1311,6 +1333,16 @@ const af: Record<TranslationKey, string> = {
     'Hierdie plaas het sy foto-bergingsperk bereik. Dit is veilig op hierdie foon totdat daar plek is — laat weet ons asseblief en ons sal meer spasie reël.',
   'notSent.why.unknown':
     'Die bediener wou hierdie een nie vat nie en het nie op ’n manier gesê hoekom wat ons kan verduidelik nie. Dit is veilig op hierdie foon. Laat weet ons asseblief daarvan.',
+  'notSent.phiOverride.intro':
+    'As die werk wel gebeur het en jy gemagtig is om die tydperk te oorskryf, gee die geskrewe rede hieronder. Die oorspronklike plaaslike rekord bly onveranderd.',
+  'notSent.phiOverride.reason': 'Oorskrywingsrede',
+  'notSent.phiOverride.choose': 'Kies ’n rede',
+  'notSent.phiOverride.details': 'Besonderhede',
+  'notSent.phiOverride.retry': 'Voeg rede by en probeer weer',
+  'notSent.phiOverride.audited':
+    'Indien aanvaar, teken die bediener jou naam, die tyd en hierdie rede in die onveranderlike ouditspoor aan.',
+  'notSent.phiOverride.saved':
+    'Rede op hierdie foon gestoor. Werf sal die rekord nou weer probeer, of wanneer sein terugkeer.',
   'install.title': 'Installeer Werf op hierdie foon',
   'install.body': 'Maak dit oop van jou tuisskerm af, en dit werk aflyn.',
   'install.action': 'Installeer',
@@ -1427,8 +1459,7 @@ const af: Record<TranslationKey, string> = {
   'tile.harvest': 'Oes',
   'tile.labour': 'Arbeid',
   'tile.money': 'Geld',
-  'tile.compliance': 'Nakoming',
-  'tile.withholding': 'weerhou',
+  'tile.withholding': 'binne ingevoerde tydperk',
   'tile.withinPhi': 'binne voor-oes-tydperk',
   'module.comingSoon': 'Hierdie deel van die plaas kom in ’n latere fase.',
   'module.notFound.title': 'Nie gevind nie',
@@ -1577,21 +1608,31 @@ const af: Record<TranslationKey, string> = {
     'Gee die hoeveelheid gebruik, of maak die voorraadlot hierbo skoon.',
   'crops.spray.title': 'Teken ’n bespuiting aan',
   'crops.spray.noBlocks': 'Nog geen blokke nie. Voeg jou eerste een by — dit stoor sonder sein.',
-  'crops.spray.noProducts':
-    'Nog geen geregistreerde produkte nie. Verbind om die produkregister te sinkroniseer.',
+  'crops.spray.noProducts': 'Nog geen produkte nie.',
   'crops.spray.which': 'Watter blok?',
   'crops.spray.day': 'Dag bespuit',
   'crops.spray.product': 'Produk',
   'crops.spray.chooseProduct': 'Kies ’n produk',
+  'crops.spray.addProduct': 'Voeg ’n produk by wat ek gebruik',
+  'crops.spray.productName': 'Produknaam',
+  'crops.spray.productUnit': 'Voorraadeenheid',
+  'crops.spray.registration': 'Registrasienommer (opsioneel)',
+  'crops.spray.activeIngredients': 'Aktiewe bestanddele, komma-geskei (opsioneel)',
+  'crops.spray.phiDays': 'Voor-oes-interval in dae (opsioneel)',
+  'crops.spray.phiBad': 'Gee ’n heelgetal dae, of los dit leeg.',
+  'crops.spray.farmerInputNote':
+    'Dit is jou produkbesonderhede. Werf stoor dit en doen die datumberekening; dit verifieer of keur nie die produk goed nie.',
   'crops.spray.noPhi': 'Hierdie produk het geen voor-oes-tydperk aangeteken nie.',
-  'crops.spray.harvestFrom': 'Vroegste veilige oes vanaf',
+  'crops.spray.harvestFrom': 'Jou ingevoerde interval gee ’n oesdatum van',
+  'crops.spray.optionalDetails': 'Toedieningsbesonderhede (opsioneel)',
   'crops.spray.rate': 'Dosis, L/ha (opsioneel)',
   'crops.spray.water': 'Water, L/ha (opsioneel)',
-  'crops.spray.targetPest': 'Teiken plaag (opsioneel)',
+  'crops.spray.targetPest': 'Teikenplaag (opsioneel)',
   'crops.spray.operator': 'Toegedien deur (opsioneel)',
   'crops.spray.equipment': 'Toerusting (opsioneel)',
   'crops.spray.wind': 'Wind, km/h (opsioneel)',
   'crops.spray.temp': 'Temperatuur, °C (opsioneel)',
+  'crops.spray.numberBad': 'Gaan die getalle na, of los daardie velde leeg.',
   'crops.spray.save': 'Stoor bespuiting',
   'crops.spray.saved': 'gestoor — jou werk is gestoor',
   'crops.spray.back': 'Terug na grond',
@@ -1600,20 +1641,10 @@ const af: Record<TranslationKey, string> = {
   'crops.spray.quantityUsed': 'Hoeveelheid gebruik',
   'crops.spray.quantityUsedBad':
     'Gee die hoeveelheid gebruik, of maak die voorraadlot hierbo skoon.',
-  'crops.spray.blockedTitle': 'Hierdie bespuiting sal na die beplande oesdatum vry word',
-  'crops.spray.blockedClears': 'Hierdie produk sal eers veilig wees om te oes vanaf',
+  'crops.spray.planningWarning': 'Beplanningsherinnering: hierdie datums oorvleuel',
+  'crops.spray.blockedClears': 'Die interval wat jy ingevoer het eindig op',
   'crops.spray.blockedPlanned': 'Die beplande oesdatum vir hierdie blok is',
-  'crops.spray.override': 'Oorskryf',
-  'crops.spray.overrideReasonLabel': 'Rede',
-  'crops.spray.overrideReasonChoose': 'Kies ’n rede',
-  'crops.spray.overrideReason.emergency_pest_control': 'Noodplaag- of siekte-uitbraak',
-  'crops.spray.overrideReason.harvest_date_will_move': 'Beplande oesdatum sal skuif',
-  'crops.spray.overrideReason.misrecorded_planting': 'Plantdatum of oesberaming was verkeerd',
-  'crops.spray.overrideReason.other': 'Ander',
-  'crops.spray.overrideTextLabel': 'Besonderhede',
-  'crops.spray.overrideAudited':
-    'Hierdie oorskrywing word met jou naam en die tyd aangeteken, en kan nie gewysig of verwyder word nie.',
-  'crops.spray.saveOverride': 'Stoor bespuiting met oorskrywing',
+  'crops.spray.warningDoesNotBlock': 'Dit is slegs ’n herinnering; jy kan steeds jou rekord stoor.',
   'crops.sprays.title': 'Bespuitingsgeskiedenis',
   'crops.sprays.record': 'Teken ’n bespuiting aan',
   'crops.sprays.filterBlock': 'Filter volgens blok',
@@ -1625,17 +1656,28 @@ const af: Record<TranslationKey, string> = {
   'crops.sprays.phiPending': 'Voor-oes-tydperk nog nie deur die bediener bevestig nie',
   'crops.sprays.harvestDateUnknown':
     'Vroegste oesdatum onbekend — moenie op hierdie rekord staatmaak nie',
+  'crops.sprays.actives': 'Aktiewe bestanddele',
+  'crops.sprays.application': 'Dosis',
+  'crops.sprays.water': 'water',
+  'crops.sprays.operator': 'Toegedien deur',
+  'crops.sprays.equipment': 'toerusting',
+  'crops.sprays.weather': 'Weer',
+  'crops.sprays.target': 'Teikenplaag',
+  'crops.sprays.override': 'Voor-oes-oorskrywing',
+  'crops.sprays.incomplete':
+    'Hierdie ouer rekord kort vereiste toedieningsbesonderhede. Sluit die oorspronklike bronrekord by die ouditpakket in.',
   'crops.harvest.title': 'Teken ’n oes aan',
   'crops.harvest.noBlocks': 'Nog geen blokke nie. Voeg jou eerste een by — dit stoor sonder sein.',
   'crops.harvest.saved': 'Gestoor — jou werk is gestoor',
   'crops.harvest.which': 'Watter blok?',
   'crops.harvest.splitBlockWarning':
-    'Hierdie blok is van ’n ander een afgesplit. Hierdie toestel kan nie sy volle bespuitingsgeskiedenis sonder sein bevestig nie — sinkroniseer voor jy ’n onlangs-gesplitste blok oes, of gaan die ouer-blok se eie rekords na.',
+    'Hierdie blok is van ’n ander een afgesplit. Sy ouerblok kan ouer bespuitingsrekords hê wat die moeite werd is om na te gaan.',
   'crops.harvest.day': 'Dag geoes',
-  'crops.harvest.blockedTitle': 'Hierdie oes val binne ’n voor-oes-tydperk',
   'crops.harvest.blockedProductUnknown': '’n Produk op hierdie blok',
   'crops.harvest.blockedSprayedOn': 'is bespuit op',
-  'crops.harvest.blockedEarliest': 'Die vroegste veilige oesdatum is',
+  'crops.harvest.reminderTitle': 'Jou rekords wys ’n intervalherinnering',
+  'crops.harvest.blockedEarliest': 'Die intervaldatum uit jou inskrywing is',
+  'crops.harvest.warningDoesNotBlock': 'Dit is slegs ’n herinnering; jy kan steeds die oes stoor.',
   'crops.harvest.override': 'Oorskryf',
   'crops.harvest.overrideReasonLabel': 'Rede',
   'crops.harvest.overrideReasonChoose': 'Kies ’n rede',
@@ -1647,7 +1689,7 @@ const af: Record<TranslationKey, string> = {
   'crops.harvest.overrideAudited':
     'Hierdie oorskrywing word met jou naam en die tyd aangeteken, en kan nie gewysig of verwyder word nie.',
   'crops.harvest.unresolved':
-    'Hierdie toestel kan nog nie bevestig dat hierdie blok gereed is om te oes nie. Sinkroniseer en probeer weer.',
+    '’n Ouer bespuitingsrekord het geen intervalbesonderhede nie. Jy kan steeds die oes stoor en die rekord later nagaan.',
   'crops.harvest.quantity': 'Hoeveelheid',
   'crops.harvest.unit': 'Eenheid',
   'crops.harvest.grade': 'Graad (opsioneel)',
@@ -1713,6 +1755,13 @@ const af: Record<TranslationKey, string> = {
   'health.administeredOn': 'Wanneer is dit gegee?',
   'health.product': 'Watter produk',
   'health.chooseProduct': 'Kies een',
+  'health.addProduct': 'Voeg ’n produk by wat ek gebruik',
+  'health.productName': 'Produknaam',
+  'health.registrationNumber': 'Registrasie- of etiketnommer (opsioneel)',
+  'health.meatWithdrawalDays': 'Vleisinterval (dae)',
+  'health.milkWithdrawalHours': 'Melkinterval (ure)',
+  'health.farmerProductHelp':
+    'Voer die etiketfeite in wat Werf moet onthou. Werf bereken datums uit jou inskrywings en verifieer of keur nie die produk goed nie.',
   'health.programme': 'Watter program (opsioneel)',
   'health.reason': 'Waarom (opsioneel)',
   'health.by': 'Wie het dit gegee (opsioneel)',
@@ -1735,11 +1784,8 @@ const af: Record<TranslationKey, string> = {
   'health.save': 'Teken dit aan',
   'health.saved': 'aangeteken — jou werk is gestoor',
   'health.back': 'Terug na diere',
-  'health.clearFrom': 'Hierdie diere mag vir slag verkoop word vanaf',
-  'health.noWithdrawal': 'Hierdie produk het geen vleis-onttrekkingstydperk nie.',
+  'health.clearFrom': 'Jou vleisinterval-herinneringsdatum is',
   'health.noAnimals': 'Nog geen diere om te behandel nie.',
-  'health.noProducts':
-    'Die produkregister het nog nie hierdie foon bereik nie. Maak die app een keer oop waar daar sein is, en dit sal hier wees vir die kraal.',
   'animals.mating': 'Teken ’n dekking aan',
   'animals.pregnancy': 'Dragtigheidstoets',
   'animals.birth': 'Teken ’n geboorte aan',
@@ -1938,9 +1984,9 @@ const af: Record<TranslationKey, string> = {
   'tally.refused':
     'Daardie verandering kon nie aangeteken word nie. Kyk na die groep en die getal, en probeer weer.',
   'tally.withheld':
-    'Hierdie groep is gedip of behandel en kan nog nie vir slag of verkoop gaan nie. Dit mag gaan vanaf',
+    'Herinnering: volgens die interval wat jy ingevoer het, bereik hierdie groep die herinneringsdatum op',
   'tally.withinWithdrawal':
-    'Hierdie groep was op hierdie dag nog binne ’n vleisonttrekkingstydperk. Om dit aan te teken is reg — maar vleis daarvan mag nie in die voedselketting ingaan nie. Die onttrekking loop tot',
+    'Herinnering: hierdie datum val binne die vleisinterval wat jy ingevoer het. Werf stoor steeds jou rekord. Die interval loop tot',
   'tally.theftNote': 'Dit verander die getal. Dit dien nie ’n veediefstalverslag in nie.',
   'tally.theftLink': 'Dien ’n veediefstalverslag in',
   'tally.save': 'Stoor',
@@ -1973,25 +2019,27 @@ const af: Record<TranslationKey, string> = {
   'loss.slaughtered': 'Geslag',
   'loss.sold': 'Verkoop',
   'loss.withheld':
-    'Hierdie dier is behandel en kan nog nie vir slag verkoop word nie. Dit mag verkoop word vanaf',
+    'Herinnering: volgens die interval wat jy ingevoer het, bereik hierdie dier die herinneringsdatum op',
   'loss.missing': 'Vermis',
   'loss.causeMissing': 'Wat het jy gekry? (opsioneel)',
   'loss.lastSeenDay': 'Wanneer laas gesien?',
   'loss.disposalDay': 'Watter dag?',
   'loss.deathWithinWithdrawal':
-    'Hierdie dier was op hierdie dag nog binne ’n vleisonttrekkingstydperk. Om die vrekte aan te teken is reg — maar vleis daarvan mag nie in die voedselketting ingaan nie. Die onttrekking loop tot',
+    'Herinnering: hierdie datum val binne die vleisinterval wat jy ingevoer het. Werf stoor steeds jou rekord. Die interval loop tot',
   'loss.gpsExplain':
-    'Om dit aan te teken neem ’n GPS-punt van waar jy staan. Dit werk sonder sein, en dit is wat die rekord bruikbaar maak vir die Veediefstal-eenheid.',
+    'Om dit aan te teken neem ’n GPS-punt van waar jy staan. Dit bly in jou private plaasrekord en word net ingesluit as jy kies om ’n bewysstuk saam te stel.',
   'loss.locating': 'Kry tans die GPS-punt…',
-  'loss.saveMissing': 'Rapporteer as vermis',
+  'loss.saveMissing': 'Teken as vermis aan',
+  'loss.saveWithoutGps': 'Stoor sonder ’n GPS-punt',
   'loss.savedSuffixMissing': 'aangeteken — as vermis gemerk',
   'loss.gps.denied':
-    'Hierdie foon laat nie die app toe om sy ligging te gebruik nie. Skakel ligging vir hierdie app aan en probeer weer.',
+    'Hierdie foon laat nie die app toe om sy ligging te gebruik nie. Skakel ligging aan en probeer weer, of stoor sonder ’n punt.',
   'loss.gps.unavailable':
-    'Die foon kon nie ’n GPS-punt kry nie. Staan in die oopte, weg van ’n skuur of bome, en probeer weer.',
-  'loss.gps.timeout': 'Die GPS soek nog. Wag ’n paar sekondes in die oopte en probeer weer.',
+    'Die foon kon nie ’n GPS-punt kry nie. Staan in die oopte en probeer weer, of stoor sonder ’n punt.',
+  'loss.gps.timeout':
+    'Die GPS soek nog. Wag ’n paar sekondes en probeer weer, of stoor sonder ’n punt.',
   'loss.gps.unsupported':
-    'Hierdie foon kan nie ’n GPS-punt gee nie, so hierdie rekord kan nie geanker word nie.',
+    'Hierdie foon kan nie ’n GPS-punt gee nie. Jy kan steeds die rekord stoor.',
   'loss.cause': 'Oorsaak',
   'loss.counterparty': 'Koper',
   'loss.price': 'Prys (R)',
@@ -2006,9 +2054,9 @@ const af: Record<TranslationKey, string> = {
   'loss.back': 'Terug na diere',
   'theft.title': 'Veediefstal',
   'theft.intro':
-    'Die voorvalle wat jy aangemeld het. Elkeen kan ’n pak feite lewer — identifikasie, eienaarskap, waar en wanneer — vir die Veediefstal-eenheid.',
-  'theft.report': 'Meld veediefstal aan',
-  'theft.empty': 'Geen voorvalle aangemeld nie.',
+    'Jou private voorvalrekords. Jy kan kies om ’n feitebewysstuk saam te stel; Werf stuur dit nêrens heen nie.',
+  'theft.report': 'Teken veediefstal aan',
+  'theft.empty': 'Geen voorvalle aangeteken nie.',
   'theft.back': 'Terug na diere',
   'theft.headTaken': 'gevat',
   'theft.discovered': 'Gekry',
@@ -2022,7 +2070,7 @@ const af: Record<TranslationKey, string> = {
     'Die pak kon nie gehaal word nie — daar is nou geen verbinding nie. Die voorval is veilig. Probeer weer waar jy sein het.',
   'theft.packRefused':
     'Die pak kon nie vir hierdie voorval saamgestel word nie. Kyk of dit gestuur is en probeer weer.',
-  'theft.report.title': 'Meld veediefstal aan',
+  'theft.report.title': 'Teken veediefstal aan',
   'theft.report.intro':
     'Teken aan wat jy gekry het, waar en wanneer. Dit stoor dadelik op hierdie foon, met of sonder sein.',
   'theft.discoveredDay': 'Wanneer het jy dit gekry?',
@@ -2041,12 +2089,12 @@ const af: Record<TranslationKey, string> = {
   'theft.caseNumber': 'SAPD-saaknommer (as jy een het)',
   'theft.station': 'SAPD-kantoor (as jy dit aangemeld het)',
   'theft.gpsExplain':
-    'Stoor neem ’n GPS-punt van waar jy staan. Dit werk sonder sein, en dit is wat hierdie rekord bruikbaar maak vir die Veediefstal-eenheid.',
+    'Stoor neem ’n GPS-punt van waar jy staan. Dit bly in jou private plaasrekord en word net ingesluit as jy kies om ’n bewysstuk saam te stel.',
   'theft.locating': 'Kry tans die GPS-punt…',
-  'theft.save': 'Meld hierdie voorval aan',
-  'theft.saveWithoutPoint': 'Meld dit aan sonder ’n GPS-punt',
+  'theft.save': 'Stoor hierdie voorval',
+  'theft.saveWithoutPoint': 'Stoor sonder ’n GPS-punt',
   'theft.gpsRetryHint':
-    'Die punt is die grootste deel van wat hierdie rekord bewys maak. Staan in die oopte en probeer weer, of meld dit aan sonder een — die voorval is meer werd aangemeld as nie.',
+    'Die punt maak hierdie private rekord nuttiger as jy later kies om dit te deel. Staan in die oopte en probeer weer, of stoor sonder een.',
   'theft.gpsTryAgain': 'Probeer die GPS weer',
   'theft.gps.denied':
     'Hierdie foon laat nie die app toe om sy ligging te gebruik nie. Skakel ligging vir hierdie app aan en probeer weer.',
@@ -2154,7 +2202,7 @@ const af: Record<TranslationKey, string> = {
   'residue.link': 'Kort jou aandag',
   'residue.title': 'Kort jou aandag',
   'attention.intro':
-    'Rekords van verskillende fone wat vinnig nagegaan moet word, plus onttrekkingsrekords wat opvolg nodig het.',
+    'Rekords van verskillende fone om na te gaan, plus private herinnerings uit intervalle wat jy ingevoer het.',
   'conflict.title': 'Rekords om na te gaan',
   'conflict.intro':
     'Albei rekords is behou. Werf het die vermelde reël toegepas en hierdie item vir ’n persoon gelos om na te gaan.',
@@ -2169,22 +2217,22 @@ const af: Record<TranslationKey, string> = {
   'conflict.reviewed': 'Merk as nagegaan',
   'conflict.manager': '’n Eienaar of bestuurder kan dit as nagegaan merk.',
   'conflict.error': 'Die nasien kon nie gestoor word nie. Probeer weer wanneer jy sein het.',
-  'residue.sectionTitle': 'Onttrekkingsrekords',
+  'residue.sectionTitle': 'Herinnerings vir ingevoerde intervalle',
   'residue.intro':
-    'Diere wat die kudde verlaat het terwyl hulle nog binne ’n vleisonttrekkingstydperk was. Niks hier is ’n weiering nie — dit is die rekord, sodat jy kan antwoord as daar ooit gevra word.',
-  'residue.empty': 'Niks kort jou aandag nie. Geen diere het binne ’n onttrekking uitgegaan nie.',
-  'residue.foodChain': 'Vleis hiervan mag nie in die voedselketting ingaan nie.',
+    'Rekords waarvan die datums binne ’n vleisinterval val wat jy ingevoer het. Werf hou die rekord en berekening bymekaar; jy besluit wat dit vir jou plaas beteken.',
+  'residue.empty': 'Geen rekords val tans binne ’n interval wat jy ingevoer het nie.',
+  'residue.foodChain': 'Hierdie rekord val voor die herinneringsdatum wat jy ingevoer het.',
   'residue.noLongerWithin':
-    'Dit is gemerk toe dit aangeteken is. Op die rekords wat ons nou hou, was dit nie binne ’n onttrekkingstydperk nie.',
+    'Dit is gemerk toe dit aangeteken is. Volgens die rekords wat ons nou hou, val dit buite die ingevoerde interval.',
   'residue.notFoodChain': 'Dit het nie in die voedselketting ingegaan nie.',
-  'residue.clearFrom': 'Die onttrekking het geloop tot',
-  'residue.clearUnknown': 'Die onttrekkingstydperk is nie meer op rekord nie.',
+  'residue.clearFrom': 'Die ingevoerde interval het geloop tot',
+  'residue.clearUnknown': 'Die ingevoerde interval is nie meer op rekord nie.',
   'residue.head': 'stuks',
   'residue.animal': 'Een dier',
   'residue.group': 'Groep',
   'residue.lateDiscovery':
     'Dit is eers later opgetel, toe ’n behandeling wat op ’n ander foon aangeteken is, ons bereik het. Niks op jou foon kon dit destyds geweet het nie.',
-  'residue.knownAtCapture': 'Jy is hiervan vertel toe jy dit aangeteken het.',
+  'residue.knownAtCapture': 'Werf het hierdie datumherinnering gewys toe jy dit aangeteken het.',
   'residue.notSentYet': 'Op hierdie foon gestoor. Nog nie gestuur nie.',
   'residue.sentNotFlagged': 'Gestuur. Hierdie foon het dit gemerk uit die rekords wat dit hou.',
   'residue.offline':
@@ -2195,10 +2243,10 @@ const af: Record<TranslationKey, string> = {
   'residue.type.slaughter': 'Geslag',
   'residue.type.theft': 'Gesteel',
   'residue.type.left': 'Uit die kudde',
-  'phi.sectionTitle': 'Oes-voor-oes-tydperk nakoming',
+  'phi.sectionTitle': 'Oesinterval-herinnerings',
   'phi.intro':
     'ʼn Oes wat, sodra elke foon se bespuitingsrekords aangekom het, binne ʼn voor-oes-tydperk geval het wat geen foon destyds kon nagaan nie.',
-  'phi.blocked': 'Hierdie oes val binne die voor-oes-tydperk —',
+  'phi.blocked': 'Volgens die interval wat vir hierdie produk ingevoer is, val hierdie oes voor',
   'phi.lateDiscovery':
     'Dit is eers later opgetel, toe ’n bespuiting wat op ’n ander foon aangeteken is, ons bereik het. Niks op jou foon kon dit destyds geweet het nie.',
   'phi.notSentYet': 'Op hierdie foon gestoor. Nog nie gestuur nie.',

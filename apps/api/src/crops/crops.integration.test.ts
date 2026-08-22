@@ -15,8 +15,6 @@ import { Test } from '@nestjs/testing';
 import { JwtModule } from '@nestjs/jwt';
 import { eq } from 'drizzle-orm';
 import {
-  auditLog,
-  chemicalProducts,
   createAppDb,
   createElevatedDb,
   events,
@@ -29,7 +27,13 @@ import {
   type ElevatedDb,
 } from '@werf/db';
 import { startWerfTestDatabase, type WerfTestDatabase } from '@werf/db/testing';
-import { NotFoundError, TenancyError, schemas, uuidv7 } from '@werf/core';
+import {
+  NotFoundError,
+  TenancyError,
+  schemas,
+  uuidv7,
+  type InventoryItemCategory,
+} from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { AuthService } from '../auth/auth.service';
 import { SessionService } from '../auth/session.service';
@@ -109,8 +113,17 @@ const fertiliserBody = (
     ...over,
   });
 
-/** A minimal valid spray body; overlay the fields a test cares about. `productId` has no default —
- *  every test creates its own `chemical_products` row and must name it. */
+const productSnapshots = new Map<
+  string,
+  {
+    productName: string;
+    registrationNumber?: string;
+    activeIngredients?: string[];
+    phiDays?: number;
+  }
+>();
+
+/** A minimal valid spray body carrying the farmer-owned product snapshot. */
 const sprayBody = (
   over: Partial<ZodInput<typeof schemas.recordSprayRequestSchema>> & {
     farmId: string;
@@ -122,6 +135,7 @@ const sprayBody = (
     id: uuidv7(),
     occurredAt: '2026-10-05T05:00:00.000Z',
     sprayedOn: '2026-10-05',
+    ...productSnapshots.get(over.productId),
     ...over,
   });
 
@@ -211,34 +225,60 @@ describe('planting capture (FR-203)', () => {
     return created.id;
   }
 
-  /** Reference data is written by the elevated admin path, never by a farmer. */
-  async function aChemicalProduct(over: Partial<typeof chemicalProducts.$inferInsert> = {}) {
+  async function camp(a: { userId: string; farmId: string }) {
+    const created = await land.createLandUnit(
+      a.userId,
+      blockBody({ farmId: a.farmId, kind: 'camp', code: 'C12' }),
+    );
+    return created.id;
+  }
+
+  /** A product in this farm's own catalogue. Werf checks ownership/category, not registration. */
+  async function aChemicalProduct(
+    a: { userId: string; farmId: string },
+    over: {
+      name?: string;
+      registrationNumber?: string;
+      activeIngredients?: string[];
+      phiDays?: number | null;
+    } = {},
+  ) {
     const [row] = await elevated.db
-      .insert(chemicalProducts)
+      .insert(inventoryItems)
       .values({
-        jurisdiction: 'ZA',
+        farmId: a.farmId,
+        category: 'chemical',
         name: 'Cyprodinex 50 WG',
+        unit: 'L',
         registrationNumber: 'L1234',
         activeIngredients: ['cyprodinil'],
-        crop: 'grapes',
         phiDays: 7,
-        effectiveFrom: '2020-01-01',
+        createdBy: a.userId,
         ...over,
       })
       .returning();
+    productSnapshots.set(row!.id, {
+      productName: row!.name,
+      ...(row!.registrationNumber === null ? {} : { registrationNumber: row!.registrationNumber }),
+      ...(row!.activeIngredients === null ? {} : { activeIngredients: row!.activeIngredients }),
+      ...(row!.phiDays === null ? {} : { phiDays: row!.phiDays }),
+    });
     return row!;
   }
 
   /** A real inventory lot this tenant's own catalogue already holds (Phase 4e, FR-502) — created
    *  directly through Drizzle, the identical shortcut `aChemicalProduct` takes, since this
    *  describe's module wires `CropsService` alone, not `InventoryService`. */
-  async function anInventoryLot(a: { userId: string; farmId: string }) {
+  async function anInventoryLot(
+    a: { userId: string; farmId: string },
+    category: InventoryItemCategory = 'chemical',
+  ) {
     const [item] = await elevated.db
       .insert(inventoryItems)
       .values({
         farmId: a.farmId,
-        category: 'chemical',
-        name: 'Cyprodinex 50 WG',
+        category,
+        name: `${category} test stock`,
         unit: 'L',
         createdBy: a.userId,
       })
@@ -271,6 +311,30 @@ describe('planting capture (FR-203)', () => {
     // Genuinely persisted and readable back through the farm's RLS scope.
     const seen = await app.asUser(a.userId, (tx) => tx.select().from(events));
     expect(seen.map((e) => e.id)).toContain(captured.id);
+  });
+
+  it('refuses every crop capture against a grazing camp', async () => {
+    const a = await tenant('Crop');
+    const landUnitId = await camp(a);
+    const product = await aChemicalProduct(a, { phiDays: 7 });
+
+    await expect(
+      service.recordPlanting(a.userId, plantingBody({ farmId: a.farmId, landUnitId })),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      service.recordFertiliser(a.userId, fertiliserBody({ farmId: a.farmId, landUnitId })),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      service.recordSpray(
+        a.userId,
+        sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
+      ),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      service.recordHarvest(a.userId, harvestBody({ farmId: a.farmId, landUnitId })),
+    ).rejects.toThrow(NotFoundError);
+
+    expect(await elevated.db.select().from(events)).toHaveLength(0);
   });
 
   it('keeps occurred_at (the planted date) distinct from created_at (row written)', async () => {
@@ -453,7 +517,7 @@ describe('planting capture (FR-203)', () => {
     it('⭐ stores an optional inventory lot reference on the event (Phase 4e, FR-502)', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const inventoryLotId = await anInventoryLot(a);
+      const inventoryLotId = await anInventoryLot(a, 'fertiliser');
 
       const captured = await service.recordFertiliser(
         a.userId,
@@ -468,7 +532,7 @@ describe('planting capture (FR-203)', () => {
       const a = await tenant('Crop');
       const b = await tenant('Other');
       const landUnitId = await block(a);
-      const othersLot = await anInventoryLot(b);
+      const othersLot = await anInventoryLot(b, 'fertiliser');
 
       await expect(
         service.recordFertiliser(
@@ -480,13 +544,26 @@ describe('planting capture (FR-203)', () => {
       const rows = await elevated.db.select().from(events);
       expect(rows).toHaveLength(0);
     });
-  });
 
-  describe('spray capture (FR-204) — COMPLIANCE-GATED', () => {
-    it('resolves the PHI from the registered product and stores the earliest harvest date (ADR-0005)', async () => {
+    it('refuses a fertiliser application naming a non-fertiliser inventory lot', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 7 });
+      const feedLot = await anInventoryLot(a, 'feed');
+
+      await expect(
+        service.recordFertiliser(
+          a.userId,
+          fertiliserBody({ farmId: a.farmId, landUnitId, inventoryLotId: feedLot }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('spray capture (FR-204) — farmer-owned product log', () => {
+    it('stores the farmer-entered product snapshot and calculated interval date', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      const product = await aChemicalProduct(a, { phiDays: 7 });
 
       const captured = await service.recordSpray(
         a.userId,
@@ -510,7 +587,7 @@ describe('planting capture (FR-203)', () => {
     it('⭐ OMITS phiDays/earliestHarvestDate, never zero, when the product carries no PHI on record', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: null });
+      const product = await aChemicalProduct(a, { phiDays: null });
 
       const captured = await service.recordSpray(
         a.userId,
@@ -521,13 +598,11 @@ describe('planting capture (FR-203)', () => {
       expect(Object.keys(captured.payload as object)).not.toContain('earliestHarvestDate');
     });
 
-    it('never trusts a client-sent PHI or active ingredients — the server always resolves its own', async () => {
+    it('preserves the farmer-entered interval and active ingredients without judging them', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 7, activeIngredients: ['cyprodinil'] });
+      const product = await aChemicalProduct(a, { phiDays: 7, activeIngredients: ['cyprodinil'] });
 
-      // The wire schema itself has no phiDays/activeIngredients fields to smuggle through — this
-      // proves the RESOLVED figure is what lands, not a coincidence of the schema shape.
       const captured = await service.recordSpray(
         a.userId,
         sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
@@ -536,69 +611,23 @@ describe('planting capture (FR-203)', () => {
       expect(captured.payload).toMatchObject({ phiDays: 7, activeIngredients: ['cyprodinil'] });
     });
 
-    it('resolves the registration IN FORCE ON THE SPRAY DAY, not today’s', async () => {
+    it("refuses a product from another farm's private catalogue", async () => {
       const a = await tenant('Crop');
+      const b = await tenant('Other');
       const landUnitId = await block(a);
-      const oldVersion = await aChemicalProduct({
-        effectiveFrom: '2020-01-01',
-        effectiveTo: '2026-04-01',
-        phiDays: 14,
-      });
-
-      const captured = await service.recordSpray(
-        a.userId,
-        sprayBody({
-          farmId: a.farmId,
-          landUnitId,
-          productId: oldVersion.id,
-          sprayedOn: '2026-02-01',
-        }),
-      );
-
-      expect(captured.payload).toMatchObject({ phiDays: 14 });
-    });
-
-    it('refuses a spray against a version no longer in force on the spray day — a stale cached row', async () => {
-      // The device's cache may hold a superseded registration; the server is the one that decides
-      // whether it was still current on the day being captured (ADR-0005, same discipline
-      // `resolveVetProduct` proves for a treatment).
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-      const supersededVersion = await aChemicalProduct({
-        effectiveFrom: '2020-01-01',
-        effectiveTo: '2026-04-01',
-        phiDays: 14,
-      });
+      const product = await aChemicalProduct(b, {});
 
       await expect(
         service.recordSpray(
           a.userId,
-          sprayBody({
-            farmId: a.farmId,
-            landUnitId,
-            productId: supersededVersion.id,
-            sprayedOn: '2026-10-05',
-          }),
-        ),
-      ).rejects.toThrow(NotFoundError);
-    });
-
-    it('refuses a spray against a product not registered in this farm’s jurisdiction', async () => {
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-      const naProduct = await aChemicalProduct({ jurisdiction: 'NA' });
-
-      await expect(
-        service.recordSpray(
-          a.userId,
-          sprayBody({ farmId: a.farmId, landUnitId, productId: naProduct.id }),
+          sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
         ),
       ).rejects.toThrow(NotFoundError);
     });
 
     it('refuses a spray against a block that does not exist on this farm', async () => {
       const a = await tenant('Crop');
-      const product = await aChemicalProduct({});
+      const product = await aChemicalProduct(a, {});
 
       await expect(
         service.recordSpray(
@@ -611,7 +640,7 @@ describe('planting capture (FR-203)', () => {
     it('is idempotent on the client id, so a re-flush does not create a second spray', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({});
+      const product = await aChemicalProduct(a, {});
       const body = sprayBody({ farmId: a.farmId, landUnitId, productId: product.id });
 
       const first = await service.recordSpray(a.userId, body);
@@ -625,7 +654,7 @@ describe('planting capture (FR-203)', () => {
     it('⭐ stores an optional inventory lot reference on the event, never in the payload (Phase 4e, FR-502)', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 7 });
+      const product = await aChemicalProduct(a, { phiDays: 7 });
       const inventoryLotId = await anInventoryLot(a);
 
       const captured = await service.recordSpray(
@@ -641,7 +670,7 @@ describe('planting capture (FR-203)', () => {
       const a = await tenant('Crop');
       const b = await tenant('Other');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 7 });
+      const product = await aChemicalProduct(a, { phiDays: 7 });
       const othersLot = await anInventoryLot(b);
 
       await expect(
@@ -659,17 +688,12 @@ describe('planting capture (FR-203)', () => {
       const rows = await elevated.db.select().from(events);
       expect(rows).toHaveLength(0);
     });
-  });
 
-  describe('spray-capture PHI block (legal-compliance.md § 4.3) — the EARLY half, complementing FR-205', () => {
-    it('blocks a spray whose resulting PHI would clear AFTER the block’s planned harvest date', async () => {
+    it('refuses a spray naming a non-chemical inventory lot', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      await service.recordPlanting(
-        a.userId,
-        plantingBody({ farmId: a.farmId, landUnitId, expectedHarvestDate: '2026-03-15' }),
-      );
-      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
+      const product = await aChemicalProduct(a, { phiDays: 7 });
+      const feedLot = await anInventoryLot(a, 'feed');
 
       await expect(
         service.recordSpray(
@@ -678,20 +702,43 @@ describe('planting capture (FR-203)', () => {
             farmId: a.farmId,
             landUnitId,
             productId: product.id,
-            sprayedOn: '2026-03-01',
-            occurredAt: '2026-03-01T08:00:00.000Z',
+            inventoryLotId: feedLot,
           }),
         ),
-      ).rejects.toThrow(/Cyprodinex 50 WG.*2026-03-22.*2026-03-15/s);
+      ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('spray interval input remains advisory', () => {
+    it('records a spray even when its entered interval ends after the planned harvest date', async () => {
+      const a = await tenant('Crop');
+      const landUnitId = await block(a);
+      await service.recordPlanting(
+        a.userId,
+        plantingBody({ farmId: a.farmId, landUnitId, expectedHarvestDate: '2026-03-15' }),
+      );
+      const product = await aChemicalProduct(a, { name: 'Cyprodinex 50 WG', phiDays: 21 });
+
+      const captured = await service.recordSpray(
+        a.userId,
+        sprayBody({
+          farmId: a.farmId,
+          landUnitId,
+          productId: product.id,
+          sprayedOn: '2026-03-01',
+          occurredAt: '2026-03-01T08:00:00.000Z',
+        }),
+      );
 
       const rows = await elevated.db.select().from(events).where(eq(events.type, 'spray'));
-      expect(rows).toHaveLength(0);
+      expect(rows).toHaveLength(1);
+      expect(captured.payload).toMatchObject({ earliestHarvestDate: '2026-03-22' });
     });
 
     it('proceeds with no warning when the block has no planned harvest date on record', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 21 });
+      const product = await aChemicalProduct(a, { phiDays: 21 });
 
       const captured = await service.recordSpray(
         a.userId,
@@ -708,7 +755,7 @@ describe('planting capture (FR-203)', () => {
         a.userId,
         plantingBody({ farmId: a.farmId, landUnitId, expectedHarvestDate: '2026-04-01' }),
       );
-      const product = await aChemicalProduct({ phiDays: 21 });
+      const product = await aChemicalProduct(a, { phiDays: 21 });
 
       const captured = await service.recordSpray(
         a.userId,
@@ -731,7 +778,7 @@ describe('planting capture (FR-203)', () => {
         a.userId,
         plantingBody({ farmId: a.farmId, landUnitId, expectedHarvestDate: '2026-03-01' }),
       );
-      const product = await aChemicalProduct({ phiDays: null });
+      const product = await aChemicalProduct(a, { phiDays: null });
 
       const captured = await service.recordSpray(
         a.userId,
@@ -741,7 +788,7 @@ describe('planting capture (FR-203)', () => {
       expect(captured.payload).not.toHaveProperty('phiOverride');
     });
 
-    it('FR-202: blocks using an ANCESTOR block’s planting — a split inherits it, unbounded', async () => {
+    it('records against a split block without treating the parent planting as an authority', async () => {
       const a = await tenant('Crop');
       const parentId = await block(a);
       await service.recordPlanting(
@@ -752,114 +799,19 @@ describe('planting capture (FR-203)', () => {
         a.userId,
         blockBody({ farmId: a.farmId, code: 'B12-A', parentId }),
       );
-      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
-
-      await expect(
-        service.recordSpray(
-          a.userId,
-          sprayBody({
-            farmId: a.farmId,
-            landUnitId: child.id,
-            productId: product.id,
-            sprayedOn: '2026-03-01',
-            occurredAt: '2026-03-01T08:00:00.000Z',
-          }),
-        ),
-      ).rejects.toThrow(/Cyprodinex 50 WG/);
-    });
-
-    it('an override is accepted, stores the reason and audits it — never silent', async () => {
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-      await service.recordPlanting(
-        a.userId,
-        plantingBody({ farmId: a.farmId, landUnitId, expectedHarvestDate: '2026-03-15' }),
-      );
-      const product = await aChemicalProduct({ phiDays: 21 });
+      const product = await aChemicalProduct(a, { name: 'Cyprodinex 50 WG', phiDays: 21 });
 
       const captured = await service.recordSpray(
         a.userId,
         sprayBody({
           farmId: a.farmId,
-          landUnitId,
+          landUnitId: child.id,
           productId: product.id,
           sprayedOn: '2026-03-01',
           occurredAt: '2026-03-01T08:00:00.000Z',
-          phiOverride: { reason: 'Emergency pest outbreak — advised to spray immediately' },
         }),
       );
-
-      expect(captured.payload).toMatchObject({
-        phiOverride: {
-          reason: 'Emergency pest outbreak — advised to spray immediately',
-          by: a.userId,
-        },
-      });
-
-      const audit = await elevated.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.recordId, captured.id));
-      expect(audit).toHaveLength(1);
-      expect(audit[0]!.action).toBe('phi_override');
-      expect(audit[0]!.userId).toBe(a.userId);
-      expect(audit[0]!.rule).toMatch(/§ 4\.3/);
-    });
-
-    it('never carries an override for a spray the guard did not actually block', async () => {
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 21 });
-
-      const captured = await service.recordSpray(
-        a.userId,
-        sprayBody({
-          farmId: a.farmId,
-          landUnitId,
-          productId: product.id,
-          sprayedOn: '2026-03-01',
-          phiOverride: { reason: 'Just in case' },
-        }),
-      );
-
-      expect(captured.payload).not.toHaveProperty('phiOverride');
-      const audit = await elevated.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.recordId, captured.id));
-      expect(audit).toHaveLength(0);
-    });
-
-    it('is idempotent BEFORE validation: a re-flushed spray does not re-run the guard or double-audit', async () => {
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-      await service.recordPlanting(
-        a.userId,
-        plantingBody({ farmId: a.farmId, landUnitId, expectedHarvestDate: '2026-03-15' }),
-      );
-      const product = await aChemicalProduct({ phiDays: 21 });
-      const body = sprayBody({
-        farmId: a.farmId,
-        landUnitId,
-        productId: product.id,
-        sprayedOn: '2026-03-01',
-        occurredAt: '2026-03-01T08:00:00.000Z',
-        phiOverride: { reason: 'Export deadline' },
-      });
-
-      const first = await service.recordSpray(a.userId, body);
-      const again = await service.recordSpray(a.userId, body);
-
-      expect(again.id).toBe(first.id);
-      const rows = await app.asUser(a.userId, (tx) =>
-        tx.select().from(events).where(eq(events.type, 'spray')),
-      );
-      expect(rows).toHaveLength(1);
-      const audit = await elevated.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.recordId, first.id));
-      expect(audit).toHaveLength(1);
+      expect(captured.landUnitId).toBe(child.id);
     });
   });
 
@@ -867,7 +819,7 @@ describe('planting capture (FR-203)', () => {
     it('lists sprays for the farm, newest first, with the registered product name resolved', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 7 });
+      const product = await aChemicalProduct(a, { name: 'Cyprodinex 50 WG', phiDays: 7 });
       await service.recordSpray(
         a.userId,
         sprayBody({
@@ -886,6 +838,13 @@ describe('planting capture (FR-203)', () => {
           productId: product.id,
           sprayedOn: '2026-10-10',
           occurredAt: '2026-10-10T05:00:00.000Z',
+          rateLPerHa: 2.5,
+          waterLPerHa: 200,
+          operator: 'Thabo Mokoena',
+          equipment: 'Orchard sprayer 2',
+          windKph: 12,
+          tempC: 24,
+          targetPest: 'Powdery mildew',
         }),
       );
 
@@ -894,6 +853,16 @@ describe('planting capture (FR-203)', () => {
       expect(report.map((r) => r.sprayedOn)).toEqual(['2026-10-10', '2026-10-01']);
       expect(report[0]!.productName).toBe('Cyprodinex 50 WG');
       expect(report[0]!.phiDays).toBe(7);
+      expect(report[0]).toMatchObject({
+        activeIngredients: ['cyprodinil'],
+        rateLPerHa: 2.5,
+        waterLPerHa: 200,
+        operator: 'Thabo Mokoena',
+        equipment: 'Orchard sprayer 2',
+        windKph: 12,
+        tempC: 24,
+        targetPest: 'Powdery mildew',
+      });
     });
 
     it('narrows to one block', async () => {
@@ -903,7 +872,7 @@ describe('planting capture (FR-203)', () => {
         a.userId,
         blockBody({ farmId: a.farmId, code: 'B13' }),
       );
-      const product = await aChemicalProduct({});
+      const product = await aChemicalProduct(a, {});
       await service.recordSpray(
         a.userId,
         sprayBody({ farmId: a.farmId, landUnitId: blockA, productId: product.id }),
@@ -922,7 +891,7 @@ describe('planting capture (FR-203)', () => {
     it('narrows to a date range on the spray day, not the row-written day', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({});
+      const product = await aChemicalProduct(a, {});
       await service.recordSpray(
         a.userId,
         sprayBody({
@@ -956,7 +925,7 @@ describe('planting capture (FR-203)', () => {
       const a = await tenant('Crop');
       const b = await tenant('Other');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({});
+      const product = await aChemicalProduct(a, {});
       await service.recordSpray(
         a.userId,
         sprayBody({ farmId: a.farmId, landUnitId, productId: product.id }),
@@ -970,7 +939,7 @@ describe('planting capture (FR-203)', () => {
       // identical noon instant (`sprayedInstant`) — an ordinary case, not a contrived one.
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({});
+      const product = await aChemicalProduct(a, {});
       const [lowerId, higherId] = [uuidv7(), uuidv7()].sort() as [string, string];
 
       // Inserted in ASCENDING id order deliberately — so a naive scan-order/insertion-order result
@@ -1005,7 +974,7 @@ describe('planting capture (FR-203)', () => {
     });
   });
 
-  describe('harvest capture (FR-207) — COMPLIANCE-GATED (US-030)', () => {
+  describe('harvest capture (FR-207) — farmer-owned log', () => {
     it('records a harvest as an append-only event scoped to the BLOCK, not a herd', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
@@ -1042,10 +1011,10 @@ describe('planting capture (FR-203)', () => {
       expect(captured.payload).not.toHaveProperty('phiOverride');
     });
 
-    it("US-030's own gherkin: blocks a harvest inside a spray's PHI, naming the product/date/earliest date", async () => {
+    it('records a harvest inside the farmer-entered interval; the reminder is not authoritative', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
+      const product = await aChemicalProduct(a, { name: 'Cyprodinex 50 WG', phiDays: 21 });
       await service.recordSpray(
         a.userId,
         sprayBody({
@@ -1057,21 +1026,20 @@ describe('planting capture (FR-203)', () => {
         }),
       );
 
-      await expect(
-        service.recordHarvest(
-          a.userId,
-          harvestBody({ farmId: a.farmId, landUnitId, harvestedOn: '2026-03-15' }),
-        ),
-      ).rejects.toThrow(/Cyprodinex 50 WG.*2026-03-01.*2026-03-22/s);
+      const captured = await service.recordHarvest(
+        a.userId,
+        harvestBody({ farmId: a.farmId, landUnitId, harvestedOn: '2026-03-15' }),
+      );
 
       const rows = await elevated.db.select().from(events).where(eq(events.type, 'harvest'));
-      expect(rows).toHaveLength(0);
+      expect(rows).toHaveLength(1);
+      expect(captured.payload).toMatchObject({ harvestedOn: '2026-03-15' });
     });
 
     it('US-030: proceeds normally once the PHI clears', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 21 });
+      const product = await aChemicalProduct(a, { phiDays: 21 });
       await service.recordSpray(
         a.userId,
         sprayBody({
@@ -1094,7 +1062,7 @@ describe('planting capture (FR-203)', () => {
     it('a spray with no PHI on record blocks nothing', async () => {
       const a = await tenant('Crop');
       const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: null });
+      const product = await aChemicalProduct(a, { phiDays: null });
       await service.recordSpray(
         a.userId,
         sprayBody({ farmId: a.farmId, landUnitId, productId: product.id, sprayedOn: '2026-03-01' }),
@@ -1115,7 +1083,7 @@ describe('planting capture (FR-203)', () => {
         a.userId,
         blockBody({ farmId: a.farmId, code: 'B13' }),
       );
-      const product = await aChemicalProduct({ phiDays: 21 });
+      const product = await aChemicalProduct(a, { phiDays: 21 });
       await service.recordSpray(
         a.userId,
         sprayBody({
@@ -1134,7 +1102,7 @@ describe('planting capture (FR-203)', () => {
       expect(captured.payload).not.toHaveProperty('phiOverride');
     });
 
-    it("4d·4: blocks on an ancestor block's pre-split spray history, not just the leaf's own", async () => {
+    it('records on a split block even when its parent has an overlapping spray reminder', async () => {
       const a = await tenant('Crop');
       const parentId = await block(a);
       const child = await land.createLandUnit(
@@ -1149,7 +1117,7 @@ describe('planting capture (FR-203)', () => {
         .where(eq(landUnits.id, child.id));
       const splitAt = childRow!.createdAt;
       const sprayedOn = new Date(splitAt.getTime() - 24 * 60 * 60 * 1000);
-      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
+      const product = await aChemicalProduct(a, { name: 'Cyprodinex 50 WG', phiDays: 21 });
       // Sprayed on the PARENT, before the split.
       await service.recordSpray(
         a.userId,
@@ -1162,113 +1130,15 @@ describe('planting capture (FR-203)', () => {
         }),
       );
 
-      await expect(
-        service.recordHarvest(
-          a.userId,
-          harvestBody({
-            farmId: a.farmId,
-            landUnitId: child.id,
-            harvestedOn: sprayedOn.toISOString().slice(0, 10),
-          }),
-        ),
-      ).rejects.toThrow(/Cyprodinex 50 WG/);
-    });
-
-    it('FR-205: an override is accepted, stores the reason and audits it — never silent', async () => {
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-      const product = await aChemicalProduct({ name: 'Cyprodinex 50 WG', phiDays: 21 });
-      await service.recordSpray(
-        a.userId,
-        sprayBody({
-          farmId: a.farmId,
-          landUnitId,
-          productId: product.id,
-          sprayedOn: '2026-03-01',
-          occurredAt: '2026-03-01T08:00:00.000Z',
-        }),
-      );
-
       const captured = await service.recordHarvest(
         a.userId,
         harvestBody({
           farmId: a.farmId,
-          landUnitId,
-          harvestedOn: '2026-03-15',
-          phiOverride: { reason: 'Export deadline — buyer contract on file' },
+          landUnitId: child.id,
+          harvestedOn: sprayedOn.toISOString().slice(0, 10),
         }),
       );
-
-      expect(captured.payload).toMatchObject({
-        phiOverride: { reason: 'Export deadline — buyer contract on file', by: a.userId },
-      });
-
-      const audit = await elevated.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.recordId, captured.id));
-      expect(audit).toHaveLength(1);
-      expect(audit[0]!.action).toBe('phi_override');
-      expect(audit[0]!.userId).toBe(a.userId);
-    });
-
-    it('never carries an override for a harvest the guard did not actually block', async () => {
-      // A client that sent a reason speculatively (its own local preview disagreed with the
-      // server) must not get a false "overridden" audit trail for a block that was never blocked.
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-
-      const captured = await service.recordHarvest(
-        a.userId,
-        harvestBody({
-          farmId: a.farmId,
-          landUnitId,
-          phiOverride: { reason: 'Just in case' },
-        }),
-      );
-
-      expect(captured.payload).not.toHaveProperty('phiOverride');
-      const audit = await elevated.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.recordId, captured.id));
-      expect(audit).toHaveLength(0);
-    });
-
-    it('is idempotent BEFORE validation: a re-flushed harvest does not re-run the guard or double-audit', async () => {
-      const a = await tenant('Crop');
-      const landUnitId = await block(a);
-      const product = await aChemicalProduct({ phiDays: 21 });
-      await service.recordSpray(
-        a.userId,
-        sprayBody({
-          farmId: a.farmId,
-          landUnitId,
-          productId: product.id,
-          sprayedOn: '2026-03-01',
-          occurredAt: '2026-03-01T08:00:00.000Z',
-        }),
-      );
-      const body = harvestBody({
-        farmId: a.farmId,
-        landUnitId,
-        harvestedOn: '2026-03-15',
-        phiOverride: { reason: 'Export deadline' },
-      });
-
-      const first = await service.recordHarvest(a.userId, body);
-      const again = await service.recordHarvest(a.userId, body);
-
-      expect(again.id).toBe(first.id);
-      const rows = await app.asUser(a.userId, (tx) =>
-        tx.select().from(events).where(eq(events.type, 'harvest')),
-      );
-      expect(rows).toHaveLength(1);
-      const audit = await elevated.db
-        .select()
-        .from(auditLog)
-        .where(eq(auditLog.recordId, first.id));
-      expect(audit).toHaveLength(1);
+      expect(captured.landUnitId).toBe(child.id);
     });
 
     it('refuses a harvest against a block that does not exist on this farm', async () => {

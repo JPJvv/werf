@@ -333,7 +333,7 @@ The two-certificate thing catches everyone once. CloudFront only reads certifica
 □ Alerts wired, each with a runbook link (NFR-705)
 □ Replication slot lag alarm                   ← the WAL footgun
 □ Per-farm sync health dashboard (NFR-710)
-□ Sentry PII scrubbing verified with a real 13-digit test
+□ Telemetry verified to contain no farm record payloads or stable farmer identifiers (ADR-0013)
 □ Smoke tests pass against production
 □ Rollback rehearsed
 □ On-call rota exists and someone has acknowledged it

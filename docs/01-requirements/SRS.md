@@ -15,7 +15,11 @@ Audience: the development team (human and AI), QA, and any third party assessing
 
 ### 1.2 Scope
 
-**Werf will:** record and report on animals, fields, labour, wages, finances, inventory, and compliance for a single farm business, potentially spanning multiple farms and enterprises; operate fully offline and synchronise when connectivity permits; generate the statutory and audit documents South African farmers are required to produce.
+**Werf will:** act as a private farmer-controlled logbook, planner and calculator for animals,
+fields, labour, wages, finances and inventory across the farms and enterprises the farmer chooses;
+operate fully offline and synchronise when connectivity permits; and generate farmer-initiated
+records or exports. Werf is not an authority, does not approve farm decisions and does not report
+farm activity to authorities or third parties (ADR-0013).
 
 **Werf will not:** trade livestock, lend money, formulate rations, control irrigation, file tax returns, replace an accounting general ledger, or require hardware.
 
@@ -194,7 +198,10 @@ Functional requirements are catalogued separately in [functional-requirements.md
 
 **SRS-19.** Language is a **user** preference, not a farm preference. The owner reads English; the manager reads Afrikaans; the same farm.
 
-**SRS-20.** Generated statutory documents (contracts, payslips, privacy notices) render in the **recipient's** language, not the generator's. A payslip for an Afrikaans-speaking worker is in Afrikaans regardless of who ran payroll. This is a POPIA openness and BCEA fairness requirement, not a nicety.
+**SRS-20.** Generated statutory documents (employment particulars, payslips, privacy notices) render
+in the **recipient's** language, not the generator's. Phase 5 provides printable PDF and, for
+editable employment particulars, Word (`.docx`) output; spreadsheet registers use the farmer's
+chosen interface language.
 
 ### 3.6 Jurisdiction
 
@@ -204,7 +211,9 @@ Functional requirements are catalogued separately in [functional-requirements.md
 
 **SRS-26.** **No South African concept may name a generic thing.** `bceaThreshold` in `packages/core` is a defect; `earningsThreshold` on the interface with `BCEA_THRESHOLD` inside `jurisdictions/za/` is correct. `BCEA`, `POPIA`, `SD13`, `UIF`, `SARS`, `SAPS`, `SIZA` appear only in `jurisdictions/za/`, in the ZA legal pack, and in ZA user-facing copy.
 
-**SRS-27.** Reference data (chemical registrations, veterinary withdrawal periods, public holidays, regulatory rates) is **filtered by the farm's jurisdiction** on sync. A South African device never downloads Namibian withdrawal periods.
+**SRS-27.** Public holidays and genuinely server-authoritative payroll rates are filtered by the
+farm's jurisdiction. Crop and veterinary products and intervals are farm-owned inputs, not public
+reference data (ADR-0013).
 
 > **Why build the seam for a country we do not serve:** the `jurisdiction` column costs one line today and a migration across 10,000 partitioned farms in year three. The interface costs one indirection today and a rewrite of the most legally-dangerous code in the system later. Both are cheap wrongs if the second country never comes. See [ADR-0006](../03-architecture/adr/ADR-0006-multi-jurisdiction.md) — and note what it refuses: no rules engine, no DSL, no plugin loader, no guessing.
 
@@ -225,6 +234,11 @@ Functional requirements are catalogued separately in [functional-requirements.md
 **SRS-33.** Export completes within 24 hours and is delivered as a signed, expiring link.
 
 **SRS-34.** Import supports CSV with column mapping, and named importers for BenguFarm, Farmbrite, SA Stud Book (Logix), and generic Excel.
+
+**SRS-35.** Phase-specific working documents are not deferred to the Phase 7 full-data export.
+Labour provides farmer-initiated PDF/DOCX/XLSX outputs for the standard forms and an accountant pack.
+Sensitive columns are excluded by default; generation is role-gated, audit-logged and never sent to
+a third party automatically (ADR-0015).
 
 > Migration-in is a growth feature and migration-out is a trust feature. Both are Phase 7. A product that traps data does not get recommended at a farmers' day.
 

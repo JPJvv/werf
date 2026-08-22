@@ -31,6 +31,14 @@ export const newInventoryItemSchema = z.object({
   /** Free text, like `planting.density`'s unit — "kg", "L", "bag", "25kg bag": too many real
    *  units across chemicals/fertiliser/feed/medicine for a closed set. */
   unit: z.string().min(1),
+  /** Optional facts copied by the farmer from their own product label. Werf does not verify or
+   * authorise these values; it preserves them and uses `phiDays` for date arithmetic only. */
+  registrationNumber: z.string().min(1).nullable().default(null),
+  activeIngredients: z.array(z.string().min(1)).nullable().default(null),
+  phiDays: z.number().int().nonnegative().nullable().default(null),
+  reentryHours: z.number().int().nonnegative().nullable().default(null),
+  meatWithdrawalDays: z.number().int().nonnegative().nullable().default(null),
+  milkWithdrawalHours: z.number().int().nonnegative().nullable().default(null),
 });
 export type NewInventoryItem = z.infer<typeof newInventoryItemSchema>;
 

@@ -1,22 +1,17 @@
 /**
- * The half of the residue register the DEVICE can answer for itself (FR-131) — COMPLIANCE-GATED.
+ * The half of the private interval-reminder history the device can answer for itself (FR-131).
  *
- * The server derives the authoritative register from the whole log, including doses recorded on a
+ * The server derives a complete cross-device view from the whole log, including doses recorded on a
  * phone this one has never heard of. But a capture made five minutes ago in a dead zone has not
  * reached the server and cannot be in that answer, and it is exactly the capture a farmer wants to
  * see: a death recorded inside a withholding this morning is a fact about a carcass that is still
  * on the farm.
  *
- * ⭐ It runs `meatWithdrawalFor` / `meatWithdrawalForMob` — the same functions the at-capture guard
- * runs — rather than a second, similar-looking rule. §2h's sharpest lesson in this repo was two
- * client mechanisms judging one food-safety boundary through two computations, one of them
- * narrower; there is one here, so this screen cannot quietly say a disposal is clear that the
- * capture screen refused.
+ * It runs `meatWithdrawalFor` / `meatWithdrawalForMob` — the same functions the capture screen
+ * uses — rather than a second, similar-looking calculation.
  *
- * ⛔ It is a PREVIEW, exactly as the capture guard is. The clear date comes from the device's cached
- * product register, and the authoritative one is computed server-side at treatment time (ADR-0005).
- * A device with a stale cache can be wrong at the margin, and the server's answer — when it arrives
- * — supersedes this one row for row.
+ * Legacy events may still use the device's compatibility cache; current events carry the farmer's
+ * interval snapshot. Either way the view is advisory and private.
  */
 
 import { useMemo } from 'react';

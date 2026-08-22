@@ -1,9 +1,7 @@
 /**
  * Recording a spray (FR-204), tested as a pure function on observable output: does a capture
- * produce the right append-only `spray` event, is the PHI clear date computed and stored (never
- * recomputed later — ADR-0005), is it omitted rather than zeroed when the product carries none,
- * and is it scoped to the BLOCK rather than a herd? Asserted on what a farmer or an auditor would
- * see — never on implementation.
+ * produce the right append-only event, preserve the farmer's product snapshot, calculate the
+ * entered interval, and scope it to the block?
  */
 
 import { describe, expect, it } from 'vitest';
@@ -25,6 +23,7 @@ function input(overrides: Partial<SprayInput> = {}): SprayInput {
     occurredAt: OCCURRED,
     sprayedOn: '2026-10-05',
     productId: PRODUCT_ID,
+    productName: 'Orchard Mix',
     activeIngredients: ['cyprodinil'],
     createdBy: USER_ID,
     ...overrides,
@@ -55,6 +54,7 @@ describe('recordSpray (FR-204)', () => {
     expect(event.type).toBe('spray');
     expect(event.payload).toEqual({
       productId: PRODUCT_ID,
+      productName: 'Orchard Mix',
       activeIngredients: ['cyprodinil'],
       sprayedOn: '2026-10-05',
     });
@@ -109,6 +109,7 @@ describe('recordSpray (FR-204)', () => {
 
     expect(event.payload).toEqual({
       productId: PRODUCT_ID,
+      productName: 'Orchard Mix',
       activeIngredients: ['cyprodinil'],
       sprayedOn: '2026-10-05',
       rateLPerHa: 2.5,
@@ -128,8 +129,10 @@ describe('recordSpray (FR-204)', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('refuses no active ingredients', () => {
-    expect(() => recordSpray(input({ activeIngredients: [] }))).toThrow(ValidationError);
+  it('accepts a named product without optional active ingredients', () => {
+    const { activeIngredients: _ignored, ...withoutIngredients } = input();
+    const event = recordSpray(withoutIngredients);
+    expect(event.payload).toMatchObject({ productName: 'Orchard Mix' });
   });
 
   it('refuses a spray day that is not a calendar date', () => {

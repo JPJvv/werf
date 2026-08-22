@@ -260,6 +260,13 @@
       "when": 1787204768701,
       "tag": "0036_feed_event",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787246850414,
+      "tag": "0037_giant_mauler",
+      "breakpoints": true
     }
   ]
 }

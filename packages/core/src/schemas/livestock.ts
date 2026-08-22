@@ -206,22 +206,15 @@ export const recordPurchaseRequestSchema = z.object({
 });
 export type RecordPurchaseRequest = z.infer<typeof recordPurchaseRequestSchema>;
 
-/**
- * Mark an animal missing (FR-605) — COMPLIANCE-GATED (legal-compliance.md § 3.2, stock theft).
- *
- * `lastSeenGeojson` is REQUIRED and not nullable, which is the whole point of "GPS-anchored": a
- * missing report with no point is of little use to the SAPS Stock Theft Unit, and it is the field
- * an evidence pack is built around. Making it optional "for convenience" would quietly hollow out
- * the one record this exists to produce.
- */
+/** Mark an animal missing (FR-605). A GPS point makes the private record more useful but is optional. */
 export const recordMissingRequestSchema = z.object({
   id: uuidV7Schema,
   farmId: uuidSchema,
   animalId: uuidSchema,
   /** When it was last seen, on the farm — days before this is captured, typically. */
   occurredAt: timestampSchema,
-  /** Where it was last seen, as GeoJSON. Required. */
-  lastSeenGeojson: geoJsonStringSchema,
+  /** Where it was last seen, as GeoJSON, when the farmer chooses to capture it. */
+  lastSeenGeojson: geoJsonStringSchema.optional(),
   cause: z.string().min(1).optional(),
 });
 export type RecordMissingRequest = z.infer<typeof recordMissingRequestSchema>;
@@ -307,15 +300,9 @@ export const recordFeedRequestSchema = z.object({
 });
 export type RecordFeedRequest = z.infer<typeof recordFeedRequestSchema>;
 
-/**
- * Health capture (FR-130/131/132/133) — COMPLIANCE-GATED (legal-compliance.md § 3). The fields
- * every treatment / vaccination / dip carries. The sharp part: the client sends a `productId`, NOT
- * the withdrawal period. The server resolves the veterinary product's REGISTERED meat/milk
- * withdrawal from reference data (by the farm's jurisdiction) and computes+stores the clear dates on
- * the event AT CAPTURE (ADR-0005, FR-131). A withdrawal number never crosses the wire and never
- * appears in code (.claude/rules/domain.md); `product` (the name) is filled server-side too, so a
- * client cannot claim a shorter withdrawal by naming a different product than the one it selected.
- */
+/** Health capture (FR-130/131/132/133). Product and withdrawal facts are copied from the farmer's
+ * own inventory entry. Werf preserves the snapshot and calculates reminder dates; it neither
+ * verifies the label nor authorises the farmer's decision. */
 const healthCaptureBase = {
   /** Client-generated UUIDv7 for the event row. */
   id: uuidV7Schema,
@@ -328,9 +315,12 @@ const healthCaptureBase = {
   occurredAt: timestampSchema,
   /** The farm-local treatment DAY (YYYY-MM-DD) — the base for the withdrawal clear-date arithmetic. */
   administeredOn: dateSchema,
-  /** The veterinary_products row the farmer selected. The server resolves the registered withdrawal
-   *  period AND the product name from it — never a withdrawal number on the wire. */
+  /** The farm-owned medicine inventory item selected by the farmer. */
   productId: uuidSchema,
+  productName: z.string().min(1),
+  registrationNumber: z.string().min(1).nullable().default(null),
+  meatWithdrawalDays: z.number().int().nonnegative().nullable().default(null),
+  milkWithdrawalHours: z.number().int().nonnegative().nullable().default(null),
   /** Which herd/enterprise this event belongs to (FR-113). */
   enterpriseId: uuidSchema.nullable().default(null),
   /** Groups one dosing run across many animals (FR-112). */
@@ -339,7 +329,7 @@ const healthCaptureBase = {
   notes: z.string().min(1).nullable().default(null),
 } as const;
 
-/** Record a treatment (FR-130/131): the registered product, batch, dose, route, who gave it, why. */
+/** Record a treatment (FR-130/131): farmer product snapshot, batch, dose, route, giver and reason. */
 export const recordTreatmentRequestSchema = z.object({
   ...healthCaptureBase,
   batch: z.string().min(1).optional(),
@@ -476,29 +466,10 @@ export const recordMobTallyRequestSchema = z
 export type RecordMobTallyRequest = z.infer<typeof recordMobTallyRequestSchema>;
 
 /**
- * One entry on the residue register (FR-131) — COMPLIANCE-GATED. A disposal that took head out of
- * the herd while something standing in it was still inside an active MEAT withholding.
- *
- * ⭐ This is a READ contract, and it is the answer to two separate holes that turn out to be one
- * surface.
- *
- * The first is that `withinWithdrawal` was being STAMPED on death and tally payloads and read by
- * nothing: a farmer who was stopped on "Slaughtered", tapped "Died" instead and carried on had that
- * circumstance recorded in a column an auditor would have needed hand-written SQL to find.
- *
- * The second is the cross-device race, which no ordering can close. Device A records Monday's dip.
- * Device B, which has never seen it, tallies forty head to the abattoir on Tuesday. Both captures
- * are honest, both are offline, and neither device can know about the other. The server sees them in
- * arrival order and the disposal may legitimately arrive FIRST, pass the guard, and be stored clean.
- * A refusal days later would be the wrong answer — the truck has gone; refusing the record only
- * loses it — so the disposal is kept and the circumstance is surfaced here instead.
- *
- * ⭐ `knownAtCapture` and `withinWithdrawal` are two different facts and are deliberately not
- * collapsed. `withinWithdrawal` is what is true NOW, re-derived from the whole log; `knownAtCapture`
- * is whether the server could already say so when the disposal was written. The pair is what
- * distinguishes "the product told the farmer and they proceeded" from "nobody could have known" —
- * and the second is the one that says a guard was structurally unable to fire, which is the finding
- * an auditor and a residue traceback both actually want.
+ * One entry in the farm's private interval-reminder history (FR-131). It compares a disposal with
+ * farmer-entered withdrawal facts without judging or blocking the disposal.
+ * It is re-derived across synced devices. `knownAtCapture` distinguishes a reminder available on
+ * the recording device from a comparison discovered after another device's records arrived.
  */
 export const residueFlagSchema = z.object({
   /** The stored disposal event this concerns. */
@@ -517,7 +488,7 @@ export const residueFlagSchema = z.object({
   /**
    * True when the head went into the FOOD CHAIN — a sale, a slaughter. A death or a theft reduces
    * the count identically and is on the register for the record, but it is not a residue event and
-   * must never be refused; conflating the two is how a guard teaches people to work around it.
+   * is still kept as a useful historic comparison.
    */
   intoFoodChain: z.boolean(),
   /**

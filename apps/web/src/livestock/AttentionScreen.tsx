@@ -1,29 +1,7 @@
 /**
- * "Needs your attention" — the residue register (FR-131), COMPLIANCE-GATED (legal-compliance.md § 3).
- *
- * ⭐ This screen is the reader two separate holes turned out to share.
- *
- * The first: `withinWithdrawal` was being stamped onto death and tally payloads by the server and
- * read by NOTHING — no screen, no report, no test. A farmer who was stopped on "Slaughtered",
- * tapped "Died" instead and carried on had that circumstance recorded in a column an auditor would
- * have needed hand-written SQL to reach. Writing a field nobody reads is the same defect as reading
- * one nobody writes.
- *
- * The second: the cross-device race, which no send-ordering can close. Device A records Monday's
- * dip; device B, which has never heard of it, tallies forty head to the abattoir on Tuesday. Both
- * captures are honest and offline. The server sees them in ARRIVAL order and the disposal may
- * legitimately land first and pass the guard. Refusing it later is the wrong answer — the truck has
- * gone, and a refusal days after the fact only loses the record — so the disposal is kept and
- * surfaced here.
- *
- * ⭐ TWO SOURCES, and the screen is honest about which is which. The server's register is
- * authoritative and is the only one that can see the other phone's dip; the device's own derivation
- * covers what this phone captured and has not sent yet, which the server cannot possibly know
- * about. Where both have a row, the server's wins — it has strictly more of the log.
- *
- * ⛔ Nothing on this screen is a reprimand and nothing here is a refusal. Most of these rows record
- * something the farmer could not have known at the time, and one of them — a death — is not a
- * food-chain event at all. A register that scolds is one people stop opening.
+ * Private interval reminders calculated from farmer-entered product facts. Local unsent records
+ * and the synced farm log are merged so the farmer can review all known dates. This screen neither
+ * instructs the farmer nor reports a record outside the farm.
  */
 
 import { useState } from 'react';
@@ -39,7 +17,7 @@ import { useAnimalLabels } from './LocalIdentifiers';
 import { usePhiRegister } from '../crops/LocalPhiRegister';
 import { useLocalPhiFlags } from '../crops/phiRegister';
 import { useEffectiveLandUnits } from '../land/LocalLand';
-import { useChemicalProducts } from '../crops/LocalChemicalProducts';
+import { useEffectiveInventoryItems } from '../inventory/stock';
 
 /** One row as the screen renders it, whichever source it came from. */
 interface Row {
@@ -152,7 +130,7 @@ export function AttentionScreen() {
   const phiServer = usePhiRegister();
   const phiLocal = useLocalPhiFlags();
   const landUnits = useEffectiveLandUnits();
-  const products = useChemicalProducts();
+  const products = useEffectiveInventoryItems();
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState(false);
 

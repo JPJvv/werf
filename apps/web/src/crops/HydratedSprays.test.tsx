@@ -1,8 +1,6 @@
 /**
  * The two-device conflict matrix for sprays (FR-204/FR-211): a spray another device recorded, or
- * this device's OWN spray round-tripping back down with its server-resolved PHI, must show up on
- * the spray-history screen. Mirrors `HydratedFertiliser.test.tsx`, one compliance-gated field
- * family over.
+ * this device's OWN spray round-tripping back down, must show up on the farmer's spray history.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -110,6 +108,8 @@ async function hydrateSpray(overrides: Partial<Record<string, unknown>> = {}): P
       occurred_at: '2026-10-05T05:00:00.000Z',
       payload: JSON.stringify({
         productId: PRODUCT_ID,
+        productName: 'Cyprodinex 50 WG',
+        registrationNumber: 'L1234',
         activeIngredients: ['cyprodinil'],
         sprayedOn: '2026-10-05',
         phiDays: 7,
@@ -142,7 +142,7 @@ describe('spray hydration — a spray another device sent (FR-204/FR-211)', () =
     expect(screen.getByText('2026-10-12')).toBeTruthy();
   });
 
-  it('⭐ the hydrated echo of THIS device’s own spray fills in the PHI the local capture never carried', async () => {
+  it('⭐ the hydrated echo of this device’s own spray keeps the farmer-entered snapshot', async () => {
     const sprayId = '0190f3a0-0000-7000-8000-00000000e003';
     window.localStorage.setItem(
       SPRAYS_KEY,
@@ -154,14 +154,18 @@ describe('spray hydration — a spray another device sent (FR-204/FR-211)', () =
           occurredAt: '2026-10-05T05:00:00.000Z',
           sprayedOn: '2026-10-05',
           productId: PRODUCT_ID,
+          productName: 'Cyprodinex 50 WG',
+          registrationNumber: 'L1234',
+          phiDays: 7,
+          earliestHarvestDate: '2026-10-12',
         },
       ]),
     );
     window.history.pushState({}, '', '/sprays');
     render(<App />);
 
-    // Before the hydrated echo lands: shown, but no confirmed PHI yet.
-    expect(await screen.findByText(/phi not yet confirmed/i)).toBeTruthy();
+    // Before the echo lands, the capture already holds the farmer-entered reminder snapshot.
+    expect(await screen.findByText('2026-10-12')).toBeTruthy();
 
     // The same spray round-trips back through the server with the SAME id, now carrying the PHI.
     await hydrateSpray({ id: sprayId });
@@ -184,6 +188,7 @@ describe('⭐ inventory lot reference survives the down-sync mapping (Phase 4e, 
       occurred_at: '2026-10-05T05:00:00.000Z',
       payload: JSON.stringify({
         productId: PRODUCT_ID,
+        productName: 'Cyprodinex 50 WG',
         activeIngredients: ['cyprodinil'],
         sprayedOn: '2026-10-05',
       }),
@@ -201,6 +206,7 @@ describe('⭐ inventory lot reference survives the down-sync mapping (Phase 4e, 
       occurred_at: '2026-10-05T05:00:00.000Z',
       payload: JSON.stringify({
         productId: PRODUCT_ID,
+        productName: 'Cyprodinex 50 WG',
         activeIngredients: ['cyprodinil'],
         sprayedOn: '2026-10-05',
       }),

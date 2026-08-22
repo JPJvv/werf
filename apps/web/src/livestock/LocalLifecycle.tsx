@@ -75,11 +75,11 @@ export interface StoredSale extends StoredEventBase {
   readonly weightKg?: number;
 }
 
-/** A missing report (FR-605) → 'missing'. GPS-anchored: the point is required, not optional. */
+/** A missing record (FR-605) → 'missing'. The optional point remains farmer-controlled. */
 export interface StoredMissing extends StoredEventBase {
   readonly type: 'missing';
   readonly status: 'missing';
-  readonly lastSeenGeojson: string;
+  readonly lastSeenGeojson?: string;
   readonly cause?: string;
 }
 
@@ -137,7 +137,7 @@ export interface SaleCapture extends CaptureBase {
 }
 
 export interface MissingCapture extends CaptureBase {
-  readonly lastSeenGeojson: string;
+  readonly lastSeenGeojson?: string;
   readonly cause?: string;
 }
 
@@ -294,18 +294,20 @@ export function useRecordSale(): (capture: SaleCapture) => Promise<void> {
   );
 }
 
-/** Mark an animal missing (FR-605) → 'missing'. The last-seen point is required, not optional. */
+/** Mark an animal missing (FR-605) → 'missing', with a point when the farmer has one. */
 export function useRecordMissing(): (capture: MissingCapture) => Promise<void> {
   const store = useLifecycleStore();
   return useCallback(
     (c) => {
       const cause = c.cause === undefined ? {} : { cause: c.cause };
-      recordMissing({ ...domainBase(c), lastSeenGeojson: c.lastSeenGeojson, ...cause });
+      const location =
+        c.lastSeenGeojson === undefined ? {} : { lastSeenGeojson: c.lastSeenGeojson };
+      recordMissing({ ...domainBase(c), ...location, ...cause });
       return store.append({
         ...storedBase(c),
         type: 'missing',
         status: 'missing',
-        lastSeenGeojson: c.lastSeenGeojson,
+        ...location,
         ...cause,
       });
     },

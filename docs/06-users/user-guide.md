@@ -250,7 +250,8 @@ Override it if you must — reason required, recorded, and it shows up on your G
 
 ### Employees
 
-**Labour → Employees → Add.** Name, ID number, job, start date, wage rate.
+**People → Add person.** Start with the name and add the details you have. Missing contract or pay
+details show as **Incomplete**; you can still save the person and record their work.
 
 Werf generates the written employment contract the law requires — **in the language the employee reads**. Not the language you read. That is the requirement.
 
@@ -258,17 +259,20 @@ ID numbers are encrypted and shown as `•••••••••1234`. They ne
 
 ### Attendance
 
-**Labour → Attendance.** The worker enters their PIN. Works with no signal.
+**People → Hours.** Enter start/end or a total number of hours. PIN and location are optional. It
+works with no signal, and a weekly grid makes paper timesheets quick to capture at a desk.
 
 **Werf does not use fingerprints.** Fingerprints are special personal information under POPIA, and consent given by a worker to their employer is not really free consent. PIN and location do the job without the legal exposure.
 
 ### Piece work
 
-**Labour → Piece work.** Worker, block, units, rate.
+**People → Piece work.** Person, date, activity, block/camp, units and rate. Repeat the last entry or
+capture several people together.
 
-**Werf will not let you pay below the minimum wage on piece rates.** If someone picks 40 crates at R4 and that comes to less than the minimum for the hours they worked, Werf tops it up and shows you the top-up as its own line.
+If piece earnings are below the reference floor for the hours recorded, Werf calculates and shows a
+top-up as its own line. It warns clearly and leaves the decision with you.
 
-This is the most common wage mistake on South African farms. Now it cannot happen on yours.
+This is a common wage mistake; Werf makes the calculation and its source easy to see.
 
 ### Running payroll
 
@@ -284,8 +288,8 @@ This is the most common wage mistake on South African farms. Now it cannot happe
 > ⚠ **Maria S · overtime over the limit**
 > 14h worked, 10h is the weekly cap. Paid in full. Fix the roster.
 >
-> ⛔ **Sipho N · deductions too high**
-> Net would fall below the minimum. You cannot approve until this is fixed.
+> ⚠ **Sipho N · deductions may be too high**
+> Net would fall below the reference floor. Review the deduction or continue.
 
 Read these. They are the reason you are using Werf instead of a spreadsheet.
 
@@ -293,11 +297,22 @@ Read these. They are the reason you are using Werf instead of a spreadsheet.
 
 **When a pay period crosses 1 March**, Werf uses February's rate for February's days and March's rate for March's days, on the same payslip. It does this every year without being asked.
 
+### Download and share your records
+
+**People → Downloads.** Choose the period, people and file:
+
+- PDF for printing payslips, employment particulars and registers;
+- Word for editable employment particulars;
+- Excel for attendance, piece work, leave, payroll detail or the accountant pack.
+
+Werf downloads the file to you. It never sends or files it on your behalf.
+
 ### When the inspector arrives
 
 **Labour → Reports → Employment records.**
 
-One button. A PDF with every employee's name, occupation, hours worked, and pay, for three years back. Which is exactly what the law says you must keep and exactly what the inspector will ask for.
+One button. A printable PDF, with an Excel option, containing each employee's recorded name,
+occupation, hours and pay for the selected period.
 
 Inspectors do not make appointments. This is why you use this.
 

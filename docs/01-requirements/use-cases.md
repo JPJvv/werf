@@ -41,11 +41,11 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
 
 ---
 
-## UC-010 · Record a treatment and enforce the withdrawal period
+## UC-010 · Record a treatment and calculate a withdrawal reminder
 
 **Primary actor:** Farm manager or herdsman
-**Preconditions:** Animal exists; product reference data is synced locally.
-**Postcondition:** Treatment recorded; withdrawal period computed and enforced locally.
+**Preconditions:** Animal exists.
+**Postcondition:** Treatment recorded; optional reminder dates computed from the farmer's inputs.
 **Trigger:** An animal needs treating.
 
 ### Main flow
@@ -54,27 +54,28 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
 2. System shows the animal with its recent health history.
 3. Actor selects "Treat".
 4. Actor selects a product from the farm's medicine inventory.
-5. **System reads the meat and milk withdrawal periods from the local product reference table.**
+5. Actor reviews or enters optional meat and milk interval facts copied from the product label.
 6. Actor enters dose, route, and reason. System pre-fills dose from the product's label rate × the animal's last known weight, and the actor confirms or corrects.
 7. Actor confirms.
 8. System, locally:
    - writes the treatment event with `occurred_at`,
    - computes `meat_clear_date = occurred_at + meat_withdrawal_days`,
    - computes `milk_clear_date = occurred_at + milk_withdrawal_days`,
-   - sets a withdrawal flag on the animal,
+   - stores the product and interval snapshot used for the reminder,
    - decrements medicine inventory by the dose,
    - queues the write for sync.
 9. System confirms in under 50ms and returns to the animal.
 
 ### Alternates
 
-- **A4.1 — Product not in inventory.** Actor can add it inline from the chemical reference table. If it is not in the reference table either, allow free-text entry **with a warning that withdrawal cannot be enforced** and a flag on the record. Never block a treatment because our reference data is incomplete — the animal is standing in the crush.
+- **A4.1 — Product not in inventory.** Actor adds it inline with a name and any optional label facts
+  they want Werf to remember. No public register is required.
 - **A6.1 — No recent weight.** System asks for an estimated weight for dosing, marks it as estimated, and does not store it as a weight record.
 - **A8.1 — Group treatment.** Steps 1–7 apply to a selected mob; step 8 writes one event per animal with a shared `batch_id`. Inventory decrements once, by the total.
 
 ### Exceptions
 
-- **E5.1 — Product reference data is stale** (older than 30 days). Record the treatment, flag the record `reference_data_stale`, and prompt a sync. Never block.
+- **E5.1 — No interval entered.** Record the treatment without inventing a reminder date.
 - **E8.1 — Insufficient inventory.** Warn, allow override with a reason (the physical stock is right there; our count is what's wrong), and flag for stock take.
 
 > **Design note.** Every exception here resolves toward "record it anyway, flag it, move on." The animal does not wait for our data model. A system that blocks a treatment because of a reference-data gap will be abandoned within a week, and correctly so.
@@ -103,15 +104,18 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
    - apply deductions with statutory caps,
    - compute UIF against the ceiling in force,
    - compute net.
-7. **System presents a draft with compliance warnings first**, above the numbers:
+7. **System presents a draft with advisory warnings first**, above the numbers:
    - overtime over 10h/week,
    - deductions capped,
    - piece rates topped up,
-   - net below floor → **run blocked**,
-   - any employee paid below minimum → **run blocked**.
-8. Actor dispositions each warning (acknowledge, or go fix the underlying record).
+   - net below floor,
+   - a reference rate or employee fact Werf could not check.
+8. Actor reviews each warning and may correct the underlying record or continue. Warnings never
+   disable Calculate, Approve or Download.
 9. Actor approves.
-10. System generates payslips in each employee's language, writes an immutable audit row per employee, locks the period against further attendance edits, and produces the EFT batch and UIF export.
+10. System generates payslips in each employee's language, writes an immutable audit row per
+    employee, versions later corrections, and offers PDF payslips, the XLSX accountant pack and
+    purpose-specific EFT/UIF/SARS exports. It sends none of them automatically.
 
 ### Alternates
 
@@ -121,7 +125,11 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
 
 ### Exceptions
 
-- **E7.1 — Net below the statutory floor after deductions.** **Reject the run.** Do not clamp, do not warn-and-proceed. Name the employee and the offending deduction. A human decides.
+- **E7.1 — Net below the reference floor after deductions.** Warn above the totals. Name the employee,
+  offending deduction, calculated net and reference used. Do not silently clamp and do not reject;
+  the employer decides (ADR-0014).
+- **E7.3 — A regulatory reference is unavailable.** Preserve the captured hours and pay inputs,
+  name the check that could not run, and allow raw PDF/XLSX record export. Never guess a rate.
 - **E7.2 — An employee has no attendance at all.** Warn; allow exclusion with a reason (leave, absent, terminated); never pay zero silently.
 - **E10.1 — Payslip generation fails for one employee.** The whole run is atomic: roll back, report, do not part-generate. A payroll where 39 of 40 people were paid is worse than one where nobody was.
 
@@ -135,7 +143,7 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
 
 **Primary actor:** Farm owner or manager
 **Preconditions:** Animals recorded with identifiers and photos; brand registered in the system.
-**Postcondition:** Missing status recorded with evidentiary timestamp and GPS; evidence pack ready for SAPS.
+**Postcondition:** Missing status recorded with the farmer's date and, when available, GPS; the farmer may choose to create an evidence pack.
 **Trigger:** Animals are missing at a count.
 
 ### Main flow
@@ -143,11 +151,11 @@ Format: UC-xxx, with main flow, alternates (A), and exceptions (E).
 1. Actor does a count and finds a shortfall.
 2. Actor opens the mob, selects the missing animals.
 3. Actor selects "Mark missing".
-4. **System captures GPS and timestamp automatically** — this is evidence, not metadata — and prompts for last-known location and last-seen date.
-5. System sets status `missing` **locally, offline**, with the captured GPS and timestamp.
+4. System asks for the last-seen date and tries to add the current GPS point, explaining that the point is optional and stays in the private farm record.
+5. System sets status `missing` **locally, offline**, even when GPS is unavailable or declined.
 6. Actor requests a Stock Theft Evidence Pack.
 7. If offline: the request queues and the system says so plainly.
-8. When online, the server generates a PDF containing, per animal: photograph, visual tag, EID, brand mark, distinguishing features; plus the brand registration certificate reference, the ownership chain from acquisition, the last-seen GPS/timestamp, 12 months of movement history, treatment history establishing continuous possession, and an empty SAPS case number field.
+8. When online, the server generates a farmer-requested PDF containing the recorded facts; location is included only when the farm captured it.
 9. Actor takes the pack to the Stock Theft Unit.
 10. Actor enters the SAPS case number, which attaches to the incident.
 

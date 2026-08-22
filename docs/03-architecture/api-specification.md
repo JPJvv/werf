@@ -57,13 +57,11 @@ If you find yourself adding `POST /animals`, stop — that is the sync path, and
 
 ```json
 {
-  "type": "https://werf.co.za/errors/payroll-below-minimum",
-  "title": "Net pay below statutory minimum",
+  "type": "https://werf.co.za/errors/invalid-payroll-period",
+  "title": "Pay period ends before it starts",
   "status": 422,
-  "detail": "Deductions for Sipho Ndlovu would reduce net pay to R280.00, below the statutory minimum of R1,208.00 for 40 hours.",
-  "instance": "/v1/farms/019.../payroll/runs/019...",
-  "employeeId": "019...",
-  "gazetteReference": "GG 54075, 2026-02-03"
+  "detail": "The end date 2026-03-01 is before the start date 2026-03-31. Choose a valid period.",
+  "instance": "/v1/farms/019.../payroll/runs"
 }
 ```
 
@@ -183,7 +181,6 @@ POST /v1/farms/{farmId}/payroll/runs
   "status": "warned",
   "totalGross": { "amount": "48204.11", "currency": "ZAR" },
   "totalNet":   { "amount": "45890.22", "currency": "ZAR" },
-  "blocked": true,
   "warnings": [
     {
       "severity": "warning",
@@ -202,11 +199,11 @@ POST /v1/farms/{farmId}/payroll/runs
       "gazetteReference": "BCEA s10"
     },
     {
-      "severity": "blocking",
+      "severity": "warning",
       "code": "NET_BELOW_MINIMUM",
       "employeeId": "019...",
       "employeeName": "Sipho Ndlovu",
-      "message": "Deductions of R5,200.00 would reduce net pay below the statutory minimum. Reduce the garnishee or the accommodation deduction.",
+      "message": "Deductions of R5,200.00 would reduce net pay below the reference floor. Review the deductions or continue.",
       "gazetteReference": "BCEA s34"
     }
   ]
@@ -215,18 +212,21 @@ POST /v1/farms/{farmId}/payroll/runs
 
 ```
 GET  /v1/farms/{farmId}/payroll/runs/{runId}          → the draft with warnings
-POST /v1/farms/{farmId}/payroll/runs/{runId}/approve  → 200 | 422 if blocked
+POST /v1/farms/{farmId}/payroll/runs/{runId}/approve  → 200; warnings remain attached to the run
 GET  /v1/farms/{farmId}/payroll/runs/{runId}/payslips → payslips
 GET  /v1/payslips/{id}/pdf                            → 302 → presigned S3
-POST /v1/farms/{farmId}/payroll/runs/{runId}/exports  → { "format": "uif"|"sars"|"eft" }
+POST /v1/farms/{farmId}/payroll/runs/{runId}/exports  → { "format": "pdf"|"xlsx"|"uif"|"sars"|"eft" }
+POST /v1/farms/{farmId}/labour/documents              → { "document": "particulars"|"employees"|"attendance"|"piece_work"|"leave"|"employment_record", "format": "pdf"|"docx"|"xlsx", "from"?: "...", "to"?: "...", "employeeIds"?: [...] }
 ```
 
 **Design notes worth defending:**
 
 - **Creating a run does not approve it.** `POST /runs` computes and returns warnings. Approval is a second, explicit call. There is no `?autoApprove=true`, ever.
-- **`blocked: true` makes `/approve` return 422.** Not a soft warning. A run with a blocking warning cannot be approved through the API, so a client bug cannot pay someone below minimum.
 - **Every warning carries a `gazetteReference`.** When the farmer asks "says who?", the API has already answered.
-- **`severity: "warning"` never blocks.** Excess overtime is the *employer's* breach of the hours limit — but the worker still worked those hours and must be paid (US-022). Pay, then flag. Never withhold pay to enforce a rule against the employer.
+- **Warnings never make `/approve` return 422.** They are returned data shown before approval; only
+  structural integrity, authorisation or tenancy failures reject a request (ADR-0015).
+- **Documents are explicit downloads.** The API generates an audit-logged job and expiring link; it
+  does not email, file or send the output to a third party.
 - **This endpoint has no offline story and that is deliberate.** See [UC-020 step 2](../01-requirements/use-cases.md).
 
 ---

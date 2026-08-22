@@ -30,7 +30,7 @@ unattended run safe — Claude cannot declare victory on broken code.
 | **2** livestock | ✅ per checklist item, with two exceptions | **Low for 2c** (the crush UX is judgement). **Medium for 2d and 2f** — read [legal-compliance.md §4.3](../00-business/legal-compliance.md) first; withdrawal, animal-ID and stock-theft rules are regulated. |
 | **3** offline sync | ⚠️ per slice | Tenancy and conflict rules are data-integrity boundaries. Keep schema/RLS/sync-rule changes small and owner-trigger `sync-auditor` when the branch is being cleared. |
 | **4** crops & fields | ⚠️ mixed | CRUD is routine; chemical registration, PHI and re-entry logic require close review and effective-dated reference data. |
-| **5** labour & wages 🇿🇦 | ❌ **low — review every diff** | Payroll is legally consequential. Never run 5d–5e (engine and blocking rules) unattended. The owner triggers `compliance-checker`; an external labour-law review gates deployment. |
+| **5** people, work & pay 🇿🇦 | ❌ **low — review regulated diffs** | Build simple farmer forms and PDF/DOCX/XLSX outputs; compliance warns and never blocks. Run each 5d payroll rule as a small reviewed slice. The owner triggers `compliance-checker`; external legal review gates deployment. |
 | **6** finance & compliance 🇿🇦 | ⚠️ mixed | The mechanics are testable, but evidence-pack contents, POPIA access and statutory exports need human review. |
 | **7** hardening & pilot | ❌ low | Mostly judgement. Pilot farms and external security testing discover things the automated gate cannot. |
 

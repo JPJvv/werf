@@ -34,7 +34,7 @@ The reference device is a **Samsung Galaxy A15** (or equivalent: 4GB RAM, Snapdr
 | NFR-013 | API p95 latency (server-side) | ≤ 200ms | APM |
 | NFR-014 | API p99 latency | ≤ 800ms | APM |
 | NFR-015 | Payroll run, 100 employees, 1 month | ≤ 10s | Integration test |
-| NFR-016 | PDF evidence pack generation | ≤ 15s | Integration test |
+| NFR-016 | PDF/DOCX/XLSX working-document generation | ≤ 15s typical; ≤ 30s for 3-year employment record | Integration + open/render verification |
 | NFR-017 | Local DB footprint, 5,000 animals + 3y | ≤ 200MB | Instrumented test |
 
 **NFR-009 fails the build.** Not warns. Bundle size is a moral hazard: every PR adds 5KB and nobody notices until the app takes eleven seconds to load on the device your customers actually own. The gate is the only thing that works.
@@ -78,7 +78,7 @@ Full threat model and controls: [security.md](../05-operations/security.md).
 | NFR-209 | OWASP Top 10 addressed and documented | Security review per phase |
 | NFR-210 | Layered rate limiting: global API budget plus tighter auth/ceremony budgets; production counters shared across replicas; account-aware delay and edge/WAF controls | Unit + distributed integration/load test |
 | NFR-211 | Audit log immutable — no UPDATE/DELETE grant at the database level | Migration assertion + test |
-| NFR-212 | **PII scrubbed before leaving South Africa** (Sentry, logs, any AI feature) | Code requirement + test, not a settings checkbox |
+| NFR-212 | **No farm record enters third-party telemetry.** Any future offshore AI/telemetry feature needs a separate owner decision and explicit privacy design (ADR-0013) | Architecture + code tests |
 | NFR-213 | CSP with no `unsafe-inline`, no `unsafe-eval` | Header test in CI |
 | NFR-214 | Penetration test before public launch | External, scheduled Phase 7 |
 | NFR-215 | Local SQLite contains no unencrypted ID numbers or banking details | Code review + test |

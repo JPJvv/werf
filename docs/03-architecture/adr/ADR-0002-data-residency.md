@@ -48,7 +48,9 @@ The auth cost is real but bounded, and we would have paid it anyway: **30-day of
 
 ## Where data does leave
 
-Sentry (error tracking) is offshore. Therefore **PII scrubbing before transmission is a code requirement with a test (NFR-212)**, not a settings checkbox in a dashboard that someone can toggle. Any future AI feature faces the same gate: scrub, or establish a s72 ground, or process locally.
+**Superseded for telemetry by ADR-0013 (2026-08-20):** current product policy is stricter than
+this original decision. Farm records do not enter third-party telemetry at all. Any future AI or
+offshore telemetry feature requires a separate owner decision and privacy design.
 
 ## Multi-country amendment
 

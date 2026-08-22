@@ -47,11 +47,17 @@ assume §2.2 is wrong and say so rather than coding against it.
 
 ## Payroll (see legal-compliance.md §2.4 for the full algorithm)
 
+Payroll and labour forms are advisory under ADR-0014 and ADR-0015. Compliance concerns never reject
+the farmer's record, run or export. Structural integrity, authorisation and tenancy remain strict.
+
 - Piece rate below the minimum floor → TOP UP, and the top-up is a visible payslip line.
 - Overtime above the weekly cap → PAID IN FULL and flagged. Never withheld. It is the
   employer's breach of the hours rule; the worker still worked those hours.
 - Deductions capped at the statutory limit → warn.
-- Net below the statutory floor → REJECT the whole run. Never clamp silently.
+- Net below the statutory floor → WARN, generate the run, and never clamp silently.
+- Missing reference data → identify the calculation that could not be checked and preserve captured
+  inputs for raw export. The rate lookup still throws internally; orchestration turns that typed
+  failure into returned advisory data and never substitutes a guessed rate.
 - Warnings are returned data, not logs. They render above the numbers.
 - Every warning carries a gazetteReference. When the farmer asks "says who?",
   the answer is a Gazette number.

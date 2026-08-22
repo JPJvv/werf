@@ -55,6 +55,12 @@ export class InventoryService {
           category: input.category,
           name: input.name,
           unit: input.unit,
+          registrationNumber: input.registrationNumber,
+          activeIngredients: input.activeIngredients,
+          phiDays: input.phiDays,
+          reentryHours: input.reentryHours,
+          meatWithdrawalDays: input.meatWithdrawalDays,
+          milkWithdrawalHours: input.milkWithdrawalHours,
           createdBy: userId,
         })
         .onConflictDoNothing({ target: inventoryItems.id })

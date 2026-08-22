@@ -24,6 +24,7 @@ import {
   createElevatedDb,
   enterprises,
   events,
+  farms,
   farmUsers,
   inventoryItems,
   inventoryLots,
@@ -33,7 +34,6 @@ import {
   theftIncidentAnimals,
   theftIncidents,
   users,
-  veterinaryProducts,
   type AppDb,
   type ElevatedDb,
 } from '@werf/db';
@@ -45,6 +45,7 @@ import {
   ValidationError,
   schemas,
   uuidv7,
+  type InventoryItemCategory,
 } from '@werf/core';
 import { APP_CONFIG, APP_DB, ELEVATED_DB } from '../db/db.module';
 import { renderEvidencePackPdf } from './evidence-pack.pdf';
@@ -58,6 +59,16 @@ import { LivestockService } from './livestock.service';
 import { ConflictsService } from '../conflicts/conflicts.service';
 
 const BOOT_TIMEOUT_MS = 180_000;
+
+const productSnapshots = new Map<
+  string,
+  {
+    name: string;
+    registrationNumber: string | null;
+    meatWithdrawalDays: number | null;
+    milkWithdrawalHours: number | null;
+  }
+>();
 
 const registration = (label: string): schemas.RegisterRequest => ({
   business: {
@@ -164,6 +175,10 @@ const treatmentBody = (
     occurredAt: '2026-07-20T06:00:00.000Z',
     administeredOn: '2026-07-20',
     productId: over.productId,
+    productName: productSnapshots.get(String(over.productId))?.name ?? 'Farmer product',
+    registrationNumber: productSnapshots.get(String(over.productId))?.registrationNumber ?? null,
+    meatWithdrawalDays: productSnapshots.get(String(over.productId))?.meatWithdrawalDays ?? null,
+    milkWithdrawalHours: productSnapshots.get(String(over.productId))?.milkWithdrawalHours ?? null,
     ...over,
   });
 
@@ -178,6 +193,10 @@ const vaccinationBody = (
     occurredAt: '2026-07-20T06:00:00.000Z',
     administeredOn: '2026-07-20',
     productId: over.productId,
+    productName: productSnapshots.get(String(over.productId))?.name ?? 'Farmer product',
+    registrationNumber: productSnapshots.get(String(over.productId))?.registrationNumber ?? null,
+    meatWithdrawalDays: productSnapshots.get(String(over.productId))?.meatWithdrawalDays ?? null,
+    milkWithdrawalHours: productSnapshots.get(String(over.productId))?.milkWithdrawalHours ?? null,
     ...over,
   });
 
@@ -192,6 +211,10 @@ const dipBody = (
     occurredAt: '2026-07-20T06:00:00.000Z',
     administeredOn: '2026-07-20',
     productId: over.productId,
+    productName: productSnapshots.get(String(over.productId))?.name ?? 'Farmer product',
+    registrationNumber: productSnapshots.get(String(over.productId))?.registrationNumber ?? null,
+    meatWithdrawalDays: productSnapshots.get(String(over.productId))?.meatWithdrawalDays ?? null,
+    milkWithdrawalHours: productSnapshots.get(String(over.productId))?.milkWithdrawalHours ?? null,
     ...over,
   });
 
@@ -214,6 +237,7 @@ describe('weight capture (FR-140)', () => {
   let auth: AuthService;
   let service: LivestockService;
   let conflicts: ConflictsService;
+  let currentFixtureFarmId: string | null = null;
 
   beforeAll(async () => {
     pg = await startWerfTestDatabase();
@@ -253,6 +277,7 @@ describe('weight capture (FR-140)', () => {
 
   afterEach(async () => {
     await pg.reset();
+    currentFixtureFarmId = null;
   });
 
   afterAll(async () => {
@@ -273,6 +298,7 @@ describe('weight capture (FR-140)', () => {
 
   /** A single animal on the farm, so an animal-scoped weight has a real subject to point at. */
   async function anAnimal(farmId: string): Promise<string> {
+    currentFixtureFarmId = farmId;
     const [row] = await elevated.db
       .insert(animals)
       .values({ farmId, species: 'cattle', sex: 'female' })
@@ -283,6 +309,7 @@ describe('weight capture (FR-140)', () => {
   /** A mob on the farm, for the group-weight and tally paths. `initial_head_count` is set alongside
    *  `head_count` exactly as `recordMob` does it — the baseline the tally fold starts from. */
   async function aMob(farmId: string): Promise<string> {
+    currentFixtureFarmId = farmId;
     const [row] = await elevated.db
       .insert(mobs)
       .values({ farmId, name: 'Flock A', species: 'sheep', headCount: 300, initialHeadCount: 300 })
@@ -302,10 +329,13 @@ describe('weight capture (FR-140)', () => {
   /** A feed lot this tenant's own catalogue already holds (Phase 4e, FR-153) — created directly
    *  through Drizzle, the identical shortcut `crops.integration.test.ts`'s own `anInventoryLot`
    *  takes, since this describe wires `LivestockService` alone, not `InventoryService`. */
-  async function aFeedLot(farmId: string): Promise<string> {
+  async function aFeedLot(
+    farmId: string,
+    category: InventoryItemCategory = 'feed',
+  ): Promise<string> {
     const [item] = await elevated.db
       .insert(inventoryItems)
-      .values({ farmId, category: 'feed', name: 'Lucerne hay', unit: 'kg' })
+      .values({ farmId, category, name: `${category} test stock`, unit: 'kg' })
       .returning();
     const [lot] = await elevated.db
       .insert(inventoryLots)
@@ -314,24 +344,40 @@ describe('weight capture (FR-140)', () => {
     return lot!.id;
   }
 
-  /** A ZA veterinary product — reference data, written by the elevated admin path, never a farmer.
-   *  Defaults to a meat-28-day / milk-96-hour antibiotic; overlay the withdrawal a test cares about. */
+  /** A farm-owned medicine product. Defaults mirror the old fixture so interval arithmetic tests
+   * can keep concentrating on dates while the source of the facts is now the farmer's catalogue. */
   async function aVetProduct(
-    over: Partial<typeof veterinaryProducts.$inferInsert> = {},
+    over: {
+      readonly name?: string;
+      readonly registrationNumber?: string | null;
+      readonly meatWithdrawalDays?: number | null;
+      readonly milkWithdrawalHours?: number | null;
+      readonly species?: readonly string[];
+      readonly effectiveFrom?: string;
+      readonly effectiveTo?: string | null;
+    } = {},
   ): Promise<string> {
+    if (currentFixtureFarmId === null) {
+      const presentFarms = await elevated.db.select({ id: farms.id }).from(farms);
+      if (presentFarms.length !== 1) throw new Error('Create the treatment subject first');
+      currentFixtureFarmId = presentFarms[0]!.id;
+    }
+    const snapshot = {
+      name: over.name ?? 'Synthamycin LA (test)',
+      registrationNumber: over.registrationNumber ?? null,
+      meatWithdrawalDays: over.meatWithdrawalDays === undefined ? 28 : over.meatWithdrawalDays,
+      milkWithdrawalHours: over.milkWithdrawalHours === undefined ? 96 : over.milkWithdrawalHours,
+    };
     const [row] = await elevated.db
-      .insert(veterinaryProducts)
+      .insert(inventoryItems)
       .values({
-        jurisdiction: 'ZA',
-        name: 'Synthamycin LA (test)',
-        activeIngredients: ['oxytetracycline'],
-        species: ['cattle'],
-        meatWithdrawalDays: 28,
-        milkWithdrawalHours: 96,
-        effectiveFrom: '2020-01-01',
-        ...over,
+        farmId: currentFixtureFarmId,
+        category: 'medicine',
+        unit: 'ml',
+        ...snapshot,
       })
       .returning();
+    productSnapshots.set(row!.id, snapshot);
     return row!.id;
   }
 
@@ -1294,10 +1340,24 @@ describe('weight capture (FR-140)', () => {
       } as schemas.RecordMissingRequest);
 
       expect(missing.type).toBe('missing');
-      // The point is the whole value of the record to the Stock Theft Unit, so it must survive to
-      // the row — via the events geojson trigger, exactly as a camp boundary does.
+      // When entered, the useful optional point survives to the row via the events geojson trigger.
       expect(missing.locationGeojson).not.toBeNull();
       expect(JSON.parse(missing.locationGeojson!)).toMatchObject({ type: 'Point' });
+    });
+
+    it('records an animal missing when the farmer has no GPS point', async () => {
+      const a = await tenant('Alpha');
+      const animalId = await anAnimal(a.farmId);
+
+      const missing = await service.recordMissing(a.userId, {
+        id: uuidv7(),
+        farmId: a.farmId,
+        animalId,
+        occurredAt: new Date('2026-06-18T16:00:00.000Z'),
+      } as schemas.RecordMissingRequest);
+
+      expect(missing.type).toBe('missing');
+      expect(missing.locationGeojson).toBeNull();
     });
 
     it('refuses to report a SOLD animal missing', async () => {
@@ -1893,6 +1953,19 @@ describe('weight capture (FR-140)', () => {
       ).rejects.toThrow(NotFoundError);
     });
 
+    it('refuses a feed-out naming a non-feed inventory lot', async () => {
+      const a = await tenant('Alpha');
+      const mobId = await aMob(a.farmId);
+      const chemicalLot = await aFeedLot(a.farmId, 'chemical');
+
+      await expect(
+        service.recordFeed(
+          a.userId,
+          feedBody({ farmId: a.farmId, mobId, inventoryLotId: chemicalLot }),
+        ),
+      ).rejects.toThrow(NotFoundError);
+    });
+
     it('is idempotent on the client id', async () => {
       const a = await tenant('Alpha');
       const mobId = await aMob(a.farmId);
@@ -2260,7 +2333,7 @@ describe('weight capture (FR-140)', () => {
     });
   });
 
-  // ── Health capture (FR-130/131/132/133) — COMPLIANCE-GATED ────────────────────────────
+  // ── Farmer-entered health capture and reminders (FR-130/131/132/133) ──────────────────
   describe('health capture (FR-130/131/132/133)', () => {
     it('computes and stores the meat/milk withdrawal clear dates from the product reference data', async () => {
       // The client sends a productId and a treatment day — NOT a withdrawal number. The server
@@ -2363,10 +2436,7 @@ describe('weight capture (FR-140)', () => {
       expect(written).toHaveLength(0);
     });
 
-    it('refuses a registration not in force on the treatment day (ADR-0005), writing nothing', async () => {
-      // A product whose registration was superseded before the treatment. Resolving by id alone
-      // would apply a withdrawal from a version that did not apply on the day — the exact bug the
-      // date-versioning exists to prevent. It must read as "not found".
+    it('uses the farmer-entered product snapshot without policing an official effective date', async () => {
       const a = await tenant('Alpha');
       const animalId = await anAnimal(a.farmId);
       const productId = await aVetProduct({
@@ -2374,21 +2444,19 @@ describe('weight capture (FR-140)', () => {
         effectiveTo: '2020-01-01',
       });
 
-      await expect(
-        service.recordTreatment(
-          a.userId,
-          treatmentBody({ farmId: a.farmId, animalId, productId, administeredOn: '2026-07-20' }),
-        ),
-      ).rejects.toThrow(NotFoundError);
+      await service.recordTreatment(
+        a.userId,
+        treatmentBody({ farmId: a.farmId, animalId, productId, administeredOn: '2026-07-20' }),
+      );
 
       const written = await app.asUser(a.userId, (tx) => tx.select().from(events));
-      expect(written).toHaveLength(0);
+      expect(written).toHaveLength(1);
     });
   });
 
-  // ── Sale within a withdrawal period is blocked at capture (FR-131) ─────────────────────
-  describe('sale withdrawal guard (FR-131)', () => {
-    it('blocks a meat sale before the stored clear date, and writes no sale', async () => {
+  // ── Entered withdrawal intervals warn but never block capture (FR-131) ─────────────────
+  describe('withdrawal reminders never block (FR-131)', () => {
+    it('records a meat sale before the stored reminder date', async () => {
       const a = await tenant('Alpha');
       const animalId = await anAnimal(a.farmId);
       const productId = await aVetProduct(); // meat 28d
@@ -2399,20 +2467,17 @@ describe('weight capture (FR-140)', () => {
       );
 
       // The withdrawal clears 2026-08-17; a sale the day before is inside it.
-      await expect(
-        service.recordSale(
-          a.userId,
-          saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-16T06:00:00.000Z' }),
-        ),
-      ).rejects.toThrow(ValidationError);
+      const sale = await service.recordSale(
+        a.userId,
+        saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-08-16T06:00:00.000Z' }),
+      );
+      expect(sale.type).toBe('sale');
 
-      // Only the treatment event exists — the sale never landed.
       const written = await app.asUser(a.userId, (tx) => tx.select().from(events));
-      expect(written).toHaveLength(1);
-      expect(written[0]!.type).toBe('treatment');
+      expect(written).toHaveLength(2);
     });
 
-    it('blocks selling an animal out of a MOB that was dipped — the whole-flock dose counts', async () => {
+    it('records a sale from a dipped mob while retaining the whole-flock reminder fact', async () => {
       // ⭐ A plunge dip is the canonical whole-mob operation: it is captured against the mob, so
       // its withdrawal lands on an event with `animal_id = NULL`. A guard that reads only
       // animal-subject events cleared every individual in a dipped flock the next day — residues
@@ -2439,24 +2504,12 @@ describe('weight capture (FR-140)', () => {
         }),
       );
 
-      await expect(
-        service.recordSale(
-          a.userId,
-          saleBody({
-            farmId: a.farmId,
-            animalId: member!.id,
-            occurredAt: '2026-08-16T06:00:00.000Z',
-          }),
-        ),
-      ).rejects.toThrow(ValidationError);
-
-      // And it clears on the same date the individual-dose path would.
       const sold = await service.recordSale(
         a.userId,
         saleBody({
           farmId: a.farmId,
           animalId: member!.id,
-          occurredAt: '2026-08-17T06:00:00.000Z',
+          occurredAt: '2026-08-16T06:00:00.000Z',
         }),
       );
       expect(sold.type).toBe('sale');
@@ -2514,7 +2567,7 @@ describe('weight capture (FR-140)', () => {
             occurredAt: '2026-08-16T06:00:00.000Z',
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
     });
 
     it('does NOT withhold an animal moved INTO a mob that was dipped before it arrived', async () => {
@@ -2630,7 +2683,7 @@ describe('weight capture (FR-140)', () => {
             occurredAt: '2026-08-16T06:00:00.000Z',
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
     });
 
     it('⭐ still withholds when the dip and the move carry the IDENTICAL instant', async () => {
@@ -2685,7 +2738,7 @@ describe('weight capture (FR-140)', () => {
             occurredAt: '2026-08-16T06:00:00.000Z',
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
     });
 
     it('does NOT withhold an animal that left the day BEFORE the dip — inclusivity stops at the move day', async () => {
@@ -2742,7 +2795,7 @@ describe('weight capture (FR-140)', () => {
       expect(sold.type).toBe('sale');
     });
 
-    it('⭐ blocks an individual SLAUGHTER inside a withdrawal, and never blocks a death', async () => {
+    it('⭐ records an individual slaughter inside an interval, as it records a death', async () => {
       // The mirror image of the hole the group tally path closed. `slaughter` has been a
       // first-class tally reason since FR-102 and the individual path had only a free-text
       // `cause` — so "slaughtered for the workers' rations" was an ordinary death and nothing
@@ -2779,7 +2832,7 @@ describe('weight capture (FR-140)', () => {
             slaughtered: true,
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
 
       // The same animal, on the same day, having simply died: recorded without argument.
       const died = await service.recordDeath(
@@ -2794,23 +2847,9 @@ describe('weight capture (FR-140)', () => {
       );
       expect(died.type).toBe('death');
       expect(died.payload).not.toHaveProperty('slaughtered');
-
-      // And the slaughter goes through once the withholding has run.
-      const slaughtered = await service.recordDeath(
-        a.userId,
-        schemas.recordDeathRequestSchema.parse({
-          id: uuidv7(),
-          farmId: a.farmId,
-          animalId,
-          occurredAt: '2026-08-17T06:00:00.000Z',
-          cause: 'Slaughtered for rations',
-          slaughtered: true,
-        }),
-      );
-      expect(slaughtered.payload).toMatchObject({ slaughtered: true });
     });
 
-    it('⭐ blocks a group tally when ONE animal in the mob was treated individually', async () => {
+    it('⭐ records a group tally when one animal has an active reminder', async () => {
       // Health events are animal-XOR-mob, so an individual treatment stores `mob_id = NULL`. The
       // group guard filtered on `events.mob_id` and therefore saw the plunge dip and missed the
       // cow the vet had come out for — and a tally to slaughter takes head out of the mob without
@@ -2854,7 +2893,7 @@ describe('weight capture (FR-140)', () => {
             count: 10,
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
 
       // Clear the day the withholding runs out, so the guard is not simply refusing everything.
       const after = await service.recordMobTally(
@@ -2871,7 +2910,7 @@ describe('weight capture (FR-140)', () => {
       expect(after.type).toBe('tally');
     });
 
-    it('⭐ blocks a group tally for an animal that carried its withholding INTO the mob', async () => {
+    it('⭐ records a group tally while retaining a carried reminder', async () => {
       // Dipped in the dip camp, walked into the ox mob, and the ox mob sold for slaughter. Neither
       // half of the old guard could see it: the dip names a different mob, and the animal was never
       // individually dosed.
@@ -2930,7 +2969,7 @@ describe('weight capture (FR-140)', () => {
             counterparty: 'Senekal Abattoir',
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
     });
 
     it('does not withhold an animal in a DIFFERENT mob from the one dipped', async () => {
@@ -2973,7 +3012,7 @@ describe('weight capture (FR-140)', () => {
       expect(sold.type).toBe('sale');
     });
 
-    it('⭐ blocks tallying a dipped FLOCK to slaughter — the group-only path was unguarded', async () => {
+    it('⭐ records a dipped flock slaughter and retains the group reminder', async () => {
       // The smallholder case, and the one the guard could not previously reach at all. A mob run
       // by head count has no `animals` rows, so every individual check in this service was
       // structurally incapable of firing for it: dip the flock, tally forty to the abattoir the
@@ -3015,7 +3054,7 @@ describe('weight capture (FR-140)', () => {
             count: 40,
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
 
       // A sale is the same rule — it is meat leaving the farm either way.
       await expect(
@@ -3030,13 +3069,13 @@ describe('weight capture (FR-140)', () => {
             count: 40,
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
 
       // And the head count is untouched: a refused capture must not half-apply.
       const [row] = await app.asUser(a.userId, (tx) =>
         tx.select({ headCount: mobs.headCount }).from(mobs).where(eq(mobs.id, flock!.id)),
       );
-      expect(row!.headCount).toBe(300);
+      expect(row!.headCount).toBe(220);
     });
 
     it('never withholds a DEATH or a recount from a withheld flock', async () => {
@@ -3154,7 +3193,7 @@ describe('weight capture (FR-140)', () => {
       expect(sold.type).toBe('sale');
     });
 
-    it('still blocks a disposal on the SAME day as the dose', async () => {
+    it('records a disposal on the same day as the dose', async () => {
       // The other end of the boundary, and it is inclusive on purpose: dipped and sold on one day
       // is a real residue question, and a food-safety boundary fails toward blocking.
       const a = await tenant('Alpha');
@@ -3177,7 +3216,7 @@ describe('weight capture (FR-140)', () => {
           a.userId,
           saleBody({ farmId: a.farmId, animalId, occurredAt: '2026-07-20T14:00:00.000Z' }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
     });
   });
 
@@ -3264,7 +3303,7 @@ describe('weight capture (FR-140)', () => {
             occurredAt: '2026-08-16T06:00:00.000Z',
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
 
       // …and free again the day the withholding runs out, so the guard is not refusing everything.
       const after = await service.recordMobTally(
@@ -3420,7 +3459,7 @@ describe('weight capture (FR-140)', () => {
             occurredAt: '2026-08-09T06:00:00.000Z',
           }),
         ),
-      ).rejects.toThrow(ValidationError);
+      ).resolves.toBeDefined();
     });
 
     it('⛔ claims nothing for an UNDECLARED purchase — unknown history is not a withdrawal', async () => {
@@ -3503,8 +3542,8 @@ describe('weight capture (FR-140)', () => {
     });
   });
 
-  // ── The residue register (FR-131) — COMPLIANCE-GATED ──────────────────────────────────
-  describe('residue register (FR-131)', () => {
+  // ── Private interval-reminder register (FR-131) ───────────────────────────────────────
+  describe('private interval-reminder register (FR-131)', () => {
     it('⭐ flags a disposal a LATER-ARRIVING dose proves was inside a withholding', async () => {
       // The cross-device race, which no send-ordering can close. Device A records Monday's dip.
       // Device B has never seen it and tallies forty head to the abattoir on Tuesday. Both captures
@@ -3792,7 +3831,7 @@ describe('weight capture (FR-140)', () => {
       });
     });
 
-    it('⭐ refuses a slaughter out of a transferred flock when the dip lands AFTER the transfer', async () => {
+    it('⭐ records slaughter after transfer even when a later dip changes reminder history', async () => {
       // ⛔ The carried withholding must be a FLOOR, never a ceiling. It is computed from the source
       // mob's log as it stands when the transfer LANDS — and arrival order is not `occurred_at`
       // order, which is this repo's oldest rule. Two phones, both offline:
@@ -3868,7 +3907,7 @@ describe('weight capture (FR-140)', () => {
             count: 10,
           }),
         ),
-      ).rejects.toThrow(/withdrawal/i);
+      ).resolves.toBeDefined();
     });
 
     it('terminates when head has moved A → B → A, and still finds the dip', async () => {
@@ -3940,7 +3979,7 @@ describe('weight capture (FR-140)', () => {
             count: 10,
           }),
         ),
-      ).rejects.toThrow(/withdrawal/i);
+      ).resolves.toBeDefined();
     }, 20_000);
 
     it('⭐ does not file a camp-to-camp transfer as a disposal', async () => {

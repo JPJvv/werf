@@ -345,6 +345,11 @@ export function populatedStores(): Record<string, unknown> {
         category: 'chemical',
         name: 'Roundup PowerMax',
         unit: 'L',
+        // Farmer-owned catalogue (ADR-0013): the PHI fact now lives on the inventory item itself,
+        // not the retired `werf-chemical-products` reference store below. Without it,
+        // `/crops/spray`'s planning-warning panel — the newest control the sweep audits — never
+        // renders, and its markup goes untested.
+        phiDays: 21,
       },
       {
         id: FIXTURE.feedInventoryItemId,

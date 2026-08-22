@@ -7,7 +7,8 @@
 
 import { describe, expect, it } from 'vitest';
 import type { PhiProductFact, PhiSprayFact } from '@werf/domain';
-import { blocksWithinPhi } from './usePhiGuard';
+import { blocksWithinPhi, sprayFactsOf } from './usePhiGuard';
+import type { StoredSpray } from './LocalSprays';
 
 const BLOCK_A = 'block-a';
 const BLOCK_B = 'block-b';
@@ -61,5 +62,33 @@ describe('blocksWithinPhi', () => {
       PRODUCTS,
     );
     expect(result.slice().sort()).toEqual([BLOCK_A, BLOCK_B]);
+  });
+});
+
+describe('sprayFactsOf', () => {
+  function storedSpray(overrides: Partial<StoredSpray> = {}): StoredSpray {
+    return {
+      id: 'spray-1',
+      farmId: 'farm-1',
+      landUnitId: BLOCK_A,
+      occurredAt: '2026-03-01T08:00:00Z',
+      sprayedOn: '2026-03-01',
+      productId: PRODUCT_ID,
+      productName: 'Roundup PowerMax',
+      ...overrides,
+    };
+  }
+
+  // O-12: a local capture waiting to send has no server-confirmed answer, so it must fall back to
+  // the offline PREVIEW (`resolved: false`) rather than reading as "confirmed, no PHI on record" —
+  // reading it as resolved silently drops the reminder this device exists to give.
+  it('marks a local capture unresolved until it carries the server-confirmed activeIngredients', () => {
+    const [fact] = sprayFactsOf([storedSpray()]);
+    expect(fact!.resolved).toBe(false);
+  });
+
+  it('marks a spray resolved once it carries activeIngredients, whether captured here or hydrated', () => {
+    const [fact] = sprayFactsOf([storedSpray({ activeIngredients: ['cyprodinil'] })]);
+    expect(fact!.resolved).toBe(true);
   });
 });

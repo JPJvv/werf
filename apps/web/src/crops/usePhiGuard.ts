@@ -25,7 +25,12 @@ export function sprayFactsOf(sprays: readonly StoredSpray[]): readonly PhiSprayF
     occurredAt: spray.occurredAt,
     sprayedOn: spray.sprayedOn,
     productId: spray.productId,
-    resolved: true,
+    // The same discriminator `SpraysScreen.tsx` uses: `activeIngredients` is required and
+    // non-empty on the wire, so its presence marks a spray that has round-tripped through the
+    // server at least once (whether captured here or hydrated from another device). A local
+    // capture still waiting to send has no server-confirmed answer, so it must fall back to the
+    // offline PREVIEW below rather than reading as "confirmed, no PHI on record" (O-12).
+    resolved: spray.activeIngredients !== undefined,
     ...(spray.earliestHarvestDate === undefined
       ? {}
       : { earliestHarvestDate: spray.earliestHarvestDate }),

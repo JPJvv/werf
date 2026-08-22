@@ -3,13 +3,32 @@
 > Read this before planning. This file records current state, owner decisions, verification evidence,
 > and the next executable slice. Historical session narratives belong in git history, not here.
 
-**Last updated:** 2026-08-22 (Phase 5 farmer-workflow/forms/exports planning audit; NO code written). Previous
-substantive state: 2026-08-20 (Phase 3–4 farmer-first commercial audit on
-`phase-4/commercial-audit`, based on `main` @ `451f793`). Owner decision ADR-0013 resets the product
-boundary: Werf is a private farmer-controlled logbook, planner and calculator, not an authority.
+**Last updated:** 2026-08-22 (Phase 4 commercial-audit + Phase 5 plan merged to `main` via PR #15;
+`phase-5/people-work-pay` branched). Previous substantive state: 2026-08-20 (Phase 3–4 farmer-first
+commercial audit on `phase-4/commercial-audit`, based on `main` @ `451f793`). Owner decision ADR-0013
+resets the product boundary: Werf is a private farmer-controlled logbook, planner and calculator, not
+an authority.
 
-⚠️ **Branch reconcile (2026-08-22):** `phase-4/commercial-audit` is **1 commit ahead of `main`** at
-`d1ab7da` (audit + first P5 plan), with this revision uncommitted; open its PR before P5 implementation.
+✅ **PR #15 merged 2026-08-22** (`phase-4/commercial-audit` → `main` @ `5988414`), closing STATUS.md
+§5 step 1. CI's own `E2E · axe` run caught two real gaps `pnpm verify` cannot see, both fixed on the
+PR before merge (`644fc94`), not filed:
+- **A genuine regression, not a stale test:** `usePhiGuard.ts`'s `sprayFactsOf` had been simplified to
+  a hardcoded `resolved: true`, silently disabling the O-12 offline PHI-preview fallback — a local
+  spray capture not yet round-tripped through the server was read as "confirmed, no PHI on record"
+  instead of falling back to the farmer's own product register. This fed both the harvest-capture
+  reminder and `phiRegister.ts`'s compliance-gated local PHI register. Restored the
+  `activeIngredients` discriminator, added a fail-first regression test (`usePhiGuard.test.ts`) — no
+  existing test exercised `sprayFactsOf` itself, only `phiGuardFor` with hand-built facts, which is
+  why `pnpm verify` stayed green through the regression.
+- `apps/web/e2e/a11y.spec.ts` and `session.ts` had gone stale against the same audit: theft-report
+  copy, the meat-interval panels and the removed crop-PHI override UI all moved to advisory language;
+  the crop-chemical PHI fact moved from the retired `werf-chemical-products` store onto the farmer's
+  own inventory item, and the fixture never carried `phiDays` onto its new home, so `/crops/spray`'s
+  planning-warning panel — the newest control on that screen — never rendered under axe. Both fixed;
+  full `a11y.spec.ts` re-verified 20/20 against the running app, not just CI's word for it.
+
+**Branch reconcile (2026-08-22):** `phase-5/people-work-pay` branched from `main` @ `5988414`. Phase
+5 implementation not started.
 
 🆕 **Phase 5 owner decisions (2026-08-22), load-bearing for the plan:**
 - **The whole phase is a farmer-controlled people, work and pay tool, not a compliance gate.**
@@ -68,11 +87,13 @@ a package just touched proves nothing changed, not that nothing is broken.
 veterinary reference-data source is required. Farmers enter the products and label facts they use;
 Werf calculates reminders from those entries without verifying, approving or reporting them.
 
-**Active branch:** `phase-4/commercial-audit` @ `d1ab7da`, 1 ahead of `main` @ `451f793`. Phase 5 code not started.
+**Active branch:** `phase-5/people-work-pay` @ `main`'s `5988414`. Phase 5 code not started.
 
 **Remote state:** Phase 2 merged to `main` via PR #3 (`13a0d46`). Phase 3 merged to `main` via
 PR #11 (`6823858`, 2026-08-17) — 3/3 CI lanes green at merge, no post-merge fixes needed. Phase 4
-merged to `main` via PR #13 (`580c611`, 2026-08-20) — 3/3 CI checks green at merge.
+merged to `main` via PR #13 (`580c611`, 2026-08-20) — 3/3 CI checks green at merge. The Phase 4
+commercial audit + Phase 5 plan merged via PR #15 (`5988414`, 2026-08-22) — 3/3 CI checks green at
+merge, after the two fixes above.
 
 ## 1. Delivery position
 
@@ -82,8 +103,8 @@ merged to `main` via PR #13 (`580c611`, 2026-08-20) — 3/3 CI checks green at m
 | 1 — App shell, auth & 2FA | Merged | PR #2, `9452ebc` |
 | 2 — Livestock | ✅ **Merged** | `main` @ `13a0d46` (PR #3, 2026-08-08). Tenth pass cleared — no SEV-1/SEV-2. MED/LOW fixed or filed as issues #4–#9 (not merge blockers) |
 | 3 — Offline sync | ✅ **Merged** | `main` @ `6823858` (PR #11, 2026-08-17). Every phase-checklist box `☑`, punch list fully closed, whole-branch review-agent pass cleared after one fix round — full account in §3 |
-| 4 — Crops & fields | ✅ **Merged; farmer-first audit repaired and verified** | PR #13 merged the phase. `phase-4/commercial-audit` replaces authoritative product/PHI logic with farmer-owned inputs and advisory reminders, tightens production RLS configuration, and passes the full gate |
-| 5 — People, work & pay | Not started; plan revised | Standard forms + PDF/DOCX/XLSX outputs planned; regulated deployment needs verified sources + labour-law review |
+| 4 — Crops & fields | ✅ **Merged; farmer-first audit repaired and verified** | PR #13 merged the phase; the commercial audit + Phase 5 plan merged via PR #15 (`5988414`, 2026-08-22). Replaces authoritative product/PHI logic with farmer-owned inputs and advisory reminders, tightens production RLS configuration, and passes the full gate |
+| 5 — People, work & pay | Branched, no code yet | `phase-5/people-work-pay` @ `5988414`. Standard forms + PDF/DOCX/XLSX outputs planned; regulated deployment needs verified sources + labour-law review |
 | 6 — Finance & compliance packs | Not started | Evidence packs, obligations, fuel/refund, reporting |
 | 7 — Hardening & pilot | Not started | Performance, security review, deployment, pilot |
 
@@ -221,17 +242,17 @@ attachment queue/residuals, P2.6–2.9, conflict audit/review + `(occurred_at,id
 
 ## 5. Next executable steps
 
-Ordered — Phase 5 implementation must not branch until step 1 lands (owner decision 2026-08-22).
+Ordered.
 
-1. **Close out the P4 commercial audit + Phase 5 planning PR.** Review and commit this session's
-   planning-only diff on `phase-4/commercial-audit`, push the branch, open its PR, run CI and merge
-   to `main` (§7: every `main`-bound change goes through a PR). The production privacy promise
-   (tenant-private vs delayed provider-blind E2E) is
-   still open and touches Phase 5's 5b PII encryption — decide and document it, but it does not block
-   Phase 5 starting; 5b uses the current PII-key model and flags the migration exposure.
-2. **Branch `phase-5/people-work-pay` from updated `main`.** Its FIRST commit carries the post-merge STATUS.md
-   reconcile note (§7 precedent — not a push to `main`).
-3. **Book/complete the two external deployment gates early** (they are not satisfied by reading the repo):
+1. ✅ **DONE 2026-08-22 — Closed out the P4 commercial audit + Phase 5 planning PR.** Committed,
+   pushed, opened PR #15, CI ran (catching and fixing the two gaps recorded at the top of this file),
+   merged to `main` @ `5988414` (§7: every `main`-bound change goes through a PR). The production
+   privacy promise (tenant-private vs delayed provider-blind E2E) is still open and touches Phase 5's
+   5b PII encryption — decide and document it, but it does not block Phase 5 starting; 5b uses the
+   current PII-key model and flags the migration exposure.
+2. ✅ **DONE 2026-08-22 — Branched `phase-5/people-work-pay` from `main`** @ `5988414`. This STATUS.md
+   reconcile is its first commit (§7 precedent — not a push to `main`).
+3. **NEXT — book/complete the two external deployment gates early** (they are not satisfied by reading the repo):
    - **B-1** — book the external labour-law review, with a date. It gates 5i (an exit-gate line) and
      is on someone else's calendar, so book it now, not in week seven. Ask it to bless or overturn
      the advisory-only payroll decision specifically.

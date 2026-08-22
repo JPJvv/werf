@@ -14,23 +14,45 @@ import {
   type SprayPhiGuardResult,
 } from '@werf/domain';
 import { useEffectiveSprays, type StoredSpray } from './LocalSprays';
+import { useHydratedSprays } from './HydratedSprays';
 import { useCurrentPlanting } from './LocalPlantings';
 import { useEffectiveLandUnits } from '../land/LocalLand';
 import { useEffectiveInventoryItems } from '../inventory/stock';
 import { farmToday } from '../farmTime';
 
-export function sprayFactsOf(sprays: readonly StoredSpray[]): readonly PhiSprayFact[] {
+/**
+ * `hydratedIds` — the raw hydrated-spray id set, same shape as `withdrawal.ts`'s
+ * `hydratedAnimalIds` (STATUS.md §3, fail-closed) — is the ONLY reliable "has this spray
+ * round-tripped through the server" signal. `activeIngredients` used to double as that
+ * discriminator (its presence was required and non-empty on the wire), but this same PR relaxed
+ * it to optional, so a confirmed spray with none entered would otherwise read as permanently
+ * unresolved, and a local unsent one could borrow the flag from a stale merge.
+ * `mergeByIdPreferHydrated` (`useEffectiveSprays`) already resolves the SAME id to its hydrated
+ * copy when both exist, so membership in `hydratedIds` on the merged list correctly means
+ * "server-confirmed," never "was confirmed once, might be stale now."
+ *
+ * ⭐ NOT DEFAULTED, deliberately — a caller with nothing to say about hydration state must pass an
+ * explicit empty `Set`, not silently inherit one. `resolved: false` (this device cannot currently
+ * PROVE the spray round-tripped) is the SAME safe posture whether that is because hydration has
+ * not settled yet, has settled but genuinely found nothing, or has settled and FAILED
+ * (`useHydratedSpraysSettled`/`useHydratedSpraysHydrationFailed`, `HydratedSprays.tsx`) — in every
+ * case the guard falls through to the offline PREVIEW/`unresolved` path below, never to "confirmed,
+ * no PHI" (`phi-guard.ts`'s `resolved: true` + no `earliestHarvestDate` branch). That can show a
+ * transient or, on a permanent hydration failure, a lasting "cannot calculate" reminder for a spray
+ * that in truth carries no PHI at all — an honest under-claim, not a false all-clear, and the
+ * correct direction to be wrong in for a food-safety-adjacent reminder that must never silently
+ * skip a possible PHI.
+ */
+export function sprayFactsOf(
+  sprays: readonly StoredSpray[],
+  hydratedIds: ReadonlySet<string>,
+): readonly PhiSprayFact[] {
   return sprays.map((spray) => ({
     landUnitId: spray.landUnitId,
     occurredAt: spray.occurredAt,
     sprayedOn: spray.sprayedOn,
     productId: spray.productId,
-    // The same discriminator `SpraysScreen.tsx` uses: `activeIngredients` is required and
-    // non-empty on the wire, so its presence marks a spray that has round-tripped through the
-    // server at least once (whether captured here or hydrated from another device). A local
-    // capture still waiting to send has no server-confirmed answer, so it must fall back to the
-    // offline PREVIEW below rather than reading as "confirmed, no PHI on record" (O-12).
-    resolved: spray.activeIngredients !== undefined,
+    resolved: hydratedIds.has(spray.id),
     ...(spray.earliestHarvestDate === undefined
       ? {}
       : { earliestHarvestDate: spray.earliestHarvestDate }),
@@ -41,7 +63,9 @@ export function sprayFactsOf(sprays: readonly StoredSpray[]): readonly PhiSprayF
  *  `phiRegister.ts`'s local derivation both read. */
 export function useSprayFacts(): readonly PhiSprayFact[] {
   const sprays = useEffectiveSprays();
-  return useMemo(() => sprayFactsOf(sprays), [sprays]);
+  const hydrated = useHydratedSprays();
+  const hydratedIds = useMemo(() => new Set(hydrated.map((spray) => spray.id)), [hydrated]);
+  return useMemo(() => sprayFactsOf(sprays, hydratedIds), [sprays, hydratedIds]);
 }
 
 export function useProductFacts(): readonly PhiProductFact[] {

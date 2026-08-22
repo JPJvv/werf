@@ -235,7 +235,9 @@ export const vaccinationPayloadSchema = z.object({
 });
 export type VaccinationPayload = z.infer<typeof vaccinationPayloadSchema>;
 
-/** Dip / tick treatment (FR-133): required in controlled areas (Animal Diseases Act 35 of 1984). */
+/** Dip / tick treatment (FR-133): a farmer-entered health record. Controlled-area dip obligations
+ *  are the farmer's own responsibility — Werf does not diagnose, classify, or report on their
+ *  behalf (ADR-0013; legal-compliance.md §3.4). */
 export const dipPayloadSchema = z.object({
   product: z.string().min(1),
   ...farmerProductSnapshotFields,

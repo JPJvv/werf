@@ -66,9 +66,11 @@ describe('blocksWithinPhi', () => {
 });
 
 describe('sprayFactsOf', () => {
+  const SPRAY_ID = 'spray-1';
+
   function storedSpray(overrides: Partial<StoredSpray> = {}): StoredSpray {
     return {
-      id: 'spray-1',
+      id: SPRAY_ID,
       farmId: 'farm-1',
       landUnitId: BLOCK_A,
       occurredAt: '2026-03-01T08:00:00Z',
@@ -82,13 +84,30 @@ describe('sprayFactsOf', () => {
   // O-12: a local capture waiting to send has no server-confirmed answer, so it must fall back to
   // the offline PREVIEW (`resolved: false`) rather than reading as "confirmed, no PHI on record" —
   // reading it as resolved silently drops the reminder this device exists to give.
-  it('marks a local capture unresolved until it carries the server-confirmed activeIngredients', () => {
-    const [fact] = sprayFactsOf([storedSpray()]);
+  it('marks a local, not-yet-hydrated capture unresolved', () => {
+    const [fact] = sprayFactsOf([storedSpray()], new Set());
     expect(fact!.resolved).toBe(false);
   });
 
-  it('marks a spray resolved once it carries activeIngredients, whether captured here or hydrated', () => {
-    const [fact] = sprayFactsOf([storedSpray({ activeIngredients: ['cyprodinil'] })]);
+  // The regression: `activeIngredients` used to double as the "server-confirmed" discriminator
+  // because it was required and non-empty on the wire. This same PR relaxed it to optional
+  // (`sprayPayloadSchema.activeIngredients`), so a fully confirmed spray with none entered
+  // (`storedSpray()`'s base fixture already omits it) must still read as resolved once its id is
+  // in the hydrated set, whether captured here or hydrated from another device — the old
+  // activeIngredients-presence check would have left it permanently "unresolved" and open to
+  // inventing a stale reminder from today's catalogue instead of skipping cleanly.
+  it('marks a spray resolved once its id is in the hydrated set, even with no activeIngredients on it at all', () => {
+    const [fact] = sprayFactsOf([storedSpray()], new Set([SPRAY_ID]));
     expect(fact!.resolved).toBe(true);
+  });
+
+  // Same safe posture as an ordinary unconfirmed local capture (above), and deliberately so — a
+  // caller mid-hydration, or one whose hydration attempt has settled and failed, is in exactly the
+  // same position: it cannot currently PROVE the spray round-tripped, so it must pass whatever
+  // hydrated-id set it actually has (possibly empty), never a stand-in default (`sprayFactsOf`'s
+  // own docstring).
+  it('treats an empty hydrated set as unresolved for every spray, whether that is a loading window or a settled failure', () => {
+    const [fact] = sprayFactsOf([storedSpray()], new Set());
+    expect(fact!.resolved).toBe(false);
   });
 });

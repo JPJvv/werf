@@ -136,6 +136,19 @@ describe('loadConfig — production RLS connections', () => {
       ),
     ).toThrow(/must connect as werf_app/);
   });
+
+  // A misconfigured elevated URL that keeps the SAME werf_app username (just a different
+  // password/host) passed every check above — same role can't bypass FORCE RLS, so every
+  // operation that needs the elevated connection breaks silently at the moment it's actually used.
+  it('refuses an elevated connection that is also the werf_app role', () => {
+    expect(() =>
+      loadConfig(
+        validProductionEnv({
+          DATABASE_ELEVATED_URL: 'postgres://werf_app:other-secret@db:5432/werf',
+        }),
+      ),
+    ).toThrow(/DATABASE_ELEVATED_URL must not also connect as werf_app/);
+  });
 });
 
 describe('loadConfig — object storage (attachments, 3i)', () => {

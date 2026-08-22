@@ -340,6 +340,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
           '  DATABASE_URL must connect as werf_app in production so FORCE RLS remains the data boundary',
       );
     }
+    const elevatedUser = new URL(parsed.data.databaseElevatedUrl).username;
+    if (elevatedUser === 'werf_app') {
+      throw new Error(
+        'Invalid server configuration:\n' +
+          '  DATABASE_ELEVATED_URL must not also connect as werf_app — a same-role elevated ' +
+          'connection cannot bypass FORCE RLS, silently breaking every operation that needs it',
+      );
+    }
   }
 
   return parsed.data;
